@@ -4,7 +4,7 @@ This document contains high level notes about the integration which may be neces
 
 ## Project Overview
 
-This is a Python 3 Home Assistant integration for interacting with the Dyson REST and WebSocket API, as well as Dyson products over MQTT. The integration is designed to be consumed as public code and must maintain high code quality standards.
+This is a Python 3 Home Assistant integration for interacting with the Dyson REST and WebSocket API, as well as Dyson products over MQTT. The integration is designed to be consumed as public code and must maintain high code quality standards.  It is expected to first be published in HACS during User Acceptance Testing, then added to the Home Assistant core integrations.
 
 ## Overlapping Terminology
 
