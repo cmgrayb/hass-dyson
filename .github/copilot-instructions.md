@@ -1,12 +1,9 @@
-# Copilot Instructions for ha-dyson-alt
+# Copilot Instructions
 
 ## Project Design
 The integration is architected to be modular, allowing for easy addition of new Dyson products and features. It leverages asynchronous programming to ensure non-blocking operations within Home Assistant. The design prioritizes security, maintainability, and adherence to Home Assistant's integration guidelines. The integration should handle ONLY the Home Assistant orchestration, event handling, logging, and state management. All direct communication with Dyson devices and APIs should be abstracted away into separate libraries or services.
 
-Additional design files may be found in the `.github/design/` directory of the project repository.
-
-## Project Overview
-This is a Python 3 Home Assistant integration for interacting with the Dyson REST and WebSocket API, as well as Dyson products over MQTT. The integration is designed to be consumed as public code and must maintain high code quality standards.
+Design documentation may be found in the `.github/design/` directory of the project repository.
 
 ## Development Standards
 
@@ -289,8 +286,6 @@ Required status checks for merge approval:
 - Quality checks pass (Python 3.10)
 - Build test passes (Ubuntu/Python 3.10)
 - Version sync check (when configuration files modified)
-
-See `.github/workflows/README.md` for detailed workflow documentation and troubleshooting guides.
 
 ## Automated Dependency Management
 

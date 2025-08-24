@@ -17,4 +17,4 @@ Local devices have an onboard MQTT broker with a preexisting password not readil
 ## IoT Authentication
 
 Less is known about the IoT connectivity.  It appears to be an MQTT broker proxy hosted in cloud by Dyson.
-Connection information including an encoded, encrypted, and/or hashed password may be determined through an existing function in libdyson-rest.
+Connection information including an encoded, encrypted, and/or hashed password may be determined through an existing function in libdyson-rest.  It is believed that we do not have to know the original value of the IoT password and may pass it to the broker as-is, however, that may be checked against known functional code found at <https://github.com/libdyson-wg/opendyson>.
