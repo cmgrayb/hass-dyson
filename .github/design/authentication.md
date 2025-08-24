@@ -12,7 +12,7 @@ Authentication to the API is performed through a multifactor series of steps, re
 
 ## Local Device Authentication
 
-Local devices have an onboard MQTT broker with a preexisting password not readily available to the end user.  The username and password to the device may be determined through an existing function in libdyson-rest.
+Local devices have an onboard MQTT broker with a preexisting password not readily available to the end user.  The username and password to the device may be determined through an existing function in libdyson-rest.  The password sent to the device must be the unencrypted password in the libdyson-api response.
 
 ## IoT Authentication
 
