@@ -3,7 +3,7 @@
   "hacs": "0.24.0",
   "domains": ["fan", "sensor", "binary_sensor", "button", "number", "select", "switch", "climate"],
   "iot_class": "Local Polling",
-  "homeassistant": "2024.1.0",
+  "homeassistant": "2025.8.0",
   "render_readme": true,
   "filename": "dyson_alt.zip"
 }
