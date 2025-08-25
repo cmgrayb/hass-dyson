@@ -13,5 +13,5 @@
     "libdyson-rest==0.4.1",
     "libdyson-mqtt==0.2.1"
   ],
-  "version": "0.1.6"
+  "version": "0.1.7"
 }

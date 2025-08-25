@@ -21,8 +21,8 @@ from .const import (
 from .coordinator import DysonDataUpdateCoordinator
 from .services import async_setup_services, async_remove_services
 
-# Import config flow to ensure it's available for registration
-from . import config_flow  # noqa: F401
+# Import config flow explicitly to ensure it's available for registration
+from .config_flow import DysonConfigFlow  # noqa: F401
 
 _LOGGER = logging.getLogger(__name__)
 
