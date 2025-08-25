@@ -1,7 +1,7 @@
 # Dyson Alternative Integration for Home Assistant
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo.svg" alt="Dyson Alternative Logo" width="200"/>
+  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo-social.png" alt="Dyson Alternative Logo" width="400"/>
 </p>
 
 [![GitHub Release][releases-shield]][releases]
