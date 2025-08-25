@@ -430,3 +430,52 @@ class DysonDevice:
 
         if self._mqtt_client:
             await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
+
+    async def set_sleep_timer(self, minutes: int) -> None:
+        """Set sleep timer in minutes (0 to cancel, 15-540 for active timer)."""
+        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+
+        # Convert minutes to the format expected by the device
+        # Dyson uses a specific encoding for sleep timer values
+        if minutes == 0:
+            timer_value = "OFF"
+        else:
+            # Ensure minutes is within valid range
+            minutes = max(15, min(540, minutes))
+            # Convert to 4-digit string format (e.g., 15 minutes = "0015", 240 minutes = "0240")
+            timer_value = f"{minutes:04d}"
+
+        command = json.dumps({"msg": "STATE-SET", "data": {"sltm": timer_value}})
+
+        if self._mqtt_client:
+            await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
+
+    async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
+        """Set custom oscillation angles."""
+        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+
+        # Ensure angles are within valid range (0-350 degrees)
+        lower_angle = max(0, min(350, lower_angle))
+        upper_angle = max(0, min(350, upper_angle))
+
+        # Ensure lower angle is less than upper angle
+        if lower_angle >= upper_angle:
+            raise ValueError("Lower angle must be less than upper angle")
+
+        # Convert angles to 4-digit string format
+        lower_str = f"{lower_angle:04d}"
+        upper_str = f"{upper_angle:04d}"
+
+        command = json.dumps(
+            {
+                "msg": "STATE-SET",
+                "data": {
+                    "osal": lower_str,  # Oscillation angle lower
+                    "osau": upper_str,  # Oscillation angle upper
+                    "oson": "ON",  # Enable oscillation
+                },
+            }
+        )
+
+        if self._mqtt_client:
+            await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)

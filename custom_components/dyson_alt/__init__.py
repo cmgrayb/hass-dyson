@@ -19,6 +19,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .services import async_setup_services, async_remove_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -152,6 +153,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Forward setup to platforms
         await hass.config_entries.async_forward_entry_setups(entry, platforms_to_setup)
 
+        # Set up services (only once when first device is added)
+        if len(hass.data[DOMAIN]) == 1:
+            await async_setup_services(hass)
+
         _LOGGER.info("Successfully set up Dyson device '%s' with platforms: %s", entry.title, platforms_to_setup)
 
         return True
@@ -178,6 +183,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Clean up coordinator
         await coordinator.async_shutdown()
         hass.data[DOMAIN].pop(entry.entry_id)
+
+        # Remove services if this was the last device
+        if not hass.data[DOMAIN]:
+            await async_remove_services(hass)
 
         _LOGGER.info("Successfully unloaded Dyson device '%s'", entry.title)
 

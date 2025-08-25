@@ -6,7 +6,7 @@ import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
+from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -35,6 +35,7 @@ async def async_setup_entry(
             DysonWiFiSensor(coordinator),
             DysonHEPAFilterLifeSensor(coordinator),
             DysonCarbonFilterLifeSensor(coordinator),
+            DysonFirmwareVersionSensor(coordinator),
         ]
     )
 
@@ -341,4 +342,37 @@ class DysonFilterStatusSensor(CoordinatorEntity, SensorEntity):
 
         # Use our device filter status property
         self._attr_native_value = self.coordinator.device.filter_status
+        super()._handle_coordinator_update()
+
+
+class DysonFirmwareVersionSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for firmware version information."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the firmware version sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_firmware_version"
+        self._attr_name = f"{coordinator.config_entry.title} Firmware Version"
+        self._attr_icon = "mdi:chip"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_native_value = None
+            return
+
+        # Extract firmware version from device data
+        # This would typically come from device info or status messages
+        device_data = self.coordinator.data.get("product-state", {})
+        firmware_version = device_data.get("fwv", "Unknown")
+
+        # Format firmware version for display
+        if firmware_version and firmware_version != "Unknown":
+            self._attr_native_value = firmware_version
+        else:
+            self._attr_native_value = "Unknown"
+
         super()._handle_coordinator_update()

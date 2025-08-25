@@ -132,6 +132,10 @@ PLATFORMS: Final = [
 # Service names
 SERVICE_RESET_FILTER: Final = "reset_filter"
 SERVICE_SET_SLEEP_TIMER: Final = "set_sleep_timer"
+SERVICE_CANCEL_SLEEP_TIMER: Final = "cancel_sleep_timer"
+SERVICE_SCHEDULE_OPERATION: Final = "schedule_operation"
+SERVICE_SET_OSCILLATION_ANGLES: Final = "set_oscillation_angles"
+SERVICE_FETCH_ACCOUNT_DATA: Final = "fetch_account_data"
 
 # Event types
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
