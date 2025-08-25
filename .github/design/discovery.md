@@ -16,7 +16,7 @@ Examples of the information available from the API through libdyson-rest may be 
 mDNS discovery (Zeroconf, paho-client-mqtt) may or may not correctly identify a device on the network.
 Newer models do not consistently include their variant as part of the advertisement, do not include connection credentials, and are generally only useful for local DNS hostname and IP information in the case that the fan reports different information to the API.  mDNS-based discovery should only be used as a fallback for host connection determination in the case that the hostname or IP returned to the API is different.  When falling back to mDNS, search for an advertisement with a format of [model with or without variant]_[serial number]._dyson._mqtt._tcp to match the cloud device to the local device.  This method appears to be particularly useful for devices returning "ec" (environment cleaner) in the DeviceCategory in the API, which represent devices with a fan and filter.
 
-Some devices also broadcast on [model with or without variant]_[serial number]_360eye._mqtt._tcp, particularly robotic vacuums.  In the case that the device returns "robot", "vacuum" or "flrc" in the DeviceCategory (index [device][category] of the json response), this additional advertisement should be checked for.
+Some devices also broadcast on [model with or without variant]_[serial number]._360eye._mqtt._tcp, particularly robotic vacuums.  In the case that the device returns "robot", "vacuum" or "flrc" in the DeviceCategory (index [device][category] of the json response), this additional advertisement should be checked for.
 
 ## Sticker and "WiFi based" discovery
 

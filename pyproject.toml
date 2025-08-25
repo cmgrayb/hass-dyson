@@ -1,0 +1,172 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ha-dyson-alt"
+version = "0.1.0"
+description = "Unofficial alternative Home Assistant Dyson integration focusing on device capabilities and connection information"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "cmgrayb"},
+]
+keywords = ["home-assistant", "dyson", "integration", "custom-component"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "homeassistant>=2025.8.0",
+    "aiohttp>=3.8.0",
+    "cryptography>=3.4.0",
+    "requests>=2.28.0",
+    "libdyson-rest==0.2.0",
+    "libdyson-mqtt==0.2.1",
+    "paho-mqtt>=1.6.0",
+    "zeroconf>=0.47.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black==25.1.0",
+    "flake8==7.3.0",
+    "isort==6.0.1",
+    "pytest==8.4.1",
+    "pytest-cov==6.2.1",
+    "pytest-asyncio==1.1.0",
+    "pytest-homeassistant-custom-component==0.13.272",
+    "mypy==1.17.1",
+    "pre-commit==4.3.0",
+    "types-requests==2.32.4.20250809",
+    "types-cryptography==3.3.23.2",
+    "bandit==1.8.0",
+    "safety==3.2.8",
+    "responses==0.25.8",
+    "aioresponses==0.7.7",
+    "pytest-mock==3.14.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/cmgrayb/ha-dyson-alt"
+Repository = "https://github.com/cmgrayb/ha-dyson-alt"
+Issues = "https://github.com/cmgrayb/ha-dyson-alt/issues"
+
+[tool.setuptools.packages.find]
+where = ["custom_components"]
+include = ["dyson_alt*"]
+
+[tool.black]
+line-length = 120
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+known_first_party = ["custom_components.dyson_alt"]
+known_third_party = ["homeassistant"]
+
+[tool.mypy]
+python_version = "3.9"
+show_error_codes = true
+follow_imports = "silent"
+ignore_missing_imports = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_reexport = true
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = [
+    "custom_components.dyson_alt.*",
+    "homeassistant.*",
+]
+disallow_subclassing_any = false
+disallow_any_generics = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".git", ".tox", "dist", "build", "south_migrations"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=custom_components.dyson_alt",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-report=html",
+    "--cov-fail-under=0",
+    "--strict-markers",
+    "-v"
+]
+markers = [
+    "asyncio: marks tests as async",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["custom_components/dyson_alt"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101", "B601"]

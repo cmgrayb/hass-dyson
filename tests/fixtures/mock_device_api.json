@@ -1,0 +1,61 @@
+{
+  "timestamp": "2025-08-23T11:48:22.816975",
+  "authentication": {
+    "account_id": "00000000-0000-0000-0000-000000000000",
+    "email": "test@example.com",
+    "country": "US",
+    "culture": "en-US",
+    "account_status": "ACTIVE",
+    "authentication_method": "EMAIL_PWD_2FA",
+    "token_type": "Bearer",
+    "bearer_token": "MOCK-TOKEN-12345",
+    "bearer_token_preview": "MOCK-TOKEN-123..."
+  },
+  "devices": [
+    {
+      "basic_info": {
+        "name": "Theater Fan",
+        "serial_number": "MOCK-SERIAL-TEST123",
+        "type": "438",
+        "model": "TP11",
+        "category": "ec",
+        "connection_category": "lecAndWifi",
+        "variant": "M"
+      },
+      "connected_configuration": {
+        "mqtt": {
+          "local_broker_credentials_encrypted": "MOCK_ENCRYPTED_CREDENTIALS_BASE64",
+          "mqtt_root_topic_level": "438M",
+          "remote_broker_type": "wss",
+          "local_broker_credentials_decrypted": "MOCK_DECRYPTED_CREDENTIALS"
+        },
+        "wifi": {
+          "ssid": "MOCK_NETWORK",
+          "password": "mock_wifi_password",
+          "security": "wpa2"
+        },
+        "firmware": {
+          "version": "21.01.08",
+          "capabilities": [
+            "AdvanceOscillationDay1",
+            "Scheduling",
+            "EnvironmentalData",
+            "ExtendedAQ",
+            "ChangeWifi"
+          ]
+        }
+      },
+      "mqtt_analysis": {
+        "local_mqtt": {
+          "username": "MOCK-SERIAL-TEST123",
+          "password": "mock_encrypted_password_base64_string_longer_than_50_chars_for_testing",
+          "root_topic": "438M",
+          "ports": {
+            "mqtt": 1883,
+            "mqtt_tls": 8883
+          }
+        }
+      }
+    }
+  ]
+}

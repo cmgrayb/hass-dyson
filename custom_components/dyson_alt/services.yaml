@@ -1,0 +1,137 @@
+# Services configuration for Dyson Alternative Integration
+
+set_sleep_timer:
+  name: Set Sleep Timer
+  description: Set a sleep timer for the Dyson device
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson device to set the timer for
+      required: true
+      selector:
+        device:
+          integration: dyson_alt
+    minutes:
+      name: Minutes
+      description: Timer duration in minutes (15-540)
+      required: true
+      selector:
+        number:
+          min: 15
+          max: 540
+          step: 15
+          unit_of_measurement: "min"
+
+cancel_sleep_timer:
+  name: Cancel Sleep Timer
+  description: Cancel the active sleep timer for the Dyson device
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson device to cancel the timer for
+      required: true
+      selector:
+        device:
+          integration: dyson_alt
+
+schedule_operation:
+  name: Schedule Operation
+  description: Schedule a device operation (experimental)
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson device to schedule operation for
+      required: true
+      selector:
+        device:
+          integration: dyson_alt
+    operation:
+      name: Operation
+      description: The operation to schedule
+      required: true
+      selector:
+        select:
+          options:
+            - "turn_on"
+            - "turn_off"
+            - "set_speed"
+            - "toggle_auto_mode"
+    schedule_time:
+      name: Schedule Time
+      description: Time to execute the operation (ISO format)
+      required: true
+      selector:
+        datetime:
+    parameters:
+      name: Parameters
+      description: JSON parameters for the operation (optional)
+      required: false
+      selector:
+        text:
+          multiline: true
+
+set_oscillation_angles:
+  name: Set Oscillation Angles
+  description: Set custom oscillation angles for the Dyson device
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson device to configure
+      required: true
+      selector:
+        device:
+          integration: dyson_alt
+    lower_angle:
+      name: Lower Angle
+      description: Lower oscillation angle in degrees (0-350)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 350
+          step: 5
+          unit_of_measurement: "°"
+    upper_angle:
+      name: Upper Angle
+      description: Upper oscillation angle in degrees (0-350)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 350
+          step: 5
+          unit_of_measurement: "°"
+
+fetch_account_data:
+  name: Fetch Account Data
+  description: Refresh device information from Dyson cloud account
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson device to refresh data for (optional - refreshes all if not specified)
+      required: false
+      selector:
+        device:
+          integration: dyson_alt
+
+reset_filter:
+  name: Reset Filter Life
+  description: Reset filter life counter to 100%
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson device to reset filter for
+      required: true
+      selector:
+        device:
+          integration: dyson_alt
+    filter_type:
+      name: Filter Type
+      description: Type of filter to reset
+      required: true
+      selector:
+        select:
+          options:
+            - "hepa"
+            - "carbon"
+            - "both"

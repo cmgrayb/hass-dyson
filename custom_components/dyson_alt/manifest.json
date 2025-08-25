@@ -1,0 +1,22 @@
+{
+  "domain": "dyson_alt",
+  "name": "Dyson Alternative",
+  "codeowners": ["@cmgrayb"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/cmgrayb/ha-dyson-alt",
+  "homekit": {},
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/cmgrayb/ha-dyson-alt/issues",
+  "loggers": ["custom_components.dyson_alt"],
+  "requirements": [
+    "aiohttp>=3.8.0",
+    "cryptography>=3.4.0",
+    "requests>=2.28.0",
+    "libdyson-rest==0.2.0",
+    "libdyson-mqtt==0.2.1",
+    "paho-mqtt>=1.6.0",
+    "zeroconf>=0.47.0"
+  ],
+  "version": "0.1.0"
+}

@@ -1,4 +1,13 @@
+# Docker development environment (contains credentials)
+docker/
+
 # Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.socompiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
@@ -48,6 +57,11 @@ coverage.xml
 *.cover
 *.py.cover
 .hypothesis/
+
+# Docker development environment (contains sensitive credentials)
+docker/
+docker-compose.yml
+docker-compose.override.yml
 .pytest_cache/
 cover/
 
