@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
@@ -62,10 +62,11 @@ DEVICE_TYPE_SCHEMA = vol.Schema(
 )
 
 
-class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class DysonConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for Dyson Alternative."""
 
     VERSION = 1
+    domain = DOMAIN
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -73,7 +74,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._cloud_devices: List[Dict[str, Any]] = []
         self._user_input: Dict[str, Any] = {}
 
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle the initial step."""
         if user_input is not None:
             self._discovery_method = user_input["discovery_method"]
@@ -105,7 +106,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_cloud(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_cloud(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle cloud authentication step."""
         errors = {}
 
@@ -144,7 +145,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_cloud_select(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_cloud_select(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle device selection for cloud discovery."""
         if user_input is not None:
             selected_device = user_input["device"]
@@ -168,7 +169,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_sticker(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_sticker(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle sticker/WiFi configuration step."""
         errors = {}
 
@@ -194,7 +195,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_device_type(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_device_type(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle device type selection for manual configuration."""
         if user_input is not None:
             self._user_input.update(user_input)
@@ -208,7 +209,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_capabilities(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_capabilities(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle capability selection for manual configuration."""
         if user_input is not None:
             # Convert boolean selections to capability list
@@ -224,7 +225,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_manual(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
+    async def async_step_manual(self, user_input: Optional[Dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle manual configuration (placeholder)."""
         # TODO: Implement manual configuration for advanced users
         return self.async_abort(reason="not_implemented")
@@ -275,7 +276,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         raise NotImplementedError("Sticker validation not yet implemented")
 
-    async def _async_create_cloud_entry(self, device_data: Dict[str, Any]) -> FlowResult:
+    async def _async_create_cloud_entry(self, device_data: Dict[str, Any]) -> ConfigFlowResult:
         """Create config entry for cloud-discovered device."""
         serial = device_data["serial"]
 
@@ -294,7 +295,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def _async_create_sticker_entry(self) -> FlowResult:
+    async def _async_create_sticker_entry(self) -> ConfigFlowResult:
         """Create config entry for sticker-configured device."""
         serial = self._user_input[CONF_SERIAL_NUMBER]
 
@@ -315,7 +316,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def async_step_import(self, import_config: Dict[str, Any]) -> FlowResult:
+    async def async_step_import(self, import_config: Dict[str, Any]) -> ConfigFlowResult:
         """Handle import from YAML configuration."""
         _LOGGER.debug("Importing YAML configuration: %s", import_config)
 
