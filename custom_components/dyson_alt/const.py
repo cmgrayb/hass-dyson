@@ -3,7 +3,7 @@
 from typing import Final
 
 # Integration domain
-DOMAIN: Final = "dyson_alt"
+DOMAIN: Final = "dyson_alt_test"
 
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds
