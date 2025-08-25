@@ -29,6 +29,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+__all__ = ["DysonConfigFlow"]
+
 # Configuration schemas
 CLOUD_SCHEMA = vol.Schema(
     {
