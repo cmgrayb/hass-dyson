@@ -1,5 +1,15 @@
 # Dyson Alternative Integration for Home Assistant
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo.svg" alt="Dyson Alternative Logo" width="200"/>
+</p>
+
+[![GitHub Release][releases-shield]][releases]
+[![GitHub Activity][commits-shield]][commits]
+[![License][license-shield]](LICENSE)
+[![hacs][hacsbadge]][hacs]
+[![Community Forum][forum-shield]][forum]
+
 A comprehensive, production-ready Home Assistant integration for Dyson air purifiers and fans, featuring real-time MQTT communication and complete platform coverage.
 
 ## 🌟 Features
@@ -223,6 +233,19 @@ custom_components/dyson_alt/
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<!-- Badge Links -->
+[releases-shield]: https://img.shields.io/github/release/cmgrayb/ha-dyson-alt.svg?style=for-the-badge
+[releases]: https://github.com/cmgrayb/ha-dyson-alt/releases
+[commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/ha-dyson-alt.svg?style=for-the-badge
+[commits]: https://github.com/cmgrayb/ha-dyson-alt/commits/main
+[hacs]: https://github.com/hacs/integration
+[hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
+[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
+[forum]: https://community.home-assistant.io/
+[license-shield]: https://img.shields.io/github/license/cmgrayb/ha-dyson-alt.svg?style=for-the-badge
 
 ---
 
