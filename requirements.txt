@@ -5,11 +5,8 @@ cryptography>=3.4.0
 requests>=2.28.0
 
 # Dyson communication libraries
-libdyson-rest @ git+https://github.com/cmgrayb/libdyson-rest.git
-libdyson-mqtt @ git+https://github.com/cmgrayb/libdyson-mqtt.git
-
-# MQTT client for device communication
-paho-mqtt>=1.6.0
+libdyson-rest==0.4.1
+libdyson-mqtt==0.2.1
 
 # Network discovery support
 zeroconf>=0.47.0
