@@ -1,0 +1,137 @@
+"""Constants for the Dyson Alternative integration."""
+
+from typing import Final
+
+# Integration domain
+DOMAIN: Final = "dyson_alt"
+
+# Default values
+DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds
+DEFAULT_DEVICE_POLLING_INTERVAL: Final = 30  # 30 seconds for device state updates
+DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
+
+# Configuration keys
+CONF_DEVICE_TYPE: Final = "device_type"
+CONF_SERIAL_NUMBER: Final = "serial_number"
+CONF_CREDENTIAL: Final = "credential"
+CONF_HOSTNAME: Final = "hostname"
+CONF_CAPABILITIES: Final = "capabilities"
+CONF_DISCOVERY_METHOD: Final = "discovery_method"
+
+# Discovery methods
+DISCOVERY_CLOUD: Final = "cloud"
+DISCOVERY_STICKER: Final = "sticker"
+DISCOVERY_MANUAL: Final = "manual"
+
+# Device categories (from Dyson API)
+DEVICE_CATEGORY_EC: Final = "ec"  # Environment Cleaner (fans with filters)
+DEVICE_CATEGORY_LIGHT: Final = "light"  # Desk/floor lamps
+DEVICE_CATEGORY_ROBOT: Final = "robot"  # Self-piloting devices
+DEVICE_CATEGORY_VACUUM: Final = "vacuum"  # Suction cleaning devices
+DEVICE_CATEGORY_FLRC: Final = "flrc"  # Floor cleaner devices
+DEVICE_CATEGORY_WEARABLE: Final = "wearable"  # Wearable devices
+DEVICE_CATEGORY_HC: Final = "hc"  # Hair care devices
+DEVICE_CATEGORY_NOT_CONNECTED: Final = "notConnected"  # Skip these devices
+
+# Supported device categories (skip unsupported ones)
+SUPPORTED_DEVICE_CATEGORIES: Final = [
+    DEVICE_CATEGORY_EC,
+    DEVICE_CATEGORY_ROBOT,
+    DEVICE_CATEGORY_VACUUM,
+    DEVICE_CATEGORY_FLRC,
+]
+
+# Device capabilities
+CAPABILITY_ADVANCE_OSCILLATION: Final = "AdvanceOscillationDay1"
+CAPABILITY_SCHEDULING: Final = "Scheduling"
+CAPABILITY_ENVIRONMENTAL_DATA: Final = "EnvironmentalData"
+CAPABILITY_EXTENDED_AQ: Final = "ExtendedAQ"
+CAPABILITY_CHANGE_WIFI: Final = "ChangeWifi"
+
+# MQTT topics
+MQTT_TOPIC_COMMAND: Final = "command"
+MQTT_TOPIC_STATUS_CURRENT: Final = "status/current"
+MQTT_TOPIC_STATUS_FAULT: Final = "status/fault"
+
+# MQTT commands
+MQTT_CMD_REQUEST_CURRENT_STATE: Final = "REQUEST-CURRENT-STATE"
+MQTT_CMD_REQUEST_FAULTS: Final = "REQUEST-CURRENT-FAULTS"
+MQTT_CMD_REQUEST_ENVIRONMENT: Final = "REQUEST-PRODUCT-ENVIRONMENT-CURRENT-SENSOR-DATA"
+MQTT_CMD_STATE_SET: Final = "STATE-SET"
+
+# MQTT message types
+MQTT_MSG_CURRENT_STATE: Final = "CURRENT-STATE"
+MQTT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
+MQTT_MSG_ENVIRONMENTAL_DATA: Final = "ENVIRONMENTAL-CURRENT-SENSOR-DATA"
+
+# MQTT constants
+MQTT_MODE_REASON: Final = "RAPP"  # Remote App
+MQTT_PORT: Final = 1883
+
+# Device state keys
+STATE_KEY_POWER: Final = "fpwr"  # Fan power (ON/OFF)
+STATE_KEY_FAN_STATE: Final = "fnst"  # Fan state (OFF/FAN)
+STATE_KEY_FAN_SPEED: Final = "fnsp"  # Fan speed (0001-0010/AUTO)
+STATE_KEY_AUTO_MODE: Final = "auto"  # Auto mode (ON/OFF)
+STATE_KEY_NIGHT_MODE: Final = "nmod"  # Night mode (ON/OFF)
+STATE_KEY_FAN_DIRECTION: Final = "fdir"  # Fan direction
+STATE_KEY_HEPA_FILTER_LIFE: Final = "hflr"  # HEPA filter life
+STATE_KEY_CARBON_FILTER_LIFE: Final = "cflr"  # Carbon filter life
+STATE_KEY_HEPA_FILTER_TYPE: Final = "hflt"  # HEPA filter type
+STATE_KEY_CARBON_FILTER_TYPE: Final = "cflt"  # Carbon filter type
+STATE_KEY_SLEEP_TIMER: Final = "sltm"  # Sleep timer
+STATE_KEY_CONTINUOUS_MONITORING: Final = "rhtm"  # Continuous monitoring
+
+# Oscillation state keys
+STATE_KEY_OSCILLATION_ON: Final = "oson"  # Oscillation on/off
+STATE_KEY_OSCILLATION_UPPER: Final = "osau"  # Upper oscillation angle
+STATE_KEY_OSCILLATION_LOWER: Final = "osal"  # Lower oscillation angle
+STATE_KEY_OSCILLATION_CENTER: Final = "ancp"  # Angle center point
+
+# Environmental data keys
+STATE_KEY_PM25: Final = "pm25"  # PM2.5 particulate matter
+STATE_KEY_PM10: Final = "pm10"  # PM10 particulate matter
+STATE_KEY_P25R: Final = "p25r"  # P25R level
+STATE_KEY_P10R: Final = "p10r"  # P10R level
+
+# Filter values
+FILTER_TYPE_GCOM: Final = "GCOM"  # Genuine Combi Filter
+FILTER_TYPE_NONE: Final = "NONE"  # No filter installed
+FILTER_TYPE_INV: Final = "INV"  # Invalid/not installed
+
+# Sleep timer limits (in minutes)
+SLEEP_TIMER_MIN: Final = 15  # 15 minutes minimum
+SLEEP_TIMER_MAX: Final = 540  # 9 hours maximum
+
+# Fan speed limits
+FAN_SPEED_MIN: Final = 1
+FAN_SPEED_MAX: Final = 10
+FAN_SPEED_AUTO: Final = "AUTO"
+
+# Boolean values for MQTT
+MQTT_ON: Final = "ON"
+MQTT_OFF: Final = "OFF"
+
+# mDNS service types
+MDNS_SERVICE_DYSON: Final = "_dyson._mqtt._tcp.local."
+MDNS_SERVICE_360EYE: Final = "_360eye._mqtt._tcp.local."
+
+# Home Assistant platforms supported by this integration
+PLATFORMS: Final = [
+    "fan",
+    "sensor",
+    "binary_sensor",
+    "button",
+    "number",
+    "select",
+    "switch",
+    "vacuum",
+    "climate",
+]
+
+# Service names
+SERVICE_RESET_FILTER: Final = "reset_filter"
+SERVICE_SET_SLEEP_TIMER: Final = "set_sleep_timer"
+
+# Event types
+EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
