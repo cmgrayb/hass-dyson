@@ -8,7 +8,7 @@ from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from .entity import DysonEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
@@ -41,7 +41,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DysonFanSpeedNumber(CoordinatorEntity, NumberEntity):
+class DysonFanSpeedNumber(DysonEntity, NumberEntity):
     """Number entity for fan speed control."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -50,7 +50,7 @@ class DysonFanSpeedNumber(CoordinatorEntity, NumberEntity):
         """Initialize the fan speed number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_fan_speed"
-        self._attr_name = f"{coordinator.config_entry.title} Fan Speed"
+        self._attr_name = "Fan Speed"
         self._attr_icon = "mdi:fan"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 1
@@ -86,7 +86,7 @@ class DysonFanSpeedNumber(CoordinatorEntity, NumberEntity):
             _LOGGER.error("Failed to set fan speed for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonSleepTimerNumber(CoordinatorEntity, NumberEntity):
+class DysonSleepTimerNumber(DysonEntity, NumberEntity):
     """Number entity for sleep timer control."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -95,7 +95,7 @@ class DysonSleepTimerNumber(CoordinatorEntity, NumberEntity):
         """Initialize the sleep timer number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_sleep_timer"
-        self._attr_name = f"{coordinator.config_entry.title} Sleep Timer"
+        self._attr_name = "Sleep Timer"
         self._attr_icon = "mdi:timer"
         self._attr_mode = NumberMode.BOX
         self._attr_native_min_value = 0
@@ -133,7 +133,7 @@ class DysonSleepTimerNumber(CoordinatorEntity, NumberEntity):
             _LOGGER.error("Failed to set sleep timer for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonOscillationAngleNumber(CoordinatorEntity, NumberEntity):
+class DysonOscillationAngleNumber(DysonEntity, NumberEntity):
     """Number entity for oscillation angle control."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -142,7 +142,7 @@ class DysonOscillationAngleNumber(CoordinatorEntity, NumberEntity):
         """Initialize the oscillation angle number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle"
-        self._attr_name = f"{coordinator.config_entry.title} Oscillation Angle"
+        self._attr_name = "Oscillation Angle"
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 45

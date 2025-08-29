@@ -8,10 +8,10 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DysonResetHEPAFilterButton(CoordinatorEntity, ButtonEntity):
+class DysonResetHEPAFilterButton(DysonEntity, ButtonEntity):
     """Button to reset HEPA filter life counter."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -47,7 +47,7 @@ class DysonResetHEPAFilterButton(CoordinatorEntity, ButtonEntity):
         """Initialize the reset HEPA filter button."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_reset_hepa_filter"
-        self._attr_name = f"{coordinator.config_entry.title} Reset HEPA Filter"
+        self._attr_name = "Reset HEPA Filter"
         self._attr_icon = "mdi:air-filter"
 
     async def async_press(self) -> None:
@@ -63,7 +63,7 @@ class DysonResetHEPAFilterButton(CoordinatorEntity, ButtonEntity):
             _LOGGER.error("Failed to reset HEPA filter for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonResetCarbonFilterButton(CoordinatorEntity, ButtonEntity):
+class DysonResetCarbonFilterButton(DysonEntity, ButtonEntity):
     """Button to reset carbon filter life counter."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -72,7 +72,7 @@ class DysonResetCarbonFilterButton(CoordinatorEntity, ButtonEntity):
         """Initialize the reset carbon filter button."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_reset_carbon_filter"
-        self._attr_name = f"{coordinator.config_entry.title} Reset Carbon Filter"
+        self._attr_name = "Reset Carbon Filter"
         self._attr_icon = "mdi:air-filter"
 
     async def async_press(self) -> None:
@@ -88,7 +88,7 @@ class DysonResetCarbonFilterButton(CoordinatorEntity, ButtonEntity):
             _LOGGER.error("Failed to reset carbon filter for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonConnectButton(CoordinatorEntity, ButtonEntity):
+class DysonConnectButton(DysonEntity, ButtonEntity):
     """Button to reconnect to device."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -97,7 +97,7 @@ class DysonConnectButton(CoordinatorEntity, ButtonEntity):
         """Initialize the connect button."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_reconnect"
-        self._attr_name = f"{coordinator.config_entry.title} Reconnect"
+        self._attr_name = "Reconnect"
         self._attr_icon = "mdi:wifi-sync"
 
     async def async_press(self) -> None:

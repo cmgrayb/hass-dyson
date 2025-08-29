@@ -13,6 +13,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
     DISCOVERY_CLOUD,
     DISCOVERY_STICKER,
@@ -138,8 +139,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Setting up Dyson Alternative integration for device: %s", entry.title)
 
     try:
-        # Create data update coordinator
-        coordinator = DysonDataUpdateCoordinator(hass, entry)
+        # Check if this is a new account-level config entry with multiple devices
+        if "devices" in entry.data and entry.data.get("devices"):
+            _LOGGER.info("Setting up account-level entry with %d devices",
+                         len(entry.data["devices"]))
+            
+            # For now, just set up the first device to get something working
+            # TODO: Handle multiple devices properly in the future
+            first_device = entry.data["devices"][0]
+            
+            _LOGGER.debug("First device data: %s", first_device)
+            
+            # Update the original config entry data to look like a single-device entry
+            updated_data = {
+                CONF_SERIAL_NUMBER: first_device["serial_number"],
+                CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+                CONF_USERNAME: entry.data.get("email", ""),
+                "auth_token": entry.data.get("auth_token"),
+                "connection_type": entry.data.get("connection_type", "local_cloud_fallback"),
+                "device_name": first_device.get("name"),
+                "product_type": first_device.get("product_type"),
+                "category": first_device.get("category"),
+            }
+            
+            _LOGGER.debug("Updated config data: %s", updated_data)
+            
+            # Update the config entry's data in place
+            hass.config_entries.async_update_entry(entry, data=updated_data)
+            
+            # Use the original entry (now updated) for the coordinator
+            coordinator = DysonDataUpdateCoordinator(hass, entry)
+            
+        else:
+            # Handle individual device config entries (legacy)
+            _LOGGER.debug("Setting up individual device config entry")
+            coordinator = DysonDataUpdateCoordinator(hass, entry)
 
         # Perform initial data fetch
         await coordinator.async_config_entry_first_refresh()
@@ -155,11 +189,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(entry, platforms_to_setup)
 
         # Set up services (only once when first device is added)
-        if len(hass.data[DOMAIN]) == 1:
+        if not any(key == "services_setup" for key in hass.data.get(DOMAIN, {})):
             await async_setup_services(hass)
+            hass.data.setdefault(DOMAIN, {})["services_setup"] = True
 
-        _LOGGER.info("Successfully set up Dyson device '%s' with platforms: %s", entry.title, platforms_to_setup)
-
+        _LOGGER.info("Successfully set up Dyson device '%s' with platforms: %s",
+                     coordinator.serial_number, platforms_to_setup)
         return True
 
     except Exception as err:

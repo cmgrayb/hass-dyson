@@ -8,7 +8,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from .entity import DysonEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
@@ -49,7 +49,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DysonAutoModeSwitch(CoordinatorEntity, SwitchEntity):
+class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
     """Switch for auto mode."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -58,7 +58,7 @@ class DysonAutoModeSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the auto mode switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_auto_mode"
-        self._attr_name = f"{coordinator.config_entry.title} Auto Mode"
+        self._attr_name = "Auto Mode"
         self._attr_icon = "mdi:auto-mode"
 
     def _handle_coordinator_update(self) -> None:
@@ -94,7 +94,7 @@ class DysonAutoModeSwitch(CoordinatorEntity, SwitchEntity):
             _LOGGER.error("Failed to turn off auto mode for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonNightModeSwitch(CoordinatorEntity, SwitchEntity):
+class DysonNightModeSwitch(DysonEntity, SwitchEntity):
     """Switch for night mode."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -103,7 +103,7 @@ class DysonNightModeSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the night mode switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_night_mode"
-        self._attr_name = f"{coordinator.config_entry.title} Night Mode"
+        self._attr_name = "Night Mode"
         self._attr_icon = "mdi:weather-night"
 
     def _handle_coordinator_update(self) -> None:
@@ -139,7 +139,7 @@ class DysonNightModeSwitch(CoordinatorEntity, SwitchEntity):
             _LOGGER.error("Failed to turn off night mode for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonOscillationSwitch(CoordinatorEntity, SwitchEntity):
+class DysonOscillationSwitch(DysonEntity, SwitchEntity):
     """Switch for oscillation."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -148,7 +148,7 @@ class DysonOscillationSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the oscillation switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation"
-        self._attr_name = f"{coordinator.config_entry.title} Oscillation"
+        self._attr_name = "Oscillation"
         self._attr_icon = "mdi:rotate-3d-variant"
 
     def _handle_coordinator_update(self) -> None:
@@ -184,7 +184,7 @@ class DysonOscillationSwitch(CoordinatorEntity, SwitchEntity):
             _LOGGER.error("Failed to turn off oscillation for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonHeatingSwitch(CoordinatorEntity, SwitchEntity):
+class DysonHeatingSwitch(DysonEntity, SwitchEntity):
     """Switch for heating mode."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -193,7 +193,7 @@ class DysonHeatingSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the heating switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_heating"
-        self._attr_name = f"{coordinator.config_entry.title} Heating"
+        self._attr_name = "Heating"
         self._attr_icon = "mdi:radiator"
 
     def _handle_coordinator_update(self) -> None:
@@ -229,7 +229,7 @@ class DysonHeatingSwitch(CoordinatorEntity, SwitchEntity):
             _LOGGER.error("Failed to turn off heating for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonContinuousMonitoringSwitch(CoordinatorEntity, SwitchEntity):
+class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
     """Switch for continuous monitoring."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -238,7 +238,7 @@ class DysonContinuousMonitoringSwitch(CoordinatorEntity, SwitchEntity):
         """Initialize the continuous monitoring switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_continuous_monitoring"
-        self._attr_name = f"{coordinator.config_entry.title} Continuous Monitoring"
+        self._attr_name = "Continuous Monitoring"
         self._attr_icon = "mdi:monitor-eye"
 
     def _handle_coordinator_update(self) -> None:

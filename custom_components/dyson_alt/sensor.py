@@ -9,10 +9,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DysonFilterLifeSensor(CoordinatorEntity, SensorEntity):
+class DysonFilterLifeSensor(DysonEntity, SensorEntity):
     """Representation of a Dyson filter life sensor."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -53,7 +53,7 @@ class DysonFilterLifeSensor(CoordinatorEntity, SensorEntity):
 
         self.filter_type = filter_type
         self._attr_unique_id = f"{coordinator.serial_number}_{filter_type}_filter_life"
-        self._attr_name = f"{coordinator.config_entry.title} {filter_type.upper()} Filter Life"
+        self._attr_name = f"{filter_type.upper()} Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = SensorDeviceClass.BATTERY  # Closest available
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -78,7 +78,7 @@ class DysonFilterLifeSensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonAirQualitySensor(CoordinatorEntity, SensorEntity):
+class DysonAirQualitySensor(DysonEntity, SensorEntity):
     """Representation of a Dyson air quality sensor."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -89,7 +89,7 @@ class DysonAirQualitySensor(CoordinatorEntity, SensorEntity):
 
         self.sensor_type = sensor_type
         self._attr_unique_id = f"{coordinator.serial_number}_{sensor_type}"
-        self._attr_name = f"{coordinator.config_entry.title} {sensor_type.upper()}"
+        self._attr_name = sensor_type.upper()
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:air-filter"
 
@@ -116,7 +116,7 @@ class DysonAirQualitySensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonTemperatureSensor(CoordinatorEntity, SensorEntity):
+class DysonTemperatureSensor(DysonEntity, SensorEntity):
     """Temperature sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -126,7 +126,7 @@ class DysonTemperatureSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_temperature"
-        self._attr_name = f"{coordinator.config_entry.title} Temperature"
+        self._attr_name = "Temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "°C"
@@ -152,7 +152,7 @@ class DysonTemperatureSensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonHumiditySensor(CoordinatorEntity, SensorEntity):
+class DysonHumiditySensor(DysonEntity, SensorEntity):
     """Humidity sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -162,7 +162,7 @@ class DysonHumiditySensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_humidity"
-        self._attr_name = f"{coordinator.config_entry.title} Humidity"
+        self._attr_name = "Humidity"
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
@@ -186,7 +186,7 @@ class DysonHumiditySensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonPM25Sensor(CoordinatorEntity, SensorEntity):
+class DysonPM25Sensor(DysonEntity, SensorEntity):
     """PM2.5 sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -196,7 +196,7 @@ class DysonPM25Sensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_pm25"
-        self._attr_name = f"{coordinator.config_entry.title} PM2.5"
+        self._attr_name = "PM2.5"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -213,7 +213,7 @@ class DysonPM25Sensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonPM10Sensor(CoordinatorEntity, SensorEntity):
+class DysonPM10Sensor(DysonEntity, SensorEntity):
     """PM10 sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -223,7 +223,7 @@ class DysonPM10Sensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_pm10"
-        self._attr_name = f"{coordinator.config_entry.title} PM10"
+        self._attr_name = "PM10"
         self._attr_device_class = SensorDeviceClass.PM10
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -240,7 +240,7 @@ class DysonPM10Sensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonWiFiSensor(CoordinatorEntity, SensorEntity):
+class DysonWiFiSensor(DysonEntity, SensorEntity):
     """WiFi signal strength sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -250,7 +250,7 @@ class DysonWiFiSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_wifi"
-        self._attr_name = f"{coordinator.config_entry.title} WiFi Signal"
+        self._attr_name = "WiFi Signal"
         self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "dBm"
@@ -267,7 +267,7 @@ class DysonWiFiSensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonHEPAFilterLifeSensor(CoordinatorEntity, SensorEntity):
+class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
     """HEPA filter life sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -277,7 +277,7 @@ class DysonHEPAFilterLifeSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_life"
-        self._attr_name = f"{coordinator.config_entry.title} HEPA Filter Life"
+        self._attr_name = "HEPA Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = SensorDeviceClass.BATTERY  # Closest available
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -294,7 +294,7 @@ class DysonHEPAFilterLifeSensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonCarbonFilterLifeSensor(CoordinatorEntity, SensorEntity):
+class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
     """Carbon filter life sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -304,7 +304,7 @@ class DysonCarbonFilterLifeSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_life"
-        self._attr_name = f"{coordinator.config_entry.title} Carbon Filter Life"
+        self._attr_name = "Carbon Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_device_class = SensorDeviceClass.BATTERY  # Closest available
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -321,7 +321,7 @@ class DysonCarbonFilterLifeSensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonFilterStatusSensor(CoordinatorEntity, SensorEntity):
+class DysonFilterStatusSensor(DysonEntity, SensorEntity):
     """Filter status sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -331,7 +331,7 @@ class DysonFilterStatusSensor(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_filter_status"
-        self._attr_name = f"{coordinator.config_entry.title} Filter Status"
+        self._attr_name = "Filter Status"
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -345,7 +345,7 @@ class DysonFilterStatusSensor(CoordinatorEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonFirmwareVersionSensor(CoordinatorEntity, SensorEntity):
+class DysonFirmwareVersionSensor(DysonEntity, SensorEntity):
     """Sensor for firmware version information."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -354,7 +354,7 @@ class DysonFirmwareVersionSensor(CoordinatorEntity, SensorEntity):
         """Initialize the firmware version sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_firmware_version"
-        self._attr_name = f"{coordinator.config_entry.title} Firmware Version"
+        self._attr_name = "Firmware Version"
         self._attr_icon = "mdi:chip"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
