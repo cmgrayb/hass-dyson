@@ -9,10 +9,9 @@ from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ async def async_setup_entry(
         async_add_entities([DysonFan(coordinator)], True)
 
 
-class DysonFan(CoordinatorEntity, FanEntity):
+class DysonFan(DysonEntity, FanEntity):
     """Representation of a Dyson fan."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -40,7 +39,7 @@ class DysonFan(CoordinatorEntity, FanEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_fan"
-        self._attr_name = f"{coordinator.config_entry.title} Fan"
+        self._attr_name = "Fan"
         self._attr_supported_features = FanEntityFeature.SET_SPEED | FanEntityFeature.DIRECTION
 
         # Add oscillation support if device has the capability

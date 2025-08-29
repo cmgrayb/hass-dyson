@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
@@ -62,6 +64,8 @@ class DysonDevice:
 
         try:
             _LOGGER.debug("Connecting to device %s at %s", self.serial_number, self.host)
+            _LOGGER.debug("Using credential length: %s", len(self.credential) if self.credential else 0)
+            _LOGGER.debug("Using MQTT prefix: %s", self.mqtt_prefix)
 
             # Create MQTT topics using our working format
             mqtt_topics = [
@@ -91,17 +95,37 @@ class DysonDevice:
             if self._mqtt_client and hasattr(self._mqtt_client, "connect"):
                 await self.hass.async_add_executor_job(self._mqtt_client.connect)
 
-            # Check if connected
-            if self._mqtt_client and hasattr(self._mqtt_client, "is_connected") and self._mqtt_client.is_connected():
-                self._connected = True
-                _LOGGER.info("Successfully connected to device %s", self.serial_number)
+                # Wait for connection to be established (with timeout)
+                connection_timeout = 30  # 30 seconds timeout
+                check_interval = 0.5  # Check every 500ms
+                elapsed_time = 0
 
-                # Request initial state
-                await self._request_current_state()
+                while elapsed_time < connection_timeout:
+                    if (
+                        self._mqtt_client
+                        and hasattr(self._mqtt_client, "is_connected")
+                        and self._mqtt_client.is_connected()
+                    ):
+                        self._connected = True
+                        _LOGGER.info(
+                            "Successfully connected to device %s after %.1f seconds", self.serial_number, elapsed_time
+                        )
 
-                return True
+                        # Request initial state
+                        await self._request_current_state()
+                        return True
+
+                    # Wait before checking again
+                    await asyncio.sleep(check_interval)
+                    elapsed_time += check_interval
+
+                # Connection timed out
+                _LOGGER.error(
+                    "Connection timeout after %.1f seconds for device %s", connection_timeout, self.serial_number
+                )
+                return False
             else:
-                _LOGGER.error("Failed to connect to device %s", self.serial_number)
+                _LOGGER.error("Failed to connect to device %s - MQTT client not available", self.serial_number)
                 return False
 
         except Exception as err:
@@ -200,6 +224,25 @@ class DysonDevice:
         except Exception as err:
             _LOGGER.error("Failed to request state from %s: %s", self.serial_number, err)
 
+    async def _request_current_faults(self) -> None:
+        """Request current faults from device."""
+        if not self._connected or not self._mqtt_client:
+            return
+
+        try:
+            command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+            command = '{"msg":"REQUEST-CURRENT-FAULTS"}'
+
+            await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
+            _LOGGER.debug("Requested current faults from %s", self.serial_number)
+
+        except Exception as err:
+            _LOGGER.error("Failed to request faults from %s: %s", self.serial_number, err)
+
+    def _get_timestamp(self) -> str:
+        """Get timestamp in the format expected by Dyson devices."""
+        return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+
     @property
     def is_connected(self) -> bool:
         """Return if device is connected."""
@@ -213,11 +256,28 @@ class DysonDevice:
         try:
             _LOGGER.debug("Sending command %s to device %s", command, self.serial_number)
 
-            # Use libdyson-mqtt to send the command
-            if hasattr(self._mqtt_client, "send_command"):
-                await self.hass.async_add_executor_job(self._mqtt_client.send_command, command, data)  # type: ignore[attr-defined]
+            # Handle heartbeat commands (REQUEST-CURRENT-STATE and REQUEST-CURRENT-FAULTS)
+            if command == "REQUEST-CURRENT-STATE":
+                await self._request_current_state()
+                return
+            elif command == "REQUEST-CURRENT-FAULTS":
+                await self._request_current_faults()
+                return
+
+            # For other commands, use the generic command format
+            command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+
+            if data:
+                # If data is provided, construct command with data
+                command_msg = {"msg": command, "time": self._get_timestamp(), "mode-reason": "RAPP"}
+                command_msg.update(data)
+                command_json = json.dumps(command_msg)
             else:
-                _LOGGER.warning("MQTT client for %s does not support send_command", self.serial_number)
+                # Simple command without additional data
+                command_json = json.dumps({"msg": command})
+
+            await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command_json)
+            _LOGGER.debug("Sent command %s to %s", command, self.serial_number)
 
         except Exception as err:
             _LOGGER.error("Failed to send command %s to device %s: %s", command, self.serial_number, err)

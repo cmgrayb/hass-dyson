@@ -8,7 +8,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from .entity import DysonEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
@@ -41,7 +41,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DysonAirQualityModeSelect(CoordinatorEntity, SelectEntity):
+class DysonAirQualityModeSelect(DysonEntity, SelectEntity):
     """Select entity for air quality mode."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -50,7 +50,7 @@ class DysonAirQualityModeSelect(CoordinatorEntity, SelectEntity):
         """Initialize the air quality mode select."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_air_quality_mode"
-        self._attr_name = f"{coordinator.config_entry.title} Air Quality Mode"
+        self._attr_name = "Air Quality Mode"
         self._attr_icon = "mdi:air-filter"
         self._attr_options = ["Auto", "Manual", "Sleep"]
 
@@ -88,7 +88,7 @@ class DysonAirQualityModeSelect(CoordinatorEntity, SelectEntity):
             _LOGGER.error("Failed to set air quality mode for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonOscillationModeSelect(CoordinatorEntity, SelectEntity):
+class DysonOscillationModeSelect(DysonEntity, SelectEntity):
     """Select entity for oscillation mode."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -97,7 +97,7 @@ class DysonOscillationModeSelect(CoordinatorEntity, SelectEntity):
         """Initialize the oscillation mode select."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode"
-        self._attr_name = f"{coordinator.config_entry.title} Oscillation Mode"
+        self._attr_name = "Oscillation Mode"
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "45°", "90°", "180°", "350°"]
 
@@ -145,7 +145,7 @@ class DysonOscillationModeSelect(CoordinatorEntity, SelectEntity):
             _LOGGER.error("Failed to set oscillation mode for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonHeatingModeSelect(CoordinatorEntity, SelectEntity):
+class DysonHeatingModeSelect(DysonEntity, SelectEntity):
     """Select entity for heating mode."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -154,7 +154,7 @@ class DysonHeatingModeSelect(CoordinatorEntity, SelectEntity):
         """Initialize the heating mode select."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_heating_mode"
-        self._attr_name = f"{coordinator.config_entry.title} Heating Mode"
+        self._attr_name = "Heating Mode"
         self._attr_icon = "mdi:radiator"
         self._attr_options = ["Off", "Heating", "Auto Heat"]
 

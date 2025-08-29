@@ -14,7 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from .entity import DysonEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
@@ -40,7 +40,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DysonClimateEntity(CoordinatorEntity, ClimateEntity):  # type: ignore[misc]
+class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
     """Climate entity for Dyson heating devices."""
 
     coordinator: DysonDataUpdateCoordinator
@@ -49,7 +49,7 @@ class DysonClimateEntity(CoordinatorEntity, ClimateEntity):  # type: ignore[misc
         """Initialize the climate entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_climate"
-        self._attr_name = f"{coordinator.config_entry.title} Climate"
+        self._attr_name = "Climate"
         self._attr_icon = "mdi:thermostat"
 
         # Climate features
