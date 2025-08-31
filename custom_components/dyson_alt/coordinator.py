@@ -7,7 +7,6 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -37,6 +36,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.device: Optional[DysonDevice] = None
         self._device_capabilities: List[str] = []
         self._device_category: str = ""
+        self._firmware_version: str = "Unknown"
 
         super().__init__(
             hass,
@@ -56,12 +56,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return self._device_category
 
     @property
+    def firmware_version(self) -> str:
+        """Return device firmware version."""
+        return self._firmware_version
+
+    @property
     def serial_number(self) -> str:
         """Return device serial number."""
         # Debug logging to see what's in the config data
         _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
         _LOGGER.debug("Config entry data: %s", self.config_entry.data)
-        
+
         # Handle both legacy single-device entries and new account-level entries
         if CONF_SERIAL_NUMBER in self.config_entry.data:
             serial = self.config_entry.data[CONF_SERIAL_NUMBER]
@@ -95,7 +100,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if discovery_method == DISCOVERY_CLOUD:
             await self._async_setup_cloud_device()
         elif discovery_method == DISCOVERY_STICKER:
-            await self._async_setup_sticker_device()
+            # TODO: Update sticker method to use paho-mqtt instead of libdyson_mqtt
+            raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
+            # await self._async_setup_sticker_device()
         else:
             raise UpdateFailed(f"Unknown discovery method: {discovery_method}")
 
@@ -127,7 +134,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 cloud_client = DysonClient(email=username, password=password)
                 # Authenticate using proper flow
                 challenge = await self.hass.async_add_executor_job(lambda: cloud_client.begin_login())
-                await self.hass.async_add_executor_job(lambda: cloud_client.complete_login(str(challenge.challenge_id), password))
+                await self.hass.async_add_executor_job(
+                    lambda: cloud_client.complete_login(str(challenge.challenge_id), password)
+                )
             else:
                 raise UpdateFailed("Missing cloud credentials (auth_token or username/password)")
 
@@ -145,8 +154,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             # Debug: Log device info properties
             _LOGGER.debug("Device info object: %s", device_info)
-            _LOGGER.debug("Device info dir: %s", [attr for attr in dir(device_info) if not attr.startswith('_')])
-            
+            _LOGGER.debug("Device info dir: %s", [attr for attr in dir(device_info) if not attr.startswith("_")])
+
             # Check connected_configuration for MQTT details
             connected_config = getattr(device_info, "connected_configuration", None)
             if connected_config:
@@ -154,45 +163,66 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 _LOGGER.debug("Connected config type: %s", type(connected_config))
                 if hasattr(connected_config, "__dict__"):
                     _LOGGER.debug("Connected config attributes: %s", vars(connected_config))
-                _LOGGER.debug("Connected config dir: %s", [attr for attr in dir(connected_config) if not attr.startswith('_')])
-                
+                _LOGGER.debug(
+                    "Connected config dir: %s", [attr for attr in dir(connected_config) if not attr.startswith("_")]
+                )
+
                 # Check MQTT object details
                 mqtt_obj = getattr(connected_config, "mqtt", None)
                 if mqtt_obj:
                     _LOGGER.debug("MQTT object: %s", mqtt_obj)
-                    _LOGGER.debug("MQTT object dir: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith('_')])
+                    _LOGGER.debug("MQTT object dir: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith("_")])
                     if hasattr(mqtt_obj, "__dict__"):
                         _LOGGER.debug("MQTT object attributes: %s", vars(mqtt_obj))
-                    
+
                     # Check for decoded password attributes that libdyson-rest might provide
                     possible_password_attrs = [
-                        'password', 'decoded_password', 'mqtt_password',
-                        'local_broker_password', 'broker_password', 'credentials'
+                        "password",
+                        "decoded_password",
+                        "mqtt_password",
+                        "local_broker_password",
+                        "broker_password",
+                        "credentials",
                     ]
                     for attr in possible_password_attrs:
                         if hasattr(mqtt_obj, attr):
                             value = getattr(mqtt_obj, attr)
                             _LOGGER.debug(
                                 "Found MQTT attribute %s: %s (length: %d)",
-                                attr, "***" if value else "None", len(value) if value else 0
+                                attr,
+                                "***" if value else "None",
+                                len(value) if value else 0,
                             )
-                    
+
                     # Check for decoded password attributes
                     for attr_name in ["password", "decoded_password", "local_password", "device_password"]:
                         if hasattr(mqtt_obj, attr_name):
                             attr_value = getattr(mqtt_obj, attr_name, "")
-                            _LOGGER.debug("Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0)
+                            _LOGGER.debug(
+                                "Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0
+                            )
 
             # Extract device capabilities and category from API response
             # The API should provide the device category directly
             self._device_category = getattr(device_info, "category", "unknown")
             self._device_capabilities = self._extract_capabilities(device_info)
 
+            # Extract firmware version from connected_configuration
+            self._firmware_version = "Unknown"
+            connected_config = getattr(device_info, "connected_configuration", None)
+            if connected_config:
+                firmware_obj = getattr(connected_config, "firmware", None)
+                if firmware_obj:
+                    firmware_version = getattr(firmware_obj, "version", "Unknown")
+                    if firmware_version and firmware_version != "Unknown":
+                        self._firmware_version = firmware_version
+                        _LOGGER.debug("Found firmware version: %s", firmware_version)
+
             # Set up MQTT connection with proper ConnectionConfig
             # Extract MQTT credentials from connected_configuration
             mqtt_username = self.serial_number
             mqtt_password = ""
-            
+
             connected_config = getattr(device_info, "connected_configuration", None)
             if connected_config:
                 mqtt_obj = getattr(connected_config, "mqtt", None)
@@ -202,11 +232,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         mqtt_password = getattr(mqtt_obj, attr, "")
                         if mqtt_password:
                             _LOGGER.debug(
-                                "Found MQTT password using attribute: mqtt.%s (length: %s)",
-                                attr, len(mqtt_password)
+                                "Found MQTT password using attribute: mqtt.%s (length: %s)", attr, len(mqtt_password)
                             )
                             break
-                    
+
                     # Fall back to decrypting the encoded credentials if no plain password found
                     if not mqtt_password:
                         encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
@@ -216,10 +245,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                                 mqtt_password = cloud_client.decrypt_local_credentials(
                                     encrypted_credentials, self.serial_number
                                 )
-                                _LOGGER.debug(
-                                    "Successfully decrypted MQTT password (length: %s)",
-                                    len(mqtt_password)
-                                )
+                                _LOGGER.debug("Successfully decrypted MQTT password (length: %s)", len(mqtt_password))
                             except Exception as e:
                                 _LOGGER.error("Failed to decrypt MQTT credentials: %s", e)
                                 mqtt_password = ""
@@ -228,26 +254,26 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             _LOGGER.debug(
                 "MQTT credentials - username: %s, password_set: %s, password_length: %s",
-                mqtt_username, bool(mqtt_password), len(mqtt_password) if mqtt_password else 0
+                mqtt_username,
+                bool(mqtt_password),
+                len(mqtt_password) if mqtt_password else 0,
             )
-            
+
             # Debug: Show first/last few characters of password for debugging (but not the full password)
             if mqtt_password:
-                _LOGGER.debug(
-                    "MQTT password format - starts: %s... ends: ...%s",
-                    mqtt_password[:8], mqtt_password[-8:]
-                )
+                _LOGGER.debug("MQTT password format - starts: %s... ends: ...%s", mqtt_password[:8], mqtt_password[-8:])
                 _LOGGER.debug(
                     "MQTT password is base64-like: %s",
-                    all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
-                        for c in mqtt_password)
+                    all(
+                        c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" for c in mqtt_password
+                    ),
                 )
 
             if not mqtt_password:
                 _LOGGER.error(
                     "MQTT password cannot be empty for device %s. Available attributes: %s",
                     self.serial_number,
-                    [attr for attr in dir(device_info) if not attr.startswith('_')]
+                    [attr for attr in dir(device_info) if not attr.startswith("_")],
                 )
                 raise UpdateFailed("MQTT password cannot be empty")
 
@@ -255,7 +281,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # DysonDevice will handle the MQTT connection internally
             device_host = self._get_device_host(device_info)
             mqtt_prefix = self._get_mqtt_prefix(device_info)
-            
+
             self.device = DysonDevice(
                 self.hass,
                 self.serial_number,
@@ -264,6 +290,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 mqtt_prefix,
                 self._device_capabilities,
             )
+
+            # Set firmware version in the device for proper device info
+            if self._firmware_version != "Unknown":
+                self.device.set_firmware_version(self._firmware_version)
 
             # Let DysonDevice handle the connection
             connected = await self.device.connect()
@@ -278,76 +308,52 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _async_setup_sticker_device(self) -> None:
         """Set up device using sticker/WiFi method."""
-        from libdyson_mqtt import ConnectionConfig, DysonMqttClient
-
-        _LOGGER.debug("Setting up sticker device for %s", self.serial_number)
-
-        try:
-            # Get credentials from config entry
-            serial_number = self.config_entry.data[CONF_SERIAL_NUMBER]
-            password = self.config_entry.data.get("password")
-            hostname = self.config_entry.data.get("hostname")
-            capabilities = self.config_entry.data.get("capabilities", [])
-
-            if not password:
-                raise UpdateFailed("Missing device password for sticker setup")
-
-            # Set capabilities and category from user input
-            self._device_capabilities = capabilities
-            self._device_category = self.config_entry.data.get("device_category", "unknown")
-
-            # Get MQTT prefix from config entry (user input or API response)
-            mqtt_prefix = self.config_entry.data.get("mqtt_prefix")
-            if not mqtt_prefix:
-                raise UpdateFailed("Missing MQTT prefix for sticker setup")
-            _LOGGER.debug("Using MQTT prefix: %s", mqtt_prefix)
-
-            # Create MQTT client with manual credentials using ConnectionConfig
-            connection_config = ConnectionConfig(
-                host=hostname or f"{serial_number}.local",
-                mqtt_username=serial_number or "",
-                mqtt_password=password or "",
-                mqtt_topics=[mqtt_prefix],  # Use dynamic MQTT prefix from config
-            )
-            mqtt_client = DysonMqttClient(connection_config)
-            await self.hass.async_add_executor_job(mqtt_client.connect)
-
-            # Create our device wrapper with correct parameters
-            self.device = DysonDevice(
-                self.hass,
-                serial_number,
-                hostname or f"{serial_number}.local",
-                password,
-                mqtt_prefix,  # Use dynamic MQTT prefix from config
-                self._device_capabilities,
-            )
-
-            _LOGGER.info("Successfully set up sticker device %s", self.serial_number)
-
-        except Exception as err:
-            _LOGGER.error("Failed to set up sticker device %s: %s", self.serial_number, err)
-            raise UpdateFailed(f"Sticker device setup failed: {err}") from err
+        # TODO: Update this method to use paho-mqtt instead of libdyson_mqtt
+        raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Update data from the device."""
         if not self.device:
             raise UpdateFailed("Device not initialized")
 
+        _LOGGER.info("Updating data for device %s", self.serial_number)
+
         try:
-            # Request current state
-            await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+            # Check if device is still connected, attempt reconnection if needed
+            if not self.device.is_connected:
+                _LOGGER.warning("Device %s not connected, attempting reconnection", self.serial_number)
+                success = await self.device.connect()
+                if not success:
+                    raise UpdateFailed(f"Failed to reconnect to device {self.serial_number}")
+                _LOGGER.info("Successfully reconnected to device %s", self.serial_number)
 
-            # Check for faults
-            await self.device.send_command(MQTT_CMD_REQUEST_FAULTS)
+            # Request current state (but don't fail if it doesn't work)
+            try:
+                await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+            except Exception as cmd_err:
+                _LOGGER.warning("Failed to request current state for %s: %s", self.serial_number, cmd_err)
 
-            # Get current device state
+            # Check for faults (but don't fail if it doesn't work)
+            try:
+                await self.device.send_command(MQTT_CMD_REQUEST_FAULTS)
+            except Exception as fault_err:
+                _LOGGER.warning("Failed to request faults for %s: %s", self.serial_number, fault_err)
+
+            # Get current device state - this should work even if commands failed
             device_state = await self.device.get_state()
+            _LOGGER.info("Retrieved device state for %s with keys: %s", self.serial_number, list(device_state.keys()))
 
-            # Handle any faults
-            await self._async_handle_faults()
+            # Handle any faults (but don't let this fail the update)
+            try:
+                await self._async_handle_faults()
+            except Exception as handle_err:
+                _LOGGER.warning("Failed to handle faults for %s: %s", self.serial_number, handle_err)
 
             return device_state
 
+        except UpdateFailed:
+            # Re-raise UpdateFailed exceptions
+            raise
         except Exception as err:
             _LOGGER.error("Error updating data for device %s: %s", self.serial_number, err)
             raise UpdateFailed(f"Error communicating with device: {err}") from err
@@ -423,14 +429,14 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Get MQTT prefix from device info."""
         # The MQTT prefix is typically the product type + model suffix
         product_type = getattr(device_info, "product_type", getattr(device_info, "type", "438"))
-        
+
         # Map known product types to MQTT prefixes
         prefix_map = {
             "438": "438M",  # Pure Cool
-            "475": "475",   # Hot+Cool
-            "455": "455",   # Pure Hot+Cool
-            "469": "469",   # Pure Cool Desk
-            "527": "527",   # V10/V11
+            "475": "475",  # Hot+Cool
+            "455": "455",  # Pure Hot+Cool
+            "469": "469",  # Pure Cool Desk
+            "527": "527",  # V10/V11
         }
-        
+
         return prefix_map.get(product_type, f"{product_type}M")

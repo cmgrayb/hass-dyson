@@ -35,7 +35,8 @@ async def async_setup_entry(
             DysonWiFiSensor(coordinator),
             DysonHEPAFilterLifeSensor(coordinator),
             DysonCarbonFilterLifeSensor(coordinator),
-            DysonFirmwareVersionSensor(coordinator),
+            DysonHEPAFilterTypeSensor(coordinator),
+            DysonCarbonFilterTypeSensor(coordinator),
         ]
     )
 
@@ -290,7 +291,9 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
             return
 
         # Use our device HEPA filter life property
-        self._attr_native_value = self.coordinator.device.hepa_filter_life
+        filter_life_value = self.coordinator.device.hepa_filter_life
+        _LOGGER.info("HEPA Filter Life Sensor Update for %s: %s%%", self.coordinator.serial_number, filter_life_value)
+        self._attr_native_value = filter_life_value
         super()._handle_coordinator_update()
 
 
@@ -345,17 +348,18 @@ class DysonFilterStatusSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonFirmwareVersionSensor(DysonEntity, SensorEntity):
-    """Sensor for firmware version information."""
+class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
+    """HEPA filter type sensor for Dyson devices."""
 
     coordinator: DysonDataUpdateCoordinator
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the firmware version sensor."""
+        """Initialize the HEPA filter type sensor."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_firmware_version"
-        self._attr_name = "Firmware Version"
-        self._attr_icon = "mdi:chip"
+
+        self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_type"
+        self._attr_name = "HEPA Filter Type"
+        self._attr_icon = "mdi:air-filter"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _handle_coordinator_update(self) -> None:
@@ -364,15 +368,53 @@ class DysonFirmwareVersionSensor(DysonEntity, SensorEntity):
             self._attr_native_value = None
             return
 
-        # Extract firmware version from device data
-        # This would typically come from device info or status messages
+        # Get HEPA filter type from device data
         device_data = self.coordinator.data.get("product-state", {})
-        firmware_version = device_data.get("fwv", "Unknown")
+        filter_type = device_data.get("hflt", "NONE")
 
-        # Format firmware version for display
-        if firmware_version and firmware_version != "Unknown":
-            self._attr_native_value = firmware_version
+        # Convert "NONE" to "Not Installed", otherwise return the actual type
+        if filter_type == "NONE":
+            self._attr_native_value = "Not Installed"
         else:
-            self._attr_native_value = "Unknown"
+            self._attr_native_value = filter_type
 
+        _LOGGER.debug(
+            "HEPA Filter Type Sensor Update for %s: %s", self.coordinator.serial_number, self._attr_native_value
+        )
+        super()._handle_coordinator_update()
+
+
+class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
+    """Carbon filter type sensor for Dyson devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the carbon filter type sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_type"
+        self._attr_name = "Carbon Filter Type"
+        self._attr_icon = "mdi:air-filter"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_native_value = None
+            return
+
+        # Get carbon filter type from device data
+        device_data = self.coordinator.data.get("product-state", {})
+        filter_type = device_data.get("cflt", "NONE")
+
+        # Convert "NONE" to "Not Installed", otherwise return the actual type
+        if filter_type == "NONE":
+            self._attr_native_value = "Not Installed"
+        else:
+            self._attr_native_value = filter_type
+
+        _LOGGER.debug(
+            "Carbon Filter Type Sensor Update for %s: %s", self.coordinator.serial_number, self._attr_native_value
+        )
         super()._handle_coordinator_update()

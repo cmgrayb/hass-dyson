@@ -1,4 +1,4 @@
-"""Dyson device wrapper using libdyson_mqtt."""
+"""Dyson device wrapper using paho-mqtt directly."""
 
 from __future__ import annotations
 
@@ -6,28 +6,19 @@ import asyncio
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+import uuid
+from typing import Any, Callable, Dict, List, Optional
 
+import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from libdyson_mqtt import ConnectionConfig, DysonMqttClient, MqttMessage
-else:
-    try:
-        from libdyson_mqtt import ConnectionConfig, DysonMqttClient, MqttMessage
-    except ImportError:
-        _LOGGER.error("libdyson_mqtt not available")
-        DysonMqttClient = None  # type: ignore[misc,assignment]
-        ConnectionConfig = None  # type: ignore[misc,assignment]
-        MqttMessage = None  # type: ignore[misc,assignment]
-
 
 class DysonDevice:
-    """Wrapper for Dyson device communication using libdyson_mqtt."""
+    """Wrapper for Dyson device communication using paho-mqtt directly."""
 
     def __init__(
         self,
@@ -46,8 +37,10 @@ class DysonDevice:
         self.mqtt_prefix = mqtt_prefix
         self.capabilities = capabilities or []
 
-        self._mqtt_client: Optional["DysonMqttClient"] = None
+        self._mqtt_client: Optional[mqtt.Client] = None
         self._connected = False
+        self._last_reconnect_attempt = 0.0  # Track last reconnection attempt
+        self._reconnect_backoff = 30.0  # Wait 30 seconds between reconnect attempts
         self._state_data: Dict[str, Any] = {}
         self._environmental_data: Dict[str, Any] = {}
         self._faults_data: Dict[str, Any] = {}  # Raw fault data from device
@@ -55,77 +48,67 @@ class DysonDevice:
 
         # Device info from successful connection
         self._device_info: Optional[Dict[str, Any]] = None
+        self._firmware_version: str = "Unknown"
 
     async def connect(self) -> bool:
-        """Connect to the device using libdyson_mqtt."""
-        if DysonMqttClient is None or ConnectionConfig is None:
-            _LOGGER.error("libdyson_mqtt not available")
+        """Connect to the device using paho-mqtt directly."""
+        # Check reconnection backoff to prevent rapid reconnection attempts
+        current_time = time.time()
+        if current_time - self._last_reconnect_attempt < self._reconnect_backoff:
+            time_remaining = self._reconnect_backoff - (current_time - self._last_reconnect_attempt)
+            _LOGGER.debug(
+                "Reconnection backoff active for %s, waiting %.1f more seconds",
+                self.serial_number,
+                time_remaining,
+            )
             return False
+
+        self._last_reconnect_attempt = current_time
 
         try:
             _LOGGER.debug("Connecting to device %s at %s", self.serial_number, self.host)
             _LOGGER.debug("Using credential length: %s", len(self.credential) if self.credential else 0)
             _LOGGER.debug("Using MQTT prefix: %s", self.mqtt_prefix)
 
-            # Create MQTT topics using our working format
-            mqtt_topics = [
-                f"{self.mqtt_prefix}/{self.serial_number}/status/current",
-                f"{self.mqtt_prefix}/{self.serial_number}/status/faults",
-            ]
+            # Create paho MQTT client
+            client_id = f"dyson-ha-{uuid.uuid4().hex[:8]}"
+            self._mqtt_client = mqtt.Client(client_id=client_id)
 
-            # Create connection configuration (using our successful test format)
-            config = ConnectionConfig(
-                host=self.host,
-                mqtt_username=self.serial_number,
-                mqtt_password=self.credential,
-                mqtt_topics=mqtt_topics,
-                port=1883,
-                keepalive=60,
-                client_id=self.serial_number,
-            )
+            # Set up authentication
+            self._mqtt_client.username_pw_set(self.serial_number, self.credential)
 
-            # Create MQTT client
-            self._mqtt_client = DysonMqttClient(config)
+            # Set up callbacks
+            self._mqtt_client.on_connect = self._on_connect
+            self._mqtt_client.on_disconnect = self._on_disconnect
+            self._mqtt_client.on_message = self._on_message
 
-            # Set up message handler
-            if self._mqtt_client and hasattr(self._mqtt_client, "set_message_callback"):
-                self._mqtt_client.set_message_callback(self._handle_message)
+            # Connect to MQTT broker
+            _LOGGER.debug("Attempting MQTT connection to %s:1883", self.host)
+            result = await self.hass.async_add_executor_job(self._mqtt_client.connect, self.host, 1883, 60)
 
-            # Connect to device
-            if self._mqtt_client and hasattr(self._mqtt_client, "connect"):
-                await self.hass.async_add_executor_job(self._mqtt_client.connect)
+            if result == mqtt.CONNACK_ACCEPTED:
+                # Start the network loop in a thread
+                await self.hass.async_add_executor_job(self._mqtt_client.loop_start)
 
-                # Wait for connection to be established (with timeout)
-                connection_timeout = 30  # 30 seconds timeout
-                check_interval = 0.5  # Check every 500ms
+                # Wait for connection to be established
+                connection_timeout = 10  # 10 seconds timeout
+                check_interval = 0.1  # Check every 100ms
                 elapsed_time = 0
 
                 while elapsed_time < connection_timeout:
-                    if (
-                        self._mqtt_client
-                        and hasattr(self._mqtt_client, "is_connected")
-                        and self._mqtt_client.is_connected()
-                    ):
-                        self._connected = True
+                    if self._connected:
                         _LOGGER.info(
                             "Successfully connected to device %s after %.1f seconds", self.serial_number, elapsed_time
                         )
-
-                        # Request initial state
-                        await self._request_current_state()
                         return True
 
-                    # Wait before checking again
                     await asyncio.sleep(check_interval)
                     elapsed_time += check_interval
 
-                # Connection timed out
-                _LOGGER.error(
-                    "Connection timeout after %.1f seconds for device %s", connection_timeout, self.serial_number
-                )
+                _LOGGER.error("Connection timeout for device %s", self.serial_number)
                 return False
             else:
-                _LOGGER.error("Failed to connect to device %s - MQTT client not available", self.serial_number)
+                _LOGGER.error("MQTT connection failed with result: %s", result)
                 return False
 
         except Exception as err:
@@ -137,49 +120,107 @@ class DysonDevice:
         if self._mqtt_client and self._connected:
             try:
                 _LOGGER.debug("Disconnecting from device %s", self.serial_number)
+                await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
                 await self.hass.async_add_executor_job(self._mqtt_client.disconnect)
                 self._connected = False
             except Exception as err:
                 _LOGGER.error("Failed to disconnect from device %s: %s", self.serial_number, err)
 
-    def _handle_message(self, message: Any) -> None:
-        """Handle MQTT message from device."""
-        try:
-            # Extract topic and payload from MqttMessage object
-            topic = getattr(message, "topic", "")
-            payload = getattr(message, "payload", "")
+    def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int) -> None:
+        """Handle MQTT connection callback."""
+        if rc == mqtt.CONNACK_ACCEPTED:
+            _LOGGER.info("MQTT connected to device %s", self.serial_number)
+            self._connected = True
 
-            _LOGGER.debug("Received message on %s: %s", topic, payload[:100])
+            # Subscribe to device topics
+            topics_to_subscribe = [
+                f"{self.mqtt_prefix}/{self.serial_number}/status/current",
+                f"{self.mqtt_prefix}/{self.serial_number}/status/faults",
+                f"{self.mqtt_prefix}/{self.serial_number}/status/connection",
+                f"{self.mqtt_prefix}/{self.serial_number}/status/software",
+                f"{self.mqtt_prefix}/{self.serial_number}/status/summary",
+                f"{self.mqtt_prefix}/{self.serial_number}/#",  # Subscribe to all topics for this device
+            ]
+
+            for topic in topics_to_subscribe:
+                client.subscribe(topic)
+                _LOGGER.debug("Subscribed to topic: %s", topic)
+
+            # Request initial device state
+            self.hass.create_task(self._request_current_state())
+        else:
+            _LOGGER.error("MQTT connection failed for device %s with code: %s", self.serial_number, rc)
+
+    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int) -> None:
+        """Handle MQTT disconnection callback."""
+        _LOGGER.warning("MQTT client disconnected for %s, code: %s", self.serial_number, rc)
+        self._connected = False
+
+    def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage) -> None:
+        """Handle MQTT message callback."""
+        try:
+            topic = message.topic
+            payload = message.payload
+
+            _LOGGER.debug("Received MQTT message on %s: %s", topic, payload[:100])
+            _LOGGER.info("MQTT MESSAGE RECEIVED for %s - Topic: %s", self.serial_number, topic)
+
+            # Log the full payload for filter debugging
+            _LOGGER.debug("Full message payload for %s: %s", self.serial_number, payload)
 
             # Parse JSON payload
             if isinstance(payload, bytes):
                 payload = payload.decode("utf-8")
 
             data = json.loads(payload)
+            _LOGGER.debug("Parsed message data for %s: %s", self.serial_number, data)
+            _LOGGER.info("MQTT PARSED DATA for %s: %s", self.serial_number, data)
+
             self._process_message_data(data, topic)
 
         except Exception as err:
-            _LOGGER.error("Error handling message: %s", err)
+            _LOGGER.error("Error handling MQTT message for %s: %s", self.serial_number, err)
 
     def _process_message_data(self, data: Dict[str, Any], topic: str) -> None:
         """Process parsed message data by type."""
         message_type = data.get("msg", "")
+        _LOGGER.debug("Processing message type '%s' for device %s", message_type, self.serial_number)
 
         # Handle different message types based on our successful test
         if message_type == "CURRENT-STATE":
+            _LOGGER.debug("Processing CURRENT-STATE message for %s", self.serial_number)
             self._handle_current_state(data)
         elif message_type == "ENVIRONMENTAL-CURRENT-SENSOR-DATA":
+            _LOGGER.debug("Processing ENVIRONMENTAL-CURRENT-SENSOR-DATA message for %s", self.serial_number)
             self._handle_environmental_data(data)
         elif message_type == "CURRENT-FAULTS":
+            _LOGGER.debug("Processing CURRENT-FAULTS message for %s", self.serial_number)
             self._handle_faults_data(data)
         elif message_type == "STATE-CHANGE":
+            _LOGGER.debug("Processing STATE-CHANGE message for %s", self.serial_number)
             self._handle_state_change(data)
+        else:
+            _LOGGER.debug("Unknown message type '%s' for device %s: %s", message_type, self.serial_number, data)
 
         # Notify callbacks
         self._notify_callbacks(topic, data)
 
     def _handle_current_state(self, data: Dict[str, Any]) -> None:
         """Handle current state message."""
+        _LOGGER.debug("Received current state data for %s: %s", self.serial_number, data)
+
+        # Check specifically for filter data
+        product_state = data.get("product-state", {})
+        if product_state:
+            _LOGGER.debug("Product state contains: %s", list(product_state.keys()))
+
+            # Log all filter-related fields
+            filter_fields = ["hflr", "cflr", "fflr", "hflt", "cflt", "fflt"]
+            for field in filter_fields:
+                value = product_state.get(field)
+                if value is not None:
+                    _LOGGER.debug("Filter field %s: %s", field, value)
+
         self._state_data.update(data)
         _LOGGER.debug("Updated device state for %s", self.serial_number)
 
@@ -195,7 +236,18 @@ class DysonDevice:
 
     def _handle_state_change(self, data: Dict[str, Any]) -> None:
         """Handle state change message."""
+        _LOGGER.debug("Received state change data for %s: %s", self.serial_number, data)
+
         product_state = data.get("product-state", {})
+        if product_state:
+            _LOGGER.debug("State change product state contains: %s", list(product_state.keys()))
+            hflr = product_state.get("hflr")
+            cflr = product_state.get("cflr")
+            if hflr is not None:
+                _LOGGER.debug("HEPA filter life (hflr) in state change: %s", hflr)
+            if cflr is not None:
+                _LOGGER.debug("Carbon filter life (cflr) in state change: %s", cflr)
+
         if "product-state" not in self._state_data:
             self._state_data["product-state"] = {}
         self._state_data["product-state"].update(product_state)
@@ -216,10 +268,18 @@ class DysonDevice:
 
         try:
             command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-            command = '{"msg":"REQUEST-CURRENT-STATE"}'
+            timestamp = self._get_timestamp()
+            command = json.dumps({"msg": "REQUEST-CURRENT-STATE", "time": timestamp, "mode-reason": "RAPP"})
 
-            await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
+            _LOGGER.debug("Publishing to topic: %s", command_topic)
+            _LOGGER.debug("Publishing command: %s", command)
+
+            result = await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
+            _LOGGER.debug("Publish result: %s", result)
             _LOGGER.debug("Requested current state from %s", self.serial_number)
+
+            # Give device time to respond
+            await asyncio.sleep(3.0)
 
         except Exception as err:
             _LOGGER.error("Failed to request state from %s: %s", self.serial_number, err)
@@ -231,7 +291,8 @@ class DysonDevice:
 
         try:
             command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-            command = '{"msg":"REQUEST-CURRENT-FAULTS"}'
+            timestamp = self._get_timestamp()
+            command = json.dumps({"msg": "REQUEST-CURRENT-FAULTS", "time": timestamp, "mode-reason": "RAPP"})
 
             await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
             _LOGGER.debug("Requested current faults from %s", self.serial_number)
@@ -246,6 +307,22 @@ class DysonDevice:
     @property
     def is_connected(self) -> bool:
         """Return if device is connected."""
+        if not self._connected or not self._mqtt_client:
+            return False
+
+        # Check if the underlying MQTT client is actually connected
+        try:
+            if hasattr(self._mqtt_client, "is_connected"):
+                mqtt_connected = self._mqtt_client.is_connected()
+                if not mqtt_connected and self._connected:
+                    _LOGGER.warning("MQTT client disconnected for %s, updating connection state", self.serial_number)
+                    self._connected = False
+                return mqtt_connected
+        except Exception as err:
+            _LOGGER.warning("Failed to check MQTT connection status for %s: %s", self.serial_number, err)
+            self._connected = False
+            return False
+
         return self._connected
 
     async def send_command(self, command: str, data: Optional[Dict[str, Any]] = None) -> None:
@@ -286,6 +363,7 @@ class DysonDevice:
     async def get_state(self) -> Dict[str, Any]:
         """Get current device state."""
         if not self._connected or not self._mqtt_client:
+            _LOGGER.debug("Device %s not connected, returning cached state", self.serial_number)
             return self._state_data
 
         try:
@@ -293,16 +371,23 @@ class DysonDevice:
             if hasattr(self._mqtt_client, "get_state"):
                 state = await self.hass.async_add_executor_job(self._mqtt_client.get_state)  # type: ignore[attr-defined]
                 if state:
+                    _LOGGER.debug("Received state data for %s: %s", self.serial_number, state)
                     self._state_data.update(state)
+                else:
+                    _LOGGER.debug("No state data returned from get_state for %s", self.serial_number)
             elif hasattr(self._mqtt_client, "state"):
                 # Some MQTT clients might have a state property
                 state = getattr(self._mqtt_client, "state", {})
                 if state:
+                    _LOGGER.debug("Received state from property for %s: %s", self.serial_number, state)
                     self._state_data.update(state)
+                else:
+                    _LOGGER.debug("No state data in property for %s", self.serial_number)
 
         except Exception as err:
             _LOGGER.warning("Failed to get state from device %s: %s", self.serial_number, err)
 
+        _LOGGER.debug("Final state data for %s: %s", self.serial_number, self._state_data)
         return self._state_data
 
     def _normalize_faults_to_list(self, faults: Any) -> List[Dict[str, Any]]:
@@ -349,6 +434,12 @@ class DysonDevice:
 
         return self._normalize_faults_to_list(self._faults_data)
 
+    def set_firmware_version(self, firmware_version: str) -> None:
+        """Set the firmware version for this device."""
+        if firmware_version and firmware_version != "Unknown":
+            self._firmware_version = firmware_version
+            _LOGGER.debug("Set firmware version for %s: %s", self.serial_number, firmware_version)
+
     @property
     def device_info(self) -> Dict[str, Any]:
         """Return device information for Home Assistant."""
@@ -357,7 +448,7 @@ class DysonDevice:
             "name": f"Dyson {self.serial_number}",
             "manufacturer": "Dyson",
             "model": self.mqtt_prefix,  # Use MQTT prefix as model indicator
-            "sw_version": self._state_data.get("product-state", {}).get("ver", "Unknown"),
+            "sw_version": self._firmware_version,
         }
 
     # Properties for device state (based on our MQTT test data)
@@ -428,11 +519,45 @@ class DysonDevice:
     def hepa_filter_life(self) -> int:
         """Return HEPA filter life percentage."""
         try:
-            hflr = self._state_data.get("product-state", {}).get("hflr", "0000")
+            product_state = self._state_data.get("product-state", {})
+
+            # Check filter types to determine which field to use
+            hflt = product_state.get("hflt", "NONE")
+            cflt = product_state.get("cflt", "NONE")
+
+            # Debug logging to troubleshoot filter life issue
+            _LOGGER.debug("HEPA filter life debug for %s:", self.serial_number)
+            _LOGGER.debug("  HEPA filter type (hflt): %s", hflt)
+            _LOGGER.debug("  Carbon filter type (cflt): %s", cflt)
+            _LOGGER.debug("  Product state keys: %s", list(product_state.keys()))
+
+            # For combination filters (GCOM), the life might be in a different field
+            if hflt == "GCOM" or cflt == "GCOM":
+                _LOGGER.debug("  Detected GCOM (combination) filter")
+                # Try checking for fflr (combination filter life) first
+                fflr = product_state.get("fflr")
+                if fflr is not None and fflr != "INV":
+                    _LOGGER.debug("  Using fflr (combination filter life): %s", fflr)
+                    try:
+                        result = int(fflr)
+                        _LOGGER.debug("  Converted fflr to int: %s", result)
+                        return result
+                    except (ValueError, TypeError):
+                        _LOGGER.warning("  Failed to convert fflr value: %s", fflr)
+
+            # Fall back to standard hflr field
+            hflr = product_state.get("hflr", "0000")
+            _LOGGER.debug("  Raw hflr value: %s (type: %s)", hflr, type(hflr))
+
             if hflr == "INV":  # Invalid/no filter installed
+                _LOGGER.debug("  HEPA filter marked as INV (invalid/no filter)")
                 return 0
-            return int(hflr)
-        except (ValueError, TypeError):
+
+            result = int(hflr)
+            _LOGGER.debug("  Converted hflr to int: %s", result)
+            return result
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning("Failed to parse HEPA filter life for %s: %s", self.serial_number, e)
             return 0
 
     @property
@@ -449,12 +574,16 @@ class DysonDevice:
     @property
     def hepa_filter_type(self) -> str:
         """Return HEPA filter type."""
-        return self._state_data.get("product-state", {}).get("hflt", "NONE")
+        filter_type = self._state_data.get("product-state", {}).get("hflt", "NONE")
+        _LOGGER.debug("HEPA filter type for %s: %s", self.serial_number, filter_type)
+        return filter_type
 
     @property
     def carbon_filter_type(self) -> str:
         """Return carbon filter type."""
-        return self._state_data.get("product-state", {}).get("cflt", "NONE")
+        filter_type = self._state_data.get("product-state", {}).get("cflt", "NONE")
+        _LOGGER.debug("Carbon filter type for %s: %s", self.serial_number, filter_type)
+        return filter_type
 
     # Command methods for device control
     async def set_night_mode(self, enabled: bool) -> None:
