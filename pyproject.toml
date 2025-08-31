@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ha-dyson-alt"
-version = "0.1.10"
+version = "0.2.0"
 description = "Unofficial alternative Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}

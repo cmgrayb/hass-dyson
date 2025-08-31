@@ -7,7 +7,9 @@ DOMAIN: Final = "dyson_alt"
 
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds
-DEFAULT_DEVICE_POLLING_INTERVAL: Final = 30  # 30 seconds for device state updates
+DEFAULT_DEVICE_POLLING_INTERVAL: Final = (
+    60  # 60 seconds for device state updates (reduced from 30 to reduce MQTT stress)
+)
 DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
 
 # Configuration keys

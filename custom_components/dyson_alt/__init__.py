@@ -12,6 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 
+# Import config flow explicitly to ensure it's available for registration
+from .config_flow import DysonConfigFlow  # noqa: F401
 from .const import (
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
@@ -20,10 +22,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import DysonDataUpdateCoordinator
-from .services import async_setup_services, async_remove_services
-
-# Import config flow explicitly to ensure it's available for registration
-from .config_flow import DysonConfigFlow  # noqa: F401
+from .services import async_remove_services, async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -141,15 +140,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         # Check if this is a new account-level config entry with multiple devices
         if "devices" in entry.data and entry.data.get("devices"):
-            _LOGGER.info("Setting up account-level entry with %d devices",
-                         len(entry.data["devices"]))
-            
+            _LOGGER.info("Setting up account-level entry with %d devices", len(entry.data["devices"]))
+
             # For now, just set up the first device to get something working
             # TODO: Handle multiple devices properly in the future
             first_device = entry.data["devices"][0]
-            
+
             _LOGGER.debug("First device data: %s", first_device)
-            
+
             # Update the original config entry data to look like a single-device entry
             updated_data = {
                 CONF_SERIAL_NUMBER: first_device["serial_number"],
@@ -161,15 +159,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "product_type": first_device.get("product_type"),
                 "category": first_device.get("category"),
             }
-            
+
             _LOGGER.debug("Updated config data: %s", updated_data)
-            
+
             # Update the config entry's data in place
             hass.config_entries.async_update_entry(entry, data=updated_data)
-            
+
             # Use the original entry (now updated) for the coordinator
             coordinator = DysonDataUpdateCoordinator(hass, entry)
-            
+
         else:
             # Handle individual device config entries (legacy)
             _LOGGER.debug("Setting up individual device config entry")
@@ -193,8 +191,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await async_setup_services(hass)
             hass.data.setdefault(DOMAIN, {})["services_setup"] = True
 
-        _LOGGER.info("Successfully set up Dyson device '%s' with platforms: %s",
-                     coordinator.serial_number, platforms_to_setup)
+        _LOGGER.info(
+            "Successfully set up Dyson device '%s' with platforms: %s", coordinator.serial_number, platforms_to_setup
+        )
         return True
 
     except Exception as err:

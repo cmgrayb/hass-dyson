@@ -14,10 +14,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .entity import DysonEntity
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
