@@ -257,6 +257,7 @@ class DysonWiFiSensor(DysonEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "dBm"
         self._attr_icon = "mdi:wifi"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

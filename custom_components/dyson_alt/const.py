@@ -153,3 +153,137 @@ SERVICE_FETCH_ACCOUNT_DATA: Final = "fetch_account_data"
 
 # Event types
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
+
+# Fault code translations
+# Based on Dyson device fault codes - only non-OK values represent actual faults
+FAULT_TRANSLATIONS: Final = {
+    # Air quality sensor faults
+    "aqs": {
+        "FAIL": "Air quality sensor failure",
+        "WARN": "Air quality sensor warning",
+        "OFF": "Air quality sensor disabled",
+    },
+    # Filter faults
+    "fltr": {
+        "FAIL": "Filter failure - replace filter",
+        "WARN": "Filter warning - low life remaining",
+        "CHNG": "Filter needs replacement",
+    },
+    # HEPA filter faults
+    "hflr": {
+        "FAIL": "HEPA filter failure",
+        "WARN": "HEPA filter warning - low life remaining",
+        "CHNG": "HEPA filter needs replacement",
+    },
+    # Carbon filter faults
+    "cflr": {
+        "FAIL": "Carbon filter failure",
+        "WARN": "Carbon filter warning - low life remaining",
+        "CHNG": "Carbon filter needs replacement",
+    },
+    # Motor faults
+    "mflr": {
+        "FAIL": "Motor failure - device malfunction",
+        "STLL": "Motor stall detected",
+        "WRNG": "Motor warning",
+    },
+    # Temperature sensor faults
+    "temp": {
+        "FAIL": "Temperature sensor failure",
+        "HIGH": "Temperature too high",
+        "LOW": "Temperature too low",
+    },
+    # Humidity sensor faults
+    "humi": {
+        "FAIL": "Humidity sensor failure",
+        "HIGH": "Humidity too high",
+        "LOW": "Humidity too low",
+    },
+    # Power supply faults
+    "pwr": {
+        "FAIL": "Power supply failure",
+        "VOLT": "Voltage fault detected",
+        "CURR": "Current fault detected",
+    },
+    # Communication faults
+    "wifi": {
+        "FAIL": "WiFi connection failure",
+        "WEAK": "WiFi signal weak",
+        "DISC": "WiFi disconnected",
+    },
+    # General system faults
+    "sys": {
+        "FAIL": "System failure - contact support",
+        "OVHT": "Device overheating",
+        "LBAT": "Low battery warning",
+    },
+    # Brush faults (for vacuum models)
+    "brsh": {
+        "FAIL": "Brush failure - check for blockages",
+        "STCK": "Brush stuck or blocked",
+        "WORN": "Brush worn - needs replacement",
+    },
+    # Bin/dustbin faults
+    "bin": {
+        "FULL": "Dustbin full - please empty",
+        "MISS": "Dustbin missing or not properly seated",
+        "BLCK": "Dustbin blocked",
+    },
+}
+
+# Device category to fault code mapping
+# Only create fault sensors for fault types relevant to each device category
+DEVICE_CATEGORY_FAULT_CODES: Final = {
+    # Environment Cleaner (fans with filters) - air purifiers/fans
+    DEVICE_CATEGORY_EC: [
+        "mflr",  # Motor/fan
+        "pwr",  # Power supply
+        "wifi",  # WiFi connection
+        "sys",  # System faults
+    ],
+    # Robot vacuum cleaners
+    DEVICE_CATEGORY_ROBOT: [
+        "mflr",  # Motor
+        "pwr",  # Power supply
+        "wifi",  # WiFi connection
+        "sys",  # System faults
+        "brsh",  # Brush system
+        "bin",  # Dustbin
+    ],
+    # Regular vacuum cleaners
+    DEVICE_CATEGORY_VACUUM: [
+        "mflr",  # Motor
+        "pwr",  # Power supply
+        "wifi",  # WiFi connection
+        "sys",  # System faults
+        "brsh",  # Brush system
+        "bin",  # Dustbin
+    ],
+    # Floor cleaner devices
+    DEVICE_CATEGORY_FLRC: [
+        "mflr",  # Motor
+        "pwr",  # Power supply
+        "wifi",  # WiFi connection
+        "sys",  # System faults
+        "brsh",  # Brush system
+        "bin",  # Tank/reservoir
+    ],
+}
+
+# Capability-based fault code filtering
+# These faults only appear if the device has specific capabilities
+CAPABILITY_FAULT_CODES: Final = {
+    "ExtendedAQ": [
+        "aqs",  # Air quality sensor
+        "fltr",  # General filter
+        "hflr",  # HEPA filter
+        "cflr",  # Carbon filter
+    ],
+    "EnvironmentalData": [
+        "temp",  # Temperature sensor
+    ],
+    # TODO: Identify humidifier capability name when we have a humidifier device
+    # "Humidifier": [
+    #     "humi",  # Humidity sensor
+    # ],
+}

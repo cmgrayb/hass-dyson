@@ -489,8 +489,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         faults = await self.device.get_faults()
 
+        # Only log and fire events for actual faults (not OK statuses)
         for fault in faults:
-            _LOGGER.warning("Device fault detected for %s: %s", self.serial_number, fault)
+            # The device.get_faults() method now filters out OK statuses
+            _LOGGER.info("Device fault detected for %s: %s", self.serial_number, fault.get("description", fault))
 
             # Fire event for device fault
             self.hass.bus.async_fire(
@@ -536,9 +538,18 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Get capabilities from device info if available
         if hasattr(device_info, "capabilities"):
             capabilities = device_info.capabilities or []
+        elif hasattr(device_info, "connected_configuration"):
+            # Try nested structure: device_info.connected_configuration.firmware.capabilities
+            connected_config = device_info.connected_configuration
+            if connected_config and hasattr(connected_config, "firmware"):
+                firmware = connected_config.firmware
+                if firmware and hasattr(firmware, "capabilities"):
+                    capabilities = firmware.capabilities or []
 
         # Capabilities should come from the API response, not from static product type mapping
         # If the API doesn't provide capabilities, they should be configured by the user
+
+        _LOGGER.debug("Extracted capabilities from device_info: %s", capabilities)
 
         # Remove duplicates and return
         return list(set(capabilities))

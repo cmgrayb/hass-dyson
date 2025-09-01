@@ -681,15 +681,61 @@ class DysonDevice:
         return self._state_data
 
     def _normalize_faults_to_list(self, faults: Any) -> List[Dict[str, Any]]:
-        """Normalize faults data to list format."""
+        """Normalize faults data to list format, filtering out OK statuses."""
+        from .const import FAULT_TRANSLATIONS
+
         if not faults:
             return []
 
+        actual_faults = []
+
+        # Handle different fault data formats
         if isinstance(faults, list):
-            return faults
+            fault_data_list = faults
         else:
+            fault_data_list = [faults]
+
+        for fault_data in fault_data_list:
+            if not isinstance(fault_data, dict):
+                continue
+
+            # Process each fault key in the data
+            for fault_key, fault_value in fault_data.items():
+                # Skip if the value indicates no fault (OK, NONE, etc.)
+                if not fault_value or fault_value in ["OK", "NONE", "PASS", "GOOD"]:
+                    continue
+
+                # Get human-readable description
+                fault_description = self._translate_fault_code(fault_key, fault_value)
+
+                actual_faults.append(
+                    {
+                        "code": fault_key,
+                        "value": fault_value,
+                        "description": fault_description,
+                        "timestamp": fault_data.get("timestamp"),
+                    }
+                )
+
+        # Store the raw fault data for other methods
+        if not isinstance(faults, list):
             self._faults_data = faults
-            return [faults]
+
+        return actual_faults
+
+    def _translate_fault_code(self, fault_key: str, fault_value: str) -> str:
+        """Translate a fault code and value to human-readable description."""
+        from .const import FAULT_TRANSLATIONS
+
+        # Get translation for this fault key
+        fault_translations = FAULT_TRANSLATIONS.get(fault_key, {})
+
+        # Try to get specific translation for this value
+        if fault_value in fault_translations:
+            return fault_translations[fault_value]
+
+        # Fallback to generic description
+        return f"{fault_key.upper()} fault: {fault_value}"
 
     async def _get_faults_from_client(self) -> List[Dict[str, Any]]:
         """Get faults from MQTT client."""
