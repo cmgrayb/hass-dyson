@@ -9,9 +9,15 @@ This integration should leverage libdyson-rest, found on GitHub at https://githu
 - Library libdyson-rest is owned by the same product group and may be updated as needed with detailed instructions that can be passed to another copilot instance without confusion or misinterpretation
 - libdyson-rest is to be used for any connections to the Dyson cloud API for authentication and discovery of devices
 
-## libdyson-mqtt
+## paho-mqtt
 
-This integration should leverage libdyson-mqtt, found on GitHub at https://github.com/cmgrayb/libdyson-mqtt
+This integration uses paho-mqtt directly for MQTT communication instead of an intermediate library. This approach provides:
 
-- Library libdyson-mqtt is owned by the same product group and may be updated as needed with detailed instructions that can be passed to another copilot instance without confusion or misinterpretation
-- libdyson-mqtt is to be used for any connections leveraging the mqtt protocol, including direct connections via the device's onboard WiFi, or "IoT" connections leveraging Dyson's cloud-hosted MQTT proxy
+- Direct control over MQTT connection handling and message processing
+- Better integration with Home Assistant's async architecture
+- Reduced dependency chain and potential compatibility issues
+- Full access to all MQTT features and configuration options
+
+The integration handles MQTT connections for both:
+- Direct connections to device onboard WiFi/MQTT brokers
+- "IoT" connections through Dyson's cloud-hosted MQTT proxy

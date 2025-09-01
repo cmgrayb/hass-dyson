@@ -285,7 +285,6 @@ ping 192.168.1.161
    logger:
      logs:
        custom_components.dyson_alt: debug
-       libdyson_mqtt: debug
    ```
 
 2. Restart Home Assistant

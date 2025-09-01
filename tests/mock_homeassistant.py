@@ -99,7 +99,9 @@ sys.modules["homeassistant.exceptions"] = MagicMock()
 
 # Mock libdyson libraries for testing
 libdyson_rest_mock = MagicMock()
-libdyson_mqtt_mock = MagicMock()
+paho_mqtt_mock = MagicMock()
 
 sys.modules["libdyson_rest"] = libdyson_rest_mock
-sys.modules["libdyson_mqtt"] = libdyson_mqtt_mock
+sys.modules["paho"] = paho_mqtt_mock
+sys.modules["paho.mqtt"] = paho_mqtt_mock
+sys.modules["paho.mqtt.client"] = paho_mqtt_mock

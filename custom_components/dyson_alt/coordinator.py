@@ -100,7 +100,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if discovery_method == DISCOVERY_CLOUD:
             await self._async_setup_cloud_device()
         elif discovery_method == DISCOVERY_STICKER:
-            # TODO: Update sticker method to use paho-mqtt instead of libdyson_mqtt
+            # TODO: Update sticker method to use paho-mqtt directly
             raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
             # await self._async_setup_sticker_device()
         else:
@@ -207,6 +207,14 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self._device_category = getattr(device_info, "category", "unknown")
             self._device_capabilities = self._extract_capabilities(device_info)
 
+            # Initialize cloud connection variables
+            cloud_host = None
+            cloud_client_id = ""
+            cloud_token_key = ""
+            cloud_token_value = ""
+            cloud_token_signature = ""
+            cloud_custom_authorizer = ""
+
             # Extract firmware version from connected_configuration
             self._firmware_version = "Unknown"
             connected_config = getattr(device_info, "connected_configuration", None)
@@ -218,7 +226,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         self._firmware_version = firmware_version
                         _LOGGER.debug("Found firmware version: %s", firmware_version)
 
-            # Set up MQTT connection with proper ConnectionConfig
             # Extract MQTT credentials from connected_configuration
             mqtt_username = self.serial_number
             mqtt_password = ""
@@ -252,6 +259,101 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         else:
                             _LOGGER.debug("No local_broker_credentials found in MQTT object")
 
+                    # Debug: Check what attributes the MQTT object actually has
+                    _LOGGER.debug(
+                        "Available MQTT attributes: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith("_")]
+                    )
+
+                    # Check for IoT credentials using separate API call
+                    try:
+                        _LOGGER.debug("Requesting IoT credentials for device %s", self.serial_number)
+                        iot_data = await self.hass.async_add_executor_job(
+                            cloud_client.get_iot_credentials, self.serial_number
+                        )
+
+                        if iot_data:
+                            _LOGGER.debug("Successfully retrieved IoT credentials")
+                            _LOGGER.debug("IoT data type: %s", type(iot_data))
+                            _LOGGER.debug(
+                                "IoT data dir: %s", [attr for attr in dir(iot_data) if not attr.startswith("_")]
+                            )
+
+                            # Extract AWS IoT endpoint
+                            cloud_host = getattr(iot_data, "endpoint", None)
+                            _LOGGER.debug("Cloud host from iot_data.endpoint: %s", cloud_host)
+
+                            # Extract credentials object
+                            credentials_obj = getattr(iot_data, "iot_credentials", None)
+                            if credentials_obj:
+                                _LOGGER.debug("Found credentials object: %s", type(credentials_obj))
+                                _LOGGER.debug(
+                                    "Credentials dir: %s",
+                                    [attr for attr in dir(credentials_obj) if not attr.startswith("_")],
+                                )
+
+                                cloud_client_id = getattr(credentials_obj, "client_id", "")
+                                cloud_token_key = getattr(credentials_obj, "token_key", "")
+                                cloud_token_value = getattr(credentials_obj, "token_value", "")
+                                cloud_token_signature = getattr(credentials_obj, "token_signature", "")
+                                cloud_custom_authorizer = getattr(credentials_obj, "custom_authorizer_name", "")
+
+                                # Convert to strings if they are UUID or other objects
+                                cloud_client_id = str(cloud_client_id) if cloud_client_id else ""
+                                cloud_token_key = str(cloud_token_key) if cloud_token_key else ""
+                                cloud_token_value = str(cloud_token_value) if cloud_token_value else ""
+                                cloud_token_signature = str(cloud_token_signature) if cloud_token_signature else ""
+                                cloud_custom_authorizer = (
+                                    str(cloud_custom_authorizer) if cloud_custom_authorizer else ""
+                                )
+
+                                # Debug logging in separate try block to avoid disrupting credential processing
+                                try:
+                                    _LOGGER.debug("Cloud client_id: %s", cloud_client_id)
+                                    _LOGGER.debug("Cloud custom_authorizer: %s", cloud_custom_authorizer)
+                                    _LOGGER.debug("Cloud token_key: %s", cloud_token_key)
+                                    _LOGGER.debug(
+                                        "Cloud token available: %s (length: %s)",
+                                        bool(cloud_token_value),
+                                        len(cloud_token_value) if cloud_token_value else 0,
+                                    )
+                                    _LOGGER.debug(
+                                        "Cloud token signature available: %s (length: %s)",
+                                        bool(cloud_token_signature),
+                                        len(cloud_token_signature) if cloud_token_signature else 0,
+                                    )
+                                except Exception as debug_error:
+                                    _LOGGER.warning("Debug logging failed for IoT credentials: %s", debug_error)
+                            else:
+                                _LOGGER.warning("No credentials object found in IoT data")
+                        else:
+                            _LOGGER.warning("No IoT data returned from API")
+
+                    except Exception as e:
+                        _LOGGER.error("Failed to retrieve IoT credentials: %s", e)
+                        # Fallback to checking MQTT object for cloud info (legacy approach)
+                        cloud_host = getattr(mqtt_obj, "remote_broker_hostname", None)
+                        _LOGGER.debug("Fallback: Raw cloud host from mqtt.remote_broker_hostname: %s", cloud_host)
+
+            if cloud_host:
+                _LOGGER.debug("Found cloud host: %s", cloud_host)
+            else:
+                _LOGGER.warning("No cloud host found - cloud connection will not be available")
+
+            if cloud_token_value and cloud_token_signature:
+                _LOGGER.debug(
+                    "Found cloud IoT credentials - token: %s, signature available: %s",
+                    bool(cloud_token_value),
+                    bool(cloud_token_signature),
+                )
+            else:
+                _LOGGER.warning("No complete cloud IoT credentials found - cloud connection will not be available")
+
+            _LOGGER.debug(
+                "Creating DysonDevice with cloud credentials - host: %s, credentials_available: %s",
+                cloud_host,
+                bool(cloud_token_value and cloud_token_signature),
+            )
+
             _LOGGER.debug(
                 "MQTT credentials - username: %s, password_set: %s, password_length: %s",
                 mqtt_username,
@@ -282,13 +384,35 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             device_host = self._get_device_host(device_info)
             mqtt_prefix = self._get_mqtt_prefix(device_info)
 
+            # Get connection type from config entry
+            connection_type = self.config_entry.data.get("connection_type", "local_cloud_fallback")
+
+            # Create cloud credential structure for AWS IoT if available
+            cloud_credential_data = None
+            if cloud_host and cloud_client_id and cloud_token_value and cloud_token_signature:
+                import json
+
+                cloud_credential_data = json.dumps(
+                    {
+                        "client_id": cloud_client_id,
+                        "custom_authorizer_name": cloud_custom_authorizer,
+                        "token_key": cloud_token_key,
+                        "token_value": cloud_token_value,
+                        "token_signature": cloud_token_signature,
+                    }
+                )
+                _LOGGER.debug("Created cloud credential data structure for AWS IoT")
+
             self.device = DysonDevice(
                 self.hass,
                 self.serial_number,
                 device_host,
-                mqtt_password,  # This becomes the credential for MQTT
+                mqtt_password,  # Local credential for MQTT
                 mqtt_prefix,
                 self._device_capabilities,
+                connection_type,
+                cloud_host,  # Cloud host
+                cloud_credential_data,  # Cloud credential (JSON string for AWS IoT)
             )
 
             # Set firmware version in the device for proper device info
@@ -308,7 +432,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _async_setup_sticker_device(self) -> None:
         """Set up device using sticker/WiFi method."""
-        # TODO: Update this method to use paho-mqtt instead of libdyson_mqtt
+        # TODO: Update this method to use paho-mqtt directly
         raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
 
     async def _async_update_data(self) -> Dict[str, Any]:

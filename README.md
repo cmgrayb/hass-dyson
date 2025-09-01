@@ -29,7 +29,7 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 - **Capability Detection** - Automatic platform setup based on device features
 
 ### **Production Quality**
-- **Real-time Communication** - Direct MQTT with libdyson-mqtt
+- **Real-time Communication** - Direct MQTT with paho-mqtt
 - **Type Safety** - Full Python type hints throughout
 - **Error Handling** - Comprehensive exception management
 - **Home Assistant Standards** - Follows HA integration guidelines
@@ -157,7 +157,7 @@ grep "MQTT prefix" /config/home-assistant.log
 
 ### **No Data Updates**
 1. Check device MQTT topics in logs
-2. Verify libdyson-mqtt dependency installed
+2. Verify paho-mqtt dependency installed
 3. Restart integration from UI
 4. Check firewall settings for MQTT traffic
 
@@ -167,7 +167,6 @@ grep "MQTT prefix" /config/home-assistant.log
 logger:
   logs:
     custom_components.dyson_alt: debug
-    libdyson_mqtt: debug
 ```
 
 ## 🛠️ Development
@@ -211,9 +210,8 @@ custom_components/dyson_alt/
 - **Home Assistant** 2025.8+
 - **Python** 3.9+
 - **Dependencies** (auto-installed):
-  - `libdyson-rest>=0.2.0`
-  - `libdyson-mqtt>=0.2.1` 
-  - `paho-mqtt>=2.1.0`
+  - `libdyson-rest>=0.4.1`
+  - `paho-mqtt>=1.6.0`
   - `cryptography>=3.4.0`
 
 ## 📊 Integration Status
@@ -226,7 +224,7 @@ custom_components/dyson_alt/
 
 ## 🙏 Acknowledgments
 
-- **libdyson-mqtt** - Core MQTT communication library
+- **paho-mqtt** - Reliable MQTT communication library
 - **Home Assistant** - Amazing home automation platform
 - **Dyson** - For making great air purifiers (even if the API is tricky!)
 

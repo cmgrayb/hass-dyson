@@ -61,13 +61,15 @@ def mock_libdyson_rest():
 
 
 @pytest.fixture
-def mock_libdyson_mqtt():
-    """Mock libdyson-mqtt library."""
-    with patch("libdyson_mqtt.DysonMQTTClient") as mock_client:
+def mock_paho_mqtt():
+    """Mock paho-mqtt library."""
+    with patch("paho.mqtt.client.Client") as mock_client:
         mock_instance = MagicMock()
         mock_client.return_value = mock_instance
-        mock_instance.connect = AsyncMock(return_value=True)
-        mock_instance.disconnect = AsyncMock()
-        mock_instance.send_command = AsyncMock()
-        mock_instance.subscribe = AsyncMock()
+        mock_instance.connect = MagicMock(return_value=0)  # CONNACK_ACCEPTED
+        mock_instance.disconnect = MagicMock()
+        mock_instance.publish = MagicMock()
+        mock_instance.subscribe = MagicMock()
+        mock_instance.loop_start = MagicMock()
+        mock_instance.loop_stop = MagicMock()
         yield mock_instance

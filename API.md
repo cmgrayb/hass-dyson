@@ -107,7 +107,7 @@ class DysonCoordinator(DataUpdateCoordinator):
 ### **DysonDevice** 
 ```python
 class DysonDevice:
-    """Wrapper for libdyson-mqtt device communication."""
+    """Wrapper for paho-mqtt device communication."""
     
     def __init__(self, serial: str, credential: str, device_type: str):
         """Initialize with device credentials."""
@@ -374,7 +374,6 @@ logger:
   default: info
   logs:
     custom_components.dyson_alt: debug
-    libdyson_mqtt: debug
     libdyson_rest: debug
 ```
 

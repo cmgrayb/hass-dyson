@@ -20,13 +20,47 @@ lec devices should have an option to pin the connection to a specific bluetooth 
 
 ## MQTT Connection
 
-In the case of devices labeled lecAndWifi or wifiOnly, the devices should be connected to using libdyson-mqtt.
+In the case of devices labeled lecAndWifi or wifiOnly, the devices should be connected to using paho-mqtt directly.
 The connection information needs to be queried from the API or supplied by the end user in the case of a manually created or sticker/wifi info connection, including the username, password, serial number, and MQTT root topic.
 The connection should remain up at all times when the integration is running, stopping only on shutdown, restart, or reconfiguration.
 
-## "IoT" connection
+## "Cloud" connection
 
-Any devices supporting lecAndWifi or wifiOnly should also support the Dyson-hosted MQTT broker proxy connections as well.  These connections should only be used if the user explicitly configures the device for IoT or IoT Fallback.  All inputs are expected to match the Local MQTT Connection excepting hostname, username, and password, which should be taken from the IoT section of the API response.  Whether or not this connection should be used should be determined by the setting for "Local Only", "Local with Cloud Fallback", "Cloud with Local Fallback" and "Cloud" detailed in the Device section.
+Any devices supporting lecAndWifi or wifiOnly should also support the Dyson-hosted MQTT broker proxy connections as well.  These connections should only be used if the user explicitly configures the device for Cloud or Cloud Fallback.  All inputs are expected to match the Local MQTT Connection excepting hostname, username, and password, which should be taken from the Cloud/IoT section of the API response.  Whether or not this connection should be used should be determined by the setting for "Local Only", "Local with Cloud Fallback", "Cloud with Local Fallback" and "Cloud" detailed in the Device section.
+
+## Connection Status Sensor
+
+A connection status sensor must be provided to indicate how the device is currently connected. The sensor should display:
+- "Local" when connected directly to the device via LAN/WiFi
+- "Cloud" when connected through Dyson's cloud-hosted MQTT proxy
+- "Disconnected" when no connection is active
+
+This sensor should be categorized as a diagnostic entity and use the "mdi:connection" icon.
+
+## Connection Resilience and Fallback Behavior
+
+### Initial Connection
+When establishing the initial connection, the integration attempts connections in the order specified by the connection type setting:
+- **Local Only**: Only attempt local connection
+- **Local with Cloud Fallback**: Try local first, then cloud if local fails
+- **Cloud with Local Fallback**: Try cloud first, then local if cloud fails  
+- **Cloud Only**: Only attempt cloud connection
+
+### Reconnection After Disconnection
+When a device connection is lost after initial establishment:
+
+1. **Immediate Retry**: First attempt to reconnect to the **preferred connection type** (regardless of current fallback state)
+2. **Fallback on Failure**: If preferred connection fails, fall back to the alternative connection method
+3. **Periodic Preferred Retry**: Every 5 minutes, attempt to reconnect to the preferred connection type to switch back from fallback
+
+### Connection Status Tracking
+The integration tracks:
+- **Current connection method**: Local or Cloud
+- **Fallback state**: Whether currently using fallback connection
+- **Preferred connection**: The user's preferred connection method based on settings
+- **Last retry time**: When the preferred connection was last attempted
+
+This ensures optimal connection reliability while respecting user preferences for privacy vs. reliability.
 
 ## MQTT Topics
 
@@ -39,7 +73,7 @@ The topics may be calculated as follows: [MQTT Root Topic]/[Serial Number]/[Topi
 
 ## MQTT Remote Broker Type
 
-Returned in the MQTT connection information from the API under index [devices][unnamed_device_index][connected_configuration][mqtt][remote_broker_type] is the connection type to use to connect to MQTT.  Currently, the only known type is "wss" indicating a websocket connection.  This information will likely become relevant in the future when interacting with libdyson-mqtt and should be stored for future use in the Home Assistant configuration for the device.  If an option for connection type exists in libdyson-mqtt, the option should be set to use the value returned by the API.
+Returned in the MQTT connection information from the API under index [devices][unnamed_device_index][connected_configuration][mqtt][remote_broker_type] is the connection type to use to connect to MQTT.  Currently, the only known type is "wss" indicating a websocket connection.  This information will likely become relevant in the future when implementing websocket connections with paho-mqtt and should be stored for future use in the Home Assistant configuration for the device.  If websocket support is needed, the integration should handle this connection type appropriately.
 
 ## Status Refresh
 

@@ -19,6 +19,13 @@ CONF_CREDENTIAL: Final = "credential"
 CONF_HOSTNAME: Final = "hostname"
 CONF_CAPABILITIES: Final = "capabilities"
 CONF_DISCOVERY_METHOD: Final = "discovery_method"
+CONF_CONNECTION_TYPE: Final = "connection_type"
+
+# Connection types
+CONNECTION_TYPE_LOCAL_ONLY: Final = "local_only"
+CONNECTION_TYPE_LOCAL_CLOUD_FALLBACK: Final = "local_cloud_fallback"
+CONNECTION_TYPE_CLOUD_LOCAL_FALLBACK: Final = "cloud_local_fallback"
+CONNECTION_TYPE_CLOUD_ONLY: Final = "cloud_only"
 
 # Discovery methods
 DISCOVERY_CLOUD: Final = "cloud"
@@ -99,7 +106,12 @@ STATE_KEY_P10R: Final = "p10r"  # P10R level
 # Filter values
 FILTER_TYPE_GCOM: Final = "GCOM"  # Genuine Combi Filter
 FILTER_TYPE_NONE: Final = "NONE"  # No filter installed
-FILTER_TYPE_INV: Final = "INV"  # Invalid/not installed
+FILTER_VALUE_INVALID: Final = "INV"  # Invalid/no filter
+
+# Connection status values
+CONNECTION_STATUS_LOCAL: Final = "Local"
+CONNECTION_STATUS_CLOUD: Final = "Cloud"
+CONNECTION_STATUS_DISCONNECTED: Final = "Disconnected"
 
 # Sleep timer limits (in minutes)
 SLEEP_TIMER_MIN: Final = 15  # 15 minutes minimum

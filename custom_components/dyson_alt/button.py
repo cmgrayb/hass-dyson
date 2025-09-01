@@ -31,7 +31,7 @@ async def async_setup_entry(
         [
             DysonResetHEPAFilterButton(coordinator),
             DysonResetCarbonFilterButton(coordinator),
-            DysonConnectButton(coordinator),
+            DysonReconnectButton(coordinator),
         ]
     )
 
@@ -88,27 +88,36 @@ class DysonResetCarbonFilterButton(DysonEntity, ButtonEntity):
             _LOGGER.error("Failed to reset carbon filter for %s: %s", self.coordinator.serial_number, err)
 
 
-class DysonConnectButton(DysonEntity, ButtonEntity):
-    """Button to reconnect to device."""
+class DysonReconnectButton(DysonEntity, ButtonEntity):
+    """Button to trigger intelligent reconnection to device."""
 
     coordinator: DysonDataUpdateCoordinator
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the connect button."""
+        """Initialize the reconnect button."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_reconnect"
         self._attr_name = "Reconnect"
         self._attr_icon = "mdi:wifi-sync"
 
     async def async_press(self) -> None:
-        """Handle the button press."""
+        """Handle the button press to trigger intelligent reconnection."""
         if not self.coordinator.device:
             _LOGGER.warning("Device not available for reconnect")
             return
 
         try:
-            # Reconnect to device
-            await self.coordinator.device.connect()
-            _LOGGER.info("Reconnect command sent to %s", self.coordinator.serial_number)
+            _LOGGER.info("Manual reconnect triggered for %s", self.coordinator.serial_number)
+
+            # Use the device's force_reconnect method for clean reconnection logic
+            success = await self.coordinator.device.force_reconnect()
+
+            if success:
+                _LOGGER.info("Manual reconnection successful for %s", self.coordinator.serial_number)
+                # Trigger a coordinator update to refresh all entities
+                await self.coordinator.async_request_refresh()
+            else:
+                _LOGGER.warning("Manual reconnection failed for %s", self.coordinator.serial_number)
+
         except Exception as err:
-            _LOGGER.error("Failed to reconnect to %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error("Failed to manually reconnect %s: %s", self.coordinator.serial_number, err)

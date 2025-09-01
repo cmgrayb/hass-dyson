@@ -33,7 +33,7 @@ dependencies = [
     "cryptography>=3.4.0",
     "requests>=2.28.0",
     "libdyson-rest==0.4.1",
-    "libdyson-mqtt==0.2.1",
+    "paho-mqtt>=1.6.0",
 ]
 
 [project.optional-dependencies]
