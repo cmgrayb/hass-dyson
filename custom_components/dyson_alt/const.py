@@ -277,11 +277,14 @@ CAPABILITY_FAULT_CODES: Final = {
         "aqs",  # Air quality sensor
         "fltr",  # General filter
         "hflr",  # HEPA filter
-        "cflr",  # Carbon filter
     ],
-    "EnvironmentalData": [
+    "Heating": [
         "temp",  # Temperature sensor
     ],
+    # TODO: Identify formaldehyde capability name when we have a formaldehyde device
+    # "Formaldehyde": [
+    #     "cflr",  # Carbon filter
+    # ],
     # TODO: Identify humidifier capability name when we have a humidifier device
     # "Humidifier": [
     #     "humi",  # Humidity sensor
