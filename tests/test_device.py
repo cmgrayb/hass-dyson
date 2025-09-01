@@ -17,7 +17,7 @@ def mock_hass():
 
 @pytest.fixture
 def mock_mqtt_client():
-    """Mock MQTT client for libdyson_mqtt."""
+    """Mock MQTT client for paho-mqtt."""
     client = MagicMock()
     client.is_connected = MagicMock(return_value=True)
     client.connect = MagicMock()

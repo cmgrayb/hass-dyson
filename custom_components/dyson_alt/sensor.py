@@ -33,6 +33,7 @@ async def async_setup_entry(
             DysonPM25Sensor(coordinator),
             DysonPM10Sensor(coordinator),
             DysonWiFiSensor(coordinator),
+            DysonConnectionStatusSensor(coordinator),
             DysonHEPAFilterLifeSensor(coordinator),
             DysonCarbonFilterLifeSensor(coordinator),
             DysonHEPAFilterTypeSensor(coordinator),
@@ -417,4 +418,31 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
         _LOGGER.debug(
             "Carbon Filter Type Sensor Update for %s: %s", self.coordinator.serial_number, self._attr_native_value
         )
+        super()._handle_coordinator_update()
+
+
+class DysonConnectionStatusSensor(DysonEntity, SensorEntity):
+    """Representation of a Dyson connection status sensor."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the connection status sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_connection_status"
+        self._attr_name = "Connection Status"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:connection"
+        self._attr_device_class = None
+
+    @property
+    def native_value(self) -> str:
+        """Return the connection status."""
+        if self.coordinator.device:
+            return self.coordinator.device.connection_status
+        return "Disconnected"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Connection status is updated directly from the device
         super()._handle_coordinator_update()

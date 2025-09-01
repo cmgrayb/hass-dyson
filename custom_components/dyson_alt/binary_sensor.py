@@ -32,34 +32,11 @@ async def async_setup_entry(
     # Basic binary sensors for all devices
     entities.extend(
         [
-            DysonConnectivitySensor(coordinator),
             DysonFilterReplacementSensor(coordinator),
         ]
     )
 
     async_add_entities(entities, True)
-
-
-class DysonConnectivitySensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
-    """Representation of device connectivity status."""
-
-    coordinator: DysonDataUpdateCoordinator
-
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the connectivity sensor."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_connectivity"
-        self._attr_name = "Connectivity"
-        self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-        self._attr_icon = "mdi:wifi"
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self.coordinator.device:
-            self._attr_is_on = self.coordinator.device.is_connected
-        else:
-            self._attr_is_on = False
-        super()._handle_coordinator_update()
 
 
 class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]

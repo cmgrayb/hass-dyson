@@ -4,7 +4,7 @@ This document details the expected features of the integration when finished
 
 ## Setup
 
-The setup of either a MyDyson API connection (libdyson-rest) or device connection (libdyson-mqtt) must be fully configurable, reconfigurable, and free to unload or reload from the UI at any time.
+The setup of either a MyDyson API connection (libdyson-rest) or device connection (paho-mqtt) must be fully configurable, reconfigurable, and free to unload or reload from the UI at any time.
 
 The configuration for MyDyson API should have configuration options for Polling Interval, where 0 indicates never, and Automatically Add Newly Discovered Devices as a boolean switch to allow the user to determine whether or not devices discovered on the account should be added without user interaction.
 
@@ -27,3 +27,24 @@ Home Assistant should support setting, clearing and displaying a timer for any d
 ## Firmware Information
 
 Firmware information is only available for devices discovered in the MyDyson API and cannot be supported for manually attached devices.  Firmware information may be found in the index [devices][unnamed_device_index][connected_configuration][firmware].  Firmware Version may be found at key `version` and is read-only, Auto-update Enabled is a read-write boolean true/false value and indicates whether or not the device will update its firmware without prompting the user.  Its key is `auto_update_enabled`.  New Version Available is a boolean read-only value with a key of `new_version_available`, and indicates to the user that a firmware update is available, regardless of whether `auto_update_enabled` is true.  The list returned in capabilities and how it is used is documented in `discovery.md`.  At this time, no information is known about requesting a manual firmware update using the API.
+
+## Connection Status
+
+The integration must provide a diagnostic sensor that displays the current connection status of the device. The sensor should show:
+
+- **"Local"** - Device is connected directly via LAN/WiFi to the device's onboard MQTT broker
+- **"Cloud"** - Device is connected through Dyson's cloud-hosted MQTT proxy service  
+- **"Disconnected"** - No active connection to the device
+
+This sensor should be automatically created for all devices and categorized as a diagnostic entity to help users understand their device connectivity and troubleshoot connection issues.
+
+## Manual Reconnection
+
+The integration must provide a "Reconnect" button that allows users to manually trigger the intelligent reconnection logic on demand. When pressed, the button should:
+
+1. **Disconnect**: Cleanly disconnect from the current connection (if connected)
+2. **Reset Retry Timer**: Reset the preferred connection retry timer to force immediate preferred connection attempt
+3. **Intelligent Reconnection**: Attempt reconnection using the full connection logic with preferred connection priority
+4. **Entity Refresh**: Trigger a coordinator refresh to update all entity states after reconnection
+
+This provides users with immediate control over connection management and troubleshooting capabilities.

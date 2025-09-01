@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import CONNECTION_STATUS_CLOUD, CONNECTION_STATUS_DISCONNECTED, CONNECTION_STATUS_LOCAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,19 +28,30 @@ class DysonDevice:
         credential: str,
         mqtt_prefix: str = "475",  # Default, will be overridden
         capabilities: Optional[List[str]] = None,
+        connection_type: str = "local_cloud_fallback",
+        cloud_host: Optional[str] = None,
+        cloud_credential: Optional[str] = None,
     ) -> None:
         """Initialize the device wrapper."""
         self.hass = hass
         self.serial_number = serial_number
-        self.host = host
-        self.credential = credential
+        self.host = host  # Local host
+        self.credential = credential  # Local credential
         self.mqtt_prefix = mqtt_prefix
         self.capabilities = capabilities or []
+        self.connection_type = connection_type
+        self.cloud_host = cloud_host
+        self.cloud_credential = cloud_credential
 
         self._mqtt_client: Optional[mqtt.Client] = None
         self._connected = False
+        self._current_connection_type: str = CONNECTION_STATUS_DISCONNECTED  # Track current connection
+        self._preferred_connection_type: str = self._get_preferred_connection_type()  # Store preferred type
+        self._using_fallback: bool = False  # Track if we're using fallback connection
         self._last_reconnect_attempt = 0.0  # Track last reconnection attempt
+        self._last_preferred_retry = 0.0  # Track last preferred connection retry
         self._reconnect_backoff = 30.0  # Wait 30 seconds between reconnect attempts
+        self._preferred_retry_interval = 300.0  # Retry preferred connection every 5 minutes
         self._state_data: Dict[str, Any] = {}
         self._environmental_data: Dict[str, Any] = {}
         self._faults_data: Dict[str, Any] = {}  # Raw fault data from device
@@ -50,8 +61,18 @@ class DysonDevice:
         self._device_info: Optional[Dict[str, Any]] = None
         self._firmware_version: str = "Unknown"
 
+    def _get_preferred_connection_type(self) -> str:
+        """Determine the preferred connection type based on connection_type setting."""
+        if self.connection_type == "cloud_only":
+            return "cloud"
+        elif self.connection_type == "cloud_local_fallback":
+            return "cloud"
+        else:
+            # local_only, local_cloud_fallback, or any unknown type defaults to local
+            return "local"
+
     async def connect(self) -> bool:
-        """Connect to the device using paho-mqtt directly."""
+        """Connect to the device using paho-mqtt with intelligent fallback support."""
         # Check reconnection backoff to prevent rapid reconnection attempts
         current_time = time.time()
         if current_time - self._last_reconnect_attempt < self._reconnect_backoff:
@@ -65,55 +86,298 @@ class DysonDevice:
 
         self._last_reconnect_attempt = current_time
 
+        # After disconnection, try preferred connection first (one retry)
+        if not self._connected and self._using_fallback:
+            _LOGGER.debug(
+                "Attempting to reconnect to preferred connection after disconnection for %s", self.serial_number
+            )
+
+            preferred_host, preferred_credential = self._get_connection_details(self._preferred_connection_type)
+            if preferred_host and preferred_credential:
+                if await self._attempt_connection(
+                    self._preferred_connection_type, preferred_host, preferred_credential
+                ):
+                    self._using_fallback = False
+                    self._current_connection_type = (
+                        CONNECTION_STATUS_LOCAL
+                        if self._preferred_connection_type == "local"
+                        else CONNECTION_STATUS_CLOUD
+                    )
+                    _LOGGER.info(
+                        "Successfully reconnected to preferred connection (%s) after disconnection for %s",
+                        self._preferred_connection_type.upper(),
+                        self.serial_number,
+                    )
+                    return True
+
+            _LOGGER.debug("Failed to reconnect to preferred connection, falling back to connection order")
+
+        # If we're using fallback connection, check if it's time to retry preferred
+        if self._using_fallback and self._should_retry_preferred():
+            _LOGGER.debug("Attempting to reconnect to preferred connection type for %s", self.serial_number)
+
+            # Try preferred connection once
+            preferred_host, preferred_credential = self._get_connection_details(self._preferred_connection_type)
+            if preferred_host and preferred_credential:
+                if await self._attempt_connection(
+                    self._preferred_connection_type, preferred_host, preferred_credential
+                ):
+                    self._using_fallback = False
+                    self._current_connection_type = (
+                        CONNECTION_STATUS_LOCAL
+                        if self._preferred_connection_type == "local"
+                        else CONNECTION_STATUS_CLOUD
+                    )
+                    _LOGGER.info(
+                        "Successfully reconnected to preferred connection (%s) for %s",
+                        self._preferred_connection_type.upper(),
+                        self.serial_number,
+                    )
+                    return True
+
+            self._last_preferred_retry = current_time
+
+        # Initial connection or fallback reconnection logic
+        connection_attempts = self._get_connection_order()
+
+        # Try each connection method in order
+        for conn_type, host, credential in connection_attempts:
+            if host is None or credential is None:
+                _LOGGER.debug("Skipping %s connection - missing host or credential", conn_type)
+                continue
+
+            _LOGGER.debug("Attempting %s connection to %s for device %s", conn_type, host, self.serial_number)
+
+            if await self._attempt_connection(conn_type, host, credential):
+                # Track if we're using fallback
+                self._using_fallback = conn_type != self._preferred_connection_type
+                self._current_connection_type = (
+                    CONNECTION_STATUS_LOCAL if conn_type == "local" else CONNECTION_STATUS_CLOUD
+                )
+
+                _LOGGER.info(
+                    "Successfully connected to %s via %s%s",
+                    self.serial_number,
+                    conn_type.upper(),
+                    " (fallback)" if self._using_fallback else "",
+                )
+                return True
+
+        _LOGGER.error("Failed to connect to device %s via any method", self.serial_number)
+        self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
+        self._using_fallback = False
+        return False
+
+    def _should_retry_preferred(self) -> bool:
+        """Check if it's time to retry the preferred connection."""
+        current_time = time.time()
+        return (current_time - self._last_preferred_retry) >= self._preferred_retry_interval
+
+    def _get_connection_details(self, conn_type: str) -> tuple[Optional[str], Optional[str]]:
+        """Get connection details for a specific connection type."""
+        if conn_type == "local":
+            return self.host, self.credential
+        elif conn_type == "cloud":
+            return self.cloud_host, self.cloud_credential
+        return None, None
+
+    def _get_connection_order(self) -> list[tuple[str, Optional[str], Optional[str]]]:
+        """Get the connection order based on connection type."""
+        if self.connection_type == "local_only":
+            return [("local", self.host, self.credential)]
+        elif self.connection_type == "cloud_only":
+            return [("cloud", self.cloud_host, self.cloud_credential)]
+        elif self.connection_type == "local_cloud_fallback":
+            return [
+                ("local", self.host, self.credential),
+                ("cloud", self.cloud_host, self.cloud_credential),
+            ]
+        elif self.connection_type == "cloud_local_fallback":
+            return [
+                ("cloud", self.cloud_host, self.cloud_credential),
+                ("local", self.host, self.credential),
+            ]
+        else:
+            # Default to local with cloud fallback
+            return [
+                ("local", self.host, self.credential),
+                ("cloud", self.cloud_host, self.cloud_credential),
+            ]
+
+    async def _attempt_connection(self, conn_type: str, host: str, credential: str) -> bool:
+        """Attempt a single connection method."""
+
         try:
-            _LOGGER.debug("Connecting to device %s at %s", self.serial_number, self.host)
-            _LOGGER.debug("Using credential length: %s", len(self.credential) if self.credential else 0)
+            _LOGGER.debug("Connecting to device %s at %s", self.serial_number, host)
+            _LOGGER.debug("Using credential length: %s", len(credential) if credential else 0)
             _LOGGER.debug("Using MQTT prefix: %s", self.mqtt_prefix)
 
-            # Create paho MQTT client
-            client_id = f"dyson-ha-{uuid.uuid4().hex[:8]}"
-            self._mqtt_client = mqtt.Client(client_id=client_id)
+            # Skip connection if host or credential is missing
+            if not host or not credential:
+                _LOGGER.debug("Missing host or credential for %s connection to %s", conn_type, self.serial_number)
+                return False
+
+            if conn_type == "local":
+                return await self._attempt_local_connection(host, credential)
+            else:  # cloud connection
+                return await self._attempt_cloud_connection(host, credential)
+
+        except Exception as err:
+            _LOGGER.error("Connection attempt failed for %s: %s", self.serial_number, err)
+            return False
+
+    async def _attempt_local_connection(self, host: str, credential: str) -> bool:
+        """Attempt local MQTT connection."""
+        try:
+            # Create paho MQTT client for local connection
+            client_id = f"dyson-ha-local-{uuid.uuid4().hex[:8]}"
+            username = self.serial_number
+
+            _LOGGER.debug("Using MQTT client ID: %s", client_id)
+            _LOGGER.debug("Using MQTT username: %s", username)
+
+            mqtt_client = mqtt.Client(client_id=client_id)
+            self._mqtt_client = mqtt_client
 
             # Set up authentication
-            self._mqtt_client.username_pw_set(self.serial_number, self.credential)
+            mqtt_client.username_pw_set(username, credential)
 
             # Set up callbacks
-            self._mqtt_client.on_connect = self._on_connect
-            self._mqtt_client.on_disconnect = self._on_disconnect
-            self._mqtt_client.on_message = self._on_message
+            mqtt_client.on_connect = self._on_connect
+            mqtt_client.on_disconnect = self._on_disconnect
+            mqtt_client.on_message = self._on_message
 
-            # Connect to MQTT broker
-            _LOGGER.debug("Attempting MQTT connection to %s:1883", self.host)
-            result = await self.hass.async_add_executor_job(self._mqtt_client.connect, self.host, 1883, 60)
+            # Connect to local MQTT broker
+            port = 1883
+            _LOGGER.debug("Attempting local MQTT connection to %s:%s", host, port)
+
+            result = await self.hass.async_add_executor_job(mqtt_client.connect, host, port, 60)
 
             if result == mqtt.CONNACK_ACCEPTED:
                 # Start the network loop in a thread
-                await self.hass.async_add_executor_job(self._mqtt_client.loop_start)
+                await self.hass.async_add_executor_job(mqtt_client.loop_start)
 
                 # Wait for connection to be established
-                connection_timeout = 10  # 10 seconds timeout
-                check_interval = 0.1  # Check every 100ms
-                elapsed_time = 0
-
-                while elapsed_time < connection_timeout:
-                    if self._connected:
-                        _LOGGER.info(
-                            "Successfully connected to device %s after %.1f seconds", self.serial_number, elapsed_time
-                        )
-                        return True
-
-                    await asyncio.sleep(check_interval)
-                    elapsed_time += check_interval
-
-                _LOGGER.error("Connection timeout for device %s", self.serial_number)
-                return False
+                return await self._wait_for_connection("local")
             else:
-                _LOGGER.error("MQTT connection failed with result: %s", result)
+                _LOGGER.debug("Local MQTT connection failed with result: %s", result)
                 return False
 
         except Exception as err:
-            _LOGGER.error("Failed to connect to device %s: %s", self.serial_number, err)
+            _LOGGER.error("Local connection failed: %s", err)
             return False
+
+    async def _attempt_cloud_connection(self, host: str, credential: str) -> bool:
+        """Attempt AWS IoT WebSocket MQTT connection."""
+        try:
+            # Parse AWS IoT credentials from JSON string
+            try:
+                cloud_credentials = json.loads(credential)
+                client_id = cloud_credentials.get("client_id", "")
+                custom_authorizer_name = cloud_credentials.get("custom_authorizer_name", "")
+                token_key = cloud_credentials.get("token_key", "token")
+                token_value = cloud_credentials.get("token_value", "")
+                token_signature = cloud_credentials.get("token_signature", "")
+
+                if not all([client_id, custom_authorizer_name, token_value, token_signature]):
+                    _LOGGER.error(
+                        "Incomplete AWS IoT credentials: client_id=%s, authorizer=%s, token=%s, signature=%s",
+                        bool(client_id),
+                        bool(custom_authorizer_name),
+                        bool(token_value),
+                        bool(token_signature),
+                    )
+                    return False
+
+                _LOGGER.debug(
+                    "Parsed AWS IoT credentials: client_id=%s, authorizer=%s", client_id, custom_authorizer_name
+                )
+                _LOGGER.debug("AWS IoT client_id length: %s", len(client_id))
+
+            except (json.JSONDecodeError, KeyError) as err:
+                _LOGGER.error("Failed to parse cloud credentials: %s", err)
+                return False
+
+            # Create paho MQTT client for WebSocket connection with exact client_id
+            # Note: For AWS IoT, the client_id must be exact - no prefixes allowed
+            mqtt_client = mqtt.Client(client_id=client_id, transport="websockets")
+
+            _LOGGER.debug("Created MQTT client with exact ID: %s", client_id)
+            _LOGGER.debug("MQTT client internal ID: %s", mqtt_client._client_id)
+
+            self._mqtt_client = mqtt_client
+
+            # Set up TLS for secure WebSocket connection
+            mqtt_client.tls_set()
+
+            # Set up WebSocket headers for AWS IoT Custom Authorizer
+            # Following OpenDyson Go implementation: use HTTP headers instead of query parameters
+            websocket_headers = {
+                "Host": host,
+                token_key: token_value,  # Token value in header
+                "X-Amz-CustomAuthorizer-Name": custom_authorizer_name,
+                "X-Amz-CustomAuthorizer-Signature": token_signature,
+            }
+
+            # Set custom WebSocket headers (if paho-mqtt supports it)
+            if hasattr(mqtt_client, "ws_set_options"):
+                # Set WebSocket path and headers (following OpenDyson pattern)
+                mqtt_client.ws_set_options(path="/mqtt", headers=websocket_headers)
+                _LOGGER.debug("Set WebSocket headers: %s", list(websocket_headers.keys()))
+            else:
+                _LOGGER.warning("WebSocket options not supported in this paho-mqtt version")
+
+            # Set up callbacks
+            mqtt_client.on_connect = self._on_connect
+            mqtt_client.on_disconnect = self._on_disconnect
+            mqtt_client.on_message = self._on_message
+
+            # Connect to AWS IoT WebSocket endpoint on port 443
+            port = 443
+            _LOGGER.debug("Attempting AWS IoT WebSocket connection to %s:%s", host, port)
+
+            result = await self.hass.async_add_executor_job(mqtt_client.connect, host, port, 60)
+
+            if result == mqtt.CONNACK_ACCEPTED:
+                # Start the network loop in a thread
+                await self.hass.async_add_executor_job(mqtt_client.loop_start)
+
+                # Wait for connection to be established
+                return await self._wait_for_connection("cloud")
+            else:
+                _LOGGER.debug("AWS IoT WebSocket connection failed with result: %s", result)
+                return False
+
+        except Exception as err:
+            _LOGGER.error("AWS IoT connection failed: %s", err)
+            return False
+
+    async def _wait_for_connection(self, conn_type: str) -> bool:
+        """Wait for MQTT connection to be established."""
+        connection_timeout = 10  # 10 seconds timeout
+        check_interval = 0.1  # Check every 100ms
+        elapsed_time = 0
+
+        while elapsed_time < connection_timeout:
+            if self._connected:
+                _LOGGER.info(
+                    "Successfully connected to device %s via %s after %.1f seconds",
+                    self.serial_number,
+                    conn_type,
+                    elapsed_time,
+                )
+                return True
+
+            await asyncio.sleep(check_interval)
+            elapsed_time += check_interval
+
+        _LOGGER.debug("Connection timeout for device %s via %s", self.serial_number, conn_type)
+        return False
+
+    @property
+    def connection_status(self) -> str:
+        """Return current connection status."""
+        return self._current_connection_type
 
     async def disconnect(self) -> None:
         """Disconnect from the device."""
@@ -123,8 +387,25 @@ class DysonDevice:
                 await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
                 await self.hass.async_add_executor_job(self._mqtt_client.disconnect)
                 self._connected = False
+                self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
+                # Don't reset _using_fallback here - we want to remember if we were using fallback
+                # for the next reconnection attempt
             except Exception as err:
                 _LOGGER.error("Failed to disconnect from device %s: %s", self.serial_number, err)
+
+    async def force_reconnect(self) -> bool:
+        """Force a reconnection attempt with preferred connection priority."""
+        _LOGGER.info("Force reconnect triggered for %s", self.serial_number)
+
+        # Disconnect if currently connected
+        if self._connected:
+            await self.disconnect()
+
+        # Reset preferred retry timer to force immediate preferred connection attempt
+        self._last_preferred_retry = 0.0
+
+        # Attempt reconnection with full intelligent logic
+        return await self.connect()
 
     def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int) -> None:
         """Handle MQTT connection callback."""
@@ -155,6 +436,15 @@ class DysonDevice:
         """Handle MQTT disconnection callback."""
         _LOGGER.warning("MQTT client disconnected for %s, code: %s", self.serial_number, rc)
         self._connected = False
+        self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
+
+        # If this is an unexpected disconnection (not initiated by us), prepare for intelligent reconnection
+        if rc != mqtt.MQTT_ERR_SUCCESS:
+            _LOGGER.info(
+                "Unexpected disconnection for %s, will retry preferred connection on next attempt", self.serial_number
+            )
+            # Reset the preferred retry timer so we'll try preferred connection first on next connect
+            self._last_preferred_retry = 0.0
 
     def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage) -> None:
         """Handle MQTT message callback."""
@@ -367,7 +657,7 @@ class DysonDevice:
             return self._state_data
 
         try:
-            # Get state from libdyson-mqtt client
+            # Get state from paho-mqtt client
             if hasattr(self._mqtt_client, "get_state"):
                 state = await self.hass.async_add_executor_job(self._mqtt_client.get_state)  # type: ignore[attr-defined]
                 if state:
