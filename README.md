@@ -12,7 +12,7 @@
 
 A comprehensive, production-ready Home Assistant integration for Dyson air purifiers and fans, featuring real-time MQTT communication and complete platform coverage.
 
-## 🌟 Features
+## 🌟 Planned Features
 
 ### **Complete Platform Support**
 - **Fan Control** - Speed adjustment (1-10), on/off, night mode
@@ -23,7 +23,7 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 - **Precise Adjustments** - Timers, oscillation angles, temperature
 
 ### **Advanced Configuration**
-- **Dynamic MQTT Prefix** - Supports all Dyson models (438M, 475, etc.)
+- **Dynamic MQTT Prefix** - Supports all Dyson models with local MQTT broker or Cloud connectoin
 - **Cloud Discovery** - Automatic device detection via Dyson API
 - **Manual Setup** - Sticker-based configuration for local devices
 - **Capability Detection** - Automatic platform setup based on device features
@@ -39,18 +39,18 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 
 ### Installation
 
-1. **Download Integration**
-   ```bash
-   git clone https://github.com/cmgrayb/ha-dyson-alt.git
-   cd ha-dyson-alt
-   ```
+1. **Add Custom Repository to HACS**
+   - Open **HACS** in Home Assistant
+   - Go to **Settings** (three dots menu)
+   - Select **Custom repositories**
+   - Add repository URL: `https://github.com/cmgrayb/ha-dyson-alt`
+   - Select category: **Integration**
+   - Click **Add**
 
-2. **Copy to Home Assistant**
-   ```bash
-   cp -r custom_components/dyson_alt /path/to/homeassistant/custom_components/
-   ```
-
-3. **Restart Home Assistant**
+2. **Install Integration**
+   - Search for "**Dyson Alternative**" in HACS
+   - Click **Download**
+   - Restart Home Assistant
 
 ### Setup
 
@@ -58,7 +58,7 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 2. Search for "**Dyson Alternative**"
 3. Choose setup method:
    - **Cloud Discovery** - Enter Dyson account credentials
-   - **Manual Setup** - Enter device details from sticker
+   - **Manual Setup** - Enter device details from sticker (not yet supported)
 
 ## 📱 Supported Entities
 
@@ -98,19 +98,69 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 - **Oscillation** - Enable/disable with angle control
 - **Heating Control** - For HP models (Off/Heat/Auto)
 
-### **Climate Platform** (Heating Models)
-- Full HVAC control interface
-- Target temperature setting (1-37°C)
-- Integrated fan speed control
-- Multiple HVAC modes (Off/Heat/Fan/Auto)
-
 ## 🔧 Configuration
 
-### Cloud Discovery Setup
-```yaml
-# Automatic via config flow - no YAML needed
-# Enter Dyson account email and password
-```
+### Cloud Account Configuration
+
+When selecting **Cloud Discovery**, you'll be guided through the following steps:
+
+#### **Step 1: Account Credentials**
+- **Email**: Your Dyson account email address
+- **Password**: Your Dyson account password
+- **Country**: Select your country (affects API region)
+
+#### **Step 2: Device Discovery**
+The integration will:
+- Connect to Dyson's cloud API using your credentials
+- Automatically discover all devices linked to your account
+- Extract device capabilities and configuration from cloud data
+- Display a list of found devices for selection
+
+#### **What You'll See**
+- **Device List**: All Dyson devices registered to your account
+- **Device Info**: Model, serial number, and current online status
+- **Automatic Setup**: Each device configured with appropriate sensors and controls
+
+#### **Expected Entities Per Device**
+Based on your device capabilities, you'll automatically get:
+
+**All Devices:**
+- Fan control with speed adjustment (1-10)
+- PM2.5 and PM10 air quality sensors
+- WiFi signal strength (diagnostic)
+- Connection status
+- HEPA filter life and type sensors
+- Reconnect button
+
+**Air Purifiers with Extended Air Quality:**
+- Individual fault sensors for each component
+- Air quality sensor fault detection
+- Filter replacement alert
+
+**Heating Models (HP series):**
+- Temperature sensor and climate control
+- Temperature fault sensor
+- Full HVAC interface
+
+**Formaldehyde Models (when detected):**
+- Carbon filter life and type sensors
+- Carbon filter fault sensors
+
+**Robot Models (when detected):**
+- Battery level sensor
+- Robot-specific fault sensors
+
+#### **Setup Time**
+- **Initial connection**: 10-30 seconds
+- **Device discovery**: 5-15 seconds per device
+- **Entity creation**: Immediate after device selection, values may take a minute or two to show up
+
+#### **Troubleshooting Cloud Setup**
+- **Invalid credentials**: Verify email/password and account region
+- **No devices found**: Ensure devices are registered in Dyson app
+- **Connection timeout**: Check internet connection and Dyson API status
+- **Partial device data**: Some devices may need additional setup time
+
 
 ### Manual Sticker Setup
 Required information from device sticker:
@@ -228,17 +278,23 @@ custom_components/dyson_alt/
 
 ## 📊 Integration Status
 
+- **Overall**: Connectivity and sensors prioritized, device controls coming soon
 - **Platforms**: 8/8 implemented ✅
-- **Entities**: 25+ entity types ✅
-- **Device Communication**: Real MQTT ✅  
-- **Code Quality**: Production ready ✅
-- **Testing**: Hardware validated ✅
+- **Entities**: 30+ entity types with capability-based filtering ✅
+- **Device Communication**: Real MQTT with cloud discovery ✅  
+- **Fault Detection**: Individual sensors for 10+ fault types ✅
+- **Capability Filtering**: Smart entity creation based on device features ✅
+- **Code Quality**: Production ready with comprehensive error handling ✅
+- **Testing**: Testing against mock data as well as physical TP11 Pure Cool (PC1) device ✅
 
 ## 🙏 Acknowledgments
 
+- **libshenxn** - For getting the Dyson community started with the original libdyson
+- **dotvezz** - For maintaining the libdyson-wg working group, ha-dyson, and opendyson, the inspiration for this integration
+- **libdyson-wg** - For maintaining excellent documentation and tooling without which this would not have been possible
 - **paho-mqtt** - Reliable MQTT communication library
 - **Home Assistant** - Amazing home automation platform
-- **Dyson** - For making great air purifiers (even if the API is tricky!)
+- **Dyson** - For making great products worth putting in the work for
 
 ## 📄 License
 
