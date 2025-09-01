@@ -27,6 +27,10 @@ async def async_setup_entry(
 
     entities = []
 
+    # Get device capabilities
+    capabilities = coordinator.device_capabilities or []
+    capabilities_str = [cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in capabilities]
+
     # Air quality sensors - we know these work from our MQTT test
     entities.extend(
         [
@@ -35,11 +39,34 @@ async def async_setup_entry(
             DysonWiFiSensor(coordinator),
             DysonConnectionStatusSensor(coordinator),
             DysonHEPAFilterLifeSensor(coordinator),
-            DysonCarbonFilterLifeSensor(coordinator),
             DysonHEPAFilterTypeSensor(coordinator),
-            DysonCarbonFilterTypeSensor(coordinator),
         ]
     )
+
+    # Add carbon filter sensors only for devices with Formaldehyde capability
+    # TODO: Update this when we identify the exact formaldehyde capability name
+    # For now, don't add carbon filter sensors to any devices until we have a formaldehyde device to test
+    # if "formaldehyde" in capabilities_str:
+    #     entities.extend([
+    #         DysonCarbonFilterLifeSensor(coordinator),
+    #         DysonCarbonFilterTypeSensor(coordinator),
+    #     ])
+
+    # Add temperature sensor only for devices with Heating capability
+    if "heating" in capabilities_str:
+        entities.append(DysonTemperatureSensor(coordinator))
+
+    # Add humidity sensor only for devices with Humidifier capability
+    # TODO: Update this when we identify the exact humidifier capability name
+    # For now, don't add humidity sensor to any devices until we have a humidifier to test
+    # if "humidifier" in capabilities_str:
+    #     entities.append(DysonHumiditySensor(coordinator))
+
+    # Add battery sensor only for devices with robot category
+    # TODO: Implement when we have a robot device to test battery data format
+    # device_category = coordinator.device_category
+    # if device_category == "robot":
+    #     entities.append(DysonBatterySensor(coordinator))
 
     async_add_entities(entities, True)
 
@@ -57,7 +84,7 @@ class DysonFilterLifeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_{filter_type}_filter_life"
         self._attr_name = f"{filter_type.upper()} Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_device_class = SensorDeviceClass.BATTERY  # Closest available
+        # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:air-filter"
 
@@ -139,7 +166,7 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
             self._attr_native_value = None
             return
 
-        temperature = self.coordinator.data.get("temperature")
+        temperature = self.coordinator.data.get("tmp")
         if temperature is not None:
             try:
                 # Dyson typically reports temperature in Kelvin * 10
@@ -175,7 +202,7 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
             self._attr_native_value = None
             return
 
-        humidity = self.coordinator.data.get("humidity")
+        humidity = self.coordinator.data.get("hact")
         if humidity is not None:
             try:
                 # Dyson typically reports humidity as percentage
@@ -282,7 +309,7 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_life"
         self._attr_name = "HEPA Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_device_class = SensorDeviceClass.BATTERY  # Closest available
+        # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:air-filter"
 
@@ -311,7 +338,7 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_life"
         self._attr_name = "Carbon Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_device_class = SensorDeviceClass.BATTERY  # Closest available
+        # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:air-filter"
 

@@ -118,12 +118,29 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Filter needs replacement if either HEPA or carbon life is very low
-            hepa_life = self.coordinator.device.hepa_filter_life
-            carbon_life = self.coordinator.device.carbon_filter_life
+            filters_to_check = []
 
-            # Check if either filter is below 10%
-            self._attr_is_on = (hepa_life <= 10 and hepa_life > 0) or (carbon_life <= 10 and carbon_life > 0)
+            # Check if HEPA filter is installed by looking at filter type
+            device_data = self.coordinator.data.get("product-state", {}) if self.coordinator.data else {}
+            hepa_filter_type = device_data.get("hflt", "NONE")
+
+            if hepa_filter_type != "NONE":  # HEPA filter is installed
+                hepa_life = self.coordinator.device.hepa_filter_life
+                filters_to_check.append(hepa_life)
+
+            # Only check carbon filter if device has formaldehyde capability and is installed
+            # TODO: Update this when we identify the exact formaldehyde capability name
+            # For now, since we don't have formaldehyde devices, carbon filter won't be checked
+            # capabilities = self.coordinator.device_capabilities or []
+            # capabilities_str = [cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in capabilities]
+            # if "formaldehyde" in capabilities_str:
+            #     carbon_filter_type = device_data.get("cflt", "NONE")
+            #     if carbon_filter_type != "NONE":  # Carbon filter is installed
+            #         carbon_life = self.coordinator.device.carbon_filter_life
+            #         filters_to_check.append(carbon_life)
+
+            # Filter needs replacement if any of the installed filters is below 10%
+            self._attr_is_on = any(filter_life <= 10 for filter_life in filters_to_check)
         else:
             self._attr_is_on = False
         super()._handle_coordinator_update()
