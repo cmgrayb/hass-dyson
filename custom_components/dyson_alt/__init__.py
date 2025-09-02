@@ -290,7 +290,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[str]:
     """Determine which platforms should be set up for this device."""
-    device_capabilities = coordinator.device_capabilities
     device_category = coordinator.device_category  # This is now a list
     platforms = []
 
@@ -299,20 +298,17 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
 
     # Device category specific platforms - check if any category matches
     if any(cat in ["ec"] for cat in device_category):  # Environment Cleaner (fans with filters)
-        platforms.extend(["fan", "climate"])
+        # For fans, only add fan platform - fan entity handles speed, oscillation, etc.
+        platforms.append("fan")
+        # Climate platform for heating/cooling modes if device supports it
+        platforms.append("climate")
 
     elif any(cat in ["robot", "vacuum", "flrc"] for cat in device_category):  # Cleaning devices
         platforms.append("vacuum")
 
-    # Capability-based platforms
-    if "AdvanceOscillationDay1" in device_capabilities:
-        platforms.extend(["number", "switch"])  # For oscillation controls
-
-    if "Scheduling" in device_capabilities:
-        platforms.append("number")  # For sleep timer
-
-    if "ExtendedAQ" in device_capabilities:
-        platforms.append("switch")  # For continuous monitoring
+    # Note: Removed capability-based platform additions as they were causing inconsistency
+    # Fan controls (speed, oscillation) should be handled by the fan entity itself
+    # Additional platforms should only be added based on device category, not user-selected capabilities
 
     # Remove duplicates and return
     return list(set(platforms))
