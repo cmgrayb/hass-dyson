@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dyson Account Authentication",
+        "description": "Enter your Dyson account credentials to discover and set up your devices.",
+        "data": {
+          "email": "Email Address",
+          "password": "Password"
+        }
+      },
+      "verify": {
+        "title": "Email Verification",
+        "description": "A verification code has been sent to {email}. Please check your email and enter the code below.",
+        "data": {
+          "verification_code": "Verification Code"
+        }
+      },
+      "connection": {
+        "title": "Connection Preferences",
+        "description": "Choose how Home Assistant should connect to your Dyson devices.",
+        "data": {
+          "connection_type": "Connection Type"
+        }
+      }
+    },
+    "error": {
+      "auth_failed": "Authentication failed. Please check your email and password.",
+      "verification_failed": "Verification failed. Please check the code and try again.",
+      "connection_failed": "Connection failed. Please try again later.",
+      "no_devices": "No devices found in your Dyson account."
+    },
+    "abort": {
+      "already_configured": "This Dyson account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dyson Device Management",
+        "description": "Manage your Dyson devices and connection settings."
+      },
+      "manage_devices": {
+        "title": "Account Management",
+        "description": "Manage {device_count} devices in your Dyson account ({account_email}).\n\n{active_count} devices are currently active.\n\n💡 Individual devices can be reloaded/deleted using Home Assistant's native controls on each device page.\n\nSelect an account-level action:",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "reload_all": {
+        "title": "Reload All Devices",
+        "description": "This will reload all {active_count} active devices out of {device_count} total devices, refreshing their connection and state information.\n\nAny temporary connection issues may be resolved. Continue?",
+        "data": {
+          "confirm": "Confirm reload"
+        }
+      },
+      "delete_device": {
+        "title": "Remove Device",
+        "description": "This will permanently remove {device_name} ({device_serial}) from Home Assistant.\n\nStatus: {device_status}\n\nAll entities for this device will be deleted. You can re-add it later by reloading the account entry.\n\n⚠️ This action cannot be undone. Continue?",
+        "data": {
+          "confirm": "Confirm removal",
+          "device_serial": "Device Serial"
+        }
+      },
+      "reconfigure_connection": {
+        "title": "Reconfigure Connection",
+        "description": "Change how Home Assistant connects to your Dyson devices.\n\nCurrent setting: {current_type}\n\nSelect new connection type:",
+        "data": {
+          "connection_type": "Connection Type"
+        }
+      },
+      "device_reconfigure_connection": {
+        "title": "Device Connection Settings",
+        "description": "Configure how {device_name} connects to Home Assistant.\n\nAccount Default: {account_connection_type}\nCurrent Setting: {current_setting}\n\nChoose connection method:",
+        "data": {
+          "connection_type": "Connection Type"
+        }
+      }
+    }
+  }
+}

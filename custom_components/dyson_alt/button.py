@@ -6,6 +6,7 @@ import logging
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -46,6 +47,7 @@ class DysonReconnectButton(DysonEntity, ButtonEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_reconnect"
         self._attr_name = "Reconnect"
         self._attr_icon = "mdi:wifi-sync"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     async def async_press(self) -> None:
         """Handle the button press to trigger intelligent reconnection."""
