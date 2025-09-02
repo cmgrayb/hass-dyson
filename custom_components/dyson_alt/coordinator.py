@@ -14,9 +14,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
+    CONF_CREDENTIAL,
+    CONF_HOSTNAME,
+    CONF_MQTT_PREFIX,
     DEFAULT_DEVICE_POLLING_INTERVAL,
     DISCOVERY_CLOUD,
     DISCOVERY_STICKER,
+    DISCOVERY_MANUAL,
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
@@ -35,7 +39,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.config_entry = config_entry
         self.device: Optional[DysonDevice] = None
         self._device_capabilities: List[str] = []
-        self._device_category: str = ""
+        self._device_category: list[str] = []
         self._firmware_version: str = "Unknown"
 
         super().__init__(
@@ -51,8 +55,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return self._device_capabilities
 
     @property
-    def device_category(self) -> str:
-        """Return device category."""
+    def device_category(self) -> list[str]:
+        """Return device category list."""
         return self._device_category
 
     @property
@@ -151,6 +155,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # TODO: Update sticker method to use paho-mqtt directly
             raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
             # await self._async_setup_sticker_device()
+        elif discovery_method == DISCOVERY_MANUAL:
+            await self._async_setup_manual_device()
         else:
             raise UpdateFailed(f"Unknown discovery method: {discovery_method}")
 
@@ -252,7 +258,31 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             # Extract device capabilities and category from API response
             # The API should provide the device category directly
-            self._device_category = getattr(device_info, "category", "unknown")
+            raw_category = getattr(device_info, "category", "unknown")
+
+            _LOGGER.debug("Raw category from API: %s (type: %s)", raw_category, type(raw_category))
+
+            # Handle different category types from the API
+            if hasattr(raw_category, "value"):
+                # DeviceCategory enum object - extract the value
+                category_value = raw_category.value
+                _LOGGER.debug("Extracted category value: %s", category_value)
+            elif hasattr(raw_category, "name"):
+                # DeviceCategory enum object - extract the name
+                category_value = raw_category.name.lower()
+                _LOGGER.debug("Extracted category name: %s", category_value)
+            elif isinstance(raw_category, str):
+                # Already a string
+                category_value = raw_category
+                _LOGGER.debug("Category is already string: %s", category_value)
+            else:
+                # Convert to string as fallback
+                category_value = str(raw_category)
+                _LOGGER.debug("Converted category to string: %s", category_value)
+
+            # Convert single category to list for consistency
+            self._device_category = [category_value] if isinstance(category_value, str) else [str(category_value)]
+            _LOGGER.debug("Final device category list: %s", self._device_category)
             self._device_capabilities = self._extract_capabilities(device_info)
 
             # Initialize cloud connection variables
@@ -480,6 +510,61 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as err:
             _LOGGER.error("Failed to set up cloud device %s: %s", self.serial_number, err)
             raise UpdateFailed(f"Cloud device setup failed: {err}") from err
+
+    async def _async_setup_manual_device(self) -> None:
+        """Set up device configured manually."""
+        try:
+            _LOGGER.info("Setting up manual device: %s", self.serial_number)
+
+            # Get configuration from config entry
+            serial_number = self.config_entry.data[CONF_SERIAL_NUMBER]
+            credential = self.config_entry.data[CONF_CREDENTIAL]
+            mqtt_prefix = self.config_entry.data[CONF_MQTT_PREFIX]
+            hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
+            device_category = self.config_entry.data.get("device_category", ["ec"])
+            capabilities = self.config_entry.data.get("capabilities", [])
+
+            # Set device category and capabilities from config entry
+            # Ensure device_category is always a list for consistency
+            self._device_category = device_category if isinstance(device_category, list) else [device_category]
+            self._device_capabilities = capabilities
+
+            # Validate that we have required information for manual setup
+            if not hostname:
+                raise UpdateFailed(f"Manual device setup requires hostname/IP address for device {serial_number}")
+
+            # Get connection type from config entry
+            connection_type = self._get_effective_connection_type()
+
+            # For manual setup, we don't have cloud credentials
+            self.device = DysonDevice(
+                self.hass,
+                serial_number,
+                hostname,  # Device hostname (required for manual setup)
+                credential,  # Local MQTT credential
+                mqtt_prefix,  # User-provided MQTT prefix
+                self._device_capabilities,
+                connection_type,
+                None,  # No cloud host for manual setup
+                None,  # No cloud credential for manual setup
+            )
+
+            # Set unknown firmware version since we don't get it from cloud
+            self.device.set_firmware_version("Unknown")
+
+            # Let DysonDevice handle the connection
+            connected = await self.device.connect()
+            if not connected:
+                raise UpdateFailed(f"Failed to connect to manual device {self.serial_number}")
+
+            # Register for environmental update notifications
+            self.device.add_environmental_callback(self._on_environmental_update)
+
+            _LOGGER.info("Successfully set up manual device %s", self.serial_number)
+
+        except Exception as err:
+            _LOGGER.error("Failed to set up manual device %s: %s", self.serial_number, err)
+            raise UpdateFailed(f"Manual device setup failed: {err}") from err
 
     async def _async_setup_sticker_device(self) -> None:
         """Set up device using sticker/WiFi method."""

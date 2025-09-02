@@ -2,11 +2,31 @@
   "config": {
     "step": {
       "user": {
+        "title": "Dyson Integration Setup",
+        "description": "Choose how you would like to set up your Dyson devices.",
+        "data": {
+          "setup_method": "Setup Method"
+        }
+      },
+      "cloud_account": {
         "title": "Dyson Account Authentication",
         "description": "Enter your Dyson account credentials to discover and set up your devices.",
         "data": {
           "email": "Email Address",
           "password": "Password"
+        }
+      },
+      "manual_device": {
+        "title": "Manual Device Setup",
+        "description": "Enter your device information manually. You can find the serial number, WiFi password, and MQTT prefix on a sticker on your device. Leave IP Address blank for automatic discovery via mDNS. Select device categories and capabilities to customize your device setup.",
+        "data": {
+          "serial_number": "Device Serial Number",
+          "credential": "Device WiFi Password",
+          "mqtt_prefix": "MQTT Prefix (e.g., 438, 475, 455)",
+          "hostname": "Device IP Address (optional - leave blank for auto-discovery)",
+          "device_name": "Device Name (Optional)",
+          "device_category": "Device Categories (select all that apply to your device)",
+          "capabilities": "Device Capabilities (select features to enable)"
         }
       },
       "verify": {
@@ -28,10 +48,13 @@
       "auth_failed": "Authentication failed. Please check your email and password.",
       "verification_failed": "Verification failed. Please check the code and try again.",
       "connection_failed": "Connection failed. Please try again later.",
-      "no_devices": "No devices found in your Dyson account."
+      "no_devices": "No devices found in your Dyson account.",
+      "manual_setup_failed": "Manual setup failed. Please check your device information.",
+      "invalid_setup_method": "Invalid setup method selected.",
+      "required": "This field is required."
     },
     "abort": {
-      "already_configured": "This Dyson account is already configured."
+      "already_configured": "This Dyson device is already configured."
     }
   },
   "options": {

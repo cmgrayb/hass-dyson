@@ -26,7 +26,7 @@ async def async_setup_entry(
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     # Only add fan entity for devices that support it
-    if coordinator.device_category == "ec":  # Environment Cleaner
+    if "ec" in coordinator.device_category:  # Environment Cleaner
         async_add_entities([DysonFan(coordinator)], True)
 
 

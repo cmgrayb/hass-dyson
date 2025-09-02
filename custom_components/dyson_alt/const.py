@@ -20,6 +20,7 @@ CONF_HOSTNAME: Final = "hostname"
 CONF_CAPABILITIES: Final = "capabilities"
 CONF_DISCOVERY_METHOD: Final = "discovery_method"
 CONF_CONNECTION_TYPE: Final = "connection_type"
+CONF_MQTT_PREFIX: Final = "mqtt_prefix"
 
 # Connection types
 CONNECTION_TYPE_LOCAL_ONLY: Final = "local_only"
@@ -50,12 +51,34 @@ SUPPORTED_DEVICE_CATEGORIES: Final = [
     DEVICE_CATEGORY_FLRC,
 ]
 
+# Available device categories for manual device setup
+AVAILABLE_DEVICE_CATEGORIES: Final = {
+    DEVICE_CATEGORY_EC: "Environment Cleaner (air purifiers, fans with filters)",
+    DEVICE_CATEGORY_ROBOT: "Robot Vacuum (self-piloting cleaning devices)",
+    DEVICE_CATEGORY_VACUUM: "Vacuum Cleaner (suction cleaning devices)",
+    DEVICE_CATEGORY_FLRC: "Floor Cleaner (mopping and floor cleaning devices)",
+}
+
 # Device capabilities
 CAPABILITY_ADVANCE_OSCILLATION: Final = "AdvanceOscillationDay1"
 CAPABILITY_SCHEDULING: Final = "Scheduling"
 CAPABILITY_ENVIRONMENTAL_DATA: Final = "EnvironmentalData"
 CAPABILITY_EXTENDED_AQ: Final = "ExtendedAQ"
 CAPABILITY_CHANGE_WIFI: Final = "ChangeWifi"
+CAPABILITY_HEATING: Final = "Heating"
+CAPABILITY_FORMALDEHYDE: Final = "Formaldehyde"
+CAPABILITY_HUMIDIFIER: Final = "Humidifier"
+
+# Available capabilities for manual device setup
+AVAILABLE_CAPABILITIES: Final = {
+    CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation (precise angle control)",
+    CAPABILITY_SCHEDULING: "Scheduling (timer and schedule controls)",
+    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (temperature, humidity sensors)",
+    CAPABILITY_EXTENDED_AQ: "Extended Air Quality (PM2.5, PM10 sensors with continuous monitoring)",
+    CAPABILITY_HEATING: "Heating (heat mode and temperature control)",
+    CAPABILITY_FORMALDEHYDE: "Formaldehyde Detection (carbon filter, HCHO sensor, VOC/NO2 sensors, continuous monitoring)",
+    CAPABILITY_HUMIDIFIER: "Humidifier (humidification controls and sensors)",
+}
 
 # MQTT topics
 MQTT_TOPIC_COMMAND: Final = "command"

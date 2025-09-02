@@ -2,15 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import socket
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 
-from .const import CONF_SERIAL_NUMBER, DOMAIN
+from .const import (
+    AVAILABLE_CAPABILITIES,
+    AVAILABLE_DEVICE_CATEGORIES,
+    CONF_SERIAL_NUMBER,
+    CONF_CREDENTIAL,
+    CONF_HOSTNAME,
+    CONF_DISCOVERY_METHOD,
+    CONF_CONNECTION_TYPE,
+    CONF_MQTT_PREFIX,
+    CONNECTION_TYPE_LOCAL_ONLY,
+    DISCOVERY_MANUAL,
+    DOMAIN,
+    MDNS_SERVICE_DYSON,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +44,51 @@ def _get_connection_type_display_name(connection_type: str) -> str:
     return CONNECTION_TYPE_NAMES.get(connection_type, connection_type)
 
 
+async def _discover_device_via_mdns(serial_number: str, timeout: int = 10) -> str | None:
+    """Discover Dyson device via mDNS using zeroconf.
+
+    Args:
+        serial_number: Device serial number to search for
+        timeout: Discovery timeout in seconds
+
+    Returns:
+        IP address if found, None otherwise
+    """
+
+    def _find_device():
+        """Synchronous mDNS discovery function."""
+        from zeroconf import Zeroconf
+
+        zeroconf = Zeroconf()
+        try:
+            # Look for Dyson services
+            services = zeroconf.get_service_info(MDNS_SERVICE_DYSON, f"{serial_number}.{MDNS_SERVICE_DYSON}")
+            if services and services.addresses:
+                # Return the first available IP address
+                return socket.inet_ntoa(services.addresses[0])
+
+            # Also try the common pattern {serial}.local
+            try:
+                hostname = f"{serial_number}.local"
+                ip = socket.gethostbyname(hostname)
+                return ip
+            except socket.gaierror:
+                pass
+
+        except Exception as e:
+            _LOGGER.debug("mDNS discovery error for %s: %s", serial_number, e)
+        finally:
+            zeroconf.close()
+        return None
+
+    # Run discovery in executor to avoid blocking
+    try:
+        return await asyncio.wait_for(asyncio.get_event_loop().run_in_executor(None, _find_device), timeout=timeout)
+    except asyncio.TimeoutError:
+        _LOGGER.debug("mDNS discovery timeout for device %s", serial_number)
+        return None
+
+
 class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Dyson Alternative."""
 
@@ -43,9 +104,56 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._challenge_id: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Handle the initial step - Dyson account authentication."""
+        """Handle the initial step - setup method selection."""
         try:
-            _LOGGER.info("Starting async_step_user - Dyson account authentication with user_input: %s", user_input)
+            _LOGGER.info("Starting async_step_user - setup method selection with user_input: %s", user_input)
+            errors = {}
+
+            if user_input is not None:
+                setup_method = user_input.get("setup_method")
+                _LOGGER.info("User selected setup method: %s", setup_method)
+
+                if setup_method == "cloud_account":
+                    return await self.async_step_cloud_account()
+                elif setup_method == "manual_device":
+                    return await self.async_step_manual_device()
+                else:
+                    _LOGGER.error("Invalid setup method selected: %s", setup_method)
+                    errors["base"] = "invalid_setup_method"
+
+            # Show the setup method selection form
+            _LOGGER.info("Showing setup method selection form")
+            try:
+                data_schema = vol.Schema(
+                    {
+                        vol.Required("setup_method"): vol.In(
+                            {
+                                "cloud_account": "Dyson Cloud Account (Recommended)",
+                                "manual_device": "Manual Device Setup",
+                            }
+                        ),
+                    }
+                )
+                _LOGGER.info("Setup method selection form schema created successfully")
+
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=data_schema,
+                    errors=errors,
+                )
+            except Exception as e:
+                _LOGGER.exception("Error creating setup method selection form: %s", e)
+                raise
+        except Exception as e:
+            _LOGGER.exception("Top-level exception in async_step_user: %s", e)
+            raise
+
+    async def async_step_cloud_account(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle the cloud account authentication step."""
+        try:
+            _LOGGER.info(
+                "Starting async_step_cloud_account - Dyson account authentication with user_input: %s", user_input
+            )
             errors = {}
 
             if user_input is not None:
@@ -86,7 +194,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.info("Authentication form schema created successfully")
 
                 return self.async_show_form(
-                    step_id="user",
+                    step_id="cloud_account",
                     data_schema=data_schema,
                     errors=errors,
                     description_placeholders={"docs_url": "https://www.dyson.com/support/account"},
@@ -95,7 +203,109 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Error creating authentication form: %s", e)
                 raise
         except Exception as e:
-            _LOGGER.exception("Top-level exception in async_step_user: %s", e)
+            _LOGGER.exception("Top-level exception in async_step_cloud_account: %s", e)
+            raise
+
+    async def async_step_manual_device(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle manual device setup."""
+        try:
+            _LOGGER.info("Starting async_step_manual_device with user_input: %s", user_input)
+            errors = {}
+
+            if user_input is not None:
+                try:
+                    # Get device information from user input
+                    serial_number = user_input.get(CONF_SERIAL_NUMBER, "").strip()
+                    credential = user_input.get(CONF_CREDENTIAL, "").strip()
+                    mqtt_prefix = user_input.get(CONF_MQTT_PREFIX, "").strip()
+                    hostname = user_input.get(CONF_HOSTNAME, "").strip()
+                    device_name = user_input.get("device_name", f"Dyson {serial_number}").strip()
+                    device_category = user_input.get("device_category", ["ec"])  # Default to Environment Cleaner list
+                    capabilities = user_input.get("capabilities", [])
+
+                    _LOGGER.info("Manual setup for device: %s", serial_number)
+
+                    # Validate required fields
+                    if not serial_number:
+                        errors[CONF_SERIAL_NUMBER] = "required"
+                    if not credential:
+                        errors[CONF_CREDENTIAL] = "required"
+                    if not mqtt_prefix:
+                        errors[CONF_MQTT_PREFIX] = "required"
+
+                    if not errors:
+                        # Check if device already exists
+                        await self.async_set_unique_id(serial_number)
+                        self._abort_if_unique_id_configured()
+
+                        # Determine hostname: use provided value or discover via mDNS
+                        if hostname:
+                            _LOGGER.info("Using provided hostname/IP for device %s: %s", serial_number, hostname)
+                        else:
+                            # Try to discover device via mDNS
+                            _LOGGER.info("No hostname provided, attempting mDNS discovery for device %s", serial_number)
+                            hostname = await _discover_device_via_mdns(serial_number)
+
+                            if hostname:
+                                _LOGGER.info("Found device %s at IP: %s", serial_number, hostname)
+                            else:
+                                _LOGGER.warning(
+                                    "Could not discover device %s via mDNS, will use serial.local", serial_number
+                                )
+                                hostname = f"{serial_number}.local"
+
+                        # Create the device entry with manual discovery method
+                        config_data = {
+                            CONF_SERIAL_NUMBER: serial_number,
+                            CONF_CREDENTIAL: credential,
+                            CONF_MQTT_PREFIX: mqtt_prefix,
+                            CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL,
+                            CONF_CONNECTION_TYPE: CONNECTION_TYPE_LOCAL_ONLY,  # Default for manual setup
+                            "device_name": device_name,
+                            CONF_HOSTNAME: hostname,
+                            "device_category": device_category,
+                            "capabilities": capabilities,
+                        }
+
+                        _LOGGER.info("Creating manual device config entry for: %s", device_name)
+                        return self.async_create_entry(
+                            title=device_name,
+                            data=config_data,
+                        )
+
+                except Exception as e:
+                    _LOGGER.exception("Error during manual device setup: %s", e)
+                    errors["base"] = "manual_setup_failed"
+
+            # Show the manual device setup form
+            _LOGGER.info("Showing manual device setup form")
+            try:
+                data_schema = vol.Schema(
+                    {
+                        vol.Required(CONF_SERIAL_NUMBER): str,
+                        vol.Required(CONF_CREDENTIAL): str,
+                        vol.Required(CONF_MQTT_PREFIX): str,
+                        vol.Optional(CONF_HOSTNAME): str,
+                        vol.Optional("device_name"): str,
+                        vol.Optional("device_category", default=["ec"]): cv.multi_select(AVAILABLE_DEVICE_CATEGORIES),
+                        vol.Optional("capabilities", default=[]): cv.multi_select(AVAILABLE_CAPABILITIES),
+                    }
+                )
+                _LOGGER.info("Manual device setup form schema created successfully")
+
+                return self.async_show_form(
+                    step_id="manual_device",
+                    data_schema=data_schema,
+                    errors=errors,
+                    description_placeholders={
+                        "discovery_info": "Leave IP Address blank for automatic discovery via mDNS"
+                    },
+                )
+            except Exception as e:
+                _LOGGER.exception("Error creating manual device setup form: %s", e)
+                raise
+        except Exception as e:
+            _LOGGER.exception("Top-level exception in async_step_manual_device: %s", e)
             raise
 
     async def async_step_verify(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

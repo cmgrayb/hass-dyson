@@ -19,6 +19,7 @@ from .const import (
     CONF_SERIAL_NUMBER,
     DISCOVERY_CLOUD,
     DISCOVERY_STICKER,
+    DISCOVERY_MANUAL,
     DOMAIN,
 )
 from .coordinator import DysonDataUpdateCoordinator
@@ -30,7 +31,9 @@ _LOGGER = logging.getLogger(__name__)
 DEVICE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_SERIAL_NUMBER): cv.string,
-        vol.Optional("discovery_method", default=DISCOVERY_CLOUD): vol.In([DISCOVERY_CLOUD, DISCOVERY_STICKER]),
+        vol.Optional("discovery_method", default=DISCOVERY_CLOUD): vol.In(
+            [DISCOVERY_CLOUD, DISCOVERY_STICKER, DISCOVERY_MANUAL]
+        ),
         vol.Optional("hostname"): cv.string,
         vol.Optional("credential"): cv.string,
         vol.Optional("capabilities", default=[]): vol.All(cv.ensure_list, [cv.string]),
@@ -288,17 +291,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[str]:
     """Determine which platforms should be set up for this device."""
     device_capabilities = coordinator.device_capabilities
-    device_category = coordinator.device_category
+    device_category = coordinator.device_category  # This is now a list
     platforms = []
 
     # Base platforms for all devices
     platforms.extend(["sensor", "binary_sensor", "button"])
 
-    # Device category specific platforms
-    if device_category in ["ec"]:  # Environment Cleaner (fans with filters)
+    # Device category specific platforms - check if any category matches
+    if any(cat in ["ec"] for cat in device_category):  # Environment Cleaner (fans with filters)
         platforms.extend(["fan", "climate"])
 
-    elif device_category in ["robot", "vacuum", "flrc"]:  # Cleaning devices
+    elif any(cat in ["robot", "vacuum", "flrc"] for cat in device_category):  # Cleaning devices
         platforms.append("vacuum")
 
     # Capability-based platforms
