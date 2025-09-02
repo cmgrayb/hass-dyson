@@ -60,6 +60,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Return device firmware version."""
         return self._firmware_version
 
+    def _on_environmental_update(self) -> None:
+        """Handle environmental data update from device."""
+        _LOGGER.debug("Received environmental update notification for %s - updating sensors", self.serial_number)
+
+        # Log current environmental data state for debugging
+        if self.device and hasattr(self.device, "_environmental_data"):
+            env_data = self.device._environmental_data
+            _LOGGER.debug(
+                "Environmental data at callback time for %s: pm25=%s, pm10=%s",
+                self.serial_number,
+                env_data.get("pm25"),
+                env_data.get("pm10"),
+            )
+
+        # Use the most direct method to trigger sensor updates
+        self.async_update_listeners()
+
     @property
     def serial_number(self) -> str:
         """Return device serial number."""
@@ -77,6 +94,37 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             serial = self.config_entry.data.get("device_serial_number", "unknown")
             _LOGGER.debug("Using device_serial_number fallback: %s", serial)
             return serial
+
+    def _get_effective_connection_type(self) -> str:
+        """Get the effective connection type for this device."""
+        # Check if device has its own connection type override
+        device_connection_type = self.config_entry.data.get("connection_type")
+        if device_connection_type:
+            _LOGGER.debug("Using device-specific connection type: %s", device_connection_type)
+            return device_connection_type
+
+        # Fall back to account-level connection type
+        parent_entry_id = self.config_entry.data.get("parent_entry_id")
+        if parent_entry_id:
+            # This is a device entry, get connection type from parent account entry
+            try:
+                account_entries = [
+                    entry
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                    if entry.entry_id == parent_entry_id
+                ]
+
+                if account_entries:
+                    account_connection_type = account_entries[0].data.get("connection_type", "local_cloud_fallback")
+                    _LOGGER.debug("Using account-level connection type: %s", account_connection_type)
+                    return account_connection_type
+            except Exception as err:
+                _LOGGER.warning("Failed to get account connection type: %s", err)
+
+        # Default fallback
+        default_type = "local_cloud_fallback"
+        _LOGGER.debug("Using default connection type: %s", default_type)
+        return default_type
 
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh and device setup."""
@@ -384,8 +432,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             device_host = self._get_device_host(device_info)
             mqtt_prefix = self._get_mqtt_prefix(device_info)
 
-            # Get connection type from config entry
-            connection_type = self.config_entry.data.get("connection_type", "local_cloud_fallback")
+            # Get connection type from config entry, with support for device-specific overrides
+            connection_type = self._get_effective_connection_type()
 
             # Create cloud credential structure for AWS IoT if available
             cloud_credential_data = None
@@ -423,6 +471,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             connected = await self.device.connect()
             if not connected:
                 raise UpdateFailed(f"Failed to connect to device {self.serial_number}")
+
+            # Register for environmental update notifications
+            self.device.add_environmental_callback(self._on_environmental_update)
 
             _LOGGER.info("Successfully set up cloud device %s (%s)", self.serial_number, self._device_category)
 
@@ -528,6 +579,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         _LOGGER.debug("Shutting down coordinator for device %s", self.serial_number)
 
         if self.device:
+            # Remove environmental callback before disconnecting
+            self.device.remove_environmental_callback(self._on_environmental_update)
             await self.device.disconnect()
             self.device = None
 

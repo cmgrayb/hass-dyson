@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Any, Tuple, List
+from typing import Any, Dict, List, Tuple
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -14,7 +14,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, FAULT_TRANSLATIONS, DEVICE_CATEGORY_FAULT_CODES, CAPABILITY_FAULT_CODES
+from .const import CAPABILITY_FAULT_CODES, DEVICE_CATEGORY_FAULT_CODES, DOMAIN, FAULT_TRANSLATIONS
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 

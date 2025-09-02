@@ -12,7 +12,13 @@ from typing import Any, Callable, Dict, List, Optional
 import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
 
-from .const import CONNECTION_STATUS_CLOUD, CONNECTION_STATUS_DISCONNECTED, CONNECTION_STATUS_LOCAL, DOMAIN
+from .const import (
+    CONNECTION_STATUS_CLOUD,
+    CONNECTION_STATUS_DISCONNECTED,
+    CONNECTION_STATUS_LOCAL,
+    DOMAIN,
+    FAULT_TRANSLATIONS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +62,9 @@ class DysonDevice:
         self._environmental_data: Dict[str, Any] = {}
         self._faults_data: Dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: List[Callable[[str, Dict[str, Any]], None]] = []
+        self._environmental_callbacks: List[Callable[[], None]] = []  # Environmental update callbacks
+
+        _LOGGER.debug("Initialized environmental data as empty dict for %s", serial_number)
 
         # Device info from successful connection
         self._device_info: Optional[Dict[str, Any]] = None
@@ -516,8 +525,75 @@ class DysonDevice:
 
     def _handle_environmental_data(self, data: Dict[str, Any]) -> None:
         """Handle environmental sensor data message."""
-        self._environmental_data.update(data.get("data", {}))
-        _LOGGER.debug("Updated environmental data for %s", self.serial_number)
+        env_data = data.get("data", {})
+        _LOGGER.debug(
+            "Processing environmental data for %s: received_keys=%s", self.serial_number, list(env_data.keys())
+        )
+
+        # Log specific PM data if present
+        pm25_in_message = env_data.get("pm25")
+        pm10_in_message = env_data.get("pm10")
+        _LOGGER.debug(
+            "Environmental message PM data for %s: pm25='%s', pm10='%s'",
+            self.serial_number,
+            pm25_in_message,
+            pm10_in_message,
+        )
+
+        # Log PM2.5 and PM10 updates specifically
+        if "pm25" in env_data:
+            _LOGGER.debug("PM2.5 updated for %s: %s", self.serial_number, env_data["pm25"])
+        if "pm10" in env_data:
+            _LOGGER.debug("PM10 updated for %s: %s", self.serial_number, env_data["pm10"])
+        if "p25r" in env_data:
+            _LOGGER.debug("P25R value for %s: %s", self.serial_number, env_data["p25r"])
+        if "p10r" in env_data:
+            _LOGGER.debug("P10R value for %s: %s", self.serial_number, env_data["p10r"])
+
+        # Store previous environmental data for comparison
+        previous_pm25 = self._environmental_data.get("pm25")
+        previous_pm10 = self._environmental_data.get("pm10")
+
+        self._environmental_data.update(env_data)
+        _LOGGER.debug("Updated environmental data for %s: keys=%s", self.serial_number, list(env_data.keys()))
+        _LOGGER.debug(
+            "Environmental data state before callback for %s: pm25=%s->%s, pm10=%s->%s",
+            self.serial_number,
+            previous_pm25,
+            env_data.get("pm25"),
+            previous_pm10,
+            env_data.get("pm10"),
+        )
+
+        # Only trigger update if PM data actually changed to avoid unnecessary updates
+        pm25_changed = previous_pm25 != env_data.get("pm25")
+        pm10_changed = previous_pm10 != env_data.get("pm10")
+
+        if pm25_changed or pm10_changed:
+            _LOGGER.debug("PM data changed for %s, triggering environmental update", self.serial_number)
+            # Trigger immediate environmental sensor batch update
+            self._trigger_environmental_update()
+        else:
+            _LOGGER.debug("PM data unchanged for %s, skipping environmental update", self.serial_number)
+
+    def _trigger_environmental_update(self) -> None:
+        """Trigger immediate update of all environmental sensors."""
+        # Notify environmental update callbacks
+        for callback in self._environmental_callbacks:
+            try:
+                callback()
+            except Exception as err:
+                _LOGGER.error("Error in environmental update callback: %s", err)
+
+    def add_environmental_callback(self, callback: Callable[[], None]) -> None:
+        """Add a callback to be notified of environmental data updates."""
+        if callback not in self._environmental_callbacks:
+            self._environmental_callbacks.append(callback)
+
+    def remove_environmental_callback(self, callback: Callable[[], None]) -> None:
+        """Remove an environmental update callback."""
+        if callback in self._environmental_callbacks:
+            self._environmental_callbacks.remove(callback)
 
     def _handle_faults_data(self, data: Dict[str, Any]) -> None:
         """Handle faults data message."""
@@ -682,8 +758,6 @@ class DysonDevice:
 
     def _normalize_faults_to_list(self, faults: Any) -> List[Dict[str, Any]]:
         """Normalize faults data to list format, filtering out OK statuses."""
-        from .const import FAULT_TRANSLATIONS
-
         if not faults:
             return []
 
@@ -725,8 +799,6 @@ class DysonDevice:
 
     def _translate_fault_code(self, fault_key: str, fault_value: str) -> str:
         """Translate a fault code and value to human-readable description."""
-        from .const import FAULT_TRANSLATIONS
-
         # Get translation for this fault key
         fault_translations = FAULT_TRANSLATIONS.get(fault_key, {})
 
@@ -820,22 +892,60 @@ class DysonDevice:
 
     # Environmental sensor properties (from our MQTT test)
     @property
-    def pm25(self) -> int:
+    def pm25(self) -> Optional[int]:
         """Return PM2.5 reading."""
         try:
-            pm25 = self._environmental_data.get("pm25", "0000")
-            return int(pm25)
-        except (ValueError, TypeError):
-            return 0
+            # Take a snapshot of environmental data to avoid race conditions
+            env_data_snapshot = dict(self._environmental_data)
+            pm25_raw = env_data_snapshot.get("pm25")
+            if pm25_raw is None:
+                _LOGGER.debug("PM2.5 property for %s: no data available", self.serial_number)
+                return None
+
+            value = int(pm25_raw)
+            import datetime
+
+            _LOGGER.debug(
+                "PM2.5 property accessed for %s at %s: raw='%s', value=%d",
+                self.serial_number,
+                datetime.datetime.now().isoformat(),
+                pm25_raw,
+                value,
+            )
+            return value
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Invalid PM2.5 value for %s: %s, error: %s", self.serial_number, self._environmental_data.get("pm25"), e
+            )
+            return None
 
     @property
-    def pm10(self) -> int:
+    def pm10(self) -> Optional[int]:
         """Return PM10 reading."""
         try:
-            pm10 = self._environmental_data.get("pm10", "0000")
-            return int(pm10)
-        except (ValueError, TypeError):
-            return 0
+            # Take a snapshot of environmental data to avoid race conditions
+            env_data_snapshot = dict(self._environmental_data)
+            pm10_raw = env_data_snapshot.get("pm10")
+            if pm10_raw is None:
+                _LOGGER.debug("PM10 property for %s: no data available", self.serial_number)
+                return None
+
+            value = int(pm10_raw)
+            import datetime
+
+            _LOGGER.debug(
+                "PM10 property accessed for %s at %s: raw='%s', value=%d",
+                self.serial_number,
+                datetime.datetime.now().isoformat(),
+                pm10_raw,
+                value,
+            )
+            return value
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Invalid PM10 value for %s: %s, error: %s", self.serial_number, self._environmental_data.get("pm10"), e
+            )
+            return None
 
     @property
     def rssi(self) -> int:

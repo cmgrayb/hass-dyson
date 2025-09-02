@@ -1,7 +1,18 @@
 # Dyson Alternative Integration for Home Assistant
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo-social.png" alt="Dyson Alternative Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo-social.png" alt="Dyson Alternative Lo### **Individual Devi## 🏠 Device Support
+
+### **Multiple Account Support**
+- ✅ **Multiple Dyson Accounts**: Add multiple Dyson cloud accounts to Home Assistant
+- ✅ **Account Separation**: Each account manages its own devices independently
+- ✅ **Duplicate Prevention**: Prevents adding the same account twice
+- ✅ **Device Isolation**: Devices from different accounts are properly separated
+
+### **Tested Models**Management** 
+- **⚙️ Configure**: Opens connection settings directly (streamlined)
+- **🔄 Reload**: Native Home Assistant button (top of device page)
+- **🗑️ Delete**: Native Home Assistant button (device menu)width="400"/>
 </p>
 
 [![GitHub Release][releases-shield]][releases]
@@ -182,7 +193,35 @@ dyson_alt:
       capabilities: ["Auto", "Scheduling", "Fault"]
 ```
 
-## 🏠 Device Support
+## �️ Device Management
+
+The integration provides comprehensive device management options through the **Configure** button in Home Assistant's Devices & Services section.
+
+### **Account-Level Management**
+- **🔄 Reload All Devices** - Refresh connection and state for all devices
+- **⚙️ Set Default Connection** - Configure default connection method for all devices
+
+### **Individual Device Management** 
+- **⚙️ Configure**: Device-specific connection settings only
+- **� Reload**: Native Home Assistant button (top of device page)
+- **🗑️ Delete**: Native Home Assistant button (device menu)
+
+### **Connection Type Hierarchy**
+1. **Device Override** - Takes priority if set
+2. **Account Default** - Used when no device override 
+3. **System Default** - Final fallback (`local_cloud_fallback`)
+
+### **How to Access**
+- **Account**: Configure button on main integration entry
+- **Device**: Native HA controls + Configure button for connection settings
+
+### **Device Status Indicators**
+- **✅ Active** - Device is currently set up and running
+- **❌ Inactive** - Device exists in account but not currently active
+
+> 📖 **See [DEVICE_MANAGEMENT.md](DEVICE_MANAGEMENT.md) for detailed documentation**
+
+## �🏠 Device Support
 
 ### **Tested Models**
 - ✅ **438M Series** - Pure Cool Air Purifiers (verified with real device)

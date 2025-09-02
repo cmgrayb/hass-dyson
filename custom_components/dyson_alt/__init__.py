@@ -133,6 +133,24 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     return True
 
 
+async def _create_device_entry(hass: HomeAssistant, device_data: dict, device_info: dict) -> None:
+    """Create a device config entry as a background task."""
+    device_serial = device_data.get(CONF_SERIAL_NUMBER, "unknown")
+
+    try:
+        _LOGGER.info("Background task: Creating device entry for %s", device_serial)
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": "device_auto_create"},
+            data=device_data,
+        )
+        _LOGGER.info("Background task: Device entry creation result: %s", result)
+
+    except Exception as e:
+        _LOGGER.error("Background task: Failed to create device entry for %s: %s", device_serial, e)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Dyson Alternative from a config entry."""
     _LOGGER.debug("Setting up Dyson Alternative integration for device: %s", entry.title)
@@ -141,35 +159,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Check if this is a new account-level config entry with multiple devices
         if "devices" in entry.data and entry.data.get("devices"):
             _LOGGER.info("Setting up account-level entry with %d devices", len(entry.data["devices"]))
+            devices = entry.data["devices"]
 
-            # For now, just set up the first device to get something working
-            # TODO: Handle multiple devices properly in the future
-            first_device = entry.data["devices"][0]
+            # Create individual config entries for each device (if they don't exist)
+            for device_info in devices:
+                device_serial = device_info["serial_number"]
 
-            _LOGGER.debug("First device data: %s", first_device)
+                # Check if device already has its own config entry
+                existing_entries = [
+                    existing_entry
+                    for existing_entry in hass.config_entries.async_entries(DOMAIN)
+                    if (
+                        existing_entry.data.get(CONF_SERIAL_NUMBER) == device_serial
+                        and existing_entry.entry_id != entry.entry_id
+                    )
+                ]
 
-            # Update the original config entry data to look like a single-device entry
-            updated_data = {
-                CONF_SERIAL_NUMBER: first_device["serial_number"],
-                CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
-                CONF_USERNAME: entry.data.get("email", ""),
-                "auth_token": entry.data.get("auth_token"),
-                "connection_type": entry.data.get("connection_type", "local_cloud_fallback"),
-                "device_name": first_device.get("name"),
-                "product_type": first_device.get("product_type"),
-                "category": first_device.get("category"),
-            }
+                if not existing_entries:
+                    # Create individual config entry for this device
+                    device_data = {
+                        CONF_SERIAL_NUMBER: device_serial,
+                        CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+                        CONF_USERNAME: entry.data.get("email", ""),
+                        "auth_token": entry.data.get("auth_token"),
+                        # Do not set connection_type - let device use account default
+                        "device_name": device_info.get("name"),
+                        "product_type": device_info.get("product_type"),
+                        "category": device_info.get("category"),
+                        "parent_entry_id": entry.entry_id,  # Link back to account entry
+                    }
 
-            _LOGGER.debug("Updated config data: %s", updated_data)
+                    _LOGGER.info("Creating individual config entry for device: %s", device_serial)
+                    # Schedule device entry creation as a background task
+                    hass.async_create_background_task(
+                        _create_device_entry(hass, device_data, device_info),
+                        f"dyson_create_device_{device_serial}",
+                    )
 
-            # Update the config entry's data in place
-            hass.config_entries.async_update_entry(entry, data=updated_data)
-
-            # Use the original entry (now updated) for the coordinator
-            coordinator = DysonDataUpdateCoordinator(hass, entry)
+            # Account-level entries don't set up coordinators themselves
+            # They just manage the individual device entries
+            _LOGGER.info("Account entry setup complete - individual device entries will be created")
+            return True
 
         else:
-            # Handle individual device config entries (legacy)
+            # Handle individual device config entries
             _LOGGER.debug("Setting up individual device config entry")
             coordinator = DysonDataUpdateCoordinator(hass, entry)
 
@@ -199,11 +232,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         _LOGGER.error("Failed to set up Dyson device '%s': %s", entry.title, err)
         raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
+        raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Dyson Alternative config entry."""
     _LOGGER.debug("Unloading Dyson Alternative integration for device: %s", entry.title)
+
+    # Check if this is an account-level entry
+    if "devices" in entry.data and entry.data.get("devices"):
+        _LOGGER.info("Unloading account-level entry - removing child device entries")
+
+        # Find and remove all child device entries
+        device_entries_to_remove = [
+            device_entry
+            for device_entry in hass.config_entries.async_entries(DOMAIN)
+            if device_entry.data.get("parent_entry_id") == entry.entry_id
+        ]
+
+        for device_entry in device_entries_to_remove:
+            _LOGGER.info("Removing child device entry: %s", device_entry.title)
+            await hass.config_entries.async_remove(device_entry.entry_id)
+
+        # Account entries don't have coordinators themselves
+        return True
+
+    # Handle individual device entries
+    if entry.entry_id not in hass.data.get(DOMAIN, {}):
+        _LOGGER.warning("No coordinator found for entry %s", entry.entry_id)
+        return True
 
     # Get coordinator
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
@@ -220,7 +277,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
         # Remove services if this was the last device
-        if not hass.data[DOMAIN]:
+        if not hass.data[DOMAIN] or all(key == "services_setup" for key in hass.data[DOMAIN]):
             await async_remove_services(hass)
 
         _LOGGER.info("Successfully unloaded Dyson device '%s'", entry.title)

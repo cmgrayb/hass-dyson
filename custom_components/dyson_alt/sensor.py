@@ -231,14 +231,47 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
+        _LOGGER.debug(
+            "Initialized PM2.5 sensor for %s with initial value: %s", coordinator.serial_number, self._attr_native_value
+        )
+
+        # Immediately sync with current environmental data if available
+        self._sync_with_current_data()
+
+    def _sync_with_current_data(self) -> None:
+        """Sync sensor with current environmental data if available."""
+        if self.coordinator.device and hasattr(self.coordinator.device, "_environmental_data"):
+            env_data = self.coordinator.device._environmental_data
+            if env_data.get("pm25") is not None:
+                old_value = self._attr_native_value
+                new_value = self.coordinator.device.pm25
+                self._attr_native_value = new_value
+                _LOGGER.debug(
+                    "PM2.5 sensor synced with existing data for %s: %s -> %s",
+                    self.coordinator.serial_number,
+                    old_value,
+                    new_value,
+                )
+
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if not self.coordinator.device:
             self._attr_native_value = None
+            _LOGGER.debug("PM2.5 sensor update: device not available")
             return
 
         # Use our device PM2.5 property
-        self._attr_native_value = self.coordinator.device.pm25
+        old_value = self._attr_native_value
+        new_value = self.coordinator.device.pm25
+        self._attr_native_value = new_value
+
+        _LOGGER.debug(
+            "PM2.5 sensor update for %s: %s -> %s (device_pm25_property_returned: %s)",
+            self.coordinator.serial_number,
+            old_value,
+            self._attr_native_value,
+            new_value,
+        )
         super()._handle_coordinator_update()
 
 
@@ -258,14 +291,47 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
+        _LOGGER.debug(
+            "Initialized PM10 sensor for %s with initial value: %s", coordinator.serial_number, self._attr_native_value
+        )
+
+        # Immediately sync with current environmental data if available
+        self._sync_with_current_data()
+
+    def _sync_with_current_data(self) -> None:
+        """Sync sensor with current environmental data if available."""
+        if self.coordinator.device and hasattr(self.coordinator.device, "_environmental_data"):
+            env_data = self.coordinator.device._environmental_data
+            if env_data.get("pm10") is not None:
+                old_value = self._attr_native_value
+                new_value = self.coordinator.device.pm10
+                self._attr_native_value = new_value
+                _LOGGER.debug(
+                    "PM10 sensor synced with existing data for %s: %s -> %s",
+                    self.coordinator.serial_number,
+                    old_value,
+                    new_value,
+                )
+
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if not self.coordinator.device:
             self._attr_native_value = None
+            _LOGGER.debug("PM10 sensor update: device not available")
             return
 
         # Use our device PM10 property
-        self._attr_native_value = self.coordinator.device.pm10
+        old_value = self._attr_native_value
+        new_value = self.coordinator.device.pm10
+        self._attr_native_value = new_value
+
+        _LOGGER.debug(
+            "PM10 sensor update for %s: %s -> %s (device_pm10_property_returned: %s)",
+            self.coordinator.serial_number,
+            old_value,
+            self._attr_native_value,
+            new_value,
+        )
         super()._handle_coordinator_update()
 
 
