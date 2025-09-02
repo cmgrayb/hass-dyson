@@ -43,9 +43,8 @@ class DysonFan(DysonEntity, FanEntity):
         self._attr_name = "Fan"
         self._attr_supported_features = FanEntityFeature.SET_SPEED | FanEntityFeature.DIRECTION
 
-        # Add oscillation support if device has the capability
-        if "AdvanceOscillationDay1" in coordinator.device_capabilities:
-            self._attr_supported_features |= FanEntityFeature.OSCILLATE
+        # Note: Oscillation control removed - will be handled by custom advanced oscillation entities
+        # Standard Home Assistant oscillation (on/off) doesn't support Dyson's advanced oscillation features
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -121,9 +120,3 @@ class DysonFan(DysonEntity, FanEntity):
         success = await self.coordinator.async_send_command("direction", {"direction": direction})
         if not success:
             _LOGGER.error("Failed to set fan direction")
-
-    async def async_oscillate(self, oscillating: bool) -> None:
-        """Set oscillation."""
-        success = await self.coordinator.async_send_command("oscillation", {"oscillating": str(oscillating).lower()})
-        if not success:
-            _LOGGER.error("Failed to set oscillation")
