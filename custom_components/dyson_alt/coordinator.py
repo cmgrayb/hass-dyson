@@ -25,7 +25,6 @@ from .const import (
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
-    MQTT_CMD_REQUEST_FAULTS,
 )
 from .device import DysonDevice
 
@@ -317,34 +316,32 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                                 "Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0
                             )
 
-            # Extract device capabilities and category from API response
-            # The API should provide the device category directly
-            raw_category = getattr(device_info, "category", "unknown")
+            # Extract device capabilities and category from API response or config entry
+            from .device_utils import normalize_device_category, normalize_capabilities
 
-            _LOGGER.debug("Raw category from API: %s (type: %s)", raw_category, type(raw_category))
-
-            # Handle different category types from the API
-            if hasattr(raw_category, "value"):
-                # DeviceCategory enum object - extract the value
-                category_value = raw_category.value
-                _LOGGER.debug("Extracted category value: %s", category_value)
-            elif hasattr(raw_category, "name"):
-                # DeviceCategory enum object - extract the name
-                category_value = raw_category.name.lower()
-                _LOGGER.debug("Extracted category name: %s", category_value)
-            elif isinstance(raw_category, str):
-                # Already a string
-                category_value = raw_category
-                _LOGGER.debug("Category is already string: %s", category_value)
+            # Check if device_category was provided in config entry (like manual devices)
+            config_device_category = self.config_entry.data.get("device_category")
+            if config_device_category:
+                # Use device_category from config entry if available (ensures consistency)
+                self._device_category = normalize_device_category(config_device_category)
+                _LOGGER.debug("Using device category from config entry: %s", self._device_category)
             else:
-                # Convert to string as fallback
-                category_value = str(raw_category)
-                _LOGGER.debug("Converted category to string: %s", category_value)
+                # Extract category from API response
+                raw_category = getattr(device_info, "category", "unknown")
+                self._device_category = normalize_device_category(raw_category)
+                _LOGGER.debug("Extracted device category from API: %s", self._device_category)
 
-            # Convert single category to list for consistency
-            self._device_category = [category_value] if isinstance(category_value, str) else [str(category_value)]
-            _LOGGER.debug("Final device category list: %s", self._device_category)
-            self._device_capabilities = self._extract_capabilities(device_info)
+            # Extract capabilities from config entry or API
+            config_capabilities = self.config_entry.data.get("capabilities")
+            if config_capabilities and len(config_capabilities) > 0:
+                # Use capabilities from config entry if non-empty
+                self._device_capabilities = normalize_capabilities(config_capabilities)
+                _LOGGER.debug("Using capabilities from config entry: %s", self._device_capabilities)
+            else:
+                # Extract capabilities from API response
+                api_capabilities = self._extract_capabilities(device_info)
+                self._device_capabilities = normalize_capabilities(api_capabilities)
+                _LOGGER.debug("Extracted capabilities from API: %s", self._device_capabilities)
 
             # Initialize cloud connection variables
             cloud_host = None
@@ -589,9 +586,14 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             capabilities = self.config_entry.data.get("capabilities", [])
 
             # Set device category and capabilities from config entry
-            # Ensure device_category is always a list for consistency
-            self._device_category = device_category if isinstance(device_category, list) else [device_category]
-            self._device_capabilities = capabilities
+            from .device_utils import normalize_device_category, normalize_capabilities
+
+            device_category = self.config_entry.data.get("device_category", ["ec"])
+            capabilities = self.config_entry.data.get("capabilities", [])
+
+            # Ensure consistent normalization
+            self._device_category = normalize_device_category(device_category)
+            self._device_capabilities = normalize_capabilities(capabilities)
 
             # Validate that we have required information for manual setup
             if not hostname:
@@ -639,11 +641,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Update data from the device."""
+        """Update data from the device - mainly for connectivity checks."""
         if not self.device:
             raise UpdateFailed("Device not initialized")
 
-        _LOGGER.info("Updating data for device %s", self.serial_number)
+        _LOGGER.debug("Checking connectivity for device %s", self.serial_number)
 
         try:
             # Check if device is still connected, attempt reconnection if needed
@@ -654,27 +656,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     raise UpdateFailed(f"Failed to reconnect to device {self.serial_number}")
                 _LOGGER.info("Successfully reconnected to device %s", self.serial_number)
 
-            # Request current state (but don't fail if it doesn't work)
-            try:
-                await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
-            except Exception as cmd_err:
-                _LOGGER.warning("Failed to request current state for %s: %s", self.serial_number, cmd_err)
+                # Only request current state after reconnection to get initial state
+                try:
+                    await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+                    _LOGGER.debug("Requested current state after reconnection for %s", self.serial_number)
+                except Exception as cmd_err:
+                    _LOGGER.warning("Failed to request current state after reconnection for %s: %s", self.serial_number, cmd_err)
 
-            # Check for faults (but don't fail if it doesn't work)
-            try:
-                await self.device.send_command(MQTT_CMD_REQUEST_FAULTS)
-            except Exception as fault_err:
-                _LOGGER.warning("Failed to request faults for %s: %s", self.serial_number, fault_err)
-
-            # Get current device state - this should work even if commands failed
+            # Get current device state (from last received MQTT message)
             device_state = await self.device.get_state()
-            _LOGGER.info("Retrieved device state for %s with keys: %s", self.serial_number, list(device_state.keys()))
-
-            # Handle any faults (but don't let this fail the update)
-            try:
-                await self._async_handle_faults()
-            except Exception as handle_err:
-                _LOGGER.warning("Failed to handle faults for %s: %s", self.serial_number, handle_err)
+            _LOGGER.debug("Retrieved cached device state for %s with keys: %s", self.serial_number, list(device_state.keys()) if device_state else "None")
 
             return device_state
 
@@ -682,7 +673,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Re-raise UpdateFailed exceptions
             raise
         except Exception as err:
-            _LOGGER.error("Error updating data for device %s: %s", self.serial_number, err)
+            _LOGGER.error("Error checking connectivity for device %s: %s", self.serial_number, err)
             raise UpdateFailed(f"Error communicating with device: {err}") from err
 
     async def _async_handle_faults(self) -> None:
@@ -756,10 +747,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Capabilities should come from the API response, not from static product type mapping
         # If the API doesn't provide capabilities, they should be configured by the user
 
-        _LOGGER.debug("Extracted capabilities from device_info: %s", capabilities)
+        _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
+        _LOGGER.debug("Capability types: %s", [type(cap).__name__ for cap in capabilities])
 
         # Remove duplicates and return
-        return list(set(capabilities))
+        final_capabilities = list(set(capabilities))
+        _LOGGER.debug("Final capabilities after deduplication: %s", final_capabilities)
+        return final_capabilities
 
     def _get_device_host(self, device_info: Any) -> str:
         """Get device host/IP address from device info."""

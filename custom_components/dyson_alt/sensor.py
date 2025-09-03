@@ -82,7 +82,7 @@ class DysonFilterLifeSensor(DysonEntity, SensorEntity):
 
         self.filter_type = filter_type
         self._attr_unique_id = f"{coordinator.serial_number}_{filter_type}_filter_life"
-        self._attr_name = f"{filter_type.upper()} Filter Life"
+        self._attr_name = f"{coordinator.device_name} {filter_type.upper()} Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -155,7 +155,7 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_temperature"
-        self._attr_name = "Temperature"
+        self._attr_name = f"{coordinator.device_name} Temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "°C"
@@ -225,7 +225,7 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_pm25"
-        self._attr_name = "PM2.5"
+        self._attr_name = f"{coordinator.device_name} PM2.5"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -285,7 +285,7 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_pm10"
-        self._attr_name = "PM10"
+        self._attr_name = f"{coordinator.device_name} PM10"
         self._attr_device_class = SensorDeviceClass.PM10
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -345,7 +345,7 @@ class DysonWiFiSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_wifi"
-        self._attr_name = "WiFi Signal"
+        self._attr_name = f"{coordinator.device_name} WiFi Signal"
         self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "dBm"
@@ -373,7 +373,7 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_life"
-        self._attr_name = "HEPA Filter Life"
+        self._attr_name = f"{coordinator.device_name} HEPA Filter Life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -453,7 +453,7 @@ class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_type"
-        self._attr_name = "HEPA Filter Type"
+        self._attr_name = f"{coordinator.device_name} HEPA Filter Type"
         self._attr_icon = "mdi:air-filter"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -524,7 +524,7 @@ class DysonConnectionStatusSensor(DysonEntity, SensorEntity):
         """Initialize the connection status sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_connection_status"
-        self._attr_name = "Connection Status"
+        self._attr_name = f"{coordinator.device_name} Connection Status"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_icon = "mdi:connection"
         self._attr_device_class = None

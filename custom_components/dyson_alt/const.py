@@ -8,7 +8,7 @@ DOMAIN: Final = "dyson_alt"
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds
 DEFAULT_DEVICE_POLLING_INTERVAL: Final = (
-    60  # 60 seconds for device state updates (reduced from 30 to reduce MQTT stress)
+    300  # 5 minutes for connectivity checks only (devices send natural STATE-CHANGE messages)
 )
 DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
 
@@ -74,11 +74,11 @@ CAPABILITY_HUMIDIFIER: Final = "Humidifier"
 AVAILABLE_CAPABILITIES: Final = {
     CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation (precise angle control)",
     CAPABILITY_SCHEDULING: "Scheduling (timer and schedule controls)",
-    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (temperature, humidity sensors)",
+    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (meta-capability, no specific sensors created)",
     CAPABILITY_EXTENDED_AQ: "Extended Air Quality (PM2.5, PM10 sensors with continuous monitoring)",
-    CAPABILITY_HEATING: "Heating (heat mode and temperature control)",
+    CAPABILITY_HEATING: "Heating (heat mode, temperature control, and temperature sensors)",
     CAPABILITY_FORMALDEHYDE: "Formaldehyde Detection (carbon filter, HCHO sensor, VOC/NO2 sensors, continuous monitoring)",
-    CAPABILITY_HUMIDIFIER: "Humidifier (humidification controls and sensors)",
+    CAPABILITY_HUMIDIFIER: "Humidifier (humidification controls and humidity sensors)",
 }
 
 # MQTT topics

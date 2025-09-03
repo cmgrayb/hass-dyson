@@ -29,10 +29,7 @@ async def async_setup_entry(
     # Basic switches for all devices
     entities.append(DysonNightModeSwitch(coordinator))
 
-    # Only add auto mode switch for cloud devices (not manual local-only devices)
-    connection_type = config_entry.data.get("connection_type", "unknown")
-    if connection_type != "local_only":
-        entities.append(DysonAutoModeSwitch(coordinator))
+    # Auto mode switch removed - now handled by fan platform preset modes
 
     # Add additional switches based on capabilities
     device_capabilities = coordinator.device_capabilities
@@ -59,7 +56,7 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         """Initialize the auto mode switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_auto_mode"
-        self._attr_name = "Auto Mode"
+        self._attr_name = f"{coordinator.device_name} Auto Mode"
         self._attr_icon = "mdi:auto-mode"
 
     def _handle_coordinator_update(self) -> None:
@@ -107,7 +104,7 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
         """Initialize the night mode switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_night_mode"
-        self._attr_name = "Night Mode"
+        self._attr_name = f"{coordinator.device_name} Night Mode"
         self._attr_icon = "mdi:weather-night"
 
     def _handle_coordinator_update(self) -> None:
@@ -155,7 +152,7 @@ class DysonOscillationSwitch(DysonEntity, SwitchEntity):
         """Initialize the oscillation switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation"
-        self._attr_name = "Oscillation"
+        self._attr_name = f"{coordinator.device_name} Oscillation"
         self._attr_icon = "mdi:rotate-3d-variant"
 
     def _handle_coordinator_update(self) -> None:
@@ -203,7 +200,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         """Initialize the heating switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_heating"
-        self._attr_name = "Heating"
+        self._attr_name = f"{coordinator.device_name} Heating"
         self._attr_icon = "mdi:radiator"
 
     def _handle_coordinator_update(self) -> None:
@@ -249,7 +246,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         """Initialize the continuous monitoring switch."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_continuous_monitoring"
-        self._attr_name = "Continuous Monitoring"
+        self._attr_name = f"{coordinator.device_name} Continuous Monitoring"
         self._attr_icon = "mdi:monitor-eye"
 
     def _handle_coordinator_update(self) -> None:

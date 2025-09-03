@@ -15,7 +15,6 @@ from homeassistant.helpers import config_validation as cv
 # Import config flow explicitly to ensure it's available for registration
 from .config_flow import DysonConfigFlow  # noqa: F401
 from .const import (
-    CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
     DISCOVERY_CLOUD,
     DISCOVERY_STICKER,
@@ -180,17 +179,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                 if not existing_entries:
                     # Create individual config entry for this device
-                    device_data = {
-                        CONF_SERIAL_NUMBER: device_serial,
-                        CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
-                        CONF_USERNAME: entry.data.get("email", ""),
-                        "auth_token": entry.data.get("auth_token"),
-                        # Do not set connection_type - let device use account default
-                        "device_name": device_info.get("name"),
-                        "product_type": device_info.get("product_type"),
-                        "category": device_info.get("category"),
-                        "parent_entry_id": entry.entry_id,  # Link back to account entry
-                    }
+                    from .device_utils import create_cloud_device_config
+
+                    device_data = create_cloud_device_config(
+                        serial_number=device_serial,
+                        username=entry.data.get("email", ""),
+                        device_info=device_info,
+                        auth_token=entry.data.get("auth_token"),
+                        parent_entry_id=entry.entry_id,
+                    )
 
                     _LOGGER.info("Creating individual config entry for device: %s", device_serial)
                     # Schedule device entry creation as a background task

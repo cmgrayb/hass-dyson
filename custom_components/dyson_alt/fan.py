@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Optional
+import time
+from typing import Any, Optional, Mapping
 
 import voluptuous as vol
 from homeassistant.components.fan import FanEntity, FanEntityFeature
@@ -68,9 +70,25 @@ class DysonFan(DysonEntity, FanEntity):
 
         self._attr_unique_id = f"{coordinator.serial_number}_fan"
         self._attr_name = f"{coordinator.device_name}"
-        self._attr_supported_features = FanEntityFeature.SET_SPEED | FanEntityFeature.DIRECTION
+        self._attr_supported_features = (
+            FanEntityFeature.SET_SPEED
+            | FanEntityFeature.DIRECTION
+            | FanEntityFeature.PRESET_MODE
+            | FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+        )
         self._attr_speed_count = 10  # Dyson supports 10 speed levels
         self._attr_percentage_step = 10  # Step size of 10%
+
+        # Set up preset modes - Auto and Manual for all device types
+        self._attr_preset_modes = ["Auto", "Manual"]
+
+        # Initialize state attributes to ensure clean state
+        self._attr_is_on = None  # Will be set properly in first coordinator update
+        self._attr_percentage = 0
+        self._attr_current_direction = "forward"
+        self._attr_preset_mode = None
+        self._attr_oscillating = False
 
         # Note: Oscillation control removed - will be handled by custom advanced oscillation entities
         # Standard Home Assistant oscillation (on/off) doesn't support Dyson's advanced oscillation features
@@ -113,6 +131,14 @@ class DysonFan(DysonEntity, FanEntity):
         # For now, we'll use forward direction (can be enhanced later)
         self._attr_current_direction = "forward"
 
+        # Update preset mode based on auto mode state
+        if self.coordinator.device and self.coordinator.data:
+            product_state = self.coordinator.data.get("product-state", {})
+            auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
+            self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
+        else:
+            self._attr_preset_mode = None
+
         # Oscillation not available in our current data, set to False
         self._attr_oscillating = False
 
@@ -123,7 +149,43 @@ class DysonFan(DysonEntity, FanEntity):
             self._attr_percentage,
         )
 
+        # Force Home Assistant to update with the new state
+        _LOGGER.debug(
+            "Fan %s writing state to Home Assistant - is_on: %s",
+            self.coordinator.serial_number,
+            self._attr_is_on
+        )
+        self.async_write_ha_state()
+
+        # Additional debugging - check what HA thinks our state is after writing
+        _LOGGER.debug(
+            "Fan %s after state write - entity_id: %s, state: %s, is_on property: %s",
+            self.coordinator.serial_number,
+            self.entity_id,
+            self.state,
+            self.is_on
+        )
+
         super()._handle_coordinator_update()
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the fan is on."""
+        return self._attr_is_on if self._attr_is_on is not None else False
+
+    def _start_command_pending(self, duration_seconds: float = 7.0) -> None:
+        """Start ignoring coordinator updates for a specified duration."""
+        self._command_pending = True
+        self._command_end_time = time.time() + duration_seconds
+        _LOGGER.debug(
+            "Fan %s started command pending period for %.1f seconds", self.coordinator.serial_number, duration_seconds
+        )
+
+    def _stop_command_pending(self) -> None:
+        """Stop ignoring coordinator updates immediately."""
+        self._command_pending = False
+        self._command_end_time = None
+        _LOGGER.debug("Fan %s stopped command pending period", self.coordinator.serial_number)
 
     async def async_turn_on(
         self,
@@ -138,6 +200,10 @@ class DysonFan(DysonEntity, FanEntity):
         # Turn on fan power
         await self.coordinator.device.set_fan_power(True)
 
+        # Update state immediately for responsive UI
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
         # Set fan speed if specified
         if percentage is not None:
             # Convert percentage to Dyson speed (1-10) with proper rounding
@@ -146,7 +212,12 @@ class DysonFan(DysonEntity, FanEntity):
                 speed = 1
             await self.coordinator.device.set_fan_speed(speed)
 
-        # No need to refresh - MQTT provides real-time updates
+        # Set preset mode if specified
+        if preset_mode is not None:
+            await self.async_set_preset_mode(preset_mode)
+
+        # Let the coordinator update naturally from MQTT messages
+        # No forced refresh or immediate state writing to prevent race conditions
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
@@ -156,7 +227,11 @@ class DysonFan(DysonEntity, FanEntity):
         # Turn off fan power
         await self.coordinator.device.set_fan_power(False)
 
-        # No need to refresh - MQTT provides real-time updates
+        # Update state immediately for responsive UI
+        self._attr_is_on = False
+        self.async_write_ha_state()
+
+        # Let the coordinator update naturally from MQTT messages for final state
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the fan speed percentage."""
@@ -171,7 +246,7 @@ class DysonFan(DysonEntity, FanEntity):
             speed = max(1, min(10, round(percentage / 10)))
             await self.coordinator.device.set_fan_speed(speed)
 
-            # No need to refresh - MQTT provides real-time updates
+            # Let the coordinator update naturally from MQTT messages for final state
 
     async def async_set_direction(self, direction: str) -> None:
         """Set the fan direction."""
@@ -186,12 +261,46 @@ class DysonFan(DysonEntity, FanEntity):
             await self.coordinator.device.send_command("STATE-SET", {"fdir": direction_value})
             _LOGGER.debug("Set fan direction to %s for %s", direction, self.coordinator.serial_number)
 
-            # No need to refresh - MQTT provides real-time updates
+            # Force coordinator refresh to update state immediately
+            await asyncio.sleep(0.5)  # Give device time to process
+            await self.coordinator.async_request_refresh()
+
+            # Force Home Assistant to update with confirmed device state
+            self.async_write_ha_state()
         except Exception as err:
             _LOGGER.error("Failed to set fan direction for %s: %s", self.coordinator.serial_number, err)
 
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set the fan preset mode."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            if preset_mode == "Auto":
+                await self.coordinator.device.set_auto_mode(True)
+            elif preset_mode == "Manual":
+                await self.coordinator.device.set_auto_mode(False)
+            else:
+                _LOGGER.warning("Unknown preset mode: %s", preset_mode)
+                return
+
+            _LOGGER.debug("Set fan preset mode to %s for %s", preset_mode, self.coordinator.serial_number)
+
+            # Update state immediately to provide responsive UI
+            self._attr_preset_mode = preset_mode
+            self.async_write_ha_state()
+
+            # Force coordinator refresh to update state immediately
+            await asyncio.sleep(0.5)  # Give device time to process
+            await self.coordinator.async_request_refresh()
+
+            # Force Home Assistant to update with confirmed device state
+            self.async_write_ha_state()
+        except Exception as err:
+            _LOGGER.error("Failed to set fan preset mode for %s: %s", self.coordinator.serial_number, err)
+
     @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return fan-specific state attributes including oscillation angles."""
         attributes = {}
 
