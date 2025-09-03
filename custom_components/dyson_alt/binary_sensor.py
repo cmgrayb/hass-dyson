@@ -21,13 +21,22 @@ from .entity import DysonEntity
 _LOGGER = logging.getLogger(__name__)
 
 
-def _is_fault_code_relevant(fault_code: str, device_category_str: Any, device_capabilities: List[Any]) -> bool:
+def _is_fault_code_relevant(fault_code: str, device_categories: Any, device_capabilities: List[Any]) -> bool:
     """Check if a fault code is relevant for a device based on category and capabilities."""
-    # Convert device category to string if it's an enum object
-    if hasattr(device_category_str, "value"):
-        category_str = device_category_str.value
+    # Handle device category list properly
+    if isinstance(device_categories, list):
+        category_strings = []
+        for cat in device_categories:
+            if hasattr(cat, "value"):
+                category_strings.append(cat.value)
+            else:
+                category_strings.append(str(cat))
     else:
-        category_str = str(device_category_str)
+        # Single category - convert to list for consistency
+        if hasattr(device_categories, "value"):
+            category_strings = [device_categories.value]
+        else:
+            category_strings = [str(device_categories)]
 
     # Convert capabilities to string values if they are enum objects
     capability_strings = []
@@ -38,25 +47,29 @@ def _is_fault_code_relevant(fault_code: str, device_category_str: Any, device_ca
             capability_strings.append(str(cap))
 
     _LOGGER.debug(
-        "Checking fault code '%s' relevance - category: %s (%s), capabilities: %s",
+        "Checking fault code '%s' relevance - categories: %s, capabilities: %s",
         fault_code,
-        device_category_str,
-        category_str,
+        category_strings,
         capability_strings,
     )
 
-    # Check if fault code is relevant for device category
-    category_fault_codes = DEVICE_CATEGORY_FAULT_CODES.get(category_str, [])
-    if fault_code in category_fault_codes:
-        _LOGGER.debug("Fault code '%s' matches device category '%s'", fault_code, category_str)
-        return True
+    # Check if fault code is relevant for any device category
+    for category_str in category_strings:
+        category_fault_codes = DEVICE_CATEGORY_FAULT_CODES.get(category_str, [])
+        if fault_code in category_fault_codes:
+            _LOGGER.debug("Fault code '%s' matches device category '%s'", fault_code, category_str)
+            return True
 
     # Check if fault code requires specific capabilities
     for capability, fault_codes in CAPABILITY_FAULT_CODES.items():
         if fault_code in fault_codes:
             is_relevant = capability in capability_strings
             _LOGGER.debug(
-                "Fault code '%s' requires capability '%s' - device has it: %s", fault_code, capability, is_relevant
+                "Fault code '%s' requires capability '%s' - device has it: %s (available capabilities: %s)",
+                fault_code,
+                capability,
+                is_relevant,
+                capability_strings,
             )
             return is_relevant
 
@@ -82,18 +95,18 @@ async def async_setup_entry(
     )
 
     # Individual fault binary sensors - filter by device category and capabilities
-    device_category_str = coordinator.device_category
+    device_categories = coordinator.device_category
     device_capabilities = coordinator.device_capabilities
 
     _LOGGER.debug(
-        "Device category: %s, capabilities: %s",
-        device_category_str,
+        "Device categories: %s, capabilities: %s",
+        device_categories,
         device_capabilities,
     )
 
     # Create fault sensors for all fault types that are relevant to this device
     for fault_code, fault_info in FAULT_TRANSLATIONS.items():
-        if _is_fault_code_relevant(fault_code, device_category_str, device_capabilities):
+        if _is_fault_code_relevant(fault_code, device_categories, device_capabilities):
             entities.append(DysonFaultSensor(coordinator, fault_code, fault_info))
             _LOGGER.debug("Adding fault sensor for code: %s", fault_code)
         else:
@@ -111,7 +124,7 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         """Initialize the filter replacement sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_filter_replacement"
-        self._attr_name = "Filter Replacement"
+        self._attr_name = f"{coordinator.device_name} Filter Replacement"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
 
@@ -157,7 +170,7 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
         self._fault_code = fault_code
         self._fault_info = fault_info
         self._attr_unique_id = f"{coordinator.serial_number}_fault_{fault_code}"
-        self._attr_name = f"Fault {self._get_fault_friendly_name()}"
+        self._attr_name = f"{coordinator.device_name} Fault {self._get_fault_friendly_name()}"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 

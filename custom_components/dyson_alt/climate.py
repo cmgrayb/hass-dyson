@@ -49,7 +49,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         """Initialize the climate entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_climate"
-        self._attr_name = "Climate"
+        self._attr_name = f"{coordinator.device_name} Climate"
         self._attr_icon = "mdi:thermostat"
 
         # Climate features

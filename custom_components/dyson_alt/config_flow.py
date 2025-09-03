@@ -19,11 +19,7 @@ from .const import (
     CONF_SERIAL_NUMBER,
     CONF_CREDENTIAL,
     CONF_HOSTNAME,
-    CONF_DISCOVERY_METHOD,
-    CONF_CONNECTION_TYPE,
     CONF_MQTT_PREFIX,
-    CONNECTION_TYPE_LOCAL_ONLY,
-    DISCOVERY_MANUAL,
     DOMAIN,
     MDNS_SERVICE_DYSON,
 )
@@ -255,17 +251,17 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 hostname = f"{serial_number}.local"
 
                         # Create the device entry with manual discovery method
-                        config_data = {
-                            CONF_SERIAL_NUMBER: serial_number,
-                            CONF_CREDENTIAL: credential,
-                            CONF_MQTT_PREFIX: mqtt_prefix,
-                            CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL,
-                            CONF_CONNECTION_TYPE: CONNECTION_TYPE_LOCAL_ONLY,  # Default for manual setup
-                            "device_name": device_name,
-                            CONF_HOSTNAME: hostname,
-                            "device_category": device_category,
-                            "capabilities": capabilities,
-                        }
+                        from .device_utils import create_manual_device_config
+
+                        config_data = create_manual_device_config(
+                            serial_number=serial_number,
+                            credential=credential,
+                            mqtt_prefix=mqtt_prefix,
+                            device_name=device_name,
+                            hostname=hostname,
+                            device_category=device_category,
+                            capabilities=capabilities,
+                        )
 
                         _LOGGER.info("Creating manual device config entry for: %s", device_name)
                         return self.async_create_entry(
