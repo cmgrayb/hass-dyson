@@ -15,6 +15,7 @@ DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
 # Configuration keys
 CONF_DEVICE_TYPE: Final = "device_type"
 CONF_SERIAL_NUMBER: Final = "serial_number"
+CONF_DEVICE_NAME: Final = "device_name"
 CONF_CREDENTIAL: Final = "credential"
 CONF_HOSTNAME: Final = "hostname"
 CONF_CAPABILITIES: Final = "capabilities"

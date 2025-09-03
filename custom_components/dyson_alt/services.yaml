@@ -135,3 +135,28 @@ reset_filter:
             - "hepa"
             - "carbon"
             - "both"
+
+set_angle:
+  name: Set Oscillation Angle
+  description: Set the oscillation angle range for the Dyson fan
+  fields:
+    angle_low:
+      name: Lower Angle
+      description: Lower oscillation angle in degrees (0-350)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 350
+          step: 5
+          unit_of_measurement: "°"
+    angle_high:
+      name: Upper Angle
+      description: Upper oscillation angle in degrees (0-350)
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 350
+          step: 5
+          unit_of_measurement: "°"

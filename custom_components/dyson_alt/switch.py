@@ -27,18 +27,19 @@ async def async_setup_entry(
     entities = []
 
     # Basic switches for all devices
-    entities.extend(
-        [
-            DysonAutoModeSwitch(coordinator),
-            DysonNightModeSwitch(coordinator),
-        ]
-    )
+    entities.append(DysonNightModeSwitch(coordinator))
+
+    # Only add auto mode switch for cloud devices (not manual local-only devices)
+    connection_type = config_entry.data.get("connection_type", "unknown")
+    if connection_type != "local_only":
+        entities.append(DysonAutoModeSwitch(coordinator))
 
     # Add additional switches based on capabilities
     device_capabilities = coordinator.device_capabilities
 
-    if "AdvanceOscillationDay1" in device_capabilities:
-        entities.append(DysonOscillationSwitch(coordinator))
+    # Oscillation switch disabled - use "Oscillation Mode" select entity instead
+    # if "AdvanceOscillationDay1" in device_capabilities:
+    #     entities.append(DysonOscillationSwitch(coordinator))
 
     if "Heating" in device_capabilities:
         entities.append(DysonHeatingSwitch(coordinator))
@@ -65,7 +66,8 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
             # Get auto mode from device state (auto)
-            auto_mode = self.coordinator.data.get("product-state", {}).get("auto", "OFF")
+            product_state = self.coordinator.data.get("product-state", {})
+            auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
             self._attr_is_on = auto_mode == "ON"
         else:
             self._attr_is_on = None
@@ -77,7 +79,8 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_auto_mode", {"auto": "ON"})
+            await self.coordinator.device.set_auto_mode(True)
+            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on auto mode for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn on auto mode for %s: %s", self.coordinator.serial_number, err)
@@ -88,7 +91,8 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_auto_mode", {"auto": "OFF"})
+            await self.coordinator.device.set_auto_mode(False)
+            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned off auto mode for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn off auto mode for %s: %s", self.coordinator.serial_number, err)
@@ -110,7 +114,8 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
             # Get night mode from device state (nmod)
-            night_mode = self.coordinator.data.get("product-state", {}).get("nmod", "OFF")
+            product_state = self.coordinator.data.get("product-state", {})
+            night_mode = self.coordinator.device._get_current_value(product_state, "nmod", "OFF")
             self._attr_is_on = night_mode == "ON"
         else:
             self._attr_is_on = None
@@ -122,7 +127,8 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_night_mode", {"nmod": "ON"})
+            await self.coordinator.device.set_night_mode(True)
+            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on night mode for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn on night mode for %s: %s", self.coordinator.serial_number, err)
@@ -133,7 +139,8 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_night_mode", {"nmod": "OFF"})
+            await self.coordinator.device.set_night_mode(False)
+            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned off night mode for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn off night mode for %s: %s", self.coordinator.serial_number, err)
@@ -155,7 +162,8 @@ class DysonOscillationSwitch(DysonEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
             # Get oscillation from device state (oson)
-            oson = self.coordinator.data.get("product-state", {}).get("oson", "OFF")
+            product_state = self.coordinator.data.get("product-state", {})
+            oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
             self._attr_is_on = oson == "ON"
         else:
             self._attr_is_on = None
@@ -167,7 +175,8 @@ class DysonOscillationSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_oscillation", {"oson": "ON"})
+            await self.coordinator.device.set_oscillation(True)
+            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on oscillation for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn on oscillation for %s: %s", self.coordinator.serial_number, err)
@@ -178,7 +187,8 @@ class DysonOscillationSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_oscillation", {"oson": "OFF"})
+            await self.coordinator.device.set_oscillation(False)
+            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned off oscillation for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn off oscillation for %s: %s", self.coordinator.serial_number, err)
@@ -200,7 +210,8 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
             # Get heating from device state (hmod)
-            hmod = self.coordinator.data.get("product-state", {}).get("hmod", "OFF")
+            product_state = self.coordinator.data.get("product-state", {})
+            hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
             self._attr_is_on = hmod != "OFF"
         else:
             self._attr_is_on = None
@@ -245,7 +256,8 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
             # Get monitoring from device state (rhtm)
-            rhtm = self.coordinator.data.get("product-state", {}).get("rhtm", "OFF")
+            product_state = self.coordinator.data.get("product-state", {})
+            rhtm = self.coordinator.device._get_current_value(product_state, "rhtm", "OFF")
             self._attr_is_on = rhtm == "ON"
         else:
             self._attr_is_on = None

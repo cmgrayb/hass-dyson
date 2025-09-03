@@ -87,8 +87,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
     def _update_temperatures(self, device_data: dict[str, Any]) -> None:
         """Update current and target temperatures from device data."""
+        if not self.coordinator.device:
+            return
+
         # Current temperature
-        current_temp = device_data.get("tmp", "0000")
+        current_temp = self.coordinator.device._get_current_value(device_data, "tmp", "0000")
         try:
             temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
             self._attr_current_temperature = temp_kelvin - 273.15  # Convert to Celsius
@@ -96,7 +99,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             self._attr_current_temperature = None
 
         # Target temperature
-        target_temp = device_data.get("hmax", "0000")
+        target_temp = self.coordinator.device._get_current_value(device_data, "hmax", "0000")
         try:
             temp_kelvin = int(target_temp) / 10
             self._attr_target_temperature = temp_kelvin - 273.15
@@ -105,9 +108,12 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
     def _update_hvac_mode(self, device_data: dict[str, Any]) -> None:
         """Update HVAC mode from device data."""
-        fan_power = device_data.get("fnst", "OFF")
-        heating_mode = device_data.get("hmod", "OFF")
-        auto_mode = device_data.get("auto", "OFF")
+        if not self.coordinator.device:
+            return
+
+        fan_power = self.coordinator.device._get_current_value(device_data, "fnst", "OFF")
+        heating_mode = self.coordinator.device._get_current_value(device_data, "hmod", "OFF")
+        auto_mode = self.coordinator.device._get_current_value(device_data, "auto", "OFF")
 
         if fan_power == "OFF":
             self._attr_hvac_mode = HVACMode.OFF
@@ -120,8 +126,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
     def _update_fan_mode(self, device_data: dict[str, Any]) -> None:
         """Update fan mode from device data."""
-        fan_speed = device_data.get("fnsp", "0001")
-        auto_mode = device_data.get("auto", "OFF")
+        if not self.coordinator.device:
+            return
+
+        fan_speed = self.coordinator.device._get_current_value(device_data, "fnsp", "0001")
+        auto_mode = self.coordinator.device._get_current_value(device_data, "auto", "OFF")
 
         try:
             speed_num = int(fan_speed.lstrip("0") or "1")

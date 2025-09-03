@@ -29,3 +29,20 @@ class DysonEntity(CoordinatorEntity):
         return self.coordinator.last_update_success and (
             self.coordinator.device is not None and self.coordinator.device.is_connected
         )
+
+    def _handle_coordinator_update_safe(self) -> None:
+        """Handle coordinator update in a thread-safe manner."""
+        if self.hass and hasattr(self.hass, "loop"):
+            # Use call_soon_threadsafe to schedule the update in the main thread
+            def schedule_update():
+                """Schedule the async update task."""
+                self.hass.async_create_task(self._async_handle_coordinator_update())
+
+            self.hass.loop.call_soon_threadsafe(schedule_update)
+        else:
+            # Fallback to direct call if hass is not available
+            super()._handle_coordinator_update()
+
+    async def _async_handle_coordinator_update(self) -> None:
+        """Handle coordinator update in the main event loop."""
+        super()._handle_coordinator_update()
