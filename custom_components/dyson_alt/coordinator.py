@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
+    CONF_DEVICE_NAME,
     CONF_CREDENTIAL,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
@@ -81,6 +82,55 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Use the most direct method to trigger sensor updates
         self.async_update_listeners()
 
+    def _on_message_update(self, topic: str, data: Dict[str, Any]) -> None:
+        """Handle message updates from device for real-time state changes."""
+        _LOGGER.debug("Received message update for %s on topic %s", self.serial_number, topic)
+
+        # Update entity states for STATE-CHANGE messages
+        if data.get("msg") == "STATE-CHANGE":
+            _LOGGER.debug("Processing STATE-CHANGE message for real-time entity updates")
+            # Update coordinator data with fresh device state
+            try:
+                if self.device:
+                    # Get fresh state from device to update self.data
+                    async def update_coordinator_data():
+                        """Update coordinator data in the event loop."""
+                        try:
+                            fresh_state = await self.device.get_state()
+                            self.data = fresh_state
+                            _LOGGER.debug("Updated coordinator data for STATE-CHANGE, triggering listeners")
+                        except Exception as e:
+                            _LOGGER.warning("Error getting fresh state for STATE-CHANGE: %s", e)
+                        finally:
+                            # Always trigger listeners, even if data update failed
+                            self.async_update_listeners()
+
+                    # Schedule the update to run in the event loop using call_soon_threadsafe
+                    def schedule_update():
+                        """Schedule the async update task."""
+                        self.hass.async_create_task(update_coordinator_data())
+
+                    self.hass.loop.call_soon_threadsafe(schedule_update)
+                else:
+                    # No device available, schedule listener update
+                    def schedule_listeners():
+                        """Schedule async listener update."""
+                        self.async_update_listeners()
+
+                    self.hass.loop.call_soon_threadsafe(schedule_listeners)
+            except Exception as e:
+                _LOGGER.warning("Error setting up STATE-CHANGE data update: %s", e)
+                # Fallback to scheduling listener update
+                try:
+
+                    def schedule_fallback():
+                        """Schedule fallback listener update."""
+                        self.async_update_listeners()
+
+                    self.hass.loop.call_soon_threadsafe(schedule_fallback)
+                except Exception as fallback_e:
+                    _LOGGER.warning("Failed to schedule fallback update: %s", fallback_e)
+
     @property
     def serial_number(self) -> str:
         """Return device serial number."""
@@ -98,6 +148,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             serial = self.config_entry.data.get("device_serial_number", "unknown")
             _LOGGER.debug("Using device_serial_number fallback: %s", serial)
             return serial
+
+    @property
+    def device_name(self) -> str:
+        """Return device friendly name."""
+        # Get device name from config entry data
+        device_name = self.config_entry.data.get(CONF_DEVICE_NAME)
+        if device_name:
+            return device_name
+
+        # Fallback to "Dyson [serial]" if no device name provided
+        return f"Dyson {self.serial_number}"
 
     def _get_effective_connection_type(self) -> str:
         """Get the effective connection type for this device."""
@@ -505,6 +566,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Register for environmental update notifications
             self.device.add_environmental_callback(self._on_environmental_update)
 
+            # Register for message updates to get real-time state changes
+            self.device.add_message_callback(self._on_message_update)
+
             _LOGGER.info("Successfully set up cloud device %s (%s)", self.serial_number, self._device_category)
 
         except Exception as err:
@@ -559,6 +623,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             # Register for environmental update notifications
             self.device.add_environmental_callback(self._on_environmental_update)
+
+            # Register for message updates to get real-time state changes
+            self.device.add_message_callback(self._on_message_update)
 
             _LOGGER.info("Successfully set up manual device %s", self.serial_number)
 
@@ -666,6 +733,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if self.device:
             # Remove environmental callback before disconnecting
             self.device.remove_environmental_callback(self._on_environmental_update)
+            # Remove message callback before disconnecting
+            self.device.remove_message_callback(self._on_message_update)
             await self.device.disconnect()
             self.device = None
 

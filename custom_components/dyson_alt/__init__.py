@@ -291,6 +291,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[str]:
     """Determine which platforms should be set up for this device."""
     device_category = coordinator.device_category  # This is now a list
+    device_capabilities = coordinator.device_capabilities
     platforms = []
 
     # Base platforms for all devices
@@ -298,17 +299,26 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
 
     # Device category specific platforms - check if any category matches
     if any(cat in ["ec"] for cat in device_category):  # Environment Cleaner (fans with filters)
-        # For fans, only add fan platform - fan entity handles speed, oscillation, etc.
+        # For fans, add fan platform and supporting control platforms
         platforms.append("fan")
+        # Add number and select platforms for advanced controls
+        platforms.extend(["number", "select"])
         # Climate platform for heating/cooling modes if device supports it
         platforms.append("climate")
 
     elif any(cat in ["robot", "vacuum", "flrc"] for cat in device_category):  # Cleaning devices
         platforms.append("vacuum")
 
-    # Note: Removed capability-based platform additions as they were causing inconsistency
-    # Fan controls (speed, oscillation) should be handled by the fan entity itself
-    # Additional platforms should only be added based on device category, not user-selected capabilities
+    # Add capability-based platforms for enhanced functionality
+    if "Scheduling" in device_capabilities or "AdvanceOscillationDay1" in device_capabilities:
+        if "number" not in platforms:
+            platforms.append("number")
+        if "select" not in platforms:
+            platforms.append("select")
+
+    # Add switch platform for devices with switching capabilities
+    if "Switch" in device_capabilities or any(cat in ["ec"] for cat in device_category):
+        platforms.append("switch")
 
     # Remove duplicates and return
     return list(set(platforms))
