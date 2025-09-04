@@ -16,10 +16,14 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
-    CONF_SERIAL_NUMBER,
+    CONF_AUTO_ADD_DEVICES,
     CONF_CREDENTIAL,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
+    CONF_POLL_FOR_DEVICES,
+    CONF_SERIAL_NUMBER,
+    DEFAULT_AUTO_ADD_DEVICES,
+    DEFAULT_POLL_FOR_DEVICES,
     DOMAIN,
     MDNS_SERVICE_DYSON,
 )
@@ -98,6 +102,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._password: str | None = None
         self._cloud_client = None  # type: ignore
         self._challenge_id: str | None = None
+        self._discovered_devices = None  # type: ignore
+        self._connection_type: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step - setup method selection."""
@@ -379,31 +385,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         else:
                             _LOGGER.info("Found %d devices in Dyson account", len(devices))
 
-                            # Set unique ID based on email to prevent duplicate accounts
-                            if self._email:
-                                await self.async_set_unique_id(self._email.lower())
-                                self._abort_if_unique_id_configured()
+                            # Store devices and connection type for next step
+                            self._discovered_devices = devices
+                            self._connection_type = connection_type
 
-                            # Create config entry with all discovered devices
-                            device_list = []
-                            for device in devices:
-                                device_info = {
-                                    "serial_number": device.serial_number,
-                                    "name": getattr(device, "name", f"Dyson {device.serial_number}"),
-                                    "product_type": getattr(device, "product_type", "unknown"),
-                                    "category": getattr(device, "category", "unknown"),
-                                }
-                                device_list.append(device_info)
-
-                            return self.async_create_entry(
-                                title=f"Dyson Account ({self._email})",
-                                data={
-                                    "email": self._email,
-                                    "connection_type": connection_type,
-                                    "devices": device_list,
-                                    "auth_token": getattr(self._cloud_client, "auth_token", None),
-                                },
-                            )
+                            return await self.async_step_cloud_preferences()
 
                 except Exception as e:
                     _LOGGER.exception("Error processing connection preferences: %s", e)
@@ -437,6 +423,216 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as e:
             _LOGGER.exception("Top-level exception in async_step_connection: %s", e)
             raise
+
+    async def async_step_cloud_preferences(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle cloud account preferences configuration."""
+        try:
+            _LOGGER.info("Starting async_step_cloud_preferences with user_input: %s", user_input)
+            errors = {}
+
+            if user_input is not None:
+                try:
+                    poll_for_devices = user_input.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+                    auto_add_devices = user_input.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+                    _LOGGER.info(
+                        "Cloud preferences: poll_for_devices=%s, auto_add_devices=%s",
+                        poll_for_devices,
+                        auto_add_devices,
+                    )
+
+                    if not self._cloud_client or not self._discovered_devices:
+                        _LOGGER.error("Missing cloud client or discovered devices")
+                        errors["base"] = "preferences_failed"
+                    else:
+                        # Set unique ID based on email to prevent duplicate accounts
+                        if self._email:
+                            await self.async_set_unique_id(self._email.lower())
+                            self._abort_if_unique_id_configured()
+
+                        # Create config entry with all discovered devices and preferences
+                        device_list = []
+                        for device in self._discovered_devices:
+                            device_info = {
+                                "serial_number": device.serial_number,
+                                "name": getattr(device, "name", f"Dyson {device.serial_number}"),
+                                "product_type": getattr(device, "product_type", "unknown"),
+                                "category": getattr(device, "category", "unknown"),
+                            }
+                            device_list.append(device_info)
+
+                        return self.async_create_entry(
+                            title=f"Dyson Account ({self._email})",
+                            data={
+                                "email": self._email,
+                                "connection_type": self._connection_type,
+                                "devices": device_list,
+                                "auth_token": getattr(self._cloud_client, "auth_token", None),
+                                CONF_POLL_FOR_DEVICES: poll_for_devices,
+                                CONF_AUTO_ADD_DEVICES: auto_add_devices,
+                            },
+                        )
+
+                except Exception as e:
+                    _LOGGER.exception("Error processing cloud preferences: %s", e)
+                    errors["base"] = "preferences_failed"
+
+            # Show the cloud preferences form
+            _LOGGER.info("Showing cloud preferences form")
+            try:
+                data_schema = vol.Schema(
+                    {
+                        vol.Required(CONF_POLL_FOR_DEVICES, default=DEFAULT_POLL_FOR_DEVICES): bool,
+                        vol.Required(CONF_AUTO_ADD_DEVICES, default=DEFAULT_AUTO_ADD_DEVICES): bool,
+                    }
+                )
+                _LOGGER.info("Cloud preferences form schema created successfully")
+
+                device_count = len(self._discovered_devices) if self._discovered_devices else 0
+
+                return self.async_show_form(
+                    step_id="cloud_preferences",
+                    data_schema=data_schema,
+                    errors=errors,
+                    description_placeholders={
+                        "device_count": str(device_count),
+                        "email": self._email or "your account",
+                    },
+                )
+            except Exception as e:
+                _LOGGER.exception("Error creating cloud preferences form: %s", e)
+                raise
+        except Exception as e:
+            _LOGGER.exception("Top-level exception in async_step_cloud_preferences: %s", e)
+            raise
+
+    async def async_step_discovery(self, discovery_info: dict[str, Any]) -> ConfigFlowResult:
+        """Handle discovery of a Dyson device from cloud account."""
+        _LOGGER.info("Discovery step triggered for device: %s", discovery_info)
+
+        # Extract device information
+        device_serial = discovery_info.get("serial_number")
+        device_name = discovery_info.get("name", f"Dyson {device_serial}")
+
+        if not device_serial:
+            _LOGGER.error("No serial number in discovery info: %s", discovery_info)
+            return self.async_abort(reason="invalid_discovery_info")
+
+        _LOGGER.info("Processing discovery for device %s (%s)", device_name, device_serial)
+
+        # Set unique_id to prevent duplicate discoveries
+        await self.async_set_unique_id(device_serial)
+        self._abort_if_unique_id_configured()
+
+        # Store discovery info for later use
+        self.init_data = discovery_info
+        _LOGGER.debug("Stored discovery info: %s", discovery_info)
+
+        # Update context with device name for discovery card subtitle
+        self.context["title_placeholders"] = {"name": device_name}
+
+        # Get better display name for device type
+        from .const import AVAILABLE_DEVICE_CATEGORIES
+
+        category = discovery_info.get("category", "unknown")
+        product_type = discovery_info.get("product_type", "unknown")
+
+        # Use category display name if available, otherwise use product_type
+        if category in AVAILABLE_DEVICE_CATEGORIES:
+            device_type_display = AVAILABLE_DEVICE_CATEGORIES[category]
+        elif product_type != "unknown":
+            device_type_display = product_type
+        else:
+            device_type_display = "Dyson Device"
+
+        # Show confirmation dialog to user with device name in title
+        return self.async_show_form(
+            step_id="discovery_confirm",
+            description_placeholders={
+                "device_name": device_name,
+                "device_serial": device_serial,
+                "product_type": device_type_display,
+            },
+        )
+
+    async def async_step_discovery_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle user confirmation of discovered device."""
+        if user_input is None:
+            # Get device info for placeholders
+            discovery_info = self.init_data
+            if not discovery_info:
+                _LOGGER.error("No discovery info available for form display")
+                return self.async_abort(reason="no_discovery_info")
+
+            device_serial = discovery_info["serial_number"]
+            device_name = discovery_info.get("name", f"Dyson {device_serial}")
+
+            # Get better display name for device type
+            from .const import AVAILABLE_DEVICE_CATEGORIES
+
+            category = discovery_info.get("category", "unknown")
+            product_type = discovery_info.get("product_type", "unknown")
+
+            # Use category display name if available, otherwise use product_type
+            if category in AVAILABLE_DEVICE_CATEGORIES:
+                device_type_display = AVAILABLE_DEVICE_CATEGORIES[category]
+            elif product_type != "unknown":
+                device_type_display = product_type
+            else:
+                device_type_display = "Dyson Device"
+
+            # Show confirmation form with device info placeholders
+            return self.async_show_form(
+                step_id="discovery_confirm",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required("confirm", default=True): bool,
+                    }
+                ),
+                description_placeholders={
+                    "device_name": device_name,
+                    "device_serial": device_serial,
+                    "product_type": device_type_display,
+                },
+            )
+
+        if not user_input.get("confirm", False):
+            _LOGGER.info("User declined to add discovered device")
+            return self.async_abort(reason="user_declined")
+
+        # User confirmed, create the device entry
+        discovery_info = self.init_data
+        if not discovery_info:
+            _LOGGER.error("No discovery info available for device creation")
+            return self.async_abort(reason="no_discovery_info")
+
+        device_serial = discovery_info["serial_number"]
+        device_name = discovery_info.get("name", f"Dyson {device_serial}")
+
+        _LOGGER.info("User confirmed device addition: %s (%s)", device_name, device_serial)
+
+        # Create proper device config using the same method as auto-add
+        from .device_utils import create_cloud_device_config
+
+        device_info = {
+            "serial_number": device_serial,
+            "name": device_name,
+            "product_type": discovery_info.get("product_type", "unknown"),
+        }
+
+        config_data = create_cloud_device_config(
+            serial_number=device_serial,
+            username=discovery_info["email"],
+            device_info=device_info,
+            auth_token=discovery_info["auth_token"],
+            parent_entry_id=discovery_info["parent_entry_id"],
+        )
+
+        _LOGGER.info("Creating config entry for discovered device: %s", device_name)
+        return self.async_create_entry(
+            title=device_name,
+            data=config_data,
+        )
 
     async def async_step_device_auto_create(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle automatic device entry creation from account setup."""
@@ -496,6 +692,8 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_reload_all()
             elif action == "reconfigure_connection":
                 return await self.async_step_reconfigure_connection()
+            elif action == "cloud_preferences":
+                return await self.async_step_manage_cloud_preferences()
 
         # Get current devices from config entry
         devices = self.config_entry.data.get("devices", [])
@@ -511,6 +709,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         action_options = {
             "reload_all": "🔄 Reload All Devices",
             "reconfigure_connection": "⚙️ Reconfigure Default Connection Settings",
+            "cloud_preferences": "☁️ Configure Cloud Account Settings",
         }
 
         # Show device status for reference (but no individual actions since devices have native controls)
@@ -756,5 +955,37 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 "device_name": device_name,
                 "account_connection_type": _get_connection_type_display_name(account_connection_type),
                 "current_setting": "Override" if device_connection_type else "Account Default",
+            },
+        )
+
+    async def async_step_manage_cloud_preferences(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle cloud account preferences management."""
+        if user_input is not None:
+            # Update cloud preferences
+            updated_data = dict(self.config_entry.data)
+            updated_data[CONF_POLL_FOR_DEVICES] = user_input.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+            updated_data[CONF_AUTO_ADD_DEVICES] = user_input.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+            self.hass.config_entries.async_update_entry(self.config_entry, data=updated_data)
+
+            # Reload to apply changes
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            return self.async_create_entry(title="", data={})
+
+        # Get current settings with backward-compatible defaults
+        current_poll_for_devices = self.config_entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+        current_auto_add_devices = self.config_entry.data.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+        return self.async_show_form(
+            step_id="manage_cloud_preferences",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_POLL_FOR_DEVICES, default=current_poll_for_devices): bool,
+                    vol.Required(CONF_AUTO_ADD_DEVICES, default=current_auto_add_devices): bool,
+                }
+            ),
+            description_placeholders={
+                "email": self.config_entry.data.get("email", "your account"),
+                "device_count": str(len(self.config_entry.data.get("devices", []))),
             },
         )
