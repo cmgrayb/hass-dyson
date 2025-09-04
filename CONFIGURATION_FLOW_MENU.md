@@ -2,7 +2,7 @@
 
 ## Overview
 
-This enhancement adds a menu to the beginning of the Dyson Alternative integration's configuration flow, allowing users to choose between two setup methods:
+This enhancement adds a menu to the beginning of the Dyson integration's configuration flow, allowing users to choose between two setup methods:
 
 1. **Dyson Cloud Account (Recommended)** - The existing cloud-based setup flow
 2. **Manual Device Setup** - A new manual setup option for direct device configuration
@@ -25,7 +25,7 @@ This enhancement adds a menu to the beginning of the Dyson Alternative integrati
 - **Purpose**: Manual device configuration
 - **Required Fields**:
   - Device Serial Number
-  - Device WiFi Password
+  - Device Password
 - **Optional Fields**:
   - Device IP Address (hostname)
   - Device Name
@@ -49,10 +49,10 @@ This enhancement adds a menu to the beginning of the Dyson Alternative integrati
       },
       "manual_device": {
         "title": "Manual Device Setup",
-        "description": "Enter your device information manually. You can find the serial number and WiFi password on a sticker on your device.",
+        "description": "Enter your device information manually. You can find the serial number and device password on a sticker on your device.",
         "data": {
           "serial_number": "Device Serial Number",
-          "credential": "Device WiFi Password",
+          "credential": "Device Password",
           "hostname": "Device IP Address (Optional)",
           "device_name": "Device Name (Optional)"
         }
@@ -113,7 +113,7 @@ Device Discovery
 ```python
 {
     "serial_number": "123-AB-CD456789",
-    "credential": "MyWiFiPassword123",
+    "credential": "MyDevicePassword123",
     "discovery_method": "manual",
     "connection_type": "local_only",
     "device_name": "Living Room Air Purifier",

@@ -42,7 +42,7 @@ echo 📋 Next Steps:
 echo 1. Open http://localhost:8123 in your browser
 echo 2. Complete the initial Home Assistant setup
 echo 3. Go to Configuration → Integrations → Add Integration
-echo 4. Search for 'Dyson Alternative' to test the integration
+echo 4. Search for 'Dyson' to test the integration
 echo.
 echo 🔧 Useful Commands:
 echo   View logs:           docker-compose logs homeassistant

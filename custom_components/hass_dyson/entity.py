@@ -1,4 +1,4 @@
-"""Base entity class for Dyson Alternative integration."""
+"""Base entity class for Dyson integration."""
 
 from __future__ import annotations
 

@@ -1,1 +1,1 @@
-"""Tests for Dyson Alternative integration."""
+"""Tests for Dyson integration."""

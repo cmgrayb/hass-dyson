@@ -40,7 +40,7 @@ The AWS IoT WebSocket implementation is ready for live testing with real Dyson d
 ### Phase 2: Cloud Discovery Testing
 1. **Add Integration via UI**
    - Go to Settings → Devices & Services → Add Integration
-   - Search for "Dyson Alternative"
+   - Search for "Dyson"
    - Choose "Cloud Discovery" method
 
 2. **Enter Dyson Account Credentials**

@@ -1,4 +1,4 @@
-"""Fan platform for Dyson Alternative integration."""
+"""Fan platform for Dyson integration."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# Setup Guide - Dyson Alternative Integration
+# Setup Guide - Dyson Integration
 
 Complete setup instructions for integrating your Dyson devices with Home Assistant.
 
@@ -22,7 +22,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 3. Click "Custom Repositories"
 4. Add URL: `https://github.com/cmgrayb/ha-dyson-alt`
 5. Category: "Integration"
-6. Install "Dyson Alternative"
+6. Install "Dyson"
 7. Restart Home Assistant
 
 ### **Method 2: Manual Installation**
@@ -54,7 +54,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 **Setup steps**:
 1. Go to **Settings** → **Devices & Services**
 2. Click **"Add Integration"**
-3. Search for **"Dyson Alternative"**
+3. Search for **"Dyson"**
 4. Select **"Cloud Discovery"**
 5. Enter your Dyson account email and password
 6. Devices will be discovered automatically
@@ -68,20 +68,20 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 
 **Required information** (from device sticker):
 - **Serial Number** (e.g., `MOCK-SERIAL-TEST123`)
-- **WiFi Password** (8-character string on sticker)
+- **Device Password** (8-character string on sticker)
 - **Product Type** (e.g., 438 for Pure Cool)
 
 **Setup steps**:
 1. Locate device sticker (usually on bottom or back)
 2. Go to **Settings** → **Devices & Services** → **"Add Integration"**
-3. Search for **"Dyson Alternative"**
+3. Search for **"Dyson"**
 4. Select **"Manual Setup"**
 5. Enter required information:
    ```
    Serial Number: MOCK-SERIAL-TEST123
-   WiFi Password: AAAABBBB
+   Device Password: AAAABBBB
    Product Type: 438
-   Device IP (optional): 192.168.1.161
+   Device IP (optional): 192.168.1.100
    ```
 6. Click **Submit**
 
@@ -96,15 +96,15 @@ hass-dyson:
   devices:
     - serial_number: "MOCK-SERIAL-TEST123"
       discovery_method: "sticker"
-      hostname: "192.168.1.161"  # Optional
-      credential: "AAAABBBB"     # WiFi password from sticker
+      hostname: "192.168.1.100"  # Optional
+      credential: "AAAABBBB"     # Device password from sticker
       device_type: "438"
       mqtt_prefix: "438M"
       capabilities: ["Auto", "Oscillation", "Heating"]
 
     - serial_number: "475-US-JEN0000B"
       discovery_method: "sticker"  
-      hostname: "192.168.1.162"
+      hostname: "192.168.1.101"
       credential: "CCCCDDDD"
       device_type: "475"
       mqtt_prefix: "475"
@@ -123,18 +123,9 @@ hass-dyson:
 **Sticker Information**:
 ```
 Serial Number: MOCK-SERIAL-TEST123  ← Use this
-WiFi Password: AAAABBBB         ← Use this
+Device Password: AAAABBBB         ← Use this
 Model: 438                      ← Use this for device_type
 ```
-
-### **MQTT Prefix by Model**
-| Model | Product Name | MQTT Prefix |
-|-------|-------------|-------------|
-| 438 | Pure Cool | 438M |
-| 475 | Hot+Cool | 475 |
-| 527 | V10/V11 | 527 |
-| 455 | Pure Hot+Cool | 455 |
-| 469 | Pure Cool Desk | 469 |
 
 **Auto-detection**: Integration automatically determines MQTT prefix from device type
 
@@ -161,7 +152,7 @@ Model: 438                      ← Use this for device_type
 nmap -sn 192.168.1.0/24 | grep -i dyson
 
 # Windows  
-ping 192.168.1.161  # Try common IPs
+ping 192.168.1.100  # Try common IPs
 ```
 
 **Method 3: Home Assistant Log**
@@ -176,17 +167,17 @@ ping 192.168.1.161  # Try common IPs
 ### **Testing Device Connection**
 ```bash
 # Test MQTT connection (port 1883)
-telnet 192.168.1.161 1883
+telnet 192.168.1.100 1883
 
 # Test device ping
-ping 192.168.1.161
+ping 192.168.1.100
 ```
 
 ## ✅ Verification Steps
 
 ### **1. Integration Loaded**
 - Go to **Settings** → **Devices & Services**
-- Verify "Dyson Alternative" appears in list
+- Verify "Dyson" appears in list
 - Status should show "Configured"
 
 ### **2. Device Connected**
@@ -237,7 +228,7 @@ ping 192.168.1.161
 
 **Problem**: "Authentication failed"
 **Solutions**:
-- Double-check WiFi password from sticker
+- Double-check device password from sticker
 - Ensure correct serial number format
 - Verify device type matches model
 
@@ -295,7 +286,7 @@ ping 192.168.1.161
 
 ### **Support Channels**
 - **GitHub Issues**: [Report bugs/feature requests](https://github.com/cmgrayb/ha-dyson-alt/issues)
-- **Home Assistant Community**: Search for "Dyson Alternative"
+- **Home Assistant Community**: Search for "Dyson"
 - **Documentation**: This guide and README.md
 
 ### **Information to Include**

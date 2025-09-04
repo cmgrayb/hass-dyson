@@ -61,7 +61,7 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 2. Search for "**Dyson**"
 3. Choose setup method:
    - **Cloud Discovery** - Enter Dyson account credentials
-   - **Manual Setup** - Enter device details from sticker (not yet supported)
+   - **Manual Setup** - Enter device details from sticker or information gained through tooling such as libdyson-rest or opendyson
 
 ## 📱 Supported Entities
 
@@ -171,7 +171,7 @@ Based on your device capabilities, you'll automatically get:
 ### Manual Sticker Setup
 Required information from device sticker:
 - **Serial Number** (e.g., MOCK-SERIAL-TEST123)
-- **WiFi Password** (from sticker)
+- **Device Password** (from sticker)
 - **MQTT Prefix** (e.g., 438M for Pure Cool models)
 - **Device Type** (e.g., 438 for air purifiers)
 
@@ -182,7 +182,7 @@ hass-dyson:
     - serial_number: "MOCK-SERIAL-TEST123"
       discovery_method: "sticker"
       hostname: "192.168.1.100"  # Optional: IP address
-      credential: "your_wifi_password"
+      credential: "your_device_password"
       device_type: "438"
       mqtt_prefix: "438M"
       capabilities: ["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"]
@@ -248,7 +248,7 @@ grep "MQTT prefix" /config/home-assistant.log
 ### **Device Not Found**
 1. Verify device is on same network as Home Assistant
 2. Check serial number from device sticker
-3. Ensure WiFi password is correct
+3. Ensure device password is correct
 4. Try manual IP address in hostname field
 
 ### **No Data Updates**

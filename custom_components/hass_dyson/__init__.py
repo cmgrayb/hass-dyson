@@ -66,7 +66,7 @@ PLATFORMS_MAP = {
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Set up Dyson Alternative integration from YAML configuration."""
+    """Set up Dyson integration from YAML configuration."""
     domain_config = config.get(DOMAIN, {})
     devices = domain_config.get("devices", [])
 
@@ -154,8 +154,8 @@ async def _create_device_entry(hass: HomeAssistant, device_data: dict, device_in
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Dyson Alternative from a config entry."""
-    _LOGGER.debug("Setting up Dyson Alternative integration for device: %s", entry.title)
+    """Set up Dyson from a config entry."""
+    _LOGGER.debug("Setting up Dyson integration for device: %s", entry.title)
 
     try:
         # Check if this is a new account-level config entry with multiple devices
@@ -236,8 +236,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a Dyson Alternative config entry."""
-    _LOGGER.debug("Unloading Dyson Alternative integration for device: %s", entry.title)
+    """Unload a Dyson config entry."""
+    _LOGGER.debug("Unloading Dyson integration for device: %s", entry.title)
 
     # Check if this is an account-level entry
     if "devices" in entry.data and entry.data.get("devices"):

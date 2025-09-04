@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.hass_dyson.const import (
+    CONF_CREDENTIAL,
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
     DISCOVERY_CLOUD,
@@ -42,7 +43,7 @@ def mock_config_entry_sticker():
     config_entry.data = {
         CONF_DISCOVERY_METHOD: DISCOVERY_STICKER,
         CONF_SERIAL_NUMBER: "TEST123456",
-        "password": "wifipassword",
+        CONF_CREDENTIAL: "devicepassword",
         "hostname": "192.168.1.100",
         "capabilities": ["environmental_data", "oscillation"],
         "device_category": "fan",
