@@ -11,6 +11,8 @@ DEFAULT_DEVICE_POLLING_INTERVAL: Final = (
     300  # 5 minutes for connectivity checks only (devices send natural STATE-CHANGE messages)
 )
 DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
+DEFAULT_POLL_FOR_DEVICES: Final = True  # Default to enabled for backward compatibility
+DEFAULT_AUTO_ADD_DEVICES: Final = True  # Default to enabled for backward compatibility
 
 # Configuration keys
 CONF_DEVICE_TYPE: Final = "device_type"
@@ -22,6 +24,10 @@ CONF_CAPABILITIES: Final = "capabilities"
 CONF_DISCOVERY_METHOD: Final = "discovery_method"
 CONF_CONNECTION_TYPE: Final = "connection_type"
 CONF_MQTT_PREFIX: Final = "mqtt_prefix"
+
+# Cloud account configuration keys
+CONF_POLL_FOR_DEVICES: Final = "poll_for_devices"
+CONF_AUTO_ADD_DEVICES: Final = "auto_add_devices"
 
 # Connection types
 CONNECTION_TYPE_LOCAL_ONLY: Final = "local_only"

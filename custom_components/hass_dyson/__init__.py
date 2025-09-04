@@ -15,13 +15,17 @@ from homeassistant.helpers import config_validation as cv
 # Import config flow explicitly to ensure it's available for registration
 from .config_flow import DysonConfigFlow  # noqa: F401
 from .const import (
+    CONF_AUTO_ADD_DEVICES,
+    CONF_POLL_FOR_DEVICES,
     CONF_SERIAL_NUMBER,
+    DEFAULT_AUTO_ADD_DEVICES,
+    DEFAULT_POLL_FOR_DEVICES,
     DISCOVERY_CLOUD,
-    DISCOVERY_STICKER,
     DISCOVERY_MANUAL,
+    DISCOVERY_STICKER,
     DOMAIN,
 )
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonCloudAccountCoordinator, DysonDataUpdateCoordinator
 from .services import async_remove_services, async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -153,6 +157,52 @@ async def _create_device_entry(hass: HomeAssistant, device_data: dict, device_in
         _LOGGER.error("Background task: Failed to create device entry for %s: %s", device_serial, e)
 
 
+async def _create_discovery_flow(hass: HomeAssistant, entry: ConfigEntry, device_info: dict) -> None:
+    """Create a discovery flow for manual device confirmation as a background task."""
+    device_serial = device_info.get("serial_number", "unknown")
+    device_name = device_info.get("name", f"Dyson {device_serial}")
+
+    try:
+        _LOGGER.info("Background task: Creating discovery flow for %s (%s)", device_name, device_serial)
+
+        # Check if discovery already exists for this device
+        existing_flows = [
+            flow
+            for flow in hass.config_entries.flow.async_progress()
+            if (
+                flow["handler"] == DOMAIN
+                and flow.get("context", {}).get("source") == "discovery"
+                and flow.get("context", {}).get("unique_id") == device_serial
+            )
+        ]
+
+        if existing_flows:
+            _LOGGER.debug("Discovery flow already exists for device %s", device_serial)
+            return
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": "discovery",
+                "unique_id": device_serial,
+                "title_placeholders": {"device_name": device_name},
+            },
+            data={
+                "serial_number": device_serial,
+                "name": device_name,
+                "product_type": device_info.get("product_type", "unknown"),
+                "category": device_info.get("category", "unknown"),
+                "auth_token": entry.data.get("auth_token"),
+                "email": entry.data.get("email"),
+                "parent_entry_id": entry.entry_id,
+            },
+        )
+        _LOGGER.info("Background task: Discovery flow creation result for %s: %s", device_name, result)
+
+    except Exception as e:
+        _LOGGER.error("Background task: Failed to create discovery flow for %s: %s", device_serial, e)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Dyson from a config entry."""
     _LOGGER.debug("Setting up Dyson integration for device: %s", entry.title)
@@ -163,7 +213,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info("Setting up account-level entry with %d devices", len(entry.data["devices"]))
             devices = entry.data["devices"]
 
-            # Create individual config entries for each device (if they don't exist)
+            # Get auto_add_devices setting with backward-compatible default
+            auto_add_devices = entry.data.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+            _LOGGER.info("Auto-add devices setting: %s", auto_add_devices)
+
+            # Create individual config entries for each device (if they don't exist and auto-add is enabled)
             for device_info in devices:
                 device_serial = device_info["serial_number"]
 
@@ -178,27 +232,65 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 ]
 
                 if not existing_entries:
-                    # Create individual config entry for this device
-                    from .device_utils import create_cloud_device_config
+                    # Get polling setting to determine if devices should be processed
+                    poll_for_devices = entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
 
-                    device_data = create_cloud_device_config(
-                        serial_number=device_serial,
-                        username=entry.data.get("email", ""),
-                        device_info=device_info,
-                        auth_token=entry.data.get("auth_token"),
-                        parent_entry_id=entry.entry_id,
-                    )
+                    if not poll_for_devices:
+                        # If polling is disabled, don't create discovery flows or device entries
+                        _LOGGER.debug(
+                            "Device %s found in stored data but polling is disabled - skipping device processing",
+                            device_serial,
+                        )
+                        continue
 
-                    _LOGGER.info("Creating individual config entry for device: %s", device_serial)
-                    # Schedule device entry creation as a background task
-                    hass.async_create_background_task(
-                        _create_device_entry(hass, device_data, device_info),
-                        f"dyson_create_device_{device_serial}",
-                    )
+                    if auto_add_devices:
+                        # Create individual config entry for this device
+                        from .device_utils import create_cloud_device_config
+
+                        device_data = create_cloud_device_config(
+                            serial_number=device_serial,
+                            username=entry.data.get("email", ""),
+                            device_info=device_info,
+                            auth_token=entry.data.get("auth_token"),
+                            parent_entry_id=entry.entry_id,
+                        )
+
+                        _LOGGER.info("Auto-creating individual config entry for device: %s", device_serial)
+                        # Schedule device entry creation as a background task
+                        hass.async_create_background_task(
+                            _create_device_entry(hass, device_data, device_info),
+                            f"dyson_create_device_{device_serial}",
+                        )
+                    else:
+                        _LOGGER.info(
+                            "Device %s discovered but auto-add disabled - device will be available for manual setup",
+                            device_serial,
+                        )
+                        # Create discovery flow for manual device confirmation
+                        hass.async_create_background_task(
+                            _create_discovery_flow(hass, entry, device_info),
+                            f"dyson_discovery_{device_serial}",
+                        )
 
             # Account-level entries don't set up coordinators themselves
             # They just manage the individual device entries
             _LOGGER.info("Account entry setup complete - individual device entries will be created")
+
+            # Set up cloud account coordinator for device polling if enabled
+            poll_for_devices = entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+            if poll_for_devices:
+                cloud_coordinator = DysonCloudAccountCoordinator(hass, entry)
+
+                # Store coordinator in hass data
+                hass.data.setdefault(DOMAIN, {})
+                hass.data[DOMAIN][f"{entry.entry_id}_cloud"] = cloud_coordinator
+
+                # Start the coordinator
+                await cloud_coordinator.async_config_entry_first_refresh()
+                _LOGGER.info("Cloud device polling coordinator started for account: %s", entry.data.get("email"))
+            else:
+                _LOGGER.info("Cloud device polling disabled for account: %s", entry.data.get("email"))
+
             return True
 
         else:
@@ -242,6 +334,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Check if this is an account-level entry
     if "devices" in entry.data and entry.data.get("devices"):
         _LOGGER.info("Unloading account-level entry - removing child device entries")
+
+        # Clean up cloud coordinator if it exists
+        cloud_coordinator_key = f"{entry.entry_id}_cloud"
+        if cloud_coordinator_key in hass.data.get(DOMAIN, {}):
+            cloud_coordinator = hass.data[DOMAIN][cloud_coordinator_key]
+            await cloud_coordinator.async_shutdown()
+            hass.data[DOMAIN].pop(cloud_coordinator_key)
+            _LOGGER.info("Cloud coordinator cleaned up for account entry")
 
         # Find and remove all child device entries
         device_entries_to_remove = [

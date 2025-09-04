@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Optional, Mapping
+from typing import Any, Mapping, Optional
 
 import voluptuous as vol
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv, entity_platform
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN

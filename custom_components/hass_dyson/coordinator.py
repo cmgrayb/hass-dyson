@@ -12,16 +12,21 @@ from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
-    CONF_DISCOVERY_METHOD,
-    CONF_SERIAL_NUMBER,
-    CONF_DEVICE_NAME,
+    CONF_AUTO_ADD_DEVICES,
     CONF_CREDENTIAL,
+    CONF_DEVICE_NAME,
+    CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
+    CONF_POLL_FOR_DEVICES,
+    CONF_SERIAL_NUMBER,
+    DEFAULT_AUTO_ADD_DEVICES,
+    DEFAULT_CLOUD_POLLING_INTERVAL,
     DEFAULT_DEVICE_POLLING_INTERVAL,
+    DEFAULT_POLL_FOR_DEVICES,
     DISCOVERY_CLOUD,
-    DISCOVERY_STICKER,
     DISCOVERY_MANUAL,
+    DISCOVERY_STICKER,
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
@@ -317,7 +322,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                             )
 
             # Extract device capabilities and category from API response or config entry
-            from .device_utils import normalize_device_category, normalize_capabilities
+            from .device_utils import normalize_capabilities, normalize_device_category
 
             # Check if device_category was provided in config entry (like manual devices)
             config_device_category = self.config_entry.data.get("device_category")
@@ -586,7 +591,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             capabilities = self.config_entry.data.get("capabilities", [])
 
             # Set device category and capabilities from config entry
-            from .device_utils import normalize_device_category, normalize_capabilities
+            from .device_utils import normalize_capabilities, normalize_device_category
 
             device_category = self.config_entry.data.get("device_category", ["ec"])
             capabilities = self.config_entry.data.get("capabilities", [])
@@ -782,3 +787,225 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         }
 
         return prefix_map.get(product_type, f"{product_type}M")
+
+
+class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+    """Coordinator to manage cloud account and device discovery."""
+
+    def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
+        """Initialize the cloud account coordinator."""
+        self.config_entry = config_entry
+        self._email = config_entry.data.get("email")
+        self._auth_token = config_entry.data.get("auth_token")
+        self._last_known_devices = set()
+
+        # Get polling settings with backward-compatible defaults
+        poll_for_devices = config_entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+
+        # Only set up polling if enabled
+        update_interval = None
+        if poll_for_devices:
+            update_interval = timedelta(seconds=DEFAULT_CLOUD_POLLING_INTERVAL)
+            _LOGGER.info(
+                "Cloud device polling enabled for %s, interval: %d seconds",
+                self._email,
+                DEFAULT_CLOUD_POLLING_INTERVAL,
+            )
+        else:
+            _LOGGER.info("Cloud device polling disabled for %s", self._email)
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_cloud_account_{self._email}",
+            update_interval=update_interval,
+        )
+
+        # Initialize known devices from config
+        for device_info in config_entry.data.get("devices", []):
+            self._last_known_devices.add(device_info["serial_number"])
+
+    async def _async_update_data(self) -> Dict[str, Any]:
+        """Update data by checking for new devices in the cloud account."""
+        _LOGGER.info("Cloud coordinator update triggered for account: %s", self._email)
+
+        if not self.config_entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES):
+            # Polling is disabled, return empty data
+            _LOGGER.debug("Device polling disabled for account %s", self._email)
+            return {"devices": []}
+
+        try:
+            _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
+
+            # Initialize libdyson-rest client
+            from libdyson_rest import DysonClient
+
+            if not self._auth_token:
+                _LOGGER.warning("No auth token available for cloud account %s", self._email)
+                return {"devices": []}
+
+            # Create client with auth token
+            client = DysonClient(auth_token=self._auth_token)
+
+            # Get devices from cloud API
+            devices = await self.hass.async_add_executor_job(client.get_devices)
+
+            if not devices:
+                _LOGGER.debug("No devices found in cloud account %s", self._email)
+                return {"devices": []}
+
+            # Check for new devices
+            current_devices = {device.serial_number for device in devices}
+            new_devices = current_devices - self._last_known_devices
+
+            # Always update the device list even if no new devices
+            updated_devices = []
+            for device in devices:
+                device_info = {
+                    "serial_number": device.serial_number,
+                    "name": getattr(device, "name", f"Dyson {device.serial_number}"),
+                    "product_type": getattr(device, "product_type", "unknown"),
+                    "category": getattr(device, "category", "unknown"),
+                }
+                updated_devices.append(device_info)
+
+            if new_devices:
+                _LOGGER.info(
+                    "Found %d new device(s) in cloud account %s: %s",
+                    len(new_devices),
+                    self._email,
+                    list(new_devices),
+                )
+
+                # Get auto_add setting
+                auto_add_devices = self.config_entry.data.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+                # Update the account config entry with new devices
+                updated_data = dict(self.config_entry.data)
+                updated_data["devices"] = updated_devices
+
+                self.hass.config_entries.async_update_entry(self.config_entry, data=updated_data)
+
+                # Create individual device entries for new devices if auto-add is enabled
+                if auto_add_devices:
+                    for device in devices:
+                        if device.serial_number in new_devices:
+                            await self._create_device_entry(device)
+                else:
+                    # Create discovery flows for manual device addition
+                    for device in devices:
+                        if device.serial_number in new_devices:
+                            await self._create_discovery_flow(device)
+                    _LOGGER.info(
+                        "Auto-add disabled, %d new devices will be available for manual setup", len(new_devices)
+                    )
+
+                # Update our known devices set
+                self._last_known_devices = current_devices
+            else:
+                _LOGGER.debug("No new devices found in cloud account %s", self._email)
+
+            return {"devices": [device_info for device_info in updated_devices if device_info]}
+
+        except Exception as err:
+            _LOGGER.error("Error checking for new devices in cloud account %s: %s", self._email, err)
+            raise UpdateFailed(f"Failed to check for new devices: {err}") from err
+
+    async def _create_device_entry(self, device) -> None:
+        """Create a new device config entry."""
+        from .device_utils import create_cloud_device_config
+
+        device_serial = device.serial_number
+        device_name = getattr(device, "name", f"Dyson {device_serial}")
+
+        # Check if device already exists
+        existing_entries = [
+            entry
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+            if (entry.data.get(CONF_SERIAL_NUMBER) == device_serial and entry.entry_id != self.config_entry.entry_id)
+        ]
+
+        if existing_entries:
+            _LOGGER.debug("Device %s already has a config entry, skipping", device_serial)
+            return
+
+        device_info = {
+            "serial_number": device_serial,
+            "name": device_name,
+            "product_type": getattr(device, "product_type", "unknown"),
+            "category": getattr(device, "category", "unknown"),
+        }
+
+        device_data = create_cloud_device_config(
+            serial_number=device_serial,
+            username=self._email,
+            device_info=device_info,
+            auth_token=self._auth_token,
+            parent_entry_id=self.config_entry.entry_id,
+        )
+
+        _LOGGER.info("Auto-creating config entry for newly discovered device: %s", device_name)
+
+        # Create the device entry
+        result = await self.hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": "device_auto_create"},
+            data=device_data,
+        )
+        _LOGGER.debug("Device entry creation result for %s: %s", device_serial, result)
+
+    async def _create_discovery_flow(self, device) -> None:
+        """Create a native Home Assistant discovery for manual device confirmation."""
+        device_serial = device.serial_number
+        device_name = getattr(device, "name", f"Dyson {device_serial}")
+
+        # Check if device already exists
+        existing_entries = [
+            entry
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+            if (entry.data.get(CONF_SERIAL_NUMBER) == device_serial and entry.entry_id != self.config_entry.entry_id)
+        ]
+
+        if existing_entries:
+            _LOGGER.debug("Device %s already has a config entry, skipping discovery", device_serial)
+            return
+
+        # Check if discovery already exists for this device
+        existing_flows = [
+            flow
+            for flow in self.hass.config_entries.flow.async_progress()
+            if (
+                flow["handler"] == DOMAIN
+                and flow.get("context", {}).get("source") == "discovery"
+                and flow.get("context", {}).get("unique_id") == device_serial
+            )
+        ]
+
+        if existing_flows:
+            _LOGGER.debug("Discovery flow already exists for device %s", device_serial)
+            return
+
+        _LOGGER.info("Creating discovery for device: %s (%s)", device_name, device_serial)
+
+        # Create a native Home Assistant discovery
+        try:
+            result = await self.hass.async_create_task(
+                self.hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={
+                        "source": "discovery",
+                        "unique_id": device_serial,
+                    },
+                    data={
+                        "serial_number": device_serial,
+                        "name": device_name,
+                        "product_type": getattr(device, "product_type", "unknown"),
+                        "auth_token": self._auth_token,
+                        "email": self._email,
+                        "parent_entry_id": self.config_entry.entry_id,
+                    },
+                )
+            )
+            _LOGGER.info("Discovery flow created successfully for %s: %s", device_name, result)
+        except Exception as e:
+            _LOGGER.error("Failed to create discovery flow for %s: %s", device_name, e)

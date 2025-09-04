@@ -42,6 +42,21 @@
         "data": {
           "connection_type": "Connection Type"
         }
+      },
+      "cloud_preferences": {
+        "title": "Cloud Account Settings",
+        "description": "Configure how your Dyson cloud account ({email}) manages {device_count} discovered devices.",
+        "data": {
+          "poll_for_devices": "Poll for new devices (check for new devices in your account periodically)",
+          "auto_add_devices": "Automatically add discovered devices (when disabled, devices will appear as discoverable but require manual approval)"
+        }
+      },
+      "discovery_confirm": {
+        "title": "{device_name}",
+        "description": "A new Dyson device has been discovered in your cloud account:\n\n**{device_name}**\nSerial: {device_serial}\nType: {product_type}\n\nWould you like to add this device to Home Assistant?",
+        "data": {
+          "confirm": "Add this device to Home Assistant"
+        }
       }
     },
     "error": {
@@ -51,11 +66,16 @@
       "no_devices": "No devices found in your Dyson account.",
       "manual_setup_failed": "Manual setup failed. Please check your device information.",
       "invalid_setup_method": "Invalid setup method selected.",
+      "preferences_failed": "Failed to save cloud preferences. Please try again.",
+      "no_devices_to_add": "No devices available to add. All discovered devices have already been added.",
       "required": "This field is required."
     },
     "abort": {
       "already_configured": "This Dyson device is already configured."
     }
+  },
+  "discovery": {
+    "title": "{name}"
   },
   "options": {
     "step": {
@@ -97,6 +117,14 @@
         "description": "Configure how {device_name} connects to Home Assistant.\n\nAccount Default: {account_connection_type}\nCurrent Setting: {current_setting}\n\nChoose connection method:",
         "data": {
           "connection_type": "Connection Type"
+        }
+      },
+      "manage_cloud_preferences": {
+        "title": "Cloud Account Settings",
+        "description": "Configure how your Dyson cloud account ({email}) manages {device_count} devices.",
+        "data": {
+          "poll_for_devices": "Poll for new devices (check for new devices in your account periodically)",
+          "auto_add_devices": "Automatically add discovered devices (when disabled, devices will appear as discoverable but require manual approval)"
         }
       }
     }
