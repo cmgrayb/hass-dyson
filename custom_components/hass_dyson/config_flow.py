@@ -1,4 +1,4 @@
-"""Config flow for Dyson Alternative integration."""
+"""Config flow for Dyson integration."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ async def _discover_device_via_mdns(serial_number: str, timeout: int = 10) -> st
 
 
 class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Dyson Alternative."""
+    """Handle a config flow for Dyson."""
 
     VERSION = 1
 

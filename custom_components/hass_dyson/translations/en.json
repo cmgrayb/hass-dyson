@@ -18,10 +18,10 @@
       },
       "manual_device": {
         "title": "Manual Device Setup",
-        "description": "Enter your device information manually. You can find the serial number, WiFi password, and MQTT prefix on a sticker on your device. Leave IP Address blank for automatic discovery via mDNS. Select device categories and capabilities to customize your device setup.",
+        "description": "Enter your device information manually. You can find the serial number, device password, and MQTT prefix on a sticker on your device or through tools like libdyson-rest and opendyson. Leave IP Address blank for automatic discovery via mDNS. Select device categories and capabilities to customize your device setup.",
         "data": {
           "serial_number": "Device Serial Number",
-          "credential": "Device WiFi Password",
+          "credential": "Device Password",
           "mqtt_prefix": "MQTT Prefix (e.g., 438, 475, 455)",
           "hostname": "Device IP Address (optional - leave blank for auto-discovery)",
           "device_name": "Device Name (Optional)",

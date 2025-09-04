@@ -1,4 +1,4 @@
-"""Service handlers for Dyson Alternative integration."""
+"""Service handlers for Dyson integration."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ SERVICE_RESET_FILTER_SCHEMA = vol.Schema(
 
 
 async def async_setup_services(hass: HomeAssistant) -> None:
-    """Set up services for Dyson Alternative integration."""
+    """Set up services for Dyson integration."""
 
     async def handle_set_sleep_timer(call: ServiceCall) -> None:
         """Handle set sleep timer service call."""
@@ -241,11 +241,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(DOMAIN, SERVICE_RESET_FILTER, handle_reset_filter, schema=SERVICE_RESET_FILTER_SCHEMA)
 
-    _LOGGER.info("Registered Dyson Alternative services")
+    _LOGGER.info("Registered Dyson services")
 
 
 async def async_remove_services(hass: HomeAssistant) -> None:
-    """Remove services for Dyson Alternative integration."""
+    """Remove services for Dyson integration."""
     services_to_remove = [
         SERVICE_SET_SLEEP_TIMER,
         SERVICE_CANCEL_SLEEP_TIMER,
@@ -259,7 +259,7 @@ async def async_remove_services(hass: HomeAssistant) -> None:
         if hass.services.has_service(DOMAIN, service):
             hass.services.async_remove(DOMAIN, service)
 
-    _LOGGER.info("Removed Dyson Alternative services")
+    _LOGGER.info("Removed Dyson services")
 
 
 async def _get_coordinator_from_device_id(hass: HomeAssistant, device_id: str) -> DysonDataUpdateCoordinator | None:

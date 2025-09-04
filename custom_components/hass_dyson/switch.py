@@ -1,4 +1,4 @@
-"""Switch platform for Dyson Alternative integration."""
+"""Switch platform for Dyson integration."""
 
 from __future__ import annotations
 

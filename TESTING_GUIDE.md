@@ -1,4 +1,4 @@
-# Real-World Testing Guide for Dyson Alternative Integration
+# Real-World Testing Guide for Dyson Integration
 
 ## Prerequisites
 1. **Dyson Device**: A physical Dyson device (fan, purifier, etc.)

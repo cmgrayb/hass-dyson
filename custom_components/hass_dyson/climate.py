@@ -1,4 +1,4 @@
-"""Climate platform for Dyson Alternative integration."""
+"""Climate platform for Dyson integration."""
 
 from __future__ import annotations
 

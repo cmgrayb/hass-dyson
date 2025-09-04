@@ -1,6 +1,6 @@
-# API Reference - Dyson Alternative Integration
+# API Reference - Dyson Integration
 
-Complete reference for developers and advanced users working with the Dyson Alternative integration.
+Complete reference for developers and advanced users working with the Dyson integration.
 
 ## 🏗️ Architecture Overview
 
@@ -236,7 +236,7 @@ class DysonAirQualityModeSelect(DysonSelectEntity):
 ### **ConfigFlow Class**
 ```python
 class DysonAltConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle config flow for Dyson Alternative integration."""
+    """Handle config flow for Dyson integration."""
     
     async def async_step_user(self, user_input=None):
         """Handle initial setup method selection."""
@@ -312,7 +312,7 @@ DEVICE_CONFIG = {
     "serial_number": "MOCK-SERIAL-TEST123",
     "discovery_method": "sticker",  # or "cloud"
     "hostname": "192.168.1.161",    # optional
-    "credential": "AAAABBBB",       # WiFi password
+    "credential": "AAAABBBB",       # Device password
     "device_type": "438",           # product type
     "mqtt_prefix": "438M",          # auto-determined
     "capabilities": [               # auto-detected

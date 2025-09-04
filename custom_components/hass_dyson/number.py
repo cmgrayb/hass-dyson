@@ -1,4 +1,4 @@
-"""Number platform for Dyson Alternative integration."""
+"""Number platform for Dyson integration."""
 
 from __future__ import annotations
 

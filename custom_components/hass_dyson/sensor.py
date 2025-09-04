@@ -1,4 +1,4 @@
-"""Sensor platform for Dyson Alternative integration."""
+"""Sensor platform for Dyson integration."""
 
 from __future__ import annotations
 

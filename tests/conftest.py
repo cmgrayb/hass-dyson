@@ -1,4 +1,4 @@
-"""Test configuration for Dyson Alternative integration."""
+"""Test configuration for Dyson integration."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 

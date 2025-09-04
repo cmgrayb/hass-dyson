@@ -106,7 +106,7 @@ class MockConfigFlow:
             "step_id": "manual_device",
             "data_schema": {
                 "serial_number": "Device Serial Number",
-                "credential": "Device WiFi Password",
+                "credential": "Device Password",
                 "hostname": "Device IP Address (Optional)",
                 "device_name": "Device Name (Optional)",
             },
@@ -117,7 +117,7 @@ class MockConfigFlow:
 async def demo_config_flows():
     """Demonstrate the different configuration flow paths."""
 
-    print("🔧 Dyson Alternative Integration - Configuration Flow Demo")
+    print("🔧 Dyson Integration - Configuration Flow Demo")
     print("=" * 60)
 
     # Test 1: Initial menu
@@ -160,7 +160,7 @@ async def demo_config_flows():
     result = await flow.async_step_manual_device(
         {
             "serial_number": "123-AB-CD456789",
-            "credential": "MyWiFiPassword123",
+            "credential": "MyDevicePassword123",
             "hostname": "192.168.1.100",
             "device_name": "Living Room Air Purifier",
         }
