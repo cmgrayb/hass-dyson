@@ -1,11 +1,11 @@
 """Test constants."""
 
-from custom_components.dyson_alt.const import DEFAULT_TIMEOUT, DOMAIN
+from custom_components.hass_dyson.const import DEFAULT_TIMEOUT, DOMAIN
 
 
 def test_domain():
     """Test domain constant."""
-    assert DOMAIN == "dyson_alt"
+    assert DOMAIN == "hass-dyson"
 
 
 def test_default_timeout():

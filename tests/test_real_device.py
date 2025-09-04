@@ -12,12 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.dyson_alt.const import (
+from custom_components.hass_dyson.const import (
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
     DISCOVERY_STICKER,
 )
-from custom_components.dyson_alt.device import DysonDevice
+from custom_components.hass_dyson.device import DysonDevice
 
 
 @pytest.fixture
@@ -99,8 +99,8 @@ async def test_sticker_config_from_real_data(real_device_data, mock_hass):
 
     # Test device wrapper creation with new API
     with (
-        patch("custom_components.dyson_alt.device.DysonMqttClient") as mock_mqtt_class,
-        patch("custom_components.dyson_alt.device.ConnectionConfig"),
+        patch("custom_components.hass_dyson.device.DysonMqttClient") as mock_mqtt_class,
+        patch("custom_components.hass_dyson.device.ConnectionConfig"),
     ):
 
         mock_mqtt_client = MagicMock()
@@ -183,7 +183,7 @@ def test_device_categorization(real_device_data):
     assert device_category == "ec"  # Environmental Control (Fan)
 
     # Test our categorization logic - should use API-provided category
-    from custom_components.dyson_alt.coordinator import DysonDataUpdateCoordinator
+    from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 
     # Create a mock device info with category field like the API would provide
     mock_device_info = type(

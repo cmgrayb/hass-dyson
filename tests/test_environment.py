@@ -15,7 +15,7 @@ def test_project_structure():
     assert (project_root / "LICENSE").exists()
 
     # Check custom component structure
-    custom_components = project_root / "custom_components" / "dyson_alt"
+    custom_components = project_root / "custom_components" / "hass_dyson"
     assert custom_components.exists()
     assert (custom_components / "__init__.py").exists()
     assert (custom_components / "manifest.json").exists()

@@ -201,7 +201,7 @@ Debug logging includes:
 
 ### Debug Steps
 
-1. Enable debug logging for `custom_components.dyson_alt.device`
+1. Enable debug logging for `custom_components.hass_dyson.device`
 2. Check Home Assistant logs for connection attempts
 3. Verify device API response contains valid `iot_credentials`
 4. Test local connectivity to rule out device issues

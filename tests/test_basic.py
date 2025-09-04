@@ -11,9 +11,9 @@ sys.path.insert(0, str(custom_components_path))
 def test_const_import():
     """Test that we can import constants."""
     # Import const.py directly without going through __init__.py
-    from dyson_alt.const import DEFAULT_TIMEOUT, DOMAIN
+    from hass_dyson.const import DEFAULT_TIMEOUT, DOMAIN
 
-    assert DOMAIN == "dyson_alt"
+    assert DOMAIN == "hass-dyson"
     assert DEFAULT_TIMEOUT == 10
 
 

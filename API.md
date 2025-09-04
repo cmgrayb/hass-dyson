@@ -373,7 +373,7 @@ ClimateDeviceClass.THERMOSTAT
 logger:
   default: info
   logs:
-    custom_components.dyson_alt: debug
+    custom_components.hass-dyson: debug
     libdyson_rest: debug
 ```
 
@@ -410,7 +410,7 @@ _LOGGER.debug("Sending command to %s: %s",
 ```python
 from unittest.mock import Mock, patch
 
-@patch('custom_components.dyson_alt.device.DysonDevice')
+@patch('custom_components.hass_dyson.device.DysonDevice')
 async def test_fan_speed_control(mock_device):
     """Test fan speed adjustment."""
     mock_device.current_state = {"fnsp": "0005"}

@@ -1,4 +1,4 @@
-# Services configuration for Dyson Alternative Integration
+# Services configuration for Dyson Integration
 
 set_sleep_timer:
   name: Set Sleep Timer
@@ -10,7 +10,7 @@ set_sleep_timer:
       required: true
       selector:
         device:
-          integration: dyson_alt
+          integration: hass-dyson
     minutes:
       name: Minutes
       description: Timer duration in minutes (15-540)
@@ -32,7 +32,7 @@ cancel_sleep_timer:
       required: true
       selector:
         device:
-          integration: dyson_alt
+          integration: hass-dyson
 
 schedule_operation:
   name: Schedule Operation
@@ -44,7 +44,7 @@ schedule_operation:
       required: true
       selector:
         device:
-          integration: dyson_alt
+          integration: hass-dyson
     operation:
       name: Operation
       description: The operation to schedule
@@ -80,7 +80,7 @@ set_oscillation_angles:
       required: true
       selector:
         device:
-          integration: dyson_alt
+          integration: hass-dyson
     lower_angle:
       name: Lower Angle
       description: Lower oscillation angle in degrees (0-350)
@@ -112,7 +112,7 @@ fetch_account_data:
       required: false
       selector:
         device:
-          integration: dyson_alt
+          integration: hass-dyson
 
 reset_filter:
   name: Reset Filter Life
@@ -124,7 +124,7 @@ reset_filter:
       required: true
       selector:
         device:
-          integration: dyson_alt
+          integration: hass-dyson
     filter_type:
       name: Filter Type
       description: Type of filter to reset

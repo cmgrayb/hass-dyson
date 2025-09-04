@@ -17,7 +17,7 @@
 ### Step 2: Update Configuration
 Edit `docker/config/configuration.yaml`:
 ```yaml
-dyson_alt:
+hass-dyson:
   username: "your_real_email@dyson.com"
   password: "your_real_password"
   devices:
@@ -54,7 +54,7 @@ python reset-config.py
 ### Step 2: Update Configuration
 Edit `docker/config/configuration.yaml`:
 ```yaml
-dyson_alt:
+hass-dyson:
   devices:
     - serial_number: "YOUR-DEVICE-SERIAL"
       discovery_method: "sticker"
@@ -135,7 +135,7 @@ Once integration loads successfully, verify:
 ### Performance Testing  
 ```bash
 # Monitor integration performance
-./docker-dev.sh logs --tail=100 | grep -E "(dyson_alt|ERROR|WARNING)"
+./docker-dev.sh logs --tail=100 | grep -E "(hass-dyson|ERROR|WARNING)"
 
 # Check memory/CPU usage in container
 ./docker-dev.sh shell

@@ -96,7 +96,7 @@
         {
             "label": "Type Check",
             "type": "shell",
-            "command": "python -m mypy custom_components/dyson_alt",
+            "command": "python -m mypy custom_components/hass_dyson",
             "group": "build",
             "presentation": {
                 "echo": true,

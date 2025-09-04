@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.dyson_alt.const import (
+from custom_components.hass_dyson.const import (
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
     DISCOVERY_CLOUD,
     DISCOVERY_STICKER,
 )
-from custom_components.dyson_alt.coordinator import DysonDataUpdateCoordinator
+from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 
 
 @pytest.fixture
@@ -55,8 +55,8 @@ class TestDysonDataUpdateCoordinatorLogic:
 
     @pytest.mark.asyncio
     @patch("libdyson_rest.DysonClient")
-    @patch("custom_components.dyson_alt.device.DysonMqttClient")
-    @patch("custom_components.dyson_alt.coordinator.DysonDevice")
+    @patch("custom_components.hass_dyson.device.DysonMqttClient")
+    @patch("custom_components.hass_dyson.coordinator.DysonDevice")
     async def test_cloud_device_setup_logic(self, mock_device_class, mock_mqtt_class, mock_cloud_class, mock_hass):
         """Test cloud device setup logic directly."""
         # Mock cloud client
@@ -79,7 +79,7 @@ class TestDysonDataUpdateCoordinatorLogic:
 
         # Create minimal coordinator for testing
         # Create with mocked base class
-        with patch("custom_components.dyson_alt.coordinator.DataUpdateCoordinator.__init__"):
+        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             coordinator.hass = mock_hass
             coordinator.device = None
@@ -109,7 +109,7 @@ class TestDysonDataUpdateCoordinatorLogic:
     def test_device_category_mapping(self):
         """Test that device category comes from API response."""
         # Test that the coordinator uses API-provided category instead of static mapping
-        with patch("custom_components.dyson_alt.coordinator.DataUpdateCoordinator.__init__"):
+        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_device_info = type("MockDeviceInfo", (), {"category": "ec", "serial_number": "TEST123"})()
 
@@ -124,7 +124,7 @@ class TestDysonDataUpdateCoordinatorLogic:
 
     def test_capability_extraction(self):
         """Test capability extraction from API response."""
-        with patch("custom_components.dyson_alt.coordinator.DataUpdateCoordinator.__init__"):
+        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_device_info = type(
                 "MockDeviceInfo", (), {"capabilities": ["EnvironmentalData", "AdvancedOscillation", "CustomCapability"]}

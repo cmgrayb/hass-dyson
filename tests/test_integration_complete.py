@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.dyson_alt.const import CONF_SERIAL_NUMBER
-from custom_components.dyson_alt.coordinator import DysonDataUpdateCoordinator
-from custom_components.dyson_alt.fan import DysonFan
-from custom_components.dyson_alt.sensor import (
+from custom_components.hass_dyson.const import CONF_SERIAL_NUMBER
+from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+from custom_components.hass_dyson.fan import DysonFan
+from custom_components.hass_dyson.sensor import (
     DysonAirQualitySensor,
     DysonFilterLifeSensor,
     DysonHumiditySensor,
@@ -44,7 +44,7 @@ def mock_config_entry():
 @pytest.fixture
 def mock_coordinator(mock_hass, mock_config_entry):
     """Mock coordinator with test data."""
-    with patch("custom_components.dyson_alt.coordinator.DataUpdateCoordinator.__init__"):
+    with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
         coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
         coordinator.hass = mock_hass
         coordinator.config_entry = mock_config_entry

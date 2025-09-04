@@ -1,4 +1,4 @@
-"""The Dyson Alternative integration."""
+"""The Dyson integration."""
 
 from __future__ import annotations
 

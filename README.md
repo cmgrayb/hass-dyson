@@ -1,18 +1,7 @@
-# Dyson Alternative Integration for Home Assistant
+# Dyson Integration for Home Assistant
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo-social.png" alt="Dyson Alternative Lo### **Individual Devi## 🏠 Device Support
-
-### **Multiple Account Support**
-- ✅ **Multiple Dyson Accounts**: Add multiple Dyson cloud accounts to Home Assistant
-- ✅ **Account Separation**: Each account manages its own devices independently
-- ✅ **Duplicate Prevention**: Prevents adding the same account twice
-- ✅ **Device Isolation**: Devices from different accounts are properly separated
-
-### **Tested Models**Management** 
-- **⚙️ Configure**: Opens connection settings directly (streamlined)
-- **🔄 Reload**: Native Home Assistant button (top of device page)
-- **🗑️ Delete**: Native Home Assistant button (device menu)width="400"/>
+  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/dyson-logo-social.png" alt="Dyson Logo" width="400"/>
 </p>
 
 [![GitHub Release][releases-shield]][releases]
@@ -21,7 +10,7 @@
 [![hacs][hacsbadge]][hacs]
 [![Community Forum][forum-shield]][forum]
 
-A comprehensive, production-ready Home Assistant integration for Dyson air purifiers and fans, featuring real-time MQTT communication and complete platform coverage.
+A comprehensive, production-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, and robotic vacuums featuring real-time MQTT communication and complete platform coverage.
 
 ## 🌟 Planned Features
 
@@ -46,6 +35,9 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 - **Home Assistant Standards** - Follows HA integration guidelines
 - **Extensive Testing** - Validated with real device hardware
 
+### **BLE Devices**
+- **lec Support** - We hope to someday support Dyson "lec" or BLE devices such as lights via BLE proxy devices
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -54,19 +46,19 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
    - Open **HACS** in Home Assistant
    - Go to **Settings** (three dots menu)
    - Select **Custom repositories**
-   - Add repository URL: `https://github.com/cmgrayb/ha-dyson-alt`
+   - Add repository URL: `https://github.com/cmgrayb/hass-dyson`
    - Select category: **Integration**
    - Click **Add**
 
 2. **Install Integration**
-   - Search for "**Dyson Alternative**" in HACS
+   - Search for "**Dyson**" in HACS
    - Click **Download**
    - Restart Home Assistant
 
 ### Setup
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
-2. Search for "**Dyson Alternative**"
+2. Search for "**Dyson**"
 3. Choose setup method:
    - **Cloud Discovery** - Enter Dyson account credentials
    - **Manual Setup** - Enter device details from sticker (not yet supported)
@@ -105,8 +97,8 @@ A comprehensive, production-ready Home Assistant integration for Dyson air purif
 ### **Controls**
 - **Speed Control** - Precise fan speed (1-10)
 - **Sleep Timer** - Auto-off timer (0-540 minutes)  
-- **Mode Selection** - Auto/Manual/Sleep operation
-- **Oscillation** - Enable/disable with angle control
+- **Mode Selection** - Auto/Manual operation
+- **Oscillation** - Enable/disable with comprehensive angle control
 - **Heating Control** - For HP models (Off/Heat/Auto)
 
 ## 🔧 Configuration
@@ -136,12 +128,15 @@ The integration will:
 Based on your device capabilities, you'll automatically get:
 
 **All Devices:**
-- Fan control with speed adjustment (1-10)
-- PM2.5 and PM10 air quality sensors
-- WiFi signal strength (diagnostic)
-- Connection status
-- HEPA filter life and type sensors
+- Connection status sensor
+- Filter replacement alert (binary sensor) 
 - Reconnect button
+
+**Air Purifiers and Fans:**
+- Fan control with speed adjustment (1-10)
+- PM2.5 and PM10 air quality sensors  
+- WiFi signal strength (diagnostic)
+- HEPA filter life and type sensors
 
 **Air Purifiers with Extended Air Quality:**
 - Individual fault sensors for each component
@@ -182,15 +177,15 @@ Required information from device sticker:
 
 ### YAML Configuration (Optional)
 ```yaml
-dyson_alt:
+hass-dyson:
   devices:
     - serial_number: "MOCK-SERIAL-TEST123"
       discovery_method: "sticker"
-      hostname: "192.168.1.161"  # Optional: IP address
+      hostname: "192.168.1.100"  # Optional: IP address
       credential: "your_wifi_password"
       device_type: "438"
       mqtt_prefix: "438M"
-      capabilities: ["Auto", "Scheduling", "Fault"]
+      capabilities: ["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"]
 ```
 
 ## �️ Device Management
@@ -244,7 +239,7 @@ The integration provides comprehensive device management options through the **C
 ### **Connection Issues**
 ```bash
 # Check device network connectivity
-ping 192.168.1.161  # Your device IP
+ping 192.168.1.100  # Your device IP
 
 # Verify MQTT prefix in logs
 grep "MQTT prefix" /config/home-assistant.log
@@ -267,7 +262,7 @@ grep "MQTT prefix" /config/home-assistant.log
 # In configuration.yaml
 logger:
   logs:
-    custom_components.dyson_alt: debug
+    custom_components.hass-dyson: debug
 ```
 
 ## 🛠️ Development
@@ -281,7 +276,7 @@ Platform Setup → Data Updates → Real Device
 
 ### **Project Structure**
 ```
-custom_components/dyson_alt/
+custom_components/hass_dyson/
 ├── __init__.py          # Integration setup
 ├── config_flow.py       # Setup wizard  
 ├── coordinator.py       # Data coordination
@@ -330,7 +325,7 @@ custom_components/dyson_alt/
 
 - **libshenxn** - For getting the Dyson community started with the original libdyson
 - **dotvezz** - For maintaining the libdyson-wg working group, ha-dyson, and opendyson, the inspiration for this integration
-- **libdyson-wg** - For maintaining excellent documentation and tooling without which this would not have been possible
+- **libdyson-wg** - For maintaining excellent documentation and tooling without which this integration would not have been possible
 - **paho-mqtt** - Reliable MQTT communication library
 - **Home Assistant** - Amazing home automation platform
 - **Dyson** - For making great products worth putting in the work for

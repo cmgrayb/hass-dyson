@@ -11,7 +11,7 @@ class MockConfigEntry:
     def __init__(self, data: Dict[str, Any]):
         self.data = data
         self.entry_id = "test_entry_id"
-        self.domain = "dyson_alt"
+        self.domain = "hass-dyson"
         self.title = "Test Dyson Device"
 
 

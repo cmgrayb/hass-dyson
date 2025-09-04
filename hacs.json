@@ -1,9 +1,9 @@
 {
-  "name": "Dyson Alternative",
+  "name": "Dyson",
   "hacs": "0.24.0",
   "domains": ["fan", "sensor", "binary_sensor", "button", "number", "select", "switch", "climate"],
   "iot_class": "Local Polling",
   "homeassistant": "2025.8.0",
   "render_readme": true,
-  "filename": "dyson_alt.zip"
+  "filename": "hass-dyson.zip"
 }

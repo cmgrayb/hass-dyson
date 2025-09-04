@@ -52,6 +52,6 @@ echo   Stop:                docker-compose down
 echo.
 echo 🐛 Debugging:
 echo   Shell into container: docker-compose exec homeassistant bash
-echo   Check integration:    docker-compose exec homeassistant ls -la /config/custom_components/dyson_alt/
+echo   Check integration:    docker-compose exec homeassistant ls -la /config/custom_components/hass_dyson/
 
 pause
