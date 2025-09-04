@@ -151,9 +151,7 @@ class DysonFan(DysonEntity, FanEntity):
 
         # Force Home Assistant to update with the new state
         _LOGGER.debug(
-            "Fan %s writing state to Home Assistant - is_on: %s",
-            self.coordinator.serial_number,
-            self._attr_is_on
+            "Fan %s writing state to Home Assistant - is_on: %s", self.coordinator.serial_number, self._attr_is_on
         )
         self.async_write_ha_state()
 
@@ -163,7 +161,7 @@ class DysonFan(DysonEntity, FanEntity):
             self.coordinator.serial_number,
             self.entity_id,
             self.state,
-            self.is_on
+            self.is_on,
         )
 
         super()._handle_coordinator_update()

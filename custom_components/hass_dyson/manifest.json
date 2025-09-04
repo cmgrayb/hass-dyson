@@ -1,6 +1,6 @@
 {
-  "domain": "dyson_alt",
-  "name": "Dyson Alternative",
+  "domain": "hass-dyson",
+  "name": "Dyson",
   "codeowners": ["@cmgrayb"],
   "config_flow": true,
   "dependencies": [],
@@ -8,9 +8,9 @@
   "homekit": {},
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/cmgrayb/ha-dyson-alt/issues",
-  "loggers": ["custom_components.dyson_alt"],
+  "loggers": ["custom_components.hass_dyson"],
   "requirements": [
     "libdyson-rest==0.4.1"
   ],
-  "version": "0.6.1"
+  "version": "0.7.0"
 }

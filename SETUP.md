@@ -34,15 +34,15 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 2. Copy to Home Assistant:
    ```bash
    # Copy integration folder
-   cp -r ha-dyson-alt/custom_components/dyson_alt /config/custom_components/
+   cp -r ha-dyson-alt/custom_components/hass_dyson /config/custom_components/
    ```
 
 3. Restart Home Assistant
 
 ### **Method 3: Direct Download**
 1. Download latest release from GitHub
-2. Extract `custom_components/dyson_alt` folder
-3. Place in `/config/custom_components/dyson_alt`
+2. Extract `custom_components/hass_dyson` folder
+3. Place in `/config/custom_components/hass_dyson`
 4. Restart Home Assistant
 
 ## ⚙️ Configuration Options
@@ -92,7 +92,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 **Configuration example**:
 ```yaml
 # configuration.yaml
-dyson_alt:
+hass-dyson:
   devices:
     - serial_number: "MOCK-SERIAL-TEST123"
       discovery_method: "sticker"
@@ -169,7 +169,7 @@ ping 192.168.1.161  # Try common IPs
    ```yaml
    logger:
      logs:
-       custom_components.dyson_alt: debug
+       custom_components.hass-dyson: debug
    ```
 2. Check logs for discovered devices
 
@@ -284,7 +284,7 @@ ping 192.168.1.161
    ```yaml
    logger:
      logs:
-       custom_components.dyson_alt: debug
+       custom_components.hass-dyson: debug
    ```
 
 2. Restart Home Assistant

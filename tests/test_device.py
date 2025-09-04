@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.dyson_alt.device import DysonDevice
+from custom_components.hass_dyson.device import DysonDevice
 
 
 @pytest.fixture
@@ -82,8 +82,8 @@ class TestDysonDevice:
     async def test_connect_success(self, mock_hass, mock_mqtt_client, sample_device_data):
         """Test successful device connection."""
         with (
-            patch("custom_components.dyson_alt.device.DysonMqttClient", return_value=mock_mqtt_client),
-            patch("custom_components.dyson_alt.device.ConnectionConfig"),
+            patch("custom_components.hass_dyson.device.DysonMqttClient", return_value=mock_mqtt_client),
+            patch("custom_components.hass_dyson.device.ConnectionConfig"),
         ):
 
             device = DysonDevice(
@@ -102,8 +102,8 @@ class TestDysonDevice:
     async def test_connect_no_client(self, mock_hass, sample_device_data):
         """Test connection when no MQTT client library is available."""
         with (
-            patch("custom_components.dyson_alt.device.DysonMqttClient", None),
-            patch("custom_components.dyson_alt.device.ConnectionConfig", None),
+            patch("custom_components.hass_dyson.device.DysonMqttClient", None),
+            patch("custom_components.hass_dyson.device.ConnectionConfig", None),
         ):
 
             device = DysonDevice(
@@ -122,8 +122,8 @@ class TestDysonDevice:
     async def test_send_command_success(self, mock_hass, mock_mqtt_client, sample_device_data):
         """Test successful command sending."""
         with (
-            patch("custom_components.dyson_alt.device.DysonMqttClient", return_value=mock_mqtt_client),
-            patch("custom_components.dyson_alt.device.ConnectionConfig"),
+            patch("custom_components.hass_dyson.device.DysonMqttClient", return_value=mock_mqtt_client),
+            patch("custom_components.hass_dyson.device.ConnectionConfig"),
         ):
 
             device = DysonDevice(
@@ -169,8 +169,8 @@ class TestDysonDevice:
         mock_mqtt_client.get_state = MagicMock(return_value=mock_state_data)
 
         with (
-            patch("custom_components.dyson_alt.device.DysonMqttClient", return_value=mock_mqtt_client),
-            patch("custom_components.dyson_alt.device.ConnectionConfig"),
+            patch("custom_components.hass_dyson.device.DysonMqttClient", return_value=mock_mqtt_client),
+            patch("custom_components.hass_dyson.device.ConnectionConfig"),
         ):
 
             device = DysonDevice(
@@ -201,8 +201,8 @@ class TestDysonDevice:
         mock_mqtt_client.get_faults = MagicMock(return_value=mock_fault_data)
 
         with (
-            patch("custom_components.dyson_alt.device.DysonMqttClient", return_value=mock_mqtt_client),
-            patch("custom_components.dyson_alt.device.ConnectionConfig"),
+            patch("custom_components.hass_dyson.device.DysonMqttClient", return_value=mock_mqtt_client),
+            patch("custom_components.hass_dyson.device.ConnectionConfig"),
         ):
 
             device = DysonDevice(
@@ -231,8 +231,8 @@ class TestDysonDevice:
     async def test_disconnect(self, mock_hass, mock_mqtt_client, sample_device_data):
         """Test device disconnection."""
         with (
-            patch("custom_components.dyson_alt.device.DysonMqttClient", return_value=mock_mqtt_client),
-            patch("custom_components.dyson_alt.device.ConnectionConfig"),
+            patch("custom_components.hass_dyson.device.DysonMqttClient", return_value=mock_mqtt_client),
+            patch("custom_components.hass_dyson.device.ConnectionConfig"),
         ):
 
             device = DysonDevice(

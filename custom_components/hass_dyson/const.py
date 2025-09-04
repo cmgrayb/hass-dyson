@@ -1,9 +1,9 @@
-"""Constants for the Dyson Alternative integration."""
+"""Constants for the Dyson integration."""
 
 from typing import Final
 
 # Integration domain
-DOMAIN: Final = "dyson_alt"
+DOMAIN: Final = "hass-dyson"
 
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds

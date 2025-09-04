@@ -182,7 +182,7 @@ Required information from device sticker:
 
 ### YAML Configuration (Optional)
 ```yaml
-dyson_alt:
+hass-dyson:
   devices:
     - serial_number: "MOCK-SERIAL-TEST123"
       discovery_method: "sticker"
@@ -267,7 +267,7 @@ grep "MQTT prefix" /config/home-assistant.log
 # In configuration.yaml
 logger:
   logs:
-    custom_components.dyson_alt: debug
+    custom_components.hass-dyson: debug
 ```
 
 ## 🛠️ Development
@@ -281,7 +281,7 @@ Platform Setup → Data Updates → Real Device
 
 ### **Project Structure**
 ```
-custom_components/dyson_alt/
+custom_components/hass_dyson/
 ├── __init__.py          # Integration setup
 ├── config_flow.py       # Setup wizard  
 ├── coordinator.py       # Data coordination

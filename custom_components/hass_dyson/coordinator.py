@@ -661,11 +661,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
                     _LOGGER.debug("Requested current state after reconnection for %s", self.serial_number)
                 except Exception as cmd_err:
-                    _LOGGER.warning("Failed to request current state after reconnection for %s: %s", self.serial_number, cmd_err)
+                    _LOGGER.warning(
+                        "Failed to request current state after reconnection for %s: %s", self.serial_number, cmd_err
+                    )
 
             # Get current device state (from last received MQTT message)
             device_state = await self.device.get_state()
-            _LOGGER.debug("Retrieved cached device state for %s with keys: %s", self.serial_number, list(device_state.keys()) if device_state else "None")
+            _LOGGER.debug(
+                "Retrieved cached device state for %s with keys: %s",
+                self.serial_number,
+                list(device_state.keys()) if device_state else "None",
+            )
 
             return device_state
 
