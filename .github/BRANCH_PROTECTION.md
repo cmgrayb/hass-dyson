@@ -36,7 +36,7 @@
 
 # \* Quick Test Suite (from pr-test.yml)
 
-# \* Test Python 3.11 (from test.yml)
+# \* Test Python 3.13 (from test.yml)
 
 # \* Code Quality Checks (from test.yml)
 
@@ -84,7 +84,7 @@
 
 required_status_checks:
 strict: true # Require branches to be up to date before merging
-contexts: # Core test suite - must pass - "Quick Test Suite" - "Test Python 3.11"
+contexts: # Core test suite - must pass - "Quick Test Suite" - "Test Python 3.13"
 
     # Code quality - must pass
     - "Code Quality Checks"
@@ -99,7 +99,7 @@ contexts: # Core test suite - must pass - "Quick Test Suite" - "Test Python 3.11
 
 # 1. All tests in /tests folder pass (Quick Test Suite)
 
-# 2. Tests pass on primary Python version (Test Python 3.11)
+# 2. Tests pass on primary Python version (Test Python 3.13)
 
 # 3. Code follows quality standards (Code Quality Checks)
 

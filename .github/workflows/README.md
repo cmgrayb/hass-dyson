@@ -11,7 +11,7 @@ This directory contains automated workflows for continuous integration and testi
 
 **Jobs:**
 
-- **Quick Test Suite:** Runs all tests in `/tests` folder with Python 3.11
+- **Quick Test Suite:** Runs all tests in `/tests` folder with Python 3.13
 - **Test Coverage Analysis:** Generates detailed coverage reports
 
 **Key Features:**
@@ -28,7 +28,7 @@ This directory contains automated workflows for continuous integration and testi
 
 **Jobs:**
 
-- **Test:** Full test suite across Python 3.11, 3.12, 3.13
+- **Test:** Full test suite on Python 3.13
 - **Quality:** Code formatting, linting, type checking, security
 - **Integration:** Separate integration and unit test runs
 - **Build:** Package building and validation
@@ -152,7 +152,7 @@ All workflows use intelligent caching:
 ### Required Checks for PR Merge
 
 1. **Quick Test Suite** - All tests in `/tests` pass
-2. **Test Python 3.11** - Core version compatibility
+2. **Test Python 3.13** - Core version compatibility
 3. **Code Quality Checks** - Formatting, linting, types
 4. **Build Package** - Successful package creation
 
