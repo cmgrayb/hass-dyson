@@ -49,6 +49,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -60,6 +61,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -89,6 +91,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -100,6 +103,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -122,6 +126,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -133,6 +138,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -155,6 +161,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -166,6 +173,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -188,6 +196,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -199,6 +208,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -221,6 +231,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -232,6 +243,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -262,6 +274,7 @@ class TestEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -273,6 +286,7 @@ class TestEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -332,6 +346,7 @@ class TestBinarySensorEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -343,6 +358,7 @@ class TestBinarySensorEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.binary_sensor import async_setup_entry
@@ -358,7 +374,7 @@ class TestBinarySensorEntityCreationIntegration:
 
         # All should be binary sensor types
         for entity in created_entities:
-            assert hasattr(entity, 'is_on')  # Binary sensor characteristic
+            assert hasattr(entity, "is_on")  # Binary sensor characteristic
 
     @pytest.mark.asyncio
     async def test_ec_category_binary_sensor_faults(self, mock_hass, mock_platform_add_entities):
@@ -368,6 +384,7 @@ class TestBinarySensorEntityCreationIntegration:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -379,6 +396,7 @@ class TestBinarySensorEntityCreationIntegration:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.binary_sensor import async_setup_entry
@@ -425,11 +443,16 @@ class TestRealDeviceEntityCreationScenarios:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
             mock_coordinator.has_capability = lambda cap: cap in [
-                "EnvironmentalData", "ExtendedAQ", "FanControl", "Oscillation"]
+                "EnvironmentalData",
+                "ExtendedAQ",
+                "FanControl",
+                "Oscillation",
+            ]
             mock_coordinator._device_category = ["purifier"]
             mock_coordinator.device_serial = "PURIFIER-REAL-001"
             mock_coordinator._device_capabilities = ["EnvironmentalData", "ExtendedAQ", "FanControl", "Oscillation"]
@@ -437,6 +460,7 @@ class TestRealDeviceEntityCreationScenarios:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -473,6 +497,7 @@ class TestRealDeviceEntityCreationScenarios:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -484,6 +509,7 @@ class TestRealDeviceEntityCreationScenarios:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -498,8 +524,10 @@ class TestRealDeviceEntityCreationScenarios:
         assert "DysonTemperatureSensor" in sensor_types
 
         # Should NOT have air quality sensors (no ExtendedAQ)
-        assert any("PM" not in sensor_type for sensor_type in sensor_types) or len(
-            [s for s in sensor_types if "PM" in s]) == 0
+        assert (
+            any("PM" not in sensor_type for sensor_type in sensor_types)
+            or len([s for s in sensor_types if "PM" in s]) == 0
+        )
 
         # Should NOT have WiFi sensors (heater category doesn't enable them)
         assert "DysonWiFiSensor" not in sensor_types
@@ -521,6 +549,7 @@ class TestRealDeviceEntityCreationScenarios:
         # Mock DataUpdateCoordinator class to avoid Frame helper issues
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
             mock_coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_coordinator.hass = mock_hass
             mock_coordinator.config_entry = config_entry
@@ -532,6 +561,7 @@ class TestRealDeviceEntityCreationScenarios:
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
+
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         from custom_components.hass_dyson.sensor import async_setup_entry
@@ -546,8 +576,10 @@ class TestRealDeviceEntityCreationScenarios:
         assert "DysonWiFiSensor" in sensor_types
 
         # Should NOT have air quality sensors (no ExtendedAQ)
-        assert any("PM" not in sensor_type for sensor_type in sensor_types) or len(
-            [s for s in sensor_types if "PM" in s]) == 0
+        assert (
+            any("PM" not in sensor_type for sensor_type in sensor_types)
+            or len([s for s in sensor_types if "PM" in s]) == 0
+        )
 
         # Should NOT have temperature sensors (no Heating)
         assert "DysonTemperatureSensor" not in sensor_types

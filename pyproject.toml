@@ -133,12 +133,14 @@ norecursedirs = [".git", ".tox", "dist", "build", "south_migrations"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# Coverage is enabled by default but with fail-under=0 to allow tests to run
+# The dedicated "coverage" job in GitHub Actions enforces the actual coverage requirements
 addopts = [
     "--cov=custom_components.hass_dyson",
     "--cov-report=term-missing",
     "--cov-report=xml",
     "--cov-report=html",
-    "--cov-fail-under=0",
+    "--cov-fail-under=0",  # No failure threshold - handled by dedicated coverage job
     "--strict-markers",
     "-v"
 ]
