@@ -59,9 +59,7 @@ jobs:
       - name: Pre-pull cache images (ignore failures)
         run: |
           echo "🔄 Attempting to pre-pull cache images for faster builds..."
-          docker pull ghcr.io/${{ github.repository }}/devcontainer-cache:latest || echo "No latest cache found"
-          docker pull ghcr.io/${{ github.repository }}/devcontainer-cache:main || echo "No main cache found"
-          docker pull ghcr.io/${{ github.repository }}/devcontainer-cache:${{ github.ref_name }} || echo "No branch cache found"
+          docker pull ghcr.io/${{ github.repository }}/devcontainer-cache:latest || echo "No latest cache found - will build from scratch"
           echo "✅ Cache pre-pull completed"
 
       - name: Build and test devcontainer
@@ -71,14 +69,8 @@ jobs:
           DOCKER_BUILDKIT: 1
         with:
           imageName: ghcr.io/${{ github.repository }}/devcontainer-cache
-          imageTag: |
-            latest
-            ${{ github.ref_name }}
-            ${{ github.sha }}
-          cacheFrom: |
-            ghcr.io/${{ github.repository }}/devcontainer-cache:latest
-            ghcr.io/${{ github.repository }}/devcontainer-cache:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}/devcontainer-cache:main
+          imageTag: latest
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer-cache:latest
           push: filter
           refFilterForPush: refs/heads/main
           eventFilterForPush: push
