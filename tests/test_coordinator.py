@@ -56,7 +56,7 @@ class TestDysonDataUpdateCoordinatorLogic:
 
     @pytest.mark.asyncio
     @patch("libdyson_rest.DysonClient")
-    @patch("custom_components.hass_dyson.device.DysonMqttClient")
+    @patch("custom_components.hass_dyson.device.DysonDevice")
     @patch("custom_components.hass_dyson.coordinator.DysonDevice")
     async def test_cloud_device_setup_logic(self, mock_device_class, mock_mqtt_class, mock_cloud_class, mock_hass):
         """Test cloud device setup logic directly."""

@@ -12,11 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hass_dyson.const import (
-    CONF_DISCOVERY_METHOD,
-    CONF_SERIAL_NUMBER,
-    DISCOVERY_STICKER,
-)
+from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, CONF_SERIAL_NUMBER, DISCOVERY_STICKER
 from custom_components.hass_dyson.device import DysonDevice
 
 
@@ -98,14 +94,17 @@ async def test_sticker_config_from_real_data(real_device_data, mock_hass):
     }
 
     # Test device wrapper creation with new API
-    with (
-        patch("custom_components.hass_dyson.device.DysonMqttClient") as mock_mqtt_class,
-        patch("custom_components.hass_dyson.device.ConnectionConfig"),
-    ):
-
+    with patch("paho.mqtt.client.Client") as mock_mqtt_class:
         mock_mqtt_client = MagicMock()
-        mock_mqtt_client.is_connected = MagicMock(return_value=True)
+        mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
+        mock_mqtt_client.is_connected.return_value = True
         mock_mqtt_class.return_value = mock_mqtt_client
+
+        # Mock async_add_executor_job to execute functions directly
+        def mock_executor_job(func, *args):
+            return func(*args) if args else func()
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
 
         device = DysonDevice(
             hass=mock_hass,
@@ -118,9 +117,15 @@ async def test_sticker_config_from_real_data(real_device_data, mock_hass):
         assert device.serial_number == "MOCK-SERIAL-TEST123"
         assert device.capabilities == ["environmental_data", "advance_oscillation", "scheduling"]
 
-        # Test connection
-        result = await device.connect()
-        assert result is True
+        # Mock the wait for connection to return True and set internal state
+        def mock_wait_for_connection(conn_type):
+            device._connected = True  # Simulate successful connection
+            return True
+
+        with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+            # Test connection
+            result = await device.connect()
+            assert result is True
         assert device.is_connected is True
 
 
