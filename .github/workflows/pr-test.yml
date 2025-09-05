@@ -59,7 +59,8 @@ jobs:
           python -m pytest tests/ \
             -v \
             --tb=short \
-            --maxfail=5
+            --maxfail=5 \
+            --no-cov
 
       - name: Quick code quality check
         run: |

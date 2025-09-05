@@ -62,7 +62,8 @@ jobs:
         run: |
           python -m pytest tests/ \
             -v \
-            --tb=short
+            --tb=short \
+            --no-cov
 
   coverage:
     name: Code Coverage Analysis
@@ -191,11 +192,11 @@ jobs:
 
       - name: Run integration tests
         run: |
-          python -m pytest tests/ -m "integration" -v --tb=short
+          python -m pytest tests/ -m "integration" -v --tb=short --no-cov
 
       - name: Run unit tests
         run: |
-          python -m pytest tests/ -m "not integration" -v --tb=short
+          python -m pytest tests/ -m "not integration" -v --tb=short --no-cov
 
   build:
     name: Build Package
