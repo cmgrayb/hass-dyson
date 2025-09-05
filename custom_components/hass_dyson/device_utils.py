@@ -124,7 +124,7 @@ def create_device_config_data(
         Dictionary of config entry data
     """
     # Start with required fields
-    config_data = {
+    config_data: Dict[str, Any] = {
         CONF_SERIAL_NUMBER: serial_number,
         CONF_DISCOVERY_METHOD: discovery_method,
     }
