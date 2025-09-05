@@ -7,7 +7,7 @@ echo ==================================================
 
 REM Create necessary directories
 echo 📁 Creating directories...
-if not exist "docker\ha-config\custom_components" mkdir "docker\ha-config\custom_components"
+if not exist "docker\ha-config" mkdir "docker\ha-config"
 if not exist "docker\logs" mkdir "docker\logs"
 if not exist "docker\mosquitto-data" mkdir "docker\mosquitto-data"
 if not exist "docker\mosquitto-logs" mkdir "docker\mosquitto-logs"
@@ -34,12 +34,12 @@ timeout /t 60 /nobreak >nul
 echo.
 echo 🎉 Production Home Assistant Test Environment Ready!
 echo ==================================================
-echo 🌐 Home Assistant URL: http://localhost:8123
+echo 🌐 Home Assistant URL: http://localhost:8124
 echo 📊 MQTT Broker: localhost:1883
 echo 🕷️ MQTT WebSocket: ws://localhost:9001
 echo.
 echo 📋 Next Steps:
-echo 1. Open http://localhost:8123 in your browser
+echo 1. Open http://localhost:8124 in your browser
 echo 2. Complete the initial Home Assistant setup
 echo 3. Go to Configuration → Integrations → Add Integration
 echo 4. Search for 'Dyson' to test the integration
