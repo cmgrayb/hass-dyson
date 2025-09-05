@@ -351,9 +351,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Initialize cloud connection variables
             cloud_host = None
             cloud_client_id = ""
-            cloud_token_key = ""
-            cloud_token_value = ""
-            cloud_token_signature = ""
+            cloud_token_key = ""  # nosec B105
+            cloud_token_value = ""  # nosec B105
+            cloud_token_signature = ""  # nosec B105
             cloud_custom_authorizer = ""
 
             # Extract firmware version from connected_configuration
@@ -369,7 +369,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             # Extract MQTT credentials from connected_configuration
             mqtt_username = self.serial_number
-            mqtt_password = ""
+            mqtt_password = ""  # nosec B105
 
             connected_config = getattr(device_info, "connected_configuration", None)
             if connected_config:
@@ -396,7 +396,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                                 _LOGGER.debug("Successfully decrypted MQTT password (length: %s)", len(mqtt_password))
                             except Exception as e:
                                 _LOGGER.error("Failed to decrypt MQTT credentials: %s", e)
-                                mqtt_password = ""
+                                mqtt_password = ""  # nosec B105
                         else:
                             _LOGGER.debug("No local_broker_credentials found in MQTT object")
 

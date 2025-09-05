@@ -27,21 +27,37 @@ async def async_setup_entry(
 
     entities = []
 
-    # Get device capabilities
+    # Get device capabilities and category
     capabilities = coordinator.device_capabilities or []
     capabilities_str = [cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in capabilities]
+    device_category = coordinator.device_category or []
 
-    # Air quality sensors - we know these work from our MQTT test
-    entities.extend(
-        [
-            DysonPM25Sensor(coordinator),
-            DysonPM10Sensor(coordinator),
-            DysonWiFiSensor(coordinator),
-            DysonConnectionStatusSensor(coordinator),
-            DysonHEPAFilterLifeSensor(coordinator),
-            DysonHEPAFilterTypeSensor(coordinator),
-        ]
-    )
+    # Add PM2.5 and PM10 sensors only for devices with ExtendedAQ capability
+    if "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str:
+        entities.extend(
+            [
+                DysonPM25Sensor(coordinator),
+                DysonPM10Sensor(coordinator),
+            ]
+        )
+
+    # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
+    if any(cat in ["ec", "robot"] for cat in device_category):
+        entities.extend(
+            [
+                DysonWiFiSensor(coordinator),
+                DysonConnectionStatusSensor(coordinator),
+            ]
+        )
+
+    # Add HEPA filter sensors only for devices with ExtendedAQ capability
+    if "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str:
+        entities.extend(
+            [
+                DysonHEPAFilterLifeSensor(coordinator),
+                DysonHEPAFilterTypeSensor(coordinator),
+            ]
+        )
 
     # Add carbon filter sensors only for devices with Formaldehyde capability
     # TODO: Update this when we identify the exact formaldehyde capability name
