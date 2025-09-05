@@ -28,18 +28,19 @@ This directory contains automated workflows for continuous integration and testi
 
 **Jobs:**
 
-- **Test:** Full test suite on Python 3.13
+- **Tests:** Core test suite on Python 3.13
+- **Code Coverage Analysis:** Comprehensive coverage reporting with artifacts
 - **Quality:** Code formatting, linting, type checking, security
 - **Integration:** Separate integration and unit test runs
 - **Build:** Package building and validation
-- **Test Summary:** Consolidated results reporting
 
 **Key Features:**
 
-- 🐍 Multi-Python version testing
+- 🎯 Focused Python 3.13 testing
+- 📊 Dedicated code coverage analysis
 - 🛡️ Security scanning with Bandit
 - 📦 Package build verification
-- 🎯 Comprehensive quality checks
+- 🔧 Comprehensive quality checks
 - 📈 Codecov integration
 
 ### 🔧 DevContainer Test (`devcontainer-test.yml`)
@@ -152,9 +153,10 @@ All workflows use intelligent caching:
 ### Required Checks for PR Merge
 
 1. **Quick Test Suite** - All tests in `/tests` pass
-2. **Test Python 3.13** - Core version compatibility
-3. **Code Quality Checks** - Formatting, linting, types
-4. **Build Package** - Successful package creation
+2. **Tests** - Core test suite passes
+3. **Code Coverage Analysis** - Coverage requirements met
+4. **Code Quality Checks** - Formatting, linting, types
+5. **Build Package** - Successful package creation
 
 ### Code Quality Standards
 

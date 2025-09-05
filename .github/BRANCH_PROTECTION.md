@@ -84,7 +84,7 @@
 
 required_status_checks:
 strict: true # Require branches to be up to date before merging
-contexts: # Core test suite - must pass - "Quick Test Suite" - "Test Python 3.13"
+contexts: # Core test suite - must pass - "Quick Test Suite" - "Tests" - "Code Coverage Analysis"
 
     # Code quality - must pass
     - "Code Quality Checks"
