@@ -125,36 +125,45 @@ The integration will:
 - **Automatic Setup**: Each device configured with appropriate sensors and controls
 
 #### **Expected Entities Per Device**
-Based on your device capabilities, you'll automatically get:
+Based on your device capabilities and category, you'll automatically get:
 
-**All Devices:**
-- Connection status sensor
-- Filter replacement alert (binary sensor) 
-- Reconnect button
-
-**Air Purifiers and Fans:**
+**All Devices (Basic Support):**
 - Fan control with speed adjustment (1-10)
-- PM2.5 and PM10 air quality sensors  
-- WiFi signal strength (diagnostic)
-- HEPA filter life and type sensors
+- Basic binary sensors (online/offline, night mode, auto mode)
+- Button controls (filter reset)
+- Number controls (sleep timer)
+- Select controls (fan speed)
+- Switch controls (oscillation)
 
-**Air Purifiers with Extended Air Quality:**
-- Individual fault sensors for each component
-- Air quality sensor fault detection
-- Filter replacement alert
+**WiFi-Enabled Devices (EC/Robot Categories):**
+- Connection status sensor (Local/Cloud/Disconnected)
+- WiFi signal strength sensor (diagnostic)
 
-**Heating Models (HP series):**
-- Temperature sensor and climate control
-- Temperature fault sensor
-- Full HVAC interface
+**Air Quality Models (ExtendedAQ Capability):**
+- PM2.5 air quality sensor
+- PM10 air quality sensor  
+- HEPA filter life sensor (%)
+- HEPA filter type sensor
 
-**Formaldehyde Models (when detected):**
-- Carbon filter life and type sensors
-- Carbon filter fault sensors
+**Heating Models (Heating Capability):**
+- Temperature sensor
+- Climate control platform
+- Heating switch control
 
-**Robot Models (when detected):**
-- Battery level sensor
-- Robot-specific fault sensors
+**Future Support (Under Development):**
+- Carbon filter sensors (Formaldehyde capability)
+- Humidity sensors (Humidifier capability)
+- Battery sensors (Robot devices)
+
+> 📖 **See [Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md) for complete entity breakdown by device type**
+
+**Future Support (Under Development):**
+- **Carbon Filter Sensors**: Life and type monitoring (pending Formaldehyde capability identification)
+- **Humidity Controls**: Sensor and controls (pending Humidifier capability identification)  
+- **Robot-Specific Features**: Battery monitoring, cleaning modes, dustbin status
+
+**Troubleshooting Missing Entities:**
+If expected sensors are missing, see our [Entity Troubleshooting Guide](docs/TROUBLESHOOTING_ENTITIES.md)
 
 #### **Setup Time**
 - **Initial connection**: 10-30 seconds
@@ -265,7 +274,55 @@ logger:
     custom_components.hass-dyson: debug
 ```
 
-## 🛠️ Development
+## � Documentation
+
+### **Comprehensive Guides**
+- **[Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md)** - Complete breakdown of which entities are available for each device type and capability
+- **[Entity Troubleshooting Guide](docs/TROUBLESHOOTING_ENTITIES.md)** - Resolve missing or unexpected sensors and controls
+- **[API Documentation](docs/API.md)** - Technical details about the Dyson API integration
+- **[Security Guide](docs/SECURITY.md)** - Security considerations and best practices
+- **[Live Testing Guide](docs/LIVE_TESTING_GUIDE.md)** - How to test with real Dyson devices
+
+### **Quick References**
+- **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
+- **[Testing Guide](docs/TESTING_GUIDE.md)** - How to run tests and validate functionality
+- **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)** - Technical architecture overview
+
+## �🛠️ Development
+
+### **Quick Start with DevContainer**
+The easiest way to get started with development is using the provided devcontainer:
+
+1. **Prerequisites**: Install VS Code with the "Dev Containers" extension
+2. **Open Project**: Open the repository in VS Code
+3. **Reopen in Container**: Press `Ctrl+Shift+P` → "Dev Containers: Reopen in Container"
+4. **Start Developing**: All dependencies, tools, and Home Assistant are pre-installed!
+
+The devcontainer includes:
+- **Home Assistant Core** with all dependencies
+- **Development Tools**: Black, Flake8, isort, mypy, pytest
+- **MQTT Broker**: Local Mosquitto for testing
+- **VS Code Extensions**: Python tools and GitHub Copilot
+- **Pre-configured Settings**: Optimized for HA development
+
+See [`.devcontainer/README.md`](.devcontainer/README.md) for detailed documentation.
+
+### **Manual Development Setup**
+If you prefer local development:
+
+```bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate     # Windows
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+pip install -e .
+
+# Install Home Assistant for testing
+pip install homeassistant
+```
 
 ### **Architecture**
 ```
@@ -295,11 +352,27 @@ custom_components/hass_dyson/
 
 ### **Contributing**
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests (`python -m pytest`)
-4. Commit changes (`git commit -am 'Add amazing feature'`)
-5. Push branch (`git push origin feature/amazing-feature`)
-6. Open Pull Request
+2. **Recommended**: Use the devcontainer for consistent development environment
+   - Open in VS Code with Dev Containers extension
+   - All tools and dependencies are pre-configured
+3. Create feature branch (`git checkout -b feature/amazing-feature`)
+4. Make your changes following the code quality standards:
+   ```bash
+   # Format code
+   python -m black .
+   
+   # Lint code  
+   python -m flake8 .
+   
+   # Sort imports
+   python -m isort .
+   
+   # Run tests
+   python -m pytest
+   ```
+5. Commit changes (`git commit -am 'Add amazing feature'`)
+6. Push branch (`git push origin feature/amazing-feature`)
+7. Open Pull Request
 
 ## 📋 Requirements
 
