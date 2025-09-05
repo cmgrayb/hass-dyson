@@ -19,6 +19,13 @@ def mock_dyson_device():
     device.send_command = AsyncMock()
     device.get_state = AsyncMock(return_value={})
     device.get_faults = AsyncMock(return_value=[])
+
+    # Add fan control methods
+    device.set_fan_power = AsyncMock()
+    device.set_fan_speed = AsyncMock()
+    device.set_oscillation = AsyncMock()
+    device.set_direction = AsyncMock()
+
     return device
 
 

@@ -5,10 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -81,7 +78,7 @@ async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-) -> None:
+) -> bool:
     """Set up Dyson binary sensor platform."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
@@ -113,6 +110,7 @@ async def async_setup_entry(
             _LOGGER.debug("Skipping fault sensor for irrelevant code: %s", fault_code)
 
     async_add_entities(entities, True)
+    return True
 
 
 class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
