@@ -103,7 +103,7 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
                 result = await device.connect()
 
             assert result is True
@@ -151,7 +151,7 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
                 # Connect first
                 await device.connect()
 
@@ -204,7 +204,7 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
                 # Connect first
                 await device.connect()
 
@@ -241,7 +241,7 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
                 # Connect first
                 await device.connect()
 
@@ -275,7 +275,7 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
                 # Connect first
                 await device.connect()
                 assert device.is_connected is True

@@ -39,10 +39,9 @@ class TestDeviceCapabilityMapping:
     def test_air_purifier_capabilities(self, mock_hass, base_config_entry):
         """Test capability mapping for air purifier devices."""
         # Air purifier typically has environmental data and extended air quality
-        base_config_entry.data.update({
-            "capabilities": ["EnvironmentalData", "ExtendedAQ", "FanControl"],
-            "device_category": "purifier"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["EnvironmentalData", "ExtendedAQ", "FanControl"], "device_category": "purifier"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -64,10 +63,9 @@ class TestDeviceCapabilityMapping:
 
     def test_heater_capabilities(self, mock_hass, base_config_entry):
         """Test capability mapping for heater devices."""
-        base_config_entry.data.update({
-            "capabilities": ["EnvironmentalData", "Heating", "FanControl"],
-            "device_category": "heater"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["EnvironmentalData", "Heating", "FanControl"], "device_category": "heater"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -85,10 +83,7 @@ class TestDeviceCapabilityMapping:
 
     def test_fan_capabilities(self, mock_hass, base_config_entry):
         """Test capability mapping for fan devices."""
-        base_config_entry.data.update({
-            "capabilities": ["FanControl", "Oscillation"],
-            "device_category": "fan"
-        })
+        base_config_entry.data.update({"capabilities": ["FanControl", "Oscillation"], "device_category": "fan"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -107,10 +102,9 @@ class TestDeviceCapabilityMapping:
     def test_humidifier_capabilities(self, mock_hass, base_config_entry):
         """Test capability mapping for humidifier devices."""
         # Humidifier capability detection (currently theoretical)
-        base_config_entry.data.update({
-            "capabilities": ["EnvironmentalData", "Humidifier", "FanControl"],
-            "device_category": "humidifier"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["EnvironmentalData", "Humidifier", "FanControl"], "device_category": "humidifier"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -125,10 +119,9 @@ class TestDeviceCapabilityMapping:
 
     def test_robot_vacuum_capabilities(self, mock_hass, base_config_entry):
         """Test capability mapping for robot vacuum devices."""
-        base_config_entry.data.update({
-            "capabilities": ["Navigation", "Cleaning", "BatteryStatus"],
-            "device_category": "robot"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["Navigation", "Cleaning", "BatteryStatus"], "device_category": "robot"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -144,10 +137,9 @@ class TestDeviceCapabilityMapping:
 
     def test_case_insensitive_capabilities(self, mock_hass, base_config_entry):
         """Test that capability matching is case-insensitive."""
-        base_config_entry.data.update({
-            "capabilities": ["environmentaldata", "EXTENDEDAQ", "FanControl"],
-            "device_category": "purifier"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["environmentaldata", "EXTENDEDAQ", "FanControl"], "device_category": "purifier"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -164,10 +156,7 @@ class TestDeviceCapabilityMapping:
 
     def test_empty_capabilities(self, mock_hass, base_config_entry):
         """Test handling of devices with no capabilities."""
-        base_config_entry.data.update({
-            "capabilities": [],
-            "device_category": "unknown"
-        })
+        base_config_entry.data.update({"capabilities": [], "device_category": "unknown"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -182,10 +171,9 @@ class TestDeviceCapabilityMapping:
 
     def test_malformed_capabilities(self, mock_hass, base_config_entry):
         """Test handling of malformed capability data."""
-        base_config_entry.data.update({
-            "capabilities": ["", None, "EnvironmentalData", 123],
-            "device_category": "purifier"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["", None, "EnvironmentalData", 123], "device_category": "purifier"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -334,10 +322,7 @@ class TestCapabilityBasedEntityCreation:
 
     def test_extended_aq_enables_air_quality_sensors(self, mock_hass, base_config_entry):
         """Test that ExtendedAQ capability enables PM2.5/PM10 sensors."""
-        base_config_entry.data.update({
-            "capabilities": ["ExtendedAQ"],
-            "device_category": "purifier"
-        })
+        base_config_entry.data.update({"capabilities": ["ExtendedAQ"], "device_category": "purifier"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -349,7 +334,7 @@ class TestCapabilityBasedEntityCreation:
             coordinator.has_capability = lambda cap: cap in coordinator._device_capabilities
 
         # Mock sensor creation check
-        with patch('custom_components.hass_dyson.sensor.async_setup_entry') as mock_setup:
+        with patch("custom_components.hass_dyson.sensor.async_setup_entry") as mock_setup:
             # The capability should be detectable
             assert coordinator.has_capability("ExtendedAQ")
 
@@ -358,10 +343,7 @@ class TestCapabilityBasedEntityCreation:
 
     def test_heating_enables_temperature_sensor(self, mock_hass, base_config_entry):
         """Test that Heating capability enables temperature sensor."""
-        base_config_entry.data.update({
-            "capabilities": ["Heating"],
-            "device_category": "heater"
-        })
+        base_config_entry.data.update({"capabilities": ["Heating"], "device_category": "heater"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -377,10 +359,7 @@ class TestCapabilityBasedEntityCreation:
 
     def test_ec_category_enables_wifi_sensors(self, mock_hass, base_config_entry):
         """Test that 'ec' category enables WiFi signal sensors."""
-        base_config_entry.data.update({
-            "capabilities": ["EnvironmentalData"],
-            "device_category": "ec"
-        })
+        base_config_entry.data.update({"capabilities": ["EnvironmentalData"], "device_category": "ec"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -394,10 +373,7 @@ class TestCapabilityBasedEntityCreation:
 
     def test_robot_category_enables_wifi_sensors(self, mock_hass, base_config_entry):
         """Test that 'robot' category enables WiFi signal sensors."""
-        base_config_entry.data.update({
-            "capabilities": ["Navigation"],
-            "device_category": "robot"
-        })
+        base_config_entry.data.update({"capabilities": ["Navigation"], "device_category": "robot"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -411,10 +387,7 @@ class TestCapabilityBasedEntityCreation:
 
     def test_vacuum_category_no_wifi_sensors(self, mock_hass, base_config_entry):
         """Test that 'vacuum' category does NOT enable WiFi sensors."""
-        base_config_entry.data.update({
-            "capabilities": ["Cleaning"],
-            "device_category": "vacuum"
-        })
+        base_config_entry.data.update({"capabilities": ["Cleaning"], "device_category": "vacuum"})
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -428,10 +401,9 @@ class TestCapabilityBasedEntityCreation:
 
     def test_multiple_capabilities_enable_multiple_sensors(self, mock_hass, base_config_entry):
         """Test that multiple capabilities enable multiple sensor types."""
-        base_config_entry.data.update({
-            "capabilities": ["ExtendedAQ", "Heating", "EnvironmentalData"],
-            "device_category": "ec"
-        })
+        base_config_entry.data.update(
+            {"capabilities": ["ExtendedAQ", "Heating", "EnvironmentalData"], "device_category": "ec"}
+        )
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
@@ -471,7 +443,7 @@ class TestRealDeviceScenarios:
             "mqtt_password": "purifier_password",
             "mqtt_hostname": "192.168.1.50",
             "capabilities": ["EnvironmentalData", "ExtendedAQ", "FanControl", "Oscillation"],
-            "device_category": "purifier"
+            "device_category": "purifier",
         }
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
@@ -501,7 +473,7 @@ class TestRealDeviceScenarios:
             "mqtt_password": "heater_password",
             "mqtt_hostname": "192.168.1.51",
             "capabilities": ["EnvironmentalData", "Heating", "FanControl"],
-            "device_category": "heater"
+            "device_category": "heater",
         }
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
@@ -534,7 +506,7 @@ class TestRealDeviceScenarios:
             "mqtt_password": "robot_password",
             "mqtt_hostname": "192.168.1.52",
             "capabilities": ["Navigation", "Cleaning", "BatteryStatus"],
-            "device_category": "robot"
+            "device_category": "robot",
         }
 
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):

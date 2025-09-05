@@ -104,7 +104,7 @@ def test_fan_entity_creation(mock_coordinator):
     assert fan.name == "Dyson MOCK-SERIAL-TEST123"  # From entity base class
 
     # Mock async_write_ha_state to prevent Home Assistant framework calls
-    with patch.object(fan, 'async_write_ha_state'):
+    with patch.object(fan, "async_write_ha_state"):
         # Trigger coordinator update to initialize attributes
         fan._handle_coordinator_update()
 
@@ -217,6 +217,7 @@ async def test_fan_entity_commands(mock_coordinator):
 
     # Mock the hass attribute and async_write_ha_state
     from unittest.mock import MagicMock
+
     mock_hass = MagicMock()
     mock_hass.async_add_executor_job = AsyncMock()
     fan.hass = mock_hass

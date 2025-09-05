@@ -122,7 +122,7 @@ async def test_sticker_config_from_real_data(real_device_data, mock_hass):
             device._connected = True  # Simulate successful connection
             return True
 
-        with patch.object(device, '_wait_for_connection', side_effect=mock_wait_for_connection):
+        with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
             # Test connection
             result = await device.connect()
             assert result is True
