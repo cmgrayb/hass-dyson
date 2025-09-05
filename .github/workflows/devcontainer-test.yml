@@ -1,0 +1,57 @@
+name: DevContainer Test
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '.devcontainer/**'
+      - 'requirements-dev.txt'
+      - 'pyproject.toml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.devcontainer/**'
+      - 'requirements-dev.txt'
+      - 'pyproject.toml'
+
+jobs:
+  test-devcontainer:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build and test devcontainer
+      uses: devcontainers/ci@v0.3
+      with:
+        imageName: dyson-ha-dev
+        runCmd: |
+          # Verify development environment
+          python --version
+          pip --version
+          
+          # Verify packages are installed
+          python -c "import homeassistant; print(f'Home Assistant: {homeassistant.__version__}')"
+          python -c "import pytest; print(f'Pytest: {pytest.__version__}')"
+          python -c "import black; print('Black: OK')"
+          python -c "import flake8; print('Flake8: OK')"
+          python -c "import isort; print('isort: OK')"
+          python -c "import mypy; print('mypy: OK')"
+          
+          # Verify our package installs correctly
+          pip install -e .
+          python -c "import custom_components.hass_dyson; print('Integration import: OK')"
+          
+          # Run basic tests
+          python -m pytest tests/test_basic.py -v
+          
+          # Run code quality checks
+          python -m black --check .
+          python -m flake8 .
+          python -m isort --check-only .
+          
+          echo "✅ DevContainer environment verified successfully!"

@@ -60,7 +60,6 @@ coverage.xml
 
 # Docker development environment (contains sensitive credentials)
 docker/
-docker-compose.yml
 docker-compose.override.yml
 .pytest_cache/
 cover/

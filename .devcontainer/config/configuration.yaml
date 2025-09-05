@@ -1,0 +1,28 @@
+# Basic Home Assistant configuration for testing
+homeassistant:
+  name: Dyson Dev
+  latitude: 37.7749
+  longitude: -122.4194
+  elevation: 0
+  unit_system: metric
+  time_zone: UTC
+
+logger:
+  default: info
+  logs:
+    custom_components.hass_dyson: debug
+
+# Enable the frontend
+frontend:
+
+# Enable configuration UI
+config:
+
+# Enable history
+history:
+
+# Enable logbook
+logbook:
+
+# Track the sun
+sun:
