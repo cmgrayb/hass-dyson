@@ -4,14 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.hass_dyson.binary_sensor import DysonFaultSensor, DysonFilterReplacementSensor
+from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
 from custom_components.hass_dyson.const import (
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_HEATING,
     CAPABILITY_HUMIDIFIER,
     DEVICE_CATEGORY_EC,
-    DEVICE_CATEGORY_FLRC,
     DEVICE_CATEGORY_ROBOT,
     DEVICE_CATEGORY_VACUUM,
 )

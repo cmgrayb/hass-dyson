@@ -20,28 +20,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def _is_fault_code_relevant(fault_code: str, device_categories: Any, device_capabilities: List[Any]) -> bool:
     """Check if a fault code is relevant for a device based on category and capabilities."""
-    # Handle device category list properly
-    if isinstance(device_categories, list):
-        category_strings = []
-        for cat in device_categories:
-            if hasattr(cat, "value"):
-                category_strings.append(cat.value)
-            else:
-                category_strings.append(str(cat))
-    else:
-        # Single category - convert to list for consistency
-        if hasattr(device_categories, "value"):
-            category_strings = [device_categories.value]
-        else:
-            category_strings = [str(device_categories)]
-
-    # Convert capabilities to string values if they are enum objects
-    capability_strings = []
-    for cap in device_capabilities:
-        if hasattr(cap, "value"):
-            capability_strings.append(cap.value)
-        else:
-            capability_strings.append(str(cap))
+    category_strings = _normalize_categories(device_categories)
+    capability_strings = _normalize_capabilities(device_capabilities)
 
     _LOGGER.debug(
         "Checking fault code '%s' relevance - categories: %s, capabilities: %s",
@@ -51,13 +31,54 @@ def _is_fault_code_relevant(fault_code: str, device_categories: Any, device_capa
     )
 
     # Check if fault code is relevant for any device category
+    if _is_fault_code_for_category(fault_code, category_strings):
+        return True
+
+    # Check if fault code requires specific capabilities
+    return _is_fault_code_for_capability(fault_code, capability_strings)
+
+
+def _normalize_categories(device_categories: Any) -> List[str]:
+    """Normalize device categories to a list of strings."""
+    if isinstance(device_categories, list):
+        category_strings = []
+        for cat in device_categories:
+            if hasattr(cat, "value"):
+                category_strings.append(cat.value)
+            else:
+                category_strings.append(str(cat))
+        return category_strings
+    else:
+        # Single category - convert to list for consistency
+        if hasattr(device_categories, "value"):
+            return [device_categories.value]
+        else:
+            return [str(device_categories)]
+
+
+def _normalize_capabilities(device_capabilities: List[Any]) -> List[str]:
+    """Normalize device capabilities to a list of strings."""
+    capability_strings = []
+    for cap in device_capabilities:
+        if hasattr(cap, "value"):
+            capability_strings.append(cap.value)
+        else:
+            capability_strings.append(str(cap))
+    return capability_strings
+
+
+def _is_fault_code_for_category(fault_code: str, category_strings: List[str]) -> bool:
+    """Check if fault code matches any device category."""
     for category_str in category_strings:
         category_fault_codes = DEVICE_CATEGORY_FAULT_CODES.get(category_str, [])
         if fault_code in category_fault_codes:
             _LOGGER.debug("Fault code '%s' matches device category '%s'", fault_code, category_str)
             return True
+    return False
 
-    # Check if fault code requires specific capabilities
+
+def _is_fault_code_for_capability(fault_code: str, capability_strings: List[str]) -> bool:
+    """Check if fault code requires specific capabilities."""
     for capability, fault_codes in CAPABILITY_FAULT_CODES.items():
         if fault_code in fault_codes:
             is_relevant = capability in capability_strings

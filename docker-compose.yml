@@ -1,11 +1,11 @@
 services:
   homeassistant:
-    container_name: dyson-ha-production-test
+    container_name: hass-dyson-test
     image: ghcr.io/home-assistant/home-assistant:stable
     volumes:
-      - /c/DevWorkspace/dyson/ha-dyson-alt/custom_components:/config/custom_components:ro
-      - /c/DevWorkspace/dyson/ha-dyson-alt/docker/ha-config:/config
-      - /c/DevWorkspace/dyson/ha-dyson-alt/docker/logs:/config/logs
+      - ./custom_components:/config/custom_components:ro
+      - ./docker/ha-config:/config
+      - ./docker/logs:/config/logs
     ports:
       - "8124:8123"
     environment:
@@ -15,13 +15,13 @@ services:
     privileged: true
 
   mosquitto:
-    container_name: dyson-mqtt-production-test
+    container_name: hass-dyson-mqtt-test
     image: eclipse-mosquitto:latest
     ports:
       - "1883:1883"
       - "9001:9001"
     volumes:
-      - /c/DevWorkspace/dyson/ha-dyson-alt/docker/mosquitto:/mosquitto/config:ro
-      - /c/DevWorkspace/dyson/ha-dyson-alt/docker/mosquitto-data:/mosquitto/data
-      - /c/DevWorkspace/dyson/ha-dyson-alt/docker/mosquitto-logs:/mosquitto/log
+      - ./docker/mosquitto:/mosquitto/config:ro
+      - ./docker/mosquitto-data:/mosquitto/data
+      - ./docker/mosquitto-logs:/mosquitto/log
     restart: unless-stopped

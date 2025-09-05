@@ -10,7 +10,7 @@ echo "=================================================="
 
 # Create necessary directories
 echo "📁 Creating directories..."
-mkdir -p docker/ha-config/custom_components
+mkdir -p docker/ha-config
 mkdir -p docker/logs
 mkdir -p docker/mosquitto-data
 mkdir -p docker/mosquitto-logs
@@ -38,7 +38,7 @@ echo "This may take a few minutes for the first startup..."
 
 # Check if Home Assistant is running
 for i in {1..30}; do
-    if curl -s http://localhost:8123 > /dev/null; then
+    if curl -s http://localhost:8124 > /dev/null; then
         echo "✅ Home Assistant is running!"
         break
     fi
@@ -53,12 +53,12 @@ done
 echo ""
 echo "🎉 Production Home Assistant Test Environment Ready!"
 echo "=================================================="
-echo "🌐 Home Assistant URL: http://localhost:8123"
+echo "🌐 Home Assistant URL: http://localhost:8124"
 echo "📊 MQTT Broker: localhost:1883"
 echo "🕷️ MQTT WebSocket: ws://localhost:9001"
 echo ""
 echo "📋 Next Steps:"
-echo "1. Open http://localhost:8123 in your browser"
+echo "1. Open http://localhost:8124 in your browser"
 echo "2. Complete the initial Home Assistant setup"
 echo "3. Go to Configuration → Integrations → Add Integration"
 echo "4. Search for 'Dyson' to test the integration"

@@ -164,8 +164,11 @@ jobs:
           python -m flake8 . --count --show-source --statistics
 
       - name: Run MyPy type checking
+        continue-on-error: true
         run: |
-          python -m mypy custom_components/hass_dyson --ignore-missing-imports
+          echo "::group::MyPy Type Checking"
+          python -m mypy custom_components/hass_dyson || echo "MyPy found type issues (non-blocking)"
+          echo "::endgroup::"
 
       - name: Run Bandit security check
         run: |

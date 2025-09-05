@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Dyson Alt Development Docker Helper Script
+# Hass Dyson Development Docker Helper Script
 
 set -e
 
@@ -8,7 +8,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 show_help() {
-    echo "Dyson Alt Development Environment"
+    echo "Hass Dyson Development Environment"
     echo ""
     echo "Usage: $0 [COMMAND]"
     echo ""
@@ -28,13 +28,13 @@ start_services() {
     echo "🏠 Starting Home Assistant development environment..."
     
     # Ensure config directory exists
-    mkdir -p docker/config
+    mkdir -p docker/ha-config
     
     # Start services
     docker-compose up -d
     
     echo "✅ Services started!"
-    echo "🌐 Home Assistant will be available at: http://localhost:8123"
+    echo "🌐 Home Assistant will be available at: http://localhost:8124"
     echo "📡 MQTT broker available at: localhost:1883"
     echo ""
     echo "Run '$0 logs' to follow startup logs"
@@ -82,7 +82,7 @@ show_status() {
 
 show_url() {
     if docker-compose ps | grep -q "homeassistant.*Up"; then
-        echo "🌐 Home Assistant: http://localhost:8123"
+        echo "🌐 Home Assistant: http://localhost:8124"
     else
         echo "❌ Home Assistant is not running. Use '$0 start' to start it."
     fi

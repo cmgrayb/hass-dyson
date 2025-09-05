@@ -93,47 +93,49 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Update entity states for STATE-CHANGE messages
         if data.get("msg") == "STATE-CHANGE":
             _LOGGER.debug("Processing STATE-CHANGE message for real-time entity updates")
-            # Update coordinator data with fresh device state
-            try:
-                if self.device:
-                    # Get fresh state from device to update self.data
-                    async def update_coordinator_data():
-                        """Update coordinator data in the event loop."""
-                        try:
-                            fresh_state = await self.device.get_state()
-                            self.data = fresh_state
-                            _LOGGER.debug("Updated coordinator data for STATE-CHANGE, triggering listeners")
-                        except Exception as e:
-                            _LOGGER.warning("Error getting fresh state for STATE-CHANGE: %s", e)
-                        finally:
-                            # Always trigger listeners, even if data update failed
-                            self.async_update_listeners()
+            self._handle_state_change_message()
 
-                    # Schedule the update to run in the event loop using call_soon_threadsafe
-                    def schedule_update():
-                        """Schedule the async update task."""
-                        self.hass.async_create_task(update_coordinator_data())
+    def _handle_state_change_message(self) -> None:
+        """Handle STATE-CHANGE message updates."""
+        try:
+            if self.device:
+                self._schedule_coordinator_data_update()
+            else:
+                self._schedule_listener_update()
+        except Exception as e:
+            _LOGGER.warning("Error setting up STATE-CHANGE data update: %s", e)
+            self._schedule_fallback_update()
 
-                    self.hass.loop.call_soon_threadsafe(schedule_update)
-                else:
-                    # No device available, schedule listener update
-                    def schedule_listeners():
-                        """Schedule async listener update."""
-                        self.async_update_listeners()
+    def _schedule_coordinator_data_update(self) -> None:
+        """Schedule coordinator data update with fresh device state."""
+        self.hass.loop.call_soon_threadsafe(self._create_coordinator_update_task)
 
-                    self.hass.loop.call_soon_threadsafe(schedule_listeners)
-            except Exception as e:
-                _LOGGER.warning("Error setting up STATE-CHANGE data update: %s", e)
-                # Fallback to scheduling listener update
-                try:
+    def _create_coordinator_update_task(self) -> None:
+        """Create the async update task."""
+        self.hass.async_create_task(self._update_coordinator_data())
 
-                    def schedule_fallback():
-                        """Schedule fallback listener update."""
-                        self.async_update_listeners()
+    async def _update_coordinator_data(self) -> None:
+        """Update coordinator data in the event loop."""
+        try:
+            fresh_state = await self.device.get_state()
+            self.data = fresh_state
+            _LOGGER.debug("Updated coordinator data for STATE-CHANGE, triggering listeners")
+        except Exception as e:
+            _LOGGER.warning("Error getting fresh state for STATE-CHANGE: %s", e)
+        finally:
+            # Always trigger listeners, even if data update failed
+            self.async_update_listeners()
 
-                    self.hass.loop.call_soon_threadsafe(schedule_fallback)
-                except Exception as fallback_e:
-                    _LOGGER.warning("Failed to schedule fallback update: %s", fallback_e)
+    def _schedule_listener_update(self) -> None:
+        """Schedule async listener update when no device is available."""
+        self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+
+    def _schedule_fallback_update(self) -> None:
+        """Schedule fallback listener update in case of errors."""
+        try:
+            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+        except Exception as fallback_e:
+            _LOGGER.warning("Failed to schedule fallback update: %s", fallback_e)
 
     @property
     def serial_number(self) -> str:
@@ -227,355 +229,298 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _async_setup_cloud_device(self) -> None:
         """Set up device discovered via cloud API."""
-        from libdyson_rest import DysonClient
-
         _LOGGER.debug("Setting up cloud device for %s", self.serial_number)
 
         try:
-            # Check if we have an auth token (from new config flow) or need to authenticate
-            auth_token = self.config_entry.data.get("auth_token")
-            username = self.config_entry.data.get("username")
-            password = self.config_entry.data.get("password")
-
-            _LOGGER.debug(
-                "Cloud authentication for %s - username: %s, auth_token: %s",
-                self.serial_number,
-                username,
-                "***" if auth_token else "None",
-            )
-
-            # Initialize cloud client
-            if auth_token:
-                # Use existing auth token from config flow
-                cloud_client = DysonClient(email=username, auth_token=auth_token)
-            elif username and password:
-                # Legacy authentication method
-                cloud_client = DysonClient(email=username, password=password)
-                # Authenticate using proper flow
-                challenge = await self.hass.async_add_executor_job(lambda: cloud_client.begin_login())
-                await self.hass.async_add_executor_job(
-                    lambda: cloud_client.complete_login(str(challenge.challenge_id), password)
-                )
-            else:
-                raise UpdateFailed("Missing cloud credentials (auth_token or username/password)")
-
-            # Get device list and find our device
-            devices = await self.hass.async_add_executor_job(cloud_client.get_devices)
-            device_info = None
-
-            for device in devices:
-                if device.serial_number == self.serial_number:
-                    device_info = device
-                    break
-
-            if not device_info:
-                raise UpdateFailed(f"Device {self.serial_number} not found in cloud account")
-
-            # Debug: Log device info properties
-            _LOGGER.debug("Device info object: %s", device_info)
-            _LOGGER.debug("Device info dir: %s", [attr for attr in dir(device_info) if not attr.startswith("_")])
-
-            # Check connected_configuration for MQTT details
-            connected_config = getattr(device_info, "connected_configuration", None)
-            if connected_config:
-                _LOGGER.debug("Connected configuration: %s", connected_config)
-                _LOGGER.debug("Connected config type: %s", type(connected_config))
-                if hasattr(connected_config, "__dict__"):
-                    _LOGGER.debug("Connected config attributes: %s", vars(connected_config))
-                _LOGGER.debug(
-                    "Connected config dir: %s", [attr for attr in dir(connected_config) if not attr.startswith("_")]
-                )
-
-                # Check MQTT object details
-                mqtt_obj = getattr(connected_config, "mqtt", None)
-                if mqtt_obj:
-                    _LOGGER.debug("MQTT object: %s", mqtt_obj)
-                    _LOGGER.debug("MQTT object dir: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith("_")])
-                    if hasattr(mqtt_obj, "__dict__"):
-                        _LOGGER.debug("MQTT object attributes: %s", vars(mqtt_obj))
-
-                    # Check for decoded password attributes that libdyson-rest might provide
-                    possible_password_attrs = [
-                        "password",
-                        "decoded_password",
-                        "mqtt_password",
-                        "local_broker_password",
-                        "broker_password",
-                        "credentials",
-                    ]
-                    for attr in possible_password_attrs:
-                        if hasattr(mqtt_obj, attr):
-                            value = getattr(mqtt_obj, attr)
-                            _LOGGER.debug(
-                                "Found MQTT attribute %s: %s (length: %d)",
-                                attr,
-                                "***" if value else "None",
-                                len(value) if value else 0,
-                            )
-
-                    # Check for decoded password attributes
-                    for attr_name in ["password", "decoded_password", "local_password", "device_password"]:
-                        if hasattr(mqtt_obj, attr_name):
-                            attr_value = getattr(mqtt_obj, attr_name, "")
-                            _LOGGER.debug(
-                                "Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0
-                            )
-
-            # Extract device capabilities and category from API response or config entry
-            from .device_utils import normalize_capabilities, normalize_device_category
-
-            # Check if device_category was provided in config entry (like manual devices)
-            config_device_category = self.config_entry.data.get("device_category")
-            if config_device_category:
-                # Use device_category from config entry if available (ensures consistency)
-                self._device_category = normalize_device_category(config_device_category)
-                _LOGGER.debug("Using device category from config entry: %s", self._device_category)
-            else:
-                # Extract category from API response
-                raw_category = getattr(device_info, "category", "unknown")
-                self._device_category = normalize_device_category(raw_category)
-                _LOGGER.debug("Extracted device category from API: %s", self._device_category)
-
-            # Extract capabilities from config entry or API
-            config_capabilities = self.config_entry.data.get("capabilities")
-            if config_capabilities and len(config_capabilities) > 0:
-                # Use capabilities from config entry if non-empty
-                self._device_capabilities = normalize_capabilities(config_capabilities)
-                _LOGGER.debug("Using capabilities from config entry: %s", self._device_capabilities)
-            else:
-                # Extract capabilities from API response
-                api_capabilities = self._extract_capabilities(device_info)
-                self._device_capabilities = normalize_capabilities(api_capabilities)
-                _LOGGER.debug("Extracted capabilities from API: %s", self._device_capabilities)
-
-            # Initialize cloud connection variables
-            cloud_host = None
-            cloud_client_id = ""
-            cloud_token_key = ""  # nosec B105
-            cloud_token_value = ""  # nosec B105
-            cloud_token_signature = ""  # nosec B105
-            cloud_custom_authorizer = ""
-
-            # Extract firmware version from connected_configuration
-            self._firmware_version = "Unknown"
-            connected_config = getattr(device_info, "connected_configuration", None)
-            if connected_config:
-                firmware_obj = getattr(connected_config, "firmware", None)
-                if firmware_obj:
-                    firmware_version = getattr(firmware_obj, "version", "Unknown")
-                    if firmware_version and firmware_version != "Unknown":
-                        self._firmware_version = firmware_version
-                        _LOGGER.debug("Found firmware version: %s", firmware_version)
-
-            # Extract MQTT credentials from connected_configuration
-            mqtt_username = self.serial_number
-            mqtt_password = ""  # nosec B105
-
-            connected_config = getattr(device_info, "connected_configuration", None)
-            if connected_config:
-                mqtt_obj = getattr(connected_config, "mqtt", None)
-                if mqtt_obj:
-                    # Try to get the decoded/plain password first
-                    for attr in ["password", "decoded_password", "local_password", "device_password"]:
-                        mqtt_password = getattr(mqtt_obj, attr, "")
-                        if mqtt_password:
-                            _LOGGER.debug(
-                                "Found MQTT password using attribute: mqtt.%s (length: %s)", attr, len(mqtt_password)
-                            )
-                            break
-
-                    # Fall back to decrypting the encoded credentials if no plain password found
-                    if not mqtt_password:
-                        encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
-                        if encrypted_credentials:
-                            try:
-                                # Use libdyson-rest to decrypt the local MQTT credentials
-                                mqtt_password = cloud_client.decrypt_local_credentials(
-                                    encrypted_credentials, self.serial_number
-                                )
-                                _LOGGER.debug("Successfully decrypted MQTT password (length: %s)", len(mqtt_password))
-                            except Exception as e:
-                                _LOGGER.error("Failed to decrypt MQTT credentials: %s", e)
-                                mqtt_password = ""  # nosec B105
-                        else:
-                            _LOGGER.debug("No local_broker_credentials found in MQTT object")
-
-                    # Debug: Check what attributes the MQTT object actually has
-                    _LOGGER.debug(
-                        "Available MQTT attributes: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith("_")]
-                    )
-
-                    # Check for IoT credentials using separate API call
-                    try:
-                        _LOGGER.debug("Requesting IoT credentials for device %s", self.serial_number)
-                        iot_data = await self.hass.async_add_executor_job(
-                            cloud_client.get_iot_credentials, self.serial_number
-                        )
-
-                        if iot_data:
-                            _LOGGER.debug("Successfully retrieved IoT credentials")
-                            _LOGGER.debug("IoT data type: %s", type(iot_data))
-                            _LOGGER.debug(
-                                "IoT data dir: %s", [attr for attr in dir(iot_data) if not attr.startswith("_")]
-                            )
-
-                            # Extract AWS IoT endpoint
-                            cloud_host = getattr(iot_data, "endpoint", None)
-                            _LOGGER.debug("Cloud host from iot_data.endpoint: %s", cloud_host)
-
-                            # Extract credentials object
-                            credentials_obj = getattr(iot_data, "iot_credentials", None)
-                            if credentials_obj:
-                                _LOGGER.debug("Found credentials object: %s", type(credentials_obj))
-                                _LOGGER.debug(
-                                    "Credentials dir: %s",
-                                    [attr for attr in dir(credentials_obj) if not attr.startswith("_")],
-                                )
-
-                                cloud_client_id = getattr(credentials_obj, "client_id", "")
-                                cloud_token_key = getattr(credentials_obj, "token_key", "")
-                                cloud_token_value = getattr(credentials_obj, "token_value", "")
-                                cloud_token_signature = getattr(credentials_obj, "token_signature", "")
-                                cloud_custom_authorizer = getattr(credentials_obj, "custom_authorizer_name", "")
-
-                                # Convert to strings if they are UUID or other objects
-                                cloud_client_id = str(cloud_client_id) if cloud_client_id else ""
-                                cloud_token_key = str(cloud_token_key) if cloud_token_key else ""
-                                cloud_token_value = str(cloud_token_value) if cloud_token_value else ""
-                                cloud_token_signature = str(cloud_token_signature) if cloud_token_signature else ""
-                                cloud_custom_authorizer = (
-                                    str(cloud_custom_authorizer) if cloud_custom_authorizer else ""
-                                )
-
-                                # Debug logging in separate try block to avoid disrupting credential processing
-                                try:
-                                    _LOGGER.debug("Cloud client_id: %s", cloud_client_id)
-                                    _LOGGER.debug("Cloud custom_authorizer: %s", cloud_custom_authorizer)
-                                    _LOGGER.debug("Cloud token_key: %s", cloud_token_key)
-                                    _LOGGER.debug(
-                                        "Cloud token available: %s (length: %s)",
-                                        bool(cloud_token_value),
-                                        len(cloud_token_value) if cloud_token_value else 0,
-                                    )
-                                    _LOGGER.debug(
-                                        "Cloud token signature available: %s (length: %s)",
-                                        bool(cloud_token_signature),
-                                        len(cloud_token_signature) if cloud_token_signature else 0,
-                                    )
-                                except Exception as debug_error:
-                                    _LOGGER.warning("Debug logging failed for IoT credentials: %s", debug_error)
-                            else:
-                                _LOGGER.warning("No credentials object found in IoT data")
-                        else:
-                            _LOGGER.warning("No IoT data returned from API")
-
-                    except Exception as e:
-                        _LOGGER.error("Failed to retrieve IoT credentials: %s", e)
-                        # Fallback to checking MQTT object for cloud info (legacy approach)
-                        cloud_host = getattr(mqtt_obj, "remote_broker_hostname", None)
-                        _LOGGER.debug("Fallback: Raw cloud host from mqtt.remote_broker_hostname: %s", cloud_host)
-
-            if cloud_host:
-                _LOGGER.debug("Found cloud host: %s", cloud_host)
-            else:
-                _LOGGER.warning("No cloud host found - cloud connection will not be available")
-
-            if cloud_token_value and cloud_token_signature:
-                _LOGGER.debug(
-                    "Found cloud IoT credentials - token: %s, signature available: %s",
-                    bool(cloud_token_value),
-                    bool(cloud_token_signature),
-                )
-            else:
-                _LOGGER.warning("No complete cloud IoT credentials found - cloud connection will not be available")
-
-            _LOGGER.debug(
-                "Creating DysonDevice with cloud credentials - host: %s, credentials_available: %s",
-                cloud_host,
-                bool(cloud_token_value and cloud_token_signature),
-            )
-
-            _LOGGER.debug(
-                "MQTT credentials - username: %s, password_set: %s, password_length: %s",
-                mqtt_username,
-                bool(mqtt_password),
-                len(mqtt_password) if mqtt_password else 0,
-            )
-
-            # Debug: Show first/last few characters of password for debugging (but not the full password)
-            if mqtt_password:
-                _LOGGER.debug("MQTT password format - starts: %s... ends: ...%s", mqtt_password[:8], mqtt_password[-8:])
-                _LOGGER.debug(
-                    "MQTT password is base64-like: %s",
-                    all(
-                        c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" for c in mqtt_password
-                    ),
-                )
-
-            if not mqtt_password:
-                _LOGGER.error(
-                    "MQTT password cannot be empty for device %s. Available attributes: %s",
-                    self.serial_number,
-                    [attr for attr in dir(device_info) if not attr.startswith("_")],
-                )
-                raise UpdateFailed("MQTT password cannot be empty")
-
-            # Create our device wrapper with correct parameters
-            # DysonDevice will handle the MQTT connection internally
-            device_host = self._get_device_host(device_info)
-            mqtt_prefix = self._get_mqtt_prefix(device_info)
-
-            # Get connection type from config entry, with support for device-specific overrides
-            connection_type = self._get_effective_connection_type()
-
-            # Create cloud credential structure for AWS IoT if available
-            cloud_credential_data = None
-            if cloud_host and cloud_client_id and cloud_token_value and cloud_token_signature:
-                import json
-
-                cloud_credential_data = json.dumps(
-                    {
-                        "client_id": cloud_client_id,
-                        "custom_authorizer_name": cloud_custom_authorizer,
-                        "token_key": cloud_token_key,
-                        "token_value": cloud_token_value,
-                        "token_signature": cloud_token_signature,
-                    }
-                )
-                _LOGGER.debug("Created cloud credential data structure for AWS IoT")
-
-            self.device = DysonDevice(
-                self.hass,
-                self.serial_number,
-                device_host,
-                mqtt_password,  # Local credential for MQTT
-                mqtt_prefix,
-                self._device_capabilities,
-                connection_type,
-                cloud_host,  # Cloud host
-                cloud_credential_data,  # Cloud credential (JSON string for AWS IoT)
-            )
-
-            # Set firmware version in the device for proper device info
-            if self._firmware_version != "Unknown":
-                self.device.set_firmware_version(self._firmware_version)
-
-            # Let DysonDevice handle the connection
-            connected = await self.device.connect()
-            if not connected:
-                raise UpdateFailed(f"Failed to connect to device {self.serial_number}")
-
-            # Register for environmental update notifications
-            self.device.add_environmental_callback(self._on_environmental_update)
-
-            # Register for message updates to get real-time state changes
-            self.device.add_message_callback(self._on_message_update)
+            cloud_client = await self._authenticate_cloud_client()
+            device_info = await self._find_cloud_device(cloud_client)
+            self._extract_device_info(device_info)
+            mqtt_credentials = await self._extract_mqtt_credentials(cloud_client, device_info)
+            cloud_credentials = await self._extract_cloud_credentials(cloud_client, device_info)
+            await self._create_cloud_device(device_info, mqtt_credentials, cloud_credentials)
 
             _LOGGER.info("Successfully set up cloud device %s (%s)", self.serial_number, self._device_category)
 
         except Exception as err:
             _LOGGER.error("Failed to set up cloud device %s: %s", self.serial_number, err)
             raise UpdateFailed(f"Cloud device setup failed: {err}") from err
+
+    async def _authenticate_cloud_client(self):
+        """Authenticate and return a cloud client."""
+        from libdyson_rest import DysonClient
+
+        auth_token = self.config_entry.data.get("auth_token")
+        username = self.config_entry.data.get("username")
+        password = self.config_entry.data.get("password")
+
+        _LOGGER.debug(
+            "Cloud authentication for %s - username: %s, auth_token: %s",
+            self.serial_number,
+            username,
+            "***" if auth_token else "None",
+        )
+
+        # Initialize cloud client
+        if auth_token:
+            # Use existing auth token from config flow
+            return DysonClient(email=username, auth_token=auth_token)
+        elif username and password:
+            # Legacy authentication method
+            cloud_client = DysonClient(email=username, password=password)
+            # Authenticate using proper flow
+            challenge = await self.hass.async_add_executor_job(lambda: cloud_client.begin_login())
+            await self.hass.async_add_executor_job(
+                lambda: cloud_client.complete_login(str(challenge.challenge_id), password)
+            )
+            return cloud_client
+        else:
+            raise UpdateFailed("Missing cloud credentials (auth_token or username/password)")
+
+    async def _find_cloud_device(self, cloud_client):
+        """Find our device in the cloud device list."""
+        devices = await self.hass.async_add_executor_job(cloud_client.get_devices)
+
+        for device in devices:
+            if device.serial_number == self.serial_number:
+                return device
+
+        raise UpdateFailed(f"Device {self.serial_number} not found in cloud account")
+
+    def _extract_device_info(self, device_info) -> None:
+        """Extract device category and capabilities from device info."""
+        _LOGGER.debug("Device info object: %s", device_info)
+        _LOGGER.debug("Device info dir: %s", [attr for attr in dir(device_info) if not attr.startswith("_")])
+
+        self._debug_connected_configuration(device_info)
+        self._extract_device_category(device_info)
+        self._extract_device_capabilities(device_info)
+        self._extract_firmware_version(device_info)
+
+    def _debug_connected_configuration(self, device_info) -> None:
+        """Debug connected configuration details."""
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if connected_config:
+            _LOGGER.debug("Connected configuration: %s", connected_config)
+            _LOGGER.debug("Connected config type: %s", type(connected_config))
+            if hasattr(connected_config, "__dict__"):
+                _LOGGER.debug("Connected config attributes: %s", vars(connected_config))
+            _LOGGER.debug(
+                "Connected config dir: %s", [attr for attr in dir(connected_config) if not attr.startswith("_")]
+            )
+            self._debug_mqtt_object(connected_config)
+
+    def _debug_mqtt_object(self, connected_config) -> None:
+        """Debug MQTT object details."""
+        mqtt_obj = getattr(connected_config, "mqtt", None)
+        if mqtt_obj:
+            _LOGGER.debug("MQTT object: %s", mqtt_obj)
+            _LOGGER.debug("MQTT object dir: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith("_")])
+            if hasattr(mqtt_obj, "__dict__"):
+                _LOGGER.debug("MQTT object attributes: %s", vars(mqtt_obj))
+
+            # Check for decoded password attributes that libdyson-rest might provide
+            possible_password_attrs = [
+                "password",
+                "decoded_password",
+                "mqtt_password",
+                "local_broker_password",
+                "broker_password",
+                "credentials",
+            ]
+            for attr in possible_password_attrs:
+                if hasattr(mqtt_obj, attr):
+                    value = getattr(mqtt_obj, attr)
+                    _LOGGER.debug(
+                        "Found MQTT attribute %s: %s (length: %d)",
+                        attr,
+                        "***" if value else "None",
+                        len(value) if value else 0,
+                    )
+
+            # Check for decoded password attributes
+            for attr_name in ["password", "decoded_password", "local_password", "device_password"]:
+                if hasattr(mqtt_obj, attr_name):
+                    attr_value = getattr(mqtt_obj, attr_name, "")
+                    _LOGGER.debug(
+                        "Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0
+                    )
+
+    def _extract_device_category(self, device_info) -> None:
+        """Extract device category from config entry or API response."""
+        from .device_utils import normalize_device_category
+
+        # Check if device_category was provided in config entry (like manual devices)
+        config_device_category = self.config_entry.data.get("device_category")
+        if config_device_category:
+            # Use device_category from config entry if available (ensures consistency)
+            self._device_category = normalize_device_category(config_device_category)
+            _LOGGER.debug("Using device category from config entry: %s", self._device_category)
+        else:
+            # Extract category from API response
+            raw_category = getattr(device_info, "category", "unknown")
+            self._device_category = normalize_device_category(raw_category)
+            _LOGGER.debug("Extracted device category from API: %s", self._device_category)
+
+    def _extract_device_capabilities(self, device_info) -> None:
+        """Extract device capabilities from config entry or API response."""
+        from .device_utils import normalize_capabilities
+
+        # Extract capabilities from config entry or API
+        config_capabilities = self.config_entry.data.get("capabilities")
+        if config_capabilities and len(config_capabilities) > 0:
+            # Use capabilities from config entry if non-empty
+            self._device_capabilities = normalize_capabilities(config_capabilities)
+            _LOGGER.debug("Using capabilities from config entry: %s", self._device_capabilities)
+        else:
+            # Extract capabilities from API response
+            api_capabilities = self._extract_capabilities(device_info)
+            self._device_capabilities = normalize_capabilities(api_capabilities)
+            _LOGGER.debug("Extracted capabilities from API: %s", self._device_capabilities)
+
+    def _extract_firmware_version(self, device_info) -> None:
+        """Extract firmware version from device info."""
+        self._firmware_version = "Unknown"
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if connected_config:
+            firmware_obj = getattr(connected_config, "firmware", None)
+            if firmware_obj:
+                firmware_version = getattr(firmware_obj, "version", "Unknown")
+                if firmware_version and firmware_version != "Unknown":
+                    self._firmware_version = firmware_version
+                    _LOGGER.debug("Found firmware version: %s", firmware_version)
+
+    async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:
+        """Extract MQTT credentials from device info."""
+        mqtt_password = ""
+        mqtt_username = self.serial_number
+
+        # Check connected_configuration for MQTT details
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if connected_config:
+            mqtt_obj = getattr(connected_config, "mqtt", None)
+            if mqtt_obj:
+                # Try to get the decoded/plain password first
+                for attr in ["password", "decoded_password", "local_password", "device_password"]:
+                    mqtt_password = getattr(mqtt_obj, attr, "")
+                    if mqtt_password:
+                        _LOGGER.debug(
+                            "Found MQTT password using attribute: mqtt.%s (length: %s)", attr, len(mqtt_password)
+                        )
+                        break
+
+                # Fall back to decrypting the encoded credentials if no plain password found
+                if not mqtt_password:
+                    encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
+                    if encrypted_credentials:
+                        try:
+                            # Use libdyson-rest to decrypt the local MQTT credentials
+                            mqtt_password = cloud_client.decrypt_local_credentials(
+                                encrypted_credentials, self.serial_number
+                            )
+                            _LOGGER.debug("Successfully decrypted MQTT password (length: %s)", len(mqtt_password))
+                        except Exception as e:
+                            _LOGGER.error("Failed to decrypt MQTT credentials: %s", e)
+                            mqtt_password = ""  # nosec B105
+
+        if not mqtt_password:
+            _LOGGER.error("MQTT password cannot be empty for device %s", self.serial_number)
+            raise UpdateFailed("MQTT password cannot be empty")
+
+        return {
+            "mqtt_username": mqtt_username,
+            "mqtt_password": mqtt_password,
+        }
+
+    async def _extract_cloud_credentials(self, cloud_client, device_info) -> dict:
+        """Extract cloud credentials from device info."""
+        cloud_host = None
+        cloud_credentials = {}
+
+        try:
+            # Check for IoT credentials using separate API call
+            _LOGGER.debug("Requesting IoT credentials for device %s", self.serial_number)
+            iot_data = await self.hass.async_add_executor_job(cloud_client.get_iot_credentials, self.serial_number)
+
+            if iot_data:
+                # Extract AWS IoT endpoint
+                cloud_host = getattr(iot_data, "endpoint", None)
+                _LOGGER.debug("Cloud host from iot_data.endpoint: %s", cloud_host)
+
+                # Extract credentials object
+                credentials_obj = getattr(iot_data, "iot_credentials", None)
+                if credentials_obj:
+                    cloud_client_id = str(getattr(credentials_obj, "client_id", ""))
+                    cloud_token_key = str(getattr(credentials_obj, "token_key", ""))
+                    cloud_token_value = str(getattr(credentials_obj, "token_value", ""))
+                    cloud_token_signature = str(getattr(credentials_obj, "token_signature", ""))
+                    cloud_custom_authorizer = str(getattr(credentials_obj, "custom_authorizer_name", ""))
+
+                    cloud_credentials = {
+                        "client_id": cloud_client_id,
+                        "custom_authorizer_name": cloud_custom_authorizer,
+                        "token_key": cloud_token_key,
+                        "token_value": cloud_token_value,
+                        "token_signature": cloud_token_signature,
+                    }
+
+                    _LOGGER.debug("Successfully extracted cloud credentials")
+                else:
+                    _LOGGER.warning("No credentials object found in IoT data")
+            else:
+                _LOGGER.warning("No IoT data returned from API")
+
+        except Exception as e:
+            _LOGGER.error("Failed to retrieve IoT credentials: %s", e)
+
+        return {
+            "cloud_host": cloud_host,
+            "cloud_credentials": cloud_credentials,
+        }
+
+    async def _create_cloud_device(self, device_info, mqtt_credentials, cloud_credentials) -> None:
+        """Create and connect to cloud device."""
+        device_host = self._get_device_host(device_info)
+        mqtt_prefix = self._get_mqtt_prefix(device_info)
+        connection_type = self._get_effective_connection_type()
+
+        # Create cloud credential structure for AWS IoT if available
+        cloud_credential_data = None
+        cloud_host = cloud_credentials.get("cloud_host")
+        creds = cloud_credentials.get("cloud_credentials", {})
+
+        if cloud_host and creds.get("client_id") and creds.get("token_value") and creds.get("token_signature"):
+            import json
+
+            cloud_credential_data = json.dumps(creds)
+            _LOGGER.debug("Created cloud credential data structure for AWS IoT")
+
+        from .device import DysonDevice
+
+        self.device = DysonDevice(
+            self.hass,
+            self.serial_number,
+            device_host,
+            mqtt_credentials["mqtt_password"],
+            mqtt_prefix,
+            self._device_capabilities,
+            connection_type,
+            cloud_host,
+            cloud_credential_data,
+        )
+
+        # Set firmware version in the device for proper device info
+        if self._firmware_version != "Unknown":
+            self.device.set_firmware_version(self._firmware_version)
+
+        # Let DysonDevice handle the connection
+        connected = await self.device.connect()
+        if not connected:
+            raise UpdateFailed(f"Failed to connect to device {self.serial_number}")
+
+        # Register for environmental update notifications
+        self.device.add_environmental_callback(self._on_environmental_update)
+        # Register for message updates to get real-time state changes
+        self.device.add_message_callback(self._on_message_update)
 
     async def _async_setup_manual_device(self) -> None:
         """Set up device configured manually."""
@@ -835,81 +780,99 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return {"devices": []}
 
         try:
-            _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
-
-            # Initialize libdyson-rest client
-            from libdyson_rest import DysonClient
-
-            if not self._auth_token:
-                _LOGGER.warning("No auth token available for cloud account %s", self._email)
-                return {"devices": []}
-
-            # Create client with auth token
-            client = DysonClient(auth_token=self._auth_token)
-
-            # Get devices from cloud API
-            devices = await self.hass.async_add_executor_job(client.get_devices)
-
+            devices = await self._fetch_cloud_devices()
             if not devices:
-                _LOGGER.debug("No devices found in cloud account %s", self._email)
                 return {"devices": []}
 
-            # Check for new devices
-            current_devices = {device.serial_number for device in devices}
-            new_devices = current_devices - self._last_known_devices
-
-            # Always update the device list even if no new devices
-            updated_devices = []
-            for device in devices:
-                device_info = {
-                    "serial_number": device.serial_number,
-                    "name": getattr(device, "name", f"Dyson {device.serial_number}"),
-                    "product_type": getattr(device, "product_type", "unknown"),
-                    "category": getattr(device, "category", "unknown"),
-                }
-                updated_devices.append(device_info)
-
-            if new_devices:
-                _LOGGER.info(
-                    "Found %d new device(s) in cloud account %s: %s",
-                    len(new_devices),
-                    self._email,
-                    list(new_devices),
-                )
-
-                # Get auto_add setting
-                auto_add_devices = self.config_entry.data.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
-
-                # Update the account config entry with new devices
-                updated_data = dict(self.config_entry.data)
-                updated_data["devices"] = updated_devices
-
-                self.hass.config_entries.async_update_entry(self.config_entry, data=updated_data)
-
-                # Create individual device entries for new devices if auto-add is enabled
-                if auto_add_devices:
-                    for device in devices:
-                        if device.serial_number in new_devices:
-                            await self._create_device_entry(device)
-                else:
-                    # Create discovery flows for manual device addition
-                    for device in devices:
-                        if device.serial_number in new_devices:
-                            await self._create_discovery_flow(device)
-                    _LOGGER.info(
-                        "Auto-add disabled, %d new devices will be available for manual setup", len(new_devices)
-                    )
-
-                # Update our known devices set
-                self._last_known_devices = current_devices
-            else:
-                _LOGGER.debug("No new devices found in cloud account %s", self._email)
+            updated_devices = self._build_device_list(devices)
+            await self._process_device_changes(devices, updated_devices)
 
             return {"devices": [device_info for device_info in updated_devices if device_info]}
 
         except Exception as err:
             _LOGGER.error("Error checking for new devices in cloud account %s: %s", self._email, err)
             raise UpdateFailed(f"Failed to check for new devices: {err}") from err
+
+    async def _fetch_cloud_devices(self):
+        """Fetch devices from cloud API."""
+        _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
+
+        # Initialize libdyson-rest client
+        from libdyson_rest import DysonClient
+
+        if not self._auth_token:
+            _LOGGER.warning("No auth token available for cloud account %s", self._email)
+            return []
+
+        # Create client with auth token
+        client = DysonClient(auth_token=self._auth_token)
+
+        # Get devices from cloud API
+        devices = await self.hass.async_add_executor_job(client.get_devices)
+
+        if not devices:
+            _LOGGER.debug("No devices found in cloud account %s", self._email)
+            return []
+
+        return devices
+
+    def _build_device_list(self, devices):
+        """Build device info list from cloud devices."""
+        updated_devices = []
+        for device in devices:
+            device_info = {
+                "serial_number": device.serial_number,
+                "name": getattr(device, "name", f"Dyson {device.serial_number}"),
+                "product_type": getattr(device, "product_type", "unknown"),
+                "category": getattr(device, "category", "unknown"),
+            }
+            updated_devices.append(device_info)
+        return updated_devices
+
+    async def _process_device_changes(self, devices, updated_devices):
+        """Process new and changed devices."""
+        # Check for new devices
+        current_devices = {device.serial_number for device in devices}
+        new_devices = current_devices - self._last_known_devices
+
+        if new_devices:
+            await self._handle_new_devices(devices, new_devices, updated_devices)
+        else:
+            _LOGGER.debug("No new devices found in cloud account %s", self._email)
+
+        return new_devices
+
+    async def _handle_new_devices(self, devices, new_devices, updated_devices):
+        """Handle new devices discovered in cloud account."""
+        _LOGGER.info(
+            "Found %d new device(s) in cloud account %s: %s",
+            len(new_devices),
+            self._email,
+            list(new_devices),
+        )
+
+        # Get auto_add setting
+        auto_add_devices = self.config_entry.data.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+        # Update the account config entry with new devices
+        updated_data = dict(self.config_entry.data)
+        updated_data["devices"] = updated_devices
+        self.hass.config_entries.async_update_entry(self.config_entry, data=updated_data)
+
+        # Create individual device entries for new devices if auto-add is enabled
+        if auto_add_devices:
+            for device in devices:
+                if device.serial_number in new_devices:
+                    await self._create_device_entry(device)
+        else:
+            # Create discovery flows for manual device addition
+            for device in devices:
+                if device.serial_number in new_devices:
+                    await self._create_discovery_flow(device)
+            _LOGGER.info("Auto-add disabled, %d new devices will be available for manual setup", len(new_devices))
+
+        # Update our known devices set
+        self._last_known_devices = {device.serial_number for device in devices}
 
     async def _create_device_entry(self, device) -> None:
         """Create a new device config entry."""

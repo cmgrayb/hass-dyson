@@ -212,6 +212,14 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             # Full range oscillation
             return 0, 350
 
+        # Calculate initial angles from center point
+        lower, upper = self._calculate_initial_angles(preset_angle, current_center)
+
+        # Apply boundary constraints
+        return self._apply_boundary_constraints(lower, upper, preset_angle, current_center)
+
+    def _calculate_initial_angles(self, preset_angle: int, current_center: int) -> tuple[int, int]:
+        """Calculate initial lower and upper angles from center point."""
         # Center point is authoritative - calculate angles to preserve it exactly
         half_span = preset_angle / 2.0  # Use float division for precision
 
@@ -229,51 +237,75 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             # Adjust upper to get exact span while keeping center as close as possible
             upper = lower + preset_angle
 
+        return lower, upper
+
+    def _apply_boundary_constraints(
+        self, lower: int, upper: int, preset_angle: int, current_center: int
+    ) -> tuple[int, int]:
+        """Apply boundary constraints to angle range."""
         # Handle boundary constraints - center point wins
         if lower < 0:
-            # Shift entire range right to fit bounds
-            shift = -lower
-            lower = 0
-            upper = min(350, preset_angle)  # Ensure we don't exceed bounds
-            # If we can't fit the full span, compress symmetrically around center
-            if upper > 350:
-                upper = 350
-                lower = max(0, 350 - preset_angle)
+            lower, upper = self._handle_lower_boundary_violation(preset_angle)
         elif upper > 350:
-            # Shift entire range left to fit bounds
+            lower, upper = self._handle_upper_boundary_violation(preset_angle)
+
+        # Final verification and centering within constraints
+        return self._optimize_centering_within_bounds(lower, upper, preset_angle, current_center)
+
+    def _handle_lower_boundary_violation(self, preset_angle: int) -> tuple[int, int]:
+        """Handle case where lower bound is violated."""
+        # Shift entire range right to fit bounds
+        lower = 0
+        upper = min(350, preset_angle)  # Ensure we don't exceed bounds
+        # If we can't fit the full span, compress symmetrically around center
+        if upper > 350:
             upper = 350
             lower = max(0, 350 - preset_angle)
+        return lower, upper
 
+    def _handle_upper_boundary_violation(self, preset_angle: int) -> tuple[int, int]:
+        """Handle case where upper bound is violated."""
+        # Shift entire range left to fit bounds
+        upper = 350
+        lower = max(0, 350 - preset_angle)
+        return lower, upper
+
+    def _optimize_centering_within_bounds(
+        self, lower: int, upper: int, preset_angle: int, current_center: int
+    ) -> tuple[int, int]:
+        """Optimize centering within boundary constraints."""
         # Final verification: if we had to compress due to bounds,
         # ensure we're still as centered as possible within constraints
         if lower == 0 or upper == 350:
             # We hit a boundary - calculate best centered position within constraints
             available_span = upper - lower
-            if available_span < preset_angle:
-                # We had to compress the span due to boundary limits
-                # Keep the result as calculated above
-                pass
-            else:
+            if available_span >= preset_angle:
                 # We have room to center better
-                actual_center = (lower + upper) / 2.0
-                if actual_center != current_center:
-                    # Try to shift to get closer to target center
-                    center_diff = current_center - actual_center
-                    max_shift_left = lower
-                    max_shift_right = 350 - upper
-
-                    if center_diff > 0 and max_shift_right > 0:
-                        # Need to shift right
-                        shift = min(center_diff, max_shift_right)
-                        lower += int(shift)
-                        upper += int(shift)
-                    elif center_diff < 0 and max_shift_left > 0:
-                        # Need to shift left
-                        shift = min(-center_diff, max_shift_left)
-                        lower -= int(shift)
-                        upper -= int(shift)
+                lower, upper = self._recenter_within_available_space(lower, upper, current_center)
 
         return int(lower), int(upper)
+
+    def _recenter_within_available_space(self, lower: int, upper: int, current_center: int) -> tuple[int, int]:
+        """Recenter the angle range within available space."""
+        actual_center = (lower + upper) / 2.0
+        if actual_center != current_center:
+            # Try to shift to get closer to target center
+            center_diff = current_center - actual_center
+            max_shift_left = lower
+            max_shift_right = 350 - upper
+
+            if center_diff > 0 and max_shift_right > 0:
+                # Need to shift right
+                shift = min(center_diff, max_shift_right)
+                lower += int(shift)
+                upper += int(shift)
+            elif center_diff < 0 and max_shift_left > 0:
+                # Need to shift left
+                shift = min(-center_diff, max_shift_left)
+                lower -= int(shift)
+                upper -= int(shift)
+
+        return lower, upper
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator with hybrid center preservation."""

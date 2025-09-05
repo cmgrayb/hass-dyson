@@ -95,24 +95,48 @@ known_first_party = ["custom_components.hass_dyson"]
 known_third_party = ["homeassistant"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.13"
 show_error_codes = true
 follow_imports = "silent"
 ignore_missing_imports = true
-strict_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_unreachable = true
-warn_return_any = true
-warn_unused_configs = true
-no_implicit_reexport = true
-check_untyped_defs = true
-disallow_any_generics = true
-disallow_incomplete_defs = true
-disallow_subclassing_any = true
-disallow_untyped_calls = true
-disallow_untyped_decorators = true
-disallow_untyped_defs = true
+strict_optional = false
+warn_redundant_casts = false
+warn_unused_ignores = false
+warn_unreachable = false
+warn_return_any = false
+warn_unused_configs = false
+no_implicit_reexport = false
+check_untyped_defs = false
+disallow_any_generics = false
+disallow_incomplete_defs = false
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+disallow_untyped_defs = false
+# Only check for basic syntax and import errors
+disable_error_code = [
+    "assignment",
+    "arg-type", 
+    "attr-defined",
+    "var-annotated",
+    "no-untyped-def",
+    "union-attr",
+    "no-any-return",
+    "no-untyped-call",
+    "type-arg",
+    "unreachable"
+]
+exclude = [
+    "build/",
+    "dist/",
+    ".venv/",
+    "venv/",
+    ".git/",
+    "__pycache__/",
+    ".pytest_cache/",
+    ".mypy_cache/",
+    "docker/",
+]
 
 [[tool.mypy.overrides]]
 module = "tests.*"

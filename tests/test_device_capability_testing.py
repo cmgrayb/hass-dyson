@@ -333,13 +333,11 @@ class TestCapabilityBasedEntityCreation:
             # Add has_capability method for tests that need it
             coordinator.has_capability = lambda cap: cap in coordinator._device_capabilities
 
-        # Mock sensor creation check
-        with patch("custom_components.hass_dyson.sensor.async_setup_entry") as mock_setup:
-            # The capability should be detectable
-            assert coordinator.has_capability("ExtendedAQ")
+        # The capability should be detectable
+        assert coordinator.has_capability("ExtendedAQ")
 
-            # In real sensor.py, this would enable PM2.5/PM10 sensor creation
-            # We verify the capability is properly detected for filtering
+        # In real sensor.py, this would enable PM2.5/PM10 sensor creation
+        # We verify the capability is properly detected for filtering
 
     def test_heating_enables_temperature_sensor(self, mock_hass, base_config_entry):
         """Test that Heating capability enables temperature sensor."""

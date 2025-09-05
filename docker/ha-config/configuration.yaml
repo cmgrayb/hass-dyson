@@ -1,0 +1,71 @@
+# Home Assistant Production Test Configuration
+# This configuration is for testing the Dyson Alternative integration
+
+# Configure the default config to detect the system
+default_config:
+
+# Enable logging for debugging the integration
+logger:
+  default: info
+  logs:
+    custom_components.dyson_alt: debug
+    homeassistant.config_entries: debug
+    homeassistant.loader: debug
+
+# Enable the frontend
+frontend:
+  themes: !include_dir_merge_named themes
+
+# Enable configuration UI
+config:
+
+# Enable the HTTP component for API access
+http:
+  # Enable CORS for development
+  cors_allowed_origins:
+    - http://localhost:8123
+    - https://localhost:8123
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+
+# Enable Home Assistant Cloud if needed (can be disabled)
+# cloud:
+
+# Enable system health for monitoring
+system_health:
+
+# Enable device discovery
+discovery:
+
+# Enable network discovery for mDNS devices
+zeroconf:
+
+# Enable SSDP discovery
+ssdp:
+
+# Enable mobile app support
+mobile_app:
+
+# Enable person detection
+person:
+
+# Enable zone configuration
+zone:
+
+# Enable sun tracking
+sun:
+
+# Text to speech
+tts:
+  - platform: google_translate
+    service_name: google_say
+
+# Enable automation
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+# Group configuration
+group: !include groups.yaml

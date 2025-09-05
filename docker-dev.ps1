@@ -1,4 +1,4 @@
-# Dyson Alt Development Docker Helper Script (PowerShell)
+# Hass Dyson Development Docker Helper Script (PowerShell)
 
 param(
     [Parameter(Position=0)]
@@ -10,7 +10,7 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
 function Show-Help {
-    Write-Host "Dyson Alt Development Environment" -ForegroundColor Green
+    Write-Host "Hass Dyson Development Environment" -ForegroundColor Green
     Write-Host ""
     Write-Host "Usage: .\docker-dev.ps1 [COMMAND]"
     Write-Host ""
@@ -30,13 +30,13 @@ function Start-Services {
     Write-Host "🏠 Starting Home Assistant development environment..." -ForegroundColor Green
     
     # Ensure config directory exists
-    New-Item -ItemType Directory -Force -Path "docker/config" | Out-Null
+    New-Item -ItemType Directory -Force -Path "docker/ha-config" | Out-Null
     
     # Start services
     docker-compose up -d
     
     Write-Host "✅ Services started!" -ForegroundColor Green
-    Write-Host "🌐 Home Assistant will be available at: http://localhost:8123" -ForegroundColor Cyan
+    Write-Host "🌐 Home Assistant will be available at: http://localhost:8124" -ForegroundColor Cyan
     Write-Host "📡 MQTT broker available at: localhost:1883" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Run '.\docker-dev.ps1 logs' to follow startup logs"
@@ -78,7 +78,7 @@ function Show-Status {
     
     $status = docker-compose ps --services --filter "status=running"
     if ($status -contains "homeassistant") {
-        Write-Host "🌐 Home Assistant: http://localhost:8123" -ForegroundColor Green
+        Write-Host "🌐 Home Assistant: http://localhost:8124" -ForegroundColor Green
         Write-Host "📡 MQTT Broker: localhost:1883" -ForegroundColor Green
     }
 }
@@ -86,8 +86,8 @@ function Show-Status {
 function Show-Url {
     $status = docker-compose ps --services --filter "status=running"
     if ($status -contains "homeassistant") {
-        Write-Host "🌐 Home Assistant: http://localhost:8123" -ForegroundColor Green
-        Start-Process "http://localhost:8123"
+        Write-Host "🌐 Home Assistant: http://localhost:8124" -ForegroundColor Green
+        Start-Process "http://localhost:8124"
     } else {
         Write-Host "❌ Home Assistant is not running. Use '.\docker-dev.ps1 start' to start it." -ForegroundColor Red
     }
