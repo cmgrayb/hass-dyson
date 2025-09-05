@@ -63,183 +63,186 @@ SERVICE_RESET_FILTER_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup_services(hass: HomeAssistant) -> None:
-    """Set up services for Dyson integration."""
+async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle set sleep timer service call."""
+    device_id = call.data["device_id"]
+    minutes = call.data["minutes"]
 
-    async def handle_set_sleep_timer(call: ServiceCall) -> None:
-        """Handle set sleep timer service call."""
-        device_id = call.data["device_id"]
-        minutes = call.data["minutes"]
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
 
+    try:
+        # Convert minutes to sleep timer format (device expects specific encoding)
+        await coordinator.device.set_sleep_timer(minutes)
+        _LOGGER.info("Set sleep timer to %d minutes for device %s", minutes, coordinator.serial_number)
+    except Exception as err:
+        _LOGGER.error("Failed to set sleep timer for device %s: %s", coordinator.serial_number, err)
+        raise HomeAssistantError(f"Failed to set sleep timer: {err}") from err
+
+
+async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle cancel sleep timer service call."""
+    device_id = call.data["device_id"]
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
+
+    try:
+        # Cancel timer by setting to 0
+        await coordinator.device.set_sleep_timer(0)
+        _LOGGER.info("Cancelled sleep timer for device %s", coordinator.serial_number)
+    except Exception as err:
+        _LOGGER.error("Failed to cancel sleep timer for device %s: %s", coordinator.serial_number, err)
+        raise HomeAssistantError(f"Failed to cancel sleep timer: {err}") from err
+
+
+async def _handle_schedule_operation(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle schedule operation service call (experimental)."""
+    device_id = call.data["device_id"]
+    operation = call.data["operation"]
+    schedule_time_str = call.data["schedule_time"]
+    parameters_str = call.data.get("parameters")
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
+
+    try:
+        # Parse schedule time
+        schedule_time = datetime.fromisoformat(schedule_time_str.replace("Z", "+00:00"))
+
+        # Parse parameters if provided
+        parameters = {}
+        if parameters_str:
+            parameters = json.loads(parameters_str)
+
+        # For now, just log the scheduled operation (would need proper scheduler implementation)
+        _LOGGER.warning(
+            "Scheduled operation '%s' for device %s at %s with parameters %s - "
+            "Note: Scheduling is experimental and not yet fully implemented",
+            operation,
+            coordinator.serial_number,
+            schedule_time,
+            parameters,
+        )
+
+    except (ValueError, json.JSONDecodeError) as err:
+        raise ServiceValidationError(f"Invalid schedule time or parameters format: {err}") from err
+    except Exception as err:
+        _LOGGER.error("Failed to schedule operation for device %s: %s", coordinator.serial_number, err)
+        raise HomeAssistantError(f"Failed to schedule operation: {err}") from err
+
+
+async def _handle_set_oscillation_angles(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle set oscillation angles service call."""
+    device_id = call.data["device_id"]
+    lower_angle = call.data["lower_angle"]
+    upper_angle = call.data["upper_angle"]
+
+    if lower_angle >= upper_angle:
+        raise ServiceValidationError("Lower angle must be less than upper angle")
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
+
+    try:
+        await coordinator.device.set_oscillation_angles(lower_angle, upper_angle)
+        _LOGGER.info(
+            "Set oscillation angles %d°-%d° for device %s", lower_angle, upper_angle, coordinator.serial_number
+        )
+    except Exception as err:
+        _LOGGER.error("Failed to set oscillation angles for device %s: %s", coordinator.serial_number, err)
+        raise HomeAssistantError(f"Failed to set oscillation angles: {err}") from err
+
+
+async def _handle_fetch_account_data(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle fetch account data service call."""
+    device_id = call.data.get("device_id")
+
+    if device_id:
+        # Refresh specific device
         coordinator = await _get_coordinator_from_device_id(hass, device_id)
-        if not coordinator or not coordinator.device:
-            raise ServiceValidationError(f"Device {device_id} not found or not available")
+        if not coordinator:
+            raise ServiceValidationError(f"Device {device_id} not found")
 
         try:
-            # Convert minutes to sleep timer format (device expects specific encoding)
-            await coordinator.device.set_sleep_timer(minutes)
-            _LOGGER.info("Set sleep timer to %d minutes for device %s", minutes, coordinator.serial_number)
+            await coordinator.async_refresh()
+            _LOGGER.info("Refreshed account data for device %s", coordinator.serial_number)
         except Exception as err:
-            _LOGGER.error("Failed to set sleep timer for device %s: %s", coordinator.serial_number, err)
-            raise HomeAssistantError(f"Failed to set sleep timer: {err}") from err
+            _LOGGER.error("Failed to refresh account data for device %s: %s", coordinator.serial_number, err)
+            raise HomeAssistantError(f"Failed to refresh account data: {err}") from err
+    else:
+        # Refresh all devices
+        coordinators = [
+            coordinator
+            for coordinator in hass.data.get(DOMAIN, {}).values()
+            if isinstance(coordinator, DysonDataUpdateCoordinator)
+        ]
 
-    async def handle_cancel_sleep_timer(call: ServiceCall) -> None:
-        """Handle cancel sleep timer service call."""
-        device_id = call.data["device_id"]
-
-        coordinator = await _get_coordinator_from_device_id(hass, device_id)
-        if not coordinator or not coordinator.device:
-            raise ServiceValidationError(f"Device {device_id} not found or not available")
-
-        try:
-            # Cancel timer by setting to 0
-            await coordinator.device.set_sleep_timer(0)
-            _LOGGER.info("Cancelled sleep timer for device %s", coordinator.serial_number)
-        except Exception as err:
-            _LOGGER.error("Failed to cancel sleep timer for device %s: %s", coordinator.serial_number, err)
-            raise HomeAssistantError(f"Failed to cancel sleep timer: {err}") from err
-
-    async def handle_schedule_operation(call: ServiceCall) -> None:
-        """Handle schedule operation service call (experimental)."""
-        device_id = call.data["device_id"]
-        operation = call.data["operation"]
-        schedule_time_str = call.data["schedule_time"]
-        parameters_str = call.data.get("parameters")
-
-        coordinator = await _get_coordinator_from_device_id(hass, device_id)
-        if not coordinator or not coordinator.device:
-            raise ServiceValidationError(f"Device {device_id} not found or not available")
-
-        try:
-            # Parse schedule time
-            schedule_time = datetime.fromisoformat(schedule_time_str.replace("Z", "+00:00"))
-
-            # Parse parameters if provided
-            parameters = {}
-            if parameters_str:
-                parameters = json.loads(parameters_str)
-
-            # For now, just log the scheduled operation (would need proper scheduler implementation)
-            _LOGGER.warning(
-                "Scheduled operation '%s' for device %s at %s with parameters %s - "
-                "Note: Scheduling is experimental and not yet fully implemented",
-                operation,
-                coordinator.serial_number,
-                schedule_time,
-                parameters,
-            )
-
-        except (ValueError, json.JSONDecodeError) as err:
-            raise ServiceValidationError(f"Invalid schedule time or parameters format: {err}") from err
-        except Exception as err:
-            _LOGGER.error("Failed to schedule operation for device %s: %s", coordinator.serial_number, err)
-            raise HomeAssistantError(f"Failed to schedule operation: {err}") from err
-
-    async def handle_set_oscillation_angles(call: ServiceCall) -> None:
-        """Handle set oscillation angles service call."""
-        device_id = call.data["device_id"]
-        lower_angle = call.data["lower_angle"]
-        upper_angle = call.data["upper_angle"]
-
-        if lower_angle >= upper_angle:
-            raise ServiceValidationError("Lower angle must be less than upper angle")
-
-        coordinator = await _get_coordinator_from_device_id(hass, device_id)
-        if not coordinator or not coordinator.device:
-            raise ServiceValidationError(f"Device {device_id} not found or not available")
-
-        try:
-            await coordinator.device.set_oscillation_angles(lower_angle, upper_angle)
-            _LOGGER.info(
-                "Set oscillation angles %d°-%d° for device %s", lower_angle, upper_angle, coordinator.serial_number
-            )
-        except Exception as err:
-            _LOGGER.error("Failed to set oscillation angles for device %s: %s", coordinator.serial_number, err)
-            raise HomeAssistantError(f"Failed to set oscillation angles: {err}") from err
-
-    async def handle_fetch_account_data(call: ServiceCall) -> None:
-        """Handle fetch account data service call."""
-        device_id = call.data.get("device_id")
-
-        if device_id:
-            # Refresh specific device
-            coordinator = await _get_coordinator_from_device_id(hass, device_id)
-            if not coordinator:
-                raise ServiceValidationError(f"Device {device_id} not found")
-
+        for coordinator in coordinators:
             try:
                 await coordinator.async_refresh()
-                _LOGGER.info("Refreshed account data for device %s", coordinator.serial_number)
+                _LOGGER.debug("Refreshed account data for device %s", coordinator.serial_number)
             except Exception as err:
                 _LOGGER.error("Failed to refresh account data for device %s: %s", coordinator.serial_number, err)
-                raise HomeAssistantError(f"Failed to refresh account data: {err}") from err
-        else:
-            # Refresh all devices
-            coordinators = [
-                coordinator
-                for coordinator in hass.data.get(DOMAIN, {}).values()
-                if isinstance(coordinator, DysonDataUpdateCoordinator)
-            ]
 
-            for coordinator in coordinators:
-                try:
-                    await coordinator.async_refresh()
-                    _LOGGER.debug("Refreshed account data for device %s", coordinator.serial_number)
-                except Exception as err:
-                    _LOGGER.error("Failed to refresh account data for device %s: %s", coordinator.serial_number, err)
+        _LOGGER.info("Refreshed account data for %d devices", len(coordinators))
 
-            _LOGGER.info("Refreshed account data for %d devices", len(coordinators))
 
-    async def handle_reset_filter(call: ServiceCall) -> None:
-        """Handle reset filter service call."""
-        device_id = call.data["device_id"]
-        filter_type = call.data["filter_type"]
+async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle reset filter service call."""
+    device_id = call.data["device_id"]
+    filter_type = call.data["filter_type"]
 
-        coordinator = await _get_coordinator_from_device_id(hass, device_id)
-        if not coordinator or not coordinator.device:
-            raise ServiceValidationError(f"Device {device_id} not found or not available")
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
 
-        try:
-            if filter_type == "hepa":
-                await coordinator.device.reset_hepa_filter_life()
-                _LOGGER.info("Reset HEPA filter life for device %s", coordinator.serial_number)
-            elif filter_type == "carbon":
-                await coordinator.device.reset_carbon_filter_life()
-                _LOGGER.info("Reset carbon filter life for device %s", coordinator.serial_number)
-            elif filter_type == "both":
-                await coordinator.device.reset_hepa_filter_life()
-                await coordinator.device.reset_carbon_filter_life()
-                _LOGGER.info("Reset both filter lives for device %s", coordinator.serial_number)
+    try:
+        if filter_type == "hepa":
+            await coordinator.device.reset_hepa_filter_life()
+            _LOGGER.info("Reset HEPA filter life for device %s", coordinator.serial_number)
+        elif filter_type == "carbon":
+            await coordinator.device.reset_carbon_filter_life()
+            _LOGGER.info("Reset carbon filter life for device %s", coordinator.serial_number)
+        elif filter_type == "both":
+            await coordinator.device.reset_hepa_filter_life()
+            await coordinator.device.reset_carbon_filter_life()
+            _LOGGER.info("Reset both filter lives for device %s", coordinator.serial_number)
 
-        except Exception as err:
-            _LOGGER.error("Failed to reset %s filter for device %s: %s", filter_type, coordinator.serial_number, err)
-            raise HomeAssistantError(f"Failed to reset {filter_type} filter: {err}") from err
+    except Exception as err:
+        _LOGGER.error("Failed to reset %s filter for device %s: %s", filter_type, coordinator.serial_number, err)
+        raise HomeAssistantError(f"Failed to reset {filter_type} filter: {err}") from err
+
+
+async def async_setup_services(hass: HomeAssistant) -> None:
+    """Set up services for Dyson integration."""
+    # Create service handlers with hass context
+    handlers = {
+        SERVICE_SET_SLEEP_TIMER: lambda call: _handle_set_sleep_timer(hass, call),
+        SERVICE_CANCEL_SLEEP_TIMER: lambda call: _handle_cancel_sleep_timer(hass, call),
+        SERVICE_SCHEDULE_OPERATION: lambda call: _handle_schedule_operation(hass, call),
+        SERVICE_SET_OSCILLATION_ANGLES: lambda call: _handle_set_oscillation_angles(hass, call),
+        SERVICE_FETCH_ACCOUNT_DATA: lambda call: _handle_fetch_account_data(hass, call),
+        SERVICE_RESET_FILTER: lambda call: _handle_reset_filter(hass, call),
+    }
+
+    # Service schemas
+    schemas = {
+        SERVICE_SET_SLEEP_TIMER: SERVICE_SET_SLEEP_TIMER_SCHEMA,
+        SERVICE_CANCEL_SLEEP_TIMER: SERVICE_CANCEL_SLEEP_TIMER_SCHEMA,
+        SERVICE_SCHEDULE_OPERATION: SERVICE_SCHEDULE_OPERATION_SCHEMA,
+        SERVICE_SET_OSCILLATION_ANGLES: SERVICE_SET_OSCILLATION_ANGLES_SCHEMA,
+        SERVICE_FETCH_ACCOUNT_DATA: SERVICE_FETCH_ACCOUNT_DATA_SCHEMA,
+        SERVICE_RESET_FILTER: SERVICE_RESET_FILTER_SCHEMA,
+    }
 
     # Register all services
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_SLEEP_TIMER, handle_set_sleep_timer, schema=SERVICE_SET_SLEEP_TIMER_SCHEMA
-    )
-
-    hass.services.async_register(
-        DOMAIN, SERVICE_CANCEL_SLEEP_TIMER, handle_cancel_sleep_timer, schema=SERVICE_CANCEL_SLEEP_TIMER_SCHEMA
-    )
-
-    hass.services.async_register(
-        DOMAIN, SERVICE_SCHEDULE_OPERATION, handle_schedule_operation, schema=SERVICE_SCHEDULE_OPERATION_SCHEMA
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_OSCILLATION_ANGLES,
-        handle_set_oscillation_angles,
-        schema=SERVICE_SET_OSCILLATION_ANGLES_SCHEMA,
-    )
-
-    hass.services.async_register(
-        DOMAIN, SERVICE_FETCH_ACCOUNT_DATA, handle_fetch_account_data, schema=SERVICE_FETCH_ACCOUNT_DATA_SCHEMA
-    )
-
-    hass.services.async_register(DOMAIN, SERVICE_RESET_FILTER, handle_reset_filter, schema=SERVICE_RESET_FILTER_SCHEMA)
+    for service_name, handler in handlers.items():
+        hass.services.async_register(DOMAIN, service_name, handler, schema=schemas[service_name])
 
     _LOGGER.info("Registered Dyson services")
 

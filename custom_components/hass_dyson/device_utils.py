@@ -129,47 +129,38 @@ def create_device_config_data(
         CONF_DISCOVERY_METHOD: discovery_method,
     }
 
-    # Add optional fields if provided
-    if device_name:
-        config_data["device_name"] = device_name
+    # Add optional fields
+    _add_optional_fields(
+        config_data,
+        {
+            "device_name": device_name,
+            CONF_HOSTNAME: hostname,
+            CONF_CREDENTIAL: credential,
+            CONF_MQTT_PREFIX: mqtt_prefix,
+            "connection_type": connection_type,
+            CONF_USERNAME: username,
+            "auth_token": auth_token,
+            "product_type": product_type,
+            "category": category,
+            "parent_entry_id": parent_entry_id,
+        },
+    )
 
-    if hostname:
-        config_data[CONF_HOSTNAME] = hostname
-
-    if credential:
-        config_data[CONF_CREDENTIAL] = credential
-
-    if mqtt_prefix:
-        config_data[CONF_MQTT_PREFIX] = mqtt_prefix
-
-    if connection_type:
-        config_data["connection_type"] = connection_type
-
-    if username:
-        config_data[CONF_USERNAME] = username
-
-    if auth_token:
-        config_data["auth_token"] = auth_token
-
-    if product_type:
-        config_data["product_type"] = product_type
-
-    if category:
-        config_data["category"] = category
-
-    if parent_entry_id:
-        config_data["parent_entry_id"] = parent_entry_id
-
-    # Normalize and add device category
+    # Normalize and add device category and capabilities
     config_data["device_category"] = normalize_device_category(device_category)
-
-    # Normalize and add capabilities
     config_data["capabilities"] = normalize_capabilities(capabilities)
 
     # Add any additional fields
     config_data.update(kwargs)
 
     return config_data
+
+
+def _add_optional_fields(config_data: Dict[str, Any], optional_fields: Dict[str, Any]) -> None:
+    """Add optional fields to config data if they are not None."""
+    for key, value in optional_fields.items():
+        if value is not None:
+            config_data[key] = value
 
 
 def create_manual_device_config(

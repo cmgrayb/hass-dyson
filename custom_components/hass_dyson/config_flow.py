@@ -215,99 +215,121 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors = {}
 
             if user_input is not None:
-                try:
-                    # Get device information from user input
-                    serial_number = user_input.get(CONF_SERIAL_NUMBER, "").strip()
-                    credential = user_input.get(CONF_CREDENTIAL, "").strip()
-                    mqtt_prefix = user_input.get(CONF_MQTT_PREFIX, "").strip()
-                    hostname = user_input.get(CONF_HOSTNAME, "").strip()
-                    device_name = user_input.get("device_name", f"Dyson {serial_number}").strip()
-                    device_category = user_input.get("device_category", ["ec"])  # Default to Environment Cleaner list
-                    capabilities = user_input.get("capabilities", [])
-
-                    _LOGGER.info("Manual setup for device: %s", serial_number)
-
-                    # Validate required fields
-                    if not serial_number:
-                        errors[CONF_SERIAL_NUMBER] = "required"
-                    if not credential:
-                        errors[CONF_CREDENTIAL] = "required"
-                    if not mqtt_prefix:
-                        errors[CONF_MQTT_PREFIX] = "required"
-
-                    if not errors:
-                        # Check if device already exists
-                        await self.async_set_unique_id(serial_number)
-                        self._abort_if_unique_id_configured()
-
-                        # Determine hostname: use provided value or discover via mDNS
-                        if hostname:
-                            _LOGGER.info("Using provided hostname/IP for device %s: %s", serial_number, hostname)
-                        else:
-                            # Try to discover device via mDNS
-                            _LOGGER.info("No hostname provided, attempting mDNS discovery for device %s", serial_number)
-                            hostname = await _discover_device_via_mdns(serial_number)
-
-                            if hostname:
-                                _LOGGER.info("Found device %s at IP: %s", serial_number, hostname)
-                            else:
-                                _LOGGER.warning(
-                                    "Could not discover device %s via mDNS, will use serial.local", serial_number
-                                )
-                                hostname = f"{serial_number}.local"
-
-                        # Create the device entry with manual discovery method
-                        from .device_utils import create_manual_device_config
-
-                        config_data = create_manual_device_config(
-                            serial_number=serial_number,
-                            credential=credential,
-                            mqtt_prefix=mqtt_prefix,
-                            device_name=device_name,
-                            hostname=hostname,
-                            device_category=device_category,
-                            capabilities=capabilities,
-                        )
-
-                        _LOGGER.info("Creating manual device config entry for: %s", device_name)
-                        return self.async_create_entry(
-                            title=device_name,
-                            data=config_data,
-                        )
-
-                except Exception as e:
-                    _LOGGER.exception("Error during manual device setup: %s", e)
-                    errors["base"] = "manual_setup_failed"
+                errors = await self._process_manual_device_input(user_input)
+                if not errors:
+                    return await self._create_manual_device_entry(user_input)
 
             # Show the manual device setup form
-            _LOGGER.info("Showing manual device setup form")
-            try:
-                data_schema = vol.Schema(
-                    {
-                        vol.Required(CONF_SERIAL_NUMBER): str,
-                        vol.Required(CONF_CREDENTIAL): str,
-                        vol.Required(CONF_MQTT_PREFIX): str,
-                        vol.Optional(CONF_HOSTNAME): str,
-                        vol.Optional("device_name"): str,
-                        vol.Optional("device_category", default=["ec"]): cv.multi_select(AVAILABLE_DEVICE_CATEGORIES),
-                        vol.Optional("capabilities", default=[]): cv.multi_select(AVAILABLE_CAPABILITIES),
-                    }
-                )
-                _LOGGER.info("Manual device setup form schema created successfully")
+            return self._show_manual_device_form(errors)
 
-                return self.async_show_form(
-                    step_id="manual_device",
-                    data_schema=data_schema,
-                    errors=errors,
-                    description_placeholders={
-                        "discovery_info": "Leave IP Address blank for automatic discovery via mDNS"
-                    },
-                )
-            except Exception as e:
-                _LOGGER.exception("Error creating manual device setup form: %s", e)
-                raise
         except Exception as e:
             _LOGGER.exception("Top-level exception in async_step_manual_device: %s", e)
+            raise
+
+    async def _process_manual_device_input(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Process and validate manual device input."""
+        errors = {}
+        try:
+            # Validate required fields
+            required_fields = {
+                CONF_SERIAL_NUMBER: "required",
+                CONF_CREDENTIAL: "required",
+                CONF_MQTT_PREFIX: "required",
+            }
+
+            for field, error_msg in required_fields.items():
+                if not user_input.get(field, "").strip():
+                    errors[field] = error_msg
+
+            if not errors:
+                serial_number = user_input.get(CONF_SERIAL_NUMBER, "").strip()
+                # Check if device already exists
+                await self.async_set_unique_id(serial_number)
+                self._abort_if_unique_id_configured()
+
+        except Exception as e:
+            _LOGGER.exception("Error during manual device setup: %s", e)
+            errors["base"] = "manual_setup_failed"
+
+        return errors
+
+    async def _create_manual_device_entry(self, user_input: dict[str, Any]) -> ConfigFlowResult:
+        """Create the manual device entry."""
+        # Get device information from user input
+        serial_number = user_input.get(CONF_SERIAL_NUMBER, "").strip()
+        credential = user_input.get(CONF_CREDENTIAL, "").strip()
+        mqtt_prefix = user_input.get(CONF_MQTT_PREFIX, "").strip()
+        hostname = user_input.get(CONF_HOSTNAME, "").strip()
+        device_name = user_input.get("device_name", f"Dyson {serial_number}").strip()
+        device_category = user_input.get("device_category", ["ec"])  # Default to Environment Cleaner list
+        capabilities = user_input.get("capabilities", [])
+
+        _LOGGER.info("Manual setup for device: %s", serial_number)
+
+        # Determine hostname: use provided value or discover via mDNS
+        hostname = await self._resolve_device_hostname(serial_number, hostname)
+
+        # Create the device entry with manual discovery method
+        from .device_utils import create_manual_device_config
+
+        config_data = create_manual_device_config(
+            serial_number=serial_number,
+            credential=credential,
+            mqtt_prefix=mqtt_prefix,
+            device_name=device_name,
+            hostname=hostname,
+            device_category=device_category,
+            capabilities=capabilities,
+        )
+
+        _LOGGER.info("Creating manual device config entry for: %s", device_name)
+        return self.async_create_entry(
+            title=device_name,
+            data=config_data,
+        )
+
+    async def _resolve_device_hostname(self, serial_number: str, hostname: str) -> str:
+        """Resolve device hostname either from input or via mDNS discovery."""
+        if hostname:
+            _LOGGER.info("Using provided hostname/IP for device %s: %s", serial_number, hostname)
+            return hostname
+
+        # Try to discover device via mDNS
+        _LOGGER.info("No hostname provided, attempting mDNS discovery for device %s", serial_number)
+        discovered_hostname = await _discover_device_via_mdns(serial_number)
+
+        if discovered_hostname:
+            _LOGGER.info("Found device %s at IP: %s", serial_number, discovered_hostname)
+            return discovered_hostname
+        else:
+            _LOGGER.warning("Could not discover device %s via mDNS, will use serial.local", serial_number)
+            return f"{serial_number}.local"
+
+    def _show_manual_device_form(self, errors: dict[str, str]) -> ConfigFlowResult:
+        """Show the manual device setup form."""
+        _LOGGER.info("Showing manual device setup form")
+        try:
+            data_schema = vol.Schema(
+                {
+                    vol.Required(CONF_SERIAL_NUMBER): str,
+                    vol.Required(CONF_CREDENTIAL): str,
+                    vol.Required(CONF_MQTT_PREFIX): str,
+                    vol.Optional(CONF_HOSTNAME): str,
+                    vol.Optional("device_name"): str,
+                    vol.Optional("device_category", default=["ec"]): cv.multi_select(AVAILABLE_DEVICE_CATEGORIES),
+                    vol.Optional("capabilities", default=[]): cv.multi_select(AVAILABLE_CAPABILITIES),
+                }
+            )
+            _LOGGER.info("Manual device setup form schema created successfully")
+
+            return self.async_show_form(
+                step_id="manual_device",
+                data_schema=data_schema,
+                errors=errors,
+                description_placeholders={"discovery_info": "Leave IP Address blank for automatic discovery via mDNS"},
+            )
+        except Exception as e:
+            _LOGGER.exception("Error creating manual device setup form: %s", e)
             raise
 
     async def async_step_verify(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -431,79 +453,98 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors = {}
 
             if user_input is not None:
-                try:
-                    poll_for_devices = user_input.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
-                    auto_add_devices = user_input.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
-
-                    _LOGGER.info(
-                        "Cloud preferences: poll_for_devices=%s, auto_add_devices=%s",
-                        poll_for_devices,
-                        auto_add_devices,
-                    )
-
-                    if not self._cloud_client or not self._discovered_devices:
-                        _LOGGER.error("Missing cloud client or discovered devices")
-                        errors["base"] = "preferences_failed"
-                    else:
-                        # Set unique ID based on email to prevent duplicate accounts
-                        if self._email:
-                            await self.async_set_unique_id(self._email.lower())
-                            self._abort_if_unique_id_configured()
-
-                        # Create config entry with all discovered devices and preferences
-                        device_list = []
-                        for device in self._discovered_devices:
-                            device_info = {
-                                "serial_number": device.serial_number,
-                                "name": getattr(device, "name", f"Dyson {device.serial_number}"),
-                                "product_type": getattr(device, "product_type", "unknown"),
-                                "category": getattr(device, "category", "unknown"),
-                            }
-                            device_list.append(device_info)
-
-                        return self.async_create_entry(
-                            title=f"Dyson Account ({self._email})",
-                            data={
-                                "email": self._email,
-                                "connection_type": self._connection_type,
-                                "devices": device_list,
-                                "auth_token": getattr(self._cloud_client, "auth_token", None),
-                                CONF_POLL_FOR_DEVICES: poll_for_devices,
-                                CONF_AUTO_ADD_DEVICES: auto_add_devices,
-                            },
-                        )
-
-                except Exception as e:
-                    _LOGGER.exception("Error processing cloud preferences: %s", e)
-                    errors["base"] = "preferences_failed"
+                errors = await self._process_cloud_preferences_input(user_input)
+                if not errors:
+                    return await self._create_cloud_account_entry(user_input)
 
             # Show the cloud preferences form
-            _LOGGER.info("Showing cloud preferences form")
-            try:
-                data_schema = vol.Schema(
-                    {
-                        vol.Required(CONF_POLL_FOR_DEVICES, default=DEFAULT_POLL_FOR_DEVICES): bool,
-                        vol.Required(CONF_AUTO_ADD_DEVICES, default=DEFAULT_AUTO_ADD_DEVICES): bool,
-                    }
-                )
-                _LOGGER.info("Cloud preferences form schema created successfully")
+            return self._show_cloud_preferences_form(errors)
 
-                device_count = len(self._discovered_devices) if self._discovered_devices else 0
-
-                return self.async_show_form(
-                    step_id="cloud_preferences",
-                    data_schema=data_schema,
-                    errors=errors,
-                    description_placeholders={
-                        "device_count": str(device_count),
-                        "email": self._email or "your account",
-                    },
-                )
-            except Exception as e:
-                _LOGGER.exception("Error creating cloud preferences form: %s", e)
-                raise
         except Exception as e:
             _LOGGER.exception("Top-level exception in async_step_cloud_preferences: %s", e)
+            raise
+
+    async def _process_cloud_preferences_input(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Process and validate cloud preferences input."""
+        errors = {}
+        try:
+            poll_for_devices = user_input.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+            auto_add_devices = user_input.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+            _LOGGER.info(
+                "Cloud preferences: poll_for_devices=%s, auto_add_devices=%s",
+                poll_for_devices,
+                auto_add_devices,
+            )
+
+            if not self._cloud_client or not self._discovered_devices:
+                _LOGGER.error("Missing cloud client or discovered devices")
+                errors["base"] = "preferences_failed"
+
+        except Exception as e:
+            _LOGGER.exception("Error processing cloud preferences: %s", e)
+            errors["base"] = "preferences_failed"
+
+        return errors
+
+    async def _create_cloud_account_entry(self, user_input: dict[str, Any]) -> ConfigFlowResult:
+        """Create the cloud account config entry."""
+        poll_for_devices = user_input.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+        auto_add_devices = user_input.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+
+        # Set unique ID based on email to prevent duplicate accounts
+        if self._email:
+            await self.async_set_unique_id(self._email.lower())
+            self._abort_if_unique_id_configured()
+
+        # Create device list from discovered devices
+        device_list = []
+        for device in self._discovered_devices:
+            device_info = {
+                "serial_number": device.serial_number,
+                "name": getattr(device, "name", f"Dyson {device.serial_number}"),
+                "product_type": getattr(device, "product_type", "unknown"),
+                "category": getattr(device, "category", "unknown"),
+            }
+            device_list.append(device_info)
+
+        return self.async_create_entry(
+            title=f"Dyson Account ({self._email})",
+            data={
+                "email": self._email,
+                "connection_type": self._connection_type,
+                "devices": device_list,
+                "auth_token": getattr(self._cloud_client, "auth_token", None),
+                CONF_POLL_FOR_DEVICES: poll_for_devices,
+                CONF_AUTO_ADD_DEVICES: auto_add_devices,
+            },
+        )
+
+    def _show_cloud_preferences_form(self, errors: dict[str, str]) -> ConfigFlowResult:
+        """Show the cloud preferences form."""
+        _LOGGER.info("Showing cloud preferences form")
+        try:
+            data_schema = vol.Schema(
+                {
+                    vol.Required(CONF_POLL_FOR_DEVICES, default=DEFAULT_POLL_FOR_DEVICES): bool,
+                    vol.Required(CONF_AUTO_ADD_DEVICES, default=DEFAULT_AUTO_ADD_DEVICES): bool,
+                }
+            )
+            _LOGGER.info("Cloud preferences form schema created successfully")
+
+            device_count = len(self._discovered_devices) if self._discovered_devices else 0
+
+            return self.async_show_form(
+                step_id="cloud_preferences",
+                data_schema=data_schema,
+                errors=errors,
+                description_placeholders={
+                    "device_count": str(device_count),
+                    "email": self._email or "your account",
+                },
+            )
+        except Exception as e:
+            _LOGGER.exception("Error creating cloud preferences form: %s", e)
             raise
 
     async def async_step_discovery(self, discovery_info: dict[str, Any]) -> ConfigFlowResult:

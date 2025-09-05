@@ -83,6 +83,24 @@ class DysonDevice:
     async def connect(self) -> bool:
         """Connect to the device using paho-mqtt with intelligent fallback support."""
         # Check reconnection backoff to prevent rapid reconnection attempts
+        if not self._check_reconnect_backoff():
+            return False
+
+        self._last_reconnect_attempt = time.time()
+
+        # Try preferred connection after disconnection
+        if await self._try_preferred_connection_after_disconnect():
+            return True
+
+        # Try preferred connection if using fallback and it's time to retry
+        if await self._try_preferred_connection_retry():
+            return True
+
+        # Try connections in order
+        return await self._try_connection_order()
+
+    def _check_reconnect_backoff(self) -> bool:
+        """Check if reconnection backoff period has passed."""
         current_time = time.time()
         if current_time - self._last_reconnect_attempt < self._reconnect_backoff:
             time_remaining = self._reconnect_backoff - (current_time - self._last_reconnect_attempt)
@@ -92,10 +110,10 @@ class DysonDevice:
                 time_remaining,
             )
             return False
+        return True
 
-        self._last_reconnect_attempt = current_time
-
-        # After disconnection, try preferred connection first (one retry)
+    async def _try_preferred_connection_after_disconnect(self) -> bool:
+        """Try preferred connection after disconnection."""
         if not self._connected and self._using_fallback:
             _LOGGER.debug(
                 "Attempting to reconnect to preferred connection after disconnection for %s", self.serial_number
@@ -120,12 +138,13 @@ class DysonDevice:
                     return True
 
             _LOGGER.debug("Failed to reconnect to preferred connection, falling back to connection order")
+        return False
 
-        # If we're using fallback connection, check if it's time to retry preferred
+    async def _try_preferred_connection_retry(self) -> bool:
+        """Try preferred connection if using fallback and it's time to retry."""
         if self._using_fallback and self._should_retry_preferred():
             _LOGGER.debug("Attempting to reconnect to preferred connection type for %s", self.serial_number)
 
-            # Try preferred connection once
             preferred_host, preferred_credential = self._get_connection_details(self._preferred_connection_type)
             if preferred_host and preferred_credential:
                 if await self._attempt_connection(
@@ -144,9 +163,11 @@ class DysonDevice:
                     )
                     return True
 
-            self._last_preferred_retry = current_time
+            self._last_preferred_retry = time.time()
+        return False
 
-        # Initial connection or fallback reconnection logic
+    async def _try_connection_order(self) -> bool:
+        """Try connections in order until one succeeds."""
         connection_attempts = self._get_connection_order()
 
         # Try each connection method in order
@@ -761,7 +782,8 @@ class DysonDevice:
         try:
             # Get state from paho-mqtt client
             if hasattr(self._mqtt_client, "get_state"):
-                state = await self.hass.async_add_executor_job(self._mqtt_client.get_state)  # type: ignore[attr-defined]
+                # type: ignore[attr-defined]
+                state = await self.hass.async_add_executor_job(self._mqtt_client.get_state)
                 if state:
                     _LOGGER.debug("Received state data for %s: %s", self.serial_number, state)
                     self._state_data.update(state)
