@@ -687,7 +687,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     def _extract_capabilities(self, device_info: Any) -> List[str]:
         """Extract device capabilities from cloud device info."""
-        capabilities = []
+        capabilities: list[str] = []
 
         # Get capabilities from device info if available
         if hasattr(device_info, "capabilities"):

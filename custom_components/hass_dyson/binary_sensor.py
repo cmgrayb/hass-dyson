@@ -5,13 +5,21 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CAPABILITY_FAULT_CODES, DEVICE_CATEGORY_FAULT_CODES, DOMAIN, FAULT_TRANSLATIONS
+from .const import (
+    CAPABILITY_FAULT_CODES,
+    DEVICE_CATEGORY_FAULT_CODES,
+    DOMAIN,
+    FAULT_TRANSLATIONS,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -103,7 +111,7 @@ async def async_setup_entry(
     """Set up Dyson binary sensor platform."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    entities = []
+    entities: list[BinarySensorEntity] = []
 
     # Basic binary sensors for all devices
     entities.extend(

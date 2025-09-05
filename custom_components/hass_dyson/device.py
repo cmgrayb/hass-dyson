@@ -7,7 +7,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
@@ -386,7 +386,7 @@ class DysonDevice:
         """Wait for MQTT connection to be established."""
         connection_timeout = 10  # 10 seconds timeout
         check_interval = 0.1  # Check every 100ms
-        elapsed_time = 0
+        elapsed_time = 0.0
 
         while elapsed_time < connection_timeout:
             if self._connected:
@@ -480,7 +480,7 @@ class DysonDevice:
         """Handle MQTT message callback."""
         try:
             topic = message.topic
-            payload = message.payload
+            payload: Union[str, bytes] = message.payload
 
             _LOGGER.debug("Received MQTT message on %s: %s", topic, payload[:100])
             _LOGGER.info("MQTT MESSAGE RECEIVED for %s - Topic: %s", self.serial_number, topic)

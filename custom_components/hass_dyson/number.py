@@ -24,7 +24,7 @@ async def async_setup_entry(
     """Set up Dyson number platform."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    entities = []
+    entities: list[NumberEntity] = []
 
     # Add timer control if device supports scheduling
     device_capabilities = coordinator.device_capabilities

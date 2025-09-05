@@ -172,6 +172,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self._cloud_client = DysonClient(email=self._email, password=self._password)
 
                     # Begin the login process to get challenge_id - this triggers the OTP email
+                    if self._cloud_client is None:
+                        raise ValueError("Failed to initialize Dyson client")
                     challenge = await self.hass.async_add_executor_job(lambda: self._cloud_client.begin_login())
 
                     # Store challenge ID for verification step
@@ -498,15 +500,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
         # Create device list from discovered devices
-        device_list = []
-        for device in self._discovered_devices:
-            device_info = {
-                "serial_number": device.serial_number,
-                "name": getattr(device, "name", f"Dyson {device.serial_number}"),
-                "product_type": getattr(device, "product_type", "unknown"),
-                "category": getattr(device, "category", "unknown"),
-            }
-            device_list.append(device_info)
+        device_list: list[dict[str, Any]] = []
+        if self._discovered_devices is not None:
+            for device in self._discovered_devices:
+                device_info = {
+                    "serial_number": device.serial_number,
+                    "name": getattr(device, "name", f"Dyson {device.serial_number}"),
+                    "product_type": getattr(device, "product_type", "unknown"),
+                    "category": getattr(device, "category", "unknown"),
+                }
+                device_list.append(device_info)
 
         return self.async_create_entry(
             title=f"Dyson Account ({self._email})",
