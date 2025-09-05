@@ -172,7 +172,7 @@ jobs:
           python -m bandit -r custom_components/ -f json || true
 
   integration:
-    name: Integration Tests
+    name: Integration Validation
     runs-on: ubuntu-latest
 
     steps:
@@ -190,13 +190,10 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e .
 
-      - name: Run integration tests
+      - name: Run all tests (integration validation)
         run: |
-          python -m pytest tests/ -m "integration" -v --tb=short --no-cov
-
-      - name: Run unit tests
-        run: |
-          python -m pytest tests/ -m "not integration" -v --tb=short --no-cov
+          echo "🔗 Running all tests to validate integration..."
+          python -m pytest tests/ -v --tb=short --no-cov
 
   build:
     name: Build Package

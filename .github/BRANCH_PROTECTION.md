@@ -99,10 +99,12 @@ contexts: # Core test suite - must pass - "Quick Test Suite" - "Tests" - "Code C
 
 # 1. All tests in /tests folder pass (Quick Test Suite)
 
-# 2. Tests pass on primary Python version (Test Python 3.13)
+# 2. Tests pass on primary Python version (Tests)
 
-# 3. Code follows quality standards (Code Quality Checks)
+# 3. Code coverage requirements met (Code Coverage Analysis)
 
-# 4. Package builds successfully (Build Package)
+# 4. Integration validation completed (Integration Validation)
 
-# 5. Coverage analysis completes (Test Coverage Analysis)
+# 5. Code follows quality standards (Code Quality Checks)
+
+# 6. Package builds successfully (Build Package)

@@ -31,7 +31,7 @@ This directory contains automated workflows for continuous integration and testi
 - **Tests:** Core test suite on Python 3.13
 - **Code Coverage Analysis:** Comprehensive coverage reporting with artifacts
 - **Quality:** Code formatting, linting, type checking, security
-- **Integration:** Separate integration and unit test runs
+- **Integration:** Full test suite validation (all tests)
 - **Build:** Package building and validation
 
 **Key Features:**
