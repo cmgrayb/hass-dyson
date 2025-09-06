@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -24,7 +25,7 @@ async def async_setup_entry(
     """Set up Dyson select platform."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    entities = []
+    entities: list[SelectEntity] = []
 
     # Fan control mode moved to fan platform preset modes
 
@@ -122,8 +123,8 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "45°", "90°", "180°", "350°", "Custom"]
         # Hybrid approach: event-driven + state-based center preservation
-        self._saved_center_angle = None
-        self._last_known_mode = None  # Track transitions for event-driven logic
+        self._saved_center_angle: Optional[int] = None
+        self._last_known_mode: Optional[str] = None  # Track transitions for event-driven logic
         # Store preferred center points for each preset mode
         self._preferred_centers = {
             "45°": 175,  # Default centers

@@ -10,7 +10,7 @@
   "issue_tracker": "https://github.com/cmgrayb/ha-dyson-alt/issues",
   "loggers": ["custom_components.hass_dyson"],
   "requirements": [
-    "libdyson-rest==0.5.0"
+    "libdyson-rest==0.5.1"
   ],
   "version": "0.10.0"
 }

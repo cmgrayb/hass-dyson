@@ -83,8 +83,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 env_data.get("pm10"),
             )
 
-        # Use the most direct method to trigger sensor updates
-        self.async_update_listeners()
+        # Schedule the async update on the event loop to ensure thread safety
+        self.hass.add_job(self.async_update_listeners)
 
     def _on_message_update(self, topic: str, data: Dict[str, Any]) -> None:
         """Handle message updates from device for real-time state changes."""
@@ -687,7 +687,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     def _extract_capabilities(self, device_info: Any) -> List[str]:
         """Extract device capabilities from cloud device info."""
-        capabilities = []
+        capabilities: list[str] = []
 
         # Get capabilities from device info if available
         if hasattr(device_info, "capabilities"):

@@ -44,48 +44,57 @@ def _get_connection_type_display_name(connection_type: str) -> str:
     return CONNECTION_TYPE_NAMES.get(connection_type, connection_type)
 
 
-async def _discover_device_via_mdns(serial_number: str, timeout: int = 10) -> str | None:
-    """Discover Dyson device via mDNS using zeroconf.
+async def _discover_device_via_mdns(hass, serial_number: str, timeout: int = 10) -> str | None:
+    """Discover Dyson device via mDNS using Home Assistant's shared zeroconf instance.
 
     Args:
+        hass: Home Assistant instance
         serial_number: Device serial number to search for
         timeout: Discovery timeout in seconds
 
     Returns:
         IP address if found, None otherwise
     """
+    from homeassistant.components import zeroconf
 
-    def _find_device():
-        """Synchronous mDNS discovery function."""
-        from zeroconf import Zeroconf
-
-        zeroconf = Zeroconf()
-        try:
-            # Look for Dyson services
-            services = zeroconf.get_service_info(MDNS_SERVICE_DYSON, f"{serial_number}.{MDNS_SERVICE_DYSON}")
-            if services and services.addresses:
-                # Return the first available IP address
-                return socket.inet_ntoa(services.addresses[0])
-
-            # Also try the common pattern {serial}.local
-            try:
-                hostname = f"{serial_number}.local"
-                ip = socket.gethostbyname(hostname)
-                return ip
-            except socket.gaierror:
-                pass
-
-        except Exception as e:
-            _LOGGER.debug("mDNS discovery error for %s: %s", serial_number, e)
-        finally:
-            zeroconf.close()
-        return None
-
-    # Run discovery in executor to avoid blocking
     try:
-        return await asyncio.wait_for(asyncio.get_event_loop().run_in_executor(None, _find_device), timeout=timeout)
-    except asyncio.TimeoutError:
-        _LOGGER.debug("mDNS discovery timeout for device %s", serial_number)
+        # Get Home Assistant's shared zeroconf instance
+        zeroconf_instance = await zeroconf.async_get_instance(hass)
+        if zeroconf_instance is None:
+            _LOGGER.warning("Unable to get shared zeroconf instance")
+            return None
+
+        def _find_device():
+            """Synchronous mDNS discovery function."""
+            try:
+                # Look for Dyson services
+                services = zeroconf_instance.get_service_info(
+                    MDNS_SERVICE_DYSON, f"{serial_number}.{MDNS_SERVICE_DYSON}"
+                )
+                if services and services.addresses:
+                    # Return the first available IP address
+                    return socket.inet_ntoa(services.addresses[0])
+
+                # Also try the common pattern {serial}.local
+                try:
+                    hostname = f"{serial_number}.local"
+                    ip = socket.gethostbyname(hostname)
+                    return ip
+                except socket.gaierror:
+                    pass
+
+            except Exception as e:
+                _LOGGER.debug("mDNS discovery error for %s: %s", serial_number, e)
+                return None
+
+        # Run discovery in executor to avoid blocking
+        try:
+            return await asyncio.wait_for(asyncio.get_event_loop().run_in_executor(None, _find_device), timeout=timeout)
+        except asyncio.TimeoutError:
+            _LOGGER.debug("mDNS discovery timeout for device %s", serial_number)
+            return None
+    except Exception as e:
+        _LOGGER.debug("Error getting zeroconf instance: %s", e)
         return None
 
 
@@ -172,13 +181,18 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self._cloud_client = DysonClient(email=self._email, password=self._password)
 
                     # Begin the login process to get challenge_id - this triggers the OTP email
+                    if self._cloud_client is None:
+                        raise ValueError("Failed to initialize Dyson client")
                     challenge = await self.hass.async_add_executor_job(lambda: self._cloud_client.begin_login())
 
-                    # Store challenge ID for verification step
-                    self._challenge_id = str(challenge.challenge_id)
-
-                    _LOGGER.info("Successfully initiated login process, challenge ID received")
-                    return await self.async_step_verify()
+                    # Validate and store challenge ID for verification step
+                    if challenge is None or challenge.challenge_id is None:
+                        _LOGGER.error("No challenge received from Dyson API")
+                        errors["base"] = "cannot_connect"
+                    else:
+                        self._challenge_id = str(challenge.challenge_id)
+                        _LOGGER.info("Successfully initiated login process, challenge ID received")
+                        return await self.async_step_verify()
 
                 except Exception as e:
                     _LOGGER.exception("Error during Dyson authentication: %s", e)
@@ -296,7 +310,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Try to discover device via mDNS
         _LOGGER.info("No hostname provided, attempting mDNS discovery for device %s", serial_number)
-        discovered_hostname = await _discover_device_via_mdns(serial_number)
+        discovered_hostname = await _discover_device_via_mdns(self.hass, serial_number)
 
         if discovered_hostname:
             _LOGGER.info("Found device %s at IP: %s", serial_number, discovered_hostname)
@@ -348,12 +362,28 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "verification_failed"
                     else:
                         # Complete authentication with libdyson-rest using challenge_id and verification code
-                        await self.hass.async_add_executor_job(
-                            lambda: self._cloud_client.complete_login(self._challenge_id, verification_code)
+                        _LOGGER.debug(
+                            "Attempting complete_login with challenge_id=%s, verification_code=%s",
+                            self._challenge_id,
+                            verification_code,
                         )
 
-                        _LOGGER.info("Successfully authenticated with Dyson API, got auth token")
-                        return await self.async_step_connection()
+                        try:
+                            await self.hass.async_add_executor_job(
+                                lambda: self._cloud_client.complete_login(self._challenge_id, verification_code)
+                            )
+                            _LOGGER.info("Successfully authenticated with Dyson API, got auth token")
+                            return await self.async_step_connection()
+                        except Exception as complete_error:
+                            _LOGGER.error(
+                                "complete_login failed: %s (Type: %s)", complete_error, type(complete_error).__name__
+                            )
+                            # Check if it's specifically an auth error vs other errors
+                            if "401" in str(complete_error) or "Unauthorized" in str(complete_error):
+                                _LOGGER.error("Authentication failed - invalid credentials or expired challenge")
+                                errors["base"] = "invalid_auth"
+                            else:
+                                errors["base"] = "verification_failed"
 
                 except Exception as e:
                     _LOGGER.exception("Error during verification: %s", e)
@@ -399,11 +429,26 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         # Discover devices using libdyson-rest
                         _LOGGER.info("Discovering devices from Dyson API")
-                        devices = await self.hass.async_add_executor_job(self._cloud_client.get_devices)
+                        try:
+                            devices = await self.hass.async_add_executor_job(self._cloud_client.get_devices)
+                        except Exception as device_error:
+                            _LOGGER.error("Failed to retrieve devices from Dyson API: %s", device_error)
+                            if "Missing required field: productType" in str(device_error):
+                                _LOGGER.error(
+                                    "Cloud API response missing productType field - this is a known issue with libdyson-rest v0.5.0"
+                                )
+                                errors["base"] = "api_format_changed"
+                            elif "JSONValidationError" in str(device_error):
+                                _LOGGER.error("Cloud API response format validation failed: %s", device_error)
+                                errors["base"] = "api_validation_failed"
+                            else:
+                                errors["base"] = "cloud_api_error"
+                            devices = None
 
                         if not devices:
-                            _LOGGER.warning("No devices found in Dyson account")
-                            errors["base"] = "no_devices"
+                            if "base" not in errors:  # Only set this if we don't already have a more specific error
+                                _LOGGER.warning("No devices found in Dyson account")
+                                errors["base"] = "no_devices"
                         else:
                             _LOGGER.info("Found %d devices in Dyson account", len(devices))
 
@@ -498,15 +543,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
         # Create device list from discovered devices
-        device_list = []
-        for device in self._discovered_devices:
-            device_info = {
-                "serial_number": device.serial_number,
-                "name": getattr(device, "name", f"Dyson {device.serial_number}"),
-                "product_type": getattr(device, "product_type", "unknown"),
-                "category": getattr(device, "category", "unknown"),
-            }
-            device_list.append(device_info)
+        device_list: list[dict[str, Any]] = []
+        if self._discovered_devices is not None:
+            for device in self._discovered_devices:
+                device_info = {
+                    "serial_number": device.serial_number,
+                    "name": getattr(device, "name", f"Dyson {device.serial_number}"),
+                    "product_type": getattr(device, "product_type", "unknown"),
+                    "category": getattr(device, "category", "unknown"),
+                }
+                device_list.append(device_info)
 
         return self.async_create_entry(
             title=f"Dyson Account ({self._email})",

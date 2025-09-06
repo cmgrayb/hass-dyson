@@ -24,7 +24,7 @@ async def async_setup_entry(
     """Set up Dyson switch platform."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    entities = []
+    entities: list[SwitchEntity] = []
 
     # Basic switches for all devices
     entities.append(DysonNightModeSwitch(coordinator))
