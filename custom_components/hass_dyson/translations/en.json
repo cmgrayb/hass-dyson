@@ -68,6 +68,9 @@
       "invalid_setup_method": "Invalid setup method selected.",
       "preferences_failed": "Failed to save cloud preferences. Please try again.",
       "no_devices_to_add": "No devices available to add. All discovered devices have already been added.",
+      "api_format_changed": "Dyson cloud API format has changed. Cloud device discovery is temporarily unavailable. Please use manual device setup instead.",
+      "api_validation_failed": "Dyson cloud API response validation failed. Please try again or use manual device setup.",
+      "cloud_api_error": "Error communicating with Dyson cloud API. Please try again later.",
       "required": "This field is required."
     },
     "abort": {

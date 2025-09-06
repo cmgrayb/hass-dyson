@@ -27,7 +27,7 @@ ATTR_ANGLE_HIGH = "angle_high"
 
 SERVICE_SET_ANGLE = "set_angle"
 
-SET_ANGLE_SCHEMA = vol.Schema(
+SET_ANGLE_SCHEMA = cv.make_entity_service_schema(
     {
         vol.Required(ATTR_ANGLE_LOW): cv.positive_int,
         vol.Required(ATTR_ANGLE_HIGH): cv.positive_int,
