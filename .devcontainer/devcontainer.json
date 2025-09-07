@@ -19,7 +19,11 @@
         "ms-vscode.vscode-json",
         "redhat.vscode-yaml",
         "GitHub.copilot",
-        "GitHub.copilot-chat"
+        "GitHub.copilot-chat",
+        "github.vscode-github-actions",
+        "GitHub.vscode-pull-request-github",
+        "keesschollaart.vscode-home-assistant",
+        "eamodio.gitlens"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
@@ -45,6 +49,9 @@
   },
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
   "forwardPorts": [8123],
+  "containerEnv": {
+    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}"
+  },
   "mounts": [
     "source=${localWorkspaceFolder}/.devcontainer/config,target=/config,type=bind",
     "source=ha-dyson-dev-data,target=/data,type=volume"
