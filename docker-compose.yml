@@ -3,16 +3,16 @@ services:
     container_name: hass-dyson-test
     image: ghcr.io/home-assistant/home-assistant:stable
     volumes:
-      - ./custom_components:/config/custom_components:ro
-      - ./docker/ha-config:/config
-      - ./docker/logs:/config/logs
+      - ./custom_components:/config/custom_components:rw
     ports:
-      - "8124:8123"
+      - "8123:8123"
     environment:
       - TZ=America/New_York
       - HASS_SERVER_HOST=0.0.0.0
     restart: unless-stopped
     privileged: true
+    networks:
+      - ha-dyson-network
 
   mosquitto:
     container_name: hass-dyson-mqtt-test
@@ -25,3 +25,9 @@ services:
       - ./docker/mosquitto-data:/mosquitto/data
       - ./docker/mosquitto-logs:/mosquitto/log
     restart: unless-stopped
+    networks:
+      - ha-dyson-network
+
+networks:
+  ha-dyson-network:
+    driver: bridge

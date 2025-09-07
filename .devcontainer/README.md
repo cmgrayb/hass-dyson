@@ -1,22 +1,87 @@
 # Development Container Setup
 
-This devcontainer provides a complete development environment for the Dyson Home Assistant integration with all necessary dependencies pre-installed.
+This devcontainer provides a complete development environment for the Dyson Home Assistant integration with all necessary dependencies pre-installed, plus a full test infrastructure.
 
 ## Features
 
-- **Home Assistant Core**: Full Home Assistant installation for testing
-- **Python 3.11**: Latest stable Python version supported by Home Assistant
-- **Development Tools**: Black, Flake8, isort, mypy, pytest, and more
+- **Development Container**: Full development tools (Black, Flake8, isort, mypy, pytest)
+- **Home Assistant Test Instance**: Complete HA installation for integration testing
+- **MQTT Broker**: Local Mosquitto broker for device communication testing
 - **VS Code Extensions**: Python, linting, formatting, and GitHub Copilot extensions
-- **MQTT Broker**: Local Mosquitto broker for testing device communication
-- **System Dependencies**: All required libraries for Home Assistant development
+- **Network Integration**: All services connected on the same Docker network
+
+## Architecture
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  DevContainer   │    │  Home Assistant  │    │  MQTT Broker    │
+│  (Development)  │────│  (Test Instance) │────│  (Mosquitto)    │
+│                 │    │                  │    │                 │
+│ - VS Code       │    │ - Frontend       │    │ - Port 1883     │
+│ - Python Tools  │    │ - Port 8123      │    │ - Port 9001     │
+│ - Integration   │    │ - Custom Component│   │ - WebSocket     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
 
 ## Quick Start
 
 1. **Open in VS Code**: Make sure you have the "Dev Containers" extension installed
 2. **Reopen in Container**: Press `Ctrl+Shift+P` → "Dev Containers: Reopen in Container"
 3. **Wait for Setup**: The container will build and install all dependencies automatically
-4. **Start Developing**: All tools are ready to use!
+4. **Access Services**:
+   - **Development**: Work directly in VS Code
+   - **Home Assistant**: http://localhost:8123
+   - **MQTT**: localhost:1883 (from host) or mosquitto:1883 (from container)
+
+## Available Services
+
+### Development Container
+- **Purpose**: Your main development environment
+- **Tools**: All Python development tools pre-installed
+- **Access**: Direct VS Code interface
+
+### Home Assistant Test Instance
+- **Purpose**: Full HA installation for testing your integration
+- **URL**: http://localhost:8123 (from host) or http://homeassistant:8123 (from container)
+- **Config**: Located in `.devcontainer/config/`
+- **Integration**: Your custom component is automatically mounted
+
+### MQTT Broker (Mosquitto)
+- **Purpose**: Test MQTT communication with simulated Dyson devices
+- **Ports**: 1883 (MQTT), 9001 (WebSocket)
+- **Access**: mosquitto:1883 from containers, localhost:1883 from host
+- **Config**: `.devcontainer/mosquitto.conf`
+
+## Development Workflow
+
+### 1. Code Development
+```bash
+# Format code
+python -m black .
+
+# Lint code  
+python -m flake8 .
+
+# Sort imports
+python -m isort .
+
+# Type checking
+python -m mypy custom_components/hass_dyson
+
+# Run tests
+python -m pytest
+```
+
+### 2. Integration Testing
+1. **Make changes** to your integration code
+2. **Restart Home Assistant** to reload the integration
+3. **Test in HA frontend** at http://localhost:8123
+4. **Check logs** for debugging information
+
+### 3. MQTT Testing
+- Use the MQTT broker to simulate Dyson device communication
+- Connect to `mosquitto:1883` from within containers
+- Connect to `localhost:1883` from your host machine
 
 ## Available Commands
 

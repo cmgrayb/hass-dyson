@@ -1,12 +1,8 @@
 {
   "name": "Dyson Home Assistant Integration Dev",
-  "image": "mcr.microsoft.com/devcontainers/python:3.13-bookworm",
-  "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.13"
-    }
-  },
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -48,14 +44,11 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
-  "forwardPorts": [8123],
+  "forwardPorts": [8123, 1883, 9001],
   "containerEnv": {
-    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}"
+    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}",
+    "HASS_SERVER": "http://homeassistant:8123",
+    "MQTT_BROKER": "mosquitto"
   },
-  "mounts": [
-    "source=${localWorkspaceFolder}/.devcontainer/config,target=/config,type=bind",
-    "source=ha-dyson-dev-data,target=/data,type=volume"
-  ],
-  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "remoteUser": "vscode"
 }
