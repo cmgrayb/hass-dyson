@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -190,6 +191,33 @@ class DysonOscillationSwitch(DysonEntity, SwitchEntity):
         except Exception as err:
             _LOGGER.error("Failed to turn off oscillation for %s: %s", self.coordinator.serial_number, err)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return oscillation-specific state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes: dict[str, Any] = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Oscillation state for scene support
+        oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
+        attributes["oscillation_enabled"] = oson == "ON"
+
+        # Include oscillation angles if available
+        try:
+            lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
+            upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
+            lower_angle: int = int(lower_data.lstrip("0") or "0")
+            upper_angle: int = int(upper_data.lstrip("0") or "350")
+
+            attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
+            attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
+        except (ValueError, TypeError):
+            pass
+
+        return attributes
+
 
 class DysonHeatingSwitch(DysonEntity, SwitchEntity):
     """Switch for heating mode."""
@@ -236,6 +264,34 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         except Exception as err:
             _LOGGER.error("Failed to turn off heating for %s: %s", self.coordinator.serial_number, err)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return heating-specific state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes: dict[str, Any] = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Heating mode state for scene support
+        hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+        attributes["heating_mode"] = hmod
+        heating_enabled: bool = hmod != "OFF"
+        attributes["heating_enabled"] = heating_enabled  # type: ignore[assignment]
+
+        # Include related heating properties if available
+        try:
+            # Target temperature in Kelvin
+            hmax = self.coordinator.device._get_current_value(product_state, "hmax", "2980")
+            temp_kelvin: float = int(hmax) / 10  # Device reports in 0.1K increments
+            target_celsius: float = temp_kelvin - 273.15
+            attributes["target_temperature"] = round(target_celsius, 1)  # type: ignore[assignment]
+            attributes["target_temperature_kelvin"] = hmax
+        except (ValueError, TypeError):
+            pass
+
+        return attributes
+
 
 class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
     """Switch for continuous monitoring."""
@@ -281,3 +337,20 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
             _LOGGER.debug("Turned off continuous monitoring for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn off continuous monitoring for %s: %s", self.coordinator.serial_number, err)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:  # type: ignore[return]
+        """Return continuous monitoring state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes: dict[str, Any] = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Continuous monitoring state for scene support
+        rhtm = self.coordinator.device._get_current_value(product_state, "rhtm", "OFF")
+        continuous_monitoring: bool = rhtm == "ON"
+        attributes["continuous_monitoring"] = continuous_monitoring  # type: ignore[assignment]
+        attributes["monitoring_mode"] = rhtm
+
+        return attributes

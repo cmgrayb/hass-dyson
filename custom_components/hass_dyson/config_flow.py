@@ -44,7 +44,7 @@ def _get_connection_type_display_name(connection_type: str) -> str:
     return CONNECTION_TYPE_NAMES.get(connection_type, connection_type)
 
 
-async def _discover_device_via_mdns(hass, serial_number: str, timeout: int = 10) -> str | None:
+async def _discover_device_via_mdns(hass, serial_number: str, timeout: int = 10) -> str | None:  # noqa: C901
     """Discover Dyson device via mDNS using Home Assistant's shared zeroconf instance.
 
     Args:
@@ -346,7 +346,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Error creating manual device setup form: %s", e)
             raise
 
-    async def async_step_verify(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_verify(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:  # noqa: C901
         """Handle the verification code step."""
         try:
             _LOGGER.info("Starting async_step_verify with user_input: %s", user_input)
@@ -412,7 +412,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Top-level exception in async_step_verify: %s", e)
             raise
 
-    async def async_step_connection(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_connection(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:  # noqa: C901
         """Handle connection preferences and device selection."""
         try:
             _LOGGER.info("Starting async_step_connection with user_input: %s", user_input)
@@ -607,6 +607,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         _LOGGER.info("Processing discovery for device %s (%s)", device_name, device_serial)
 
+        # Debug logging for complete discovery info
+        _LOGGER.debug("Complete discovery_info contents: %r", discovery_info)
+        _LOGGER.debug("Discovery_info keys: %r", list(discovery_info.keys()) if discovery_info else None)
+
         # Set unique_id to prevent duplicate discoveries
         await self.async_set_unique_id(device_serial)
         self._abort_if_unique_id_configured()
@@ -620,17 +624,35 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Get better display name for device type
         from .const import AVAILABLE_DEVICE_CATEGORIES
+        from .device_utils import normalize_device_category
 
         category = discovery_info.get("category", "unknown")
         product_type = discovery_info.get("product_type", "unknown")
 
+        # Debug logging for device categorization
+        _LOGGER.debug("Device categorization debug for %s:", device_serial)
+        _LOGGER.debug("  - Raw category value: %r (type: %s)", category, type(category))
+        _LOGGER.debug("  - Raw product_type value: %r (type: %s)", product_type, type(product_type))
+        _LOGGER.debug("  - Available categories: %r", list(AVAILABLE_DEVICE_CATEGORIES.keys()))
+
+        # Normalize category from enum to string value
+        normalized_categories = normalize_device_category(category)
+        category_string = normalized_categories[0] if normalized_categories else "unknown"
+        _LOGGER.debug("  - Normalized category string: %r", category_string)
+        _LOGGER.debug("  - Category string in available categories: %s", category_string in AVAILABLE_DEVICE_CATEGORIES)
+
         # Use category display name if available, otherwise use product_type
-        if category in AVAILABLE_DEVICE_CATEGORIES:
-            device_type_display = AVAILABLE_DEVICE_CATEGORIES[category]
+        if category_string in AVAILABLE_DEVICE_CATEGORIES:
+            device_type_display = AVAILABLE_DEVICE_CATEGORIES[category_string]
+            _LOGGER.debug("  - Using category display name: %r", device_type_display)
         elif product_type != "unknown":
             device_type_display = product_type
+            _LOGGER.debug("  - Using product_type as display name: %r", device_type_display)
         else:
             device_type_display = "Dyson Device"
+            _LOGGER.debug("  - Falling back to default 'Dyson Device'")
+
+        _LOGGER.debug("  - Final device_type_display: %r", device_type_display)
 
         # Show confirmation dialog to user with device name in title
         return self.async_show_form(
@@ -656,17 +678,37 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Get better display name for device type
             from .const import AVAILABLE_DEVICE_CATEGORIES
+            from .device_utils import normalize_device_category
 
             category = discovery_info.get("category", "unknown")
             product_type = discovery_info.get("product_type", "unknown")
 
+            # Debug logging for device categorization (discovery_confirm)
+            _LOGGER.debug("Device categorization debug for %s (discovery_confirm):", device_serial)
+            _LOGGER.debug("  - Raw category value: %r (type: %s)", category, type(category))
+            _LOGGER.debug("  - Raw product_type value: %r (type: %s)", product_type, type(product_type))
+            _LOGGER.debug("  - Available categories: %r", list(AVAILABLE_DEVICE_CATEGORIES.keys()))
+
+            # Normalize category from enum to string value
+            normalized_categories = normalize_device_category(category)
+            category_string = normalized_categories[0] if normalized_categories else "unknown"
+            _LOGGER.debug("  - Normalized category string: %r", category_string)
+            _LOGGER.debug(
+                "  - Category string in available categories: %s", category_string in AVAILABLE_DEVICE_CATEGORIES
+            )
+
             # Use category display name if available, otherwise use product_type
-            if category in AVAILABLE_DEVICE_CATEGORIES:
-                device_type_display = AVAILABLE_DEVICE_CATEGORIES[category]
+            if category_string in AVAILABLE_DEVICE_CATEGORIES:
+                device_type_display = AVAILABLE_DEVICE_CATEGORIES[category_string]
+                _LOGGER.debug("  - Using category display name: %r", device_type_display)
             elif product_type != "unknown":
                 device_type_display = product_type
+                _LOGGER.debug("  - Using product_type as display name: %r", device_type_display)
             else:
                 device_type_display = "Dyson Device"
+                _LOGGER.debug("  - Falling back to default 'Dyson Device'")
+
+            _LOGGER.debug("  - Final device_type_display: %r", device_type_display)
 
             # Show confirmation form with device info placeholders
             return self.async_show_form(

@@ -208,3 +208,40 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
         await self.async_set_hvac_mode(HVACMode.OFF)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return climate-specific state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Core climate properties for scene support
+        target_temp: float | None = self._attr_target_temperature
+        hvac_mode: HVACMode | None = self._attr_hvac_mode
+        fan_mode: str | None = self._attr_fan_mode
+
+        attributes["target_temperature"] = target_temp  # type: ignore[assignment]
+        attributes["hvac_mode"] = hvac_mode  # type: ignore[assignment]
+        attributes["fan_mode"] = fan_mode  # type: ignore[assignment]
+
+        # Device state properties that can be controlled
+        heating_mode = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+        auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
+        fan_speed = self.coordinator.device._get_current_value(product_state, "fnsp", "0001")
+        fan_power = self.coordinator.device._get_current_value(product_state, "fnst", "OFF")
+
+        attributes["heating_mode"] = heating_mode  # type: ignore[assignment]
+        attributes["auto_mode"] = auto_mode == "ON"
+        attributes["fan_speed"] = fan_speed  # type: ignore[assignment]
+        attributes["fan_power"] = fan_power == "FAN"
+
+        # Target temperature in Kelvin for device commands
+        if target_temp is not None:
+            temp_kelvin: int = int((target_temp + 273.15) * 10)
+            kelvin_str: str = f"{temp_kelvin:04d}"
+            attributes["target_temperature_kelvin"] = kelvin_str  # type: ignore[assignment]
+
+        return attributes

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -426,6 +426,43 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         except Exception as err:
             _LOGGER.error("Failed to set oscillation mode for %s: %s", self.coordinator.serial_number, err)
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return oscillation mode state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Current oscillation mode for scene support
+        attributes["oscillation_mode"] = self._attr_current_option
+
+        # Oscillation state details
+        oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
+        oscillation_enabled: bool = oson == "ON"
+        attributes["oscillation_enabled"] = oscillation_enabled  # type: ignore[assignment]
+
+        # Current angle configuration
+        try:
+            lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
+            upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
+            center_data = self.coordinator.device._get_current_value(product_state, "ancp", "0175")
+
+            lower_angle: int = int(lower_data.lstrip("0") or "0")
+            upper_angle: int = int(upper_data.lstrip("0") or "350")
+            center_angle: int = int(center_data.lstrip("0") or "175")
+            span: int = upper_angle - lower_angle
+
+            attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
+            attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
+            attributes["oscillation_center"] = center_angle  # type: ignore[assignment]
+            attributes["oscillation_span"] = span  # type: ignore[assignment]
+        except (ValueError, TypeError):
+            pass
+
+        return attributes
+
 
 class DysonHeatingModeSelect(DysonEntity, SelectEntity):
     """Select entity for heating mode."""
@@ -473,3 +510,33 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
             _LOGGER.debug("Set heating mode to %s for %s", option, self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to set heating mode for %s: %s", self.coordinator.serial_number, err)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return heating mode state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Current heating mode for scene support
+        attributes["heating_mode"] = self._attr_current_option
+
+        # Device heating state details
+        hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+        attributes["heating_mode_raw"] = hmod
+        heating_enabled: bool = hmod != "OFF"
+        attributes["heating_enabled"] = heating_enabled  # type: ignore[assignment]
+
+        # Include target temperature if available
+        try:
+            hmax = self.coordinator.device._get_current_value(product_state, "hmax", "2980")
+            temp_kelvin: float = int(hmax) / 10  # Device reports in 0.1K increments
+            target_celsius: float = temp_kelvin - 273.15
+            attributes["target_temperature"] = round(target_celsius, 1)  # type: ignore[assignment]
+            attributes["target_temperature_kelvin"] = hmax
+        except (ValueError, TypeError):
+            pass
+
+        return attributes

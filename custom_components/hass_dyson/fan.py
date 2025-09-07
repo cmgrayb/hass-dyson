@@ -299,14 +299,41 @@ class DysonFan(DysonEntity, FanEntity):
             _LOGGER.error("Failed to set fan preset mode for %s: %s", self.coordinator.serial_number, err)
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any] | None:
-        """Return fan-specific state attributes including oscillation angles."""
+    def extra_state_attributes(self) -> Mapping[str, Any] | None:  # type: ignore[return]
+        """Return fan-specific state attributes for scene support."""
         attributes = {}
 
         if self.coordinator.device:
             product_state = self.coordinator.data.get("product-state", {})
 
-            # Add oscillation angle information
+            # Core fan properties for scene support
+            percentage: int | None = self._attr_percentage
+            preset_mode: str | None = self._attr_preset_mode
+            current_direction: str | None = self._attr_current_direction
+            is_on: bool | None = self._attr_is_on
+
+            attributes["fan_speed"] = percentage  # type: ignore[assignment]
+            attributes["preset_mode"] = preset_mode  # type: ignore[assignment]
+            attributes["direction"] = current_direction  # type: ignore[assignment]
+            attributes["is_on"] = is_on  # type: ignore[assignment]
+
+            # Device state properties
+            fan_power = self.coordinator.device._get_current_value(product_state, "fpwr", "OFF")
+            fan_state = self.coordinator.device._get_current_value(product_state, "fnst", "OFF")
+            fan_speed_setting = self.coordinator.device._get_current_value(product_state, "fnsp", "0001")
+            auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
+            night_mode = self.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+
+            attributes["fan_power"] = fan_power == "ON"
+            attributes["fan_state"] = fan_state  # type: ignore[assignment]
+            attributes["fan_speed_setting"] = fan_speed_setting  # type: ignore[assignment]
+            attributes["auto_mode"] = auto_mode == "ON"
+            attributes["night_mode"] = night_mode == "ON"
+
+            # Oscillation information
+            oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
+            attributes["oscillation_enabled"] = oson == "ON"
+
             lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
             upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
 
@@ -316,8 +343,19 @@ class DysonFan(DysonEntity, FanEntity):
 
                 attributes[ATTR_ANGLE_LOW] = lower_angle
                 attributes[ATTR_ANGLE_HIGH] = upper_angle
+                attributes["oscillation_span"] = upper_angle - lower_angle
             except (ValueError, TypeError):
                 pass
+
+            # Sleep timer if available
+            try:
+                sltm = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
+                if sltm != "OFF":
+                    attributes["sleep_timer"] = int(sltm)
+                else:
+                    attributes["sleep_timer"] = 0
+            except (ValueError, TypeError):
+                attributes["sleep_timer"] = 0
 
         return attributes if attributes else None
 

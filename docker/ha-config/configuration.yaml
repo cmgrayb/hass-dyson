@@ -8,7 +8,7 @@ default_config:
 logger:
   default: info
   logs:
-    custom_components.dyson_alt: debug
+    custom_components.hass_dyson: debug
     homeassistant.config_entries: debug
     homeassistant.loader: debug
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
@@ -98,6 +99,26 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             _LOGGER.debug("Set sleep timer to %s minutes for %s", minutes, self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to set sleep timer for %s: %s", self.coordinator.serial_number, err)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:  # type: ignore[return]
+        """Return sleep timer state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Sleep timer state for scene support
+        native_value: float | None = self._attr_native_value
+        attributes["sleep_timer_minutes"] = native_value  # type: ignore[assignment]
+
+        # Raw device state
+        sltm = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
+        attributes["sleep_timer_raw"] = sltm  # type: ignore[assignment]
+        attributes["sleep_timer_enabled"] = sltm != "OFF"
+
+        return attributes
 
 
 class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):

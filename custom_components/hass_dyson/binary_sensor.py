@@ -28,22 +28,28 @@ _LOGGER = logging.getLogger(__name__)
 
 def _is_fault_code_relevant(fault_code: str, device_categories: Any, device_capabilities: List[Any]) -> bool:
     """Check if a fault code is relevant for a device based on category and capabilities."""
-    category_strings = _normalize_categories(device_categories)
-    capability_strings = _normalize_capabilities(device_capabilities)
+    try:
+        category_strings = _normalize_categories(device_categories)
+        capability_strings = _normalize_capabilities(device_capabilities)
 
-    _LOGGER.debug(
-        "Checking fault code '%s' relevance - categories: %s, capabilities: %s",
-        fault_code,
-        category_strings,
-        capability_strings,
-    )
+        _LOGGER.debug(
+            "Checking fault code '%s' relevance - categories: %s, capabilities: %s",
+            fault_code,
+            category_strings,
+            capability_strings,
+        )
 
-    # Check if fault code is relevant for any device category
-    if _is_fault_code_for_category(fault_code, category_strings):
+        # Check if fault code is relevant for any device category
+        if _is_fault_code_for_category(fault_code, category_strings):
+            return True
+
+        # Check if fault code requires specific capabilities
+        return _is_fault_code_for_capability(fault_code, capability_strings)
+
+    except Exception as e:
+        _LOGGER.error("Error checking fault code relevance for '%s': %s", fault_code, e)
+        # Default to including the fault sensor if we can't determine relevance
         return True
-
-    # Check if fault code requires specific capabilities
-    return _is_fault_code_for_capability(fault_code, capability_strings)
 
 
 def _normalize_categories(device_categories: Any) -> List[str]:
@@ -155,34 +161,77 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
 
-    def _handle_coordinator_update(self) -> None:
+    def _handle_coordinator_update(self) -> None:  # noqa: C901
         """Handle updated data from the coordinator."""
-        if self.coordinator.device:
-            filters_to_check = []
+        device_serial = getattr(self.coordinator, "serial_number", "unknown")
 
-            # Check if HEPA filter is installed by looking at filter type
-            device_data = self.coordinator.data.get("product-state", {}) if self.coordinator.data else {}
-            hepa_filter_type = device_data.get("hflt", "NONE")
+        try:
+            if self.coordinator.device:
+                filters_to_check = []
 
-            if hepa_filter_type != "NONE":  # HEPA filter is installed
-                hepa_life = self.coordinator.device.hepa_filter_life
-                filters_to_check.append(hepa_life)
+                # Check if HEPA filter is installed by looking at filter type
+                device_data = {}
+                if self.coordinator.data and isinstance(self.coordinator.data, dict):
+                    device_data = self.coordinator.data.get("product-state", {})
+                    if not isinstance(device_data, dict):
+                        _LOGGER.warning("Product-state data is not a dictionary for device %s", device_serial)
+                        device_data = {}
+                else:
+                    _LOGGER.debug("No coordinator data available for filter check on device %s", device_serial)
 
-            # Only check carbon filter if device has formaldehyde capability and is installed
-            # TODO: Update this when we identify the exact formaldehyde capability name
-            # For now, since we don't have formaldehyde devices, carbon filter won't be checked
-            # capabilities = self.coordinator.device_capabilities or []
-            # capabilities_str = [cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in capabilities]
-            # if "formaldehyde" in capabilities_str:
-            #     carbon_filter_type = device_data.get("cflt", "NONE")
-            #     if carbon_filter_type != "NONE":  # Carbon filter is installed
-            #         carbon_life = self.coordinator.device.carbon_filter_life
-            #         filters_to_check.append(carbon_life)
+                # Safely check HEPA filter
+                hepa_filter_type = device_data.get("hflt", "NONE") if device_data else "NONE"
+                if hepa_filter_type != "NONE":  # HEPA filter is installed
+                    try:
+                        hepa_life = getattr(self.coordinator.device, "hepa_filter_life", None)
+                        if hepa_life is not None and isinstance(hepa_life, (int, float)):
+                            filters_to_check.append(hepa_life)
+                            _LOGGER.debug("HEPA filter life for device %s: %s%%", device_serial, hepa_life)
+                        else:
+                            _LOGGER.warning("Invalid HEPA filter life data for device %s: %s", device_serial, hepa_life)
+                    except Exception as e:
+                        _LOGGER.error("Error getting HEPA filter life for device %s: %s", device_serial, e)
 
-            # Filter needs replacement if any of the installed filters is below 10%
-            self._attr_is_on = any(filter_life <= 10 for filter_life in filters_to_check)
-        else:
+                # Only check carbon filter if device has formaldehyde capability and is installed
+                # TODO: Update this when we identify the exact formaldehyde capability name
+                # For now, since we don't have formaldehyde devices, carbon filter won't be checked
+                # capabilities = self.coordinator.device_capabilities or []
+                # capabilities_str = [cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in capabilities]
+                # if "formaldehyde" in capabilities_str:
+                #     carbon_filter_type = device_data.get("cflt", "NONE")
+                #     if carbon_filter_type != "NONE":  # Carbon filter is installed
+                #         try:
+                #             carbon_life = getattr(self.coordinator.device, "carbon_filter_life", None)
+                #             if carbon_life is not None and isinstance(carbon_life, (int, float)):
+                #                 filters_to_check.append(carbon_life)
+                #                 _LOGGER.debug("Carbon filter life for device %s: %s%%", device_serial, carbon_life)
+                #             else:
+                #                 _LOGGER.warning("Invalid carbon filter life data for device %s: %s", device_serial, carbon_life)
+                #         except Exception as e:
+                #             _LOGGER.error("Error getting carbon filter life for device %s: %s", device_serial, e)
+
+                # Filter needs replacement if any of the installed filters is below 10%
+                if filters_to_check:
+                    self._attr_is_on = any(
+                        filter_life <= 10 for filter_life in filters_to_check if isinstance(filter_life, (int, float))
+                    )
+                    _LOGGER.debug(
+                        "Filter replacement check for device %s: filters=%s, needs_replacement=%s",
+                        device_serial,
+                        filters_to_check,
+                        self._attr_is_on,
+                    )
+                else:
+                    self._attr_is_on = False
+                    _LOGGER.debug("No filters to check for device %s", device_serial)
+            else:
+                self._attr_is_on = False
+                _LOGGER.debug("Device not available for filter replacement check on %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error("Error during filter replacement sensor update for device %s: %s", device_serial, e)
             self._attr_is_on = False
+
         super()._handle_coordinator_update()
 
 
