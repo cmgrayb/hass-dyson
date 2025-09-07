@@ -50,7 +50,7 @@ def normalize_device_category(category: Any) -> List[str]:
     return ["ec"]
 
 
-def normalize_capabilities(capabilities: Any) -> List[str]:
+def normalize_capabilities(capabilities: Any) -> List[str]:  # noqa: C901
     """Normalize device capabilities to a consistent list format.
 
     Args:
@@ -60,25 +60,228 @@ def normalize_capabilities(capabilities: Any) -> List[str]:
         List of capability strings, empty list if invalid
     """
     if capabilities is None:
+        _LOGGER.debug("No capabilities provided, returning empty list")
         return []
 
     if isinstance(capabilities, list):
         # Convert enum objects to their string values, otherwise use str()
         result = []
         for cap in capabilities:
-            if cap:  # Skip empty/None values
-                if hasattr(cap, "value"):
-                    result.append(cap.value)  # Use enum value
-                else:
-                    result.append(str(cap))  # Fallback to string conversion
+            if cap is None:
+                _LOGGER.warning("Found None capability in list, skipping")
+                continue
+            elif cap == "":
+                _LOGGER.warning("Found empty string capability in list, skipping")
+                continue
+            elif isinstance(cap, (int, float)) and cap == 0:
+                _LOGGER.warning("Found zero numeric capability in list, skipping")
+                continue
+            else:
+                try:
+                    if hasattr(cap, "value") and not isinstance(cap, (int, float, str)):
+                        normalized_cap = str(cap.value)
+                    else:
+                        normalized_cap = str(cap)
+
+                    # Validate that the normalized capability is meaningful
+                    if normalized_cap.strip():
+                        result.append(normalized_cap)
+                        _LOGGER.debug("Normalized capability: %s -> %s", cap, normalized_cap)
+                    else:
+                        _LOGGER.warning("Capability normalized to empty string, skipping: %s", cap)
+                except Exception as e:
+                    _LOGGER.error("Failed to normalize capability %s (type: %s): %s", cap, type(cap), e)
+                    continue
+
+        _LOGGER.debug("Normalized capabilities list: %s -> %s", capabilities, result)
         return result
 
     # Single capability as string
     if isinstance(capabilities, str):
-        return [capabilities]
+        if capabilities.strip():
+            _LOGGER.debug("Normalized single capability: %s", capabilities)
+            return [capabilities]
+        else:
+            _LOGGER.warning("Single capability is empty string, returning empty list")
+            return []
 
-    _LOGGER.warning("Unknown capabilities type %s, defaulting to []", type(capabilities))
-    return []
+    # Handle other types that might be convertible
+    try:
+        if hasattr(capabilities, "value") and not isinstance(capabilities, (int, float, str)):
+            normalized = str(capabilities.value)
+        else:
+            normalized = str(capabilities)
+
+        if normalized.strip():
+            _LOGGER.debug("Normalized non-standard capability: %s -> %s", capabilities, normalized)
+            return [normalized]
+        else:
+            _LOGGER.warning("Non-standard capability normalized to empty string: %s", capabilities)
+            return []
+    except Exception as e:
+        _LOGGER.error("Failed to normalize capabilities %s (type: %s): %s", capabilities, type(capabilities), e)
+        return []
+
+
+def has_capability_safe(capabilities: Optional[List[str]], capability_name: str) -> bool:
+    """Safely check if device has a specific capability with case-insensitive matching.
+
+    Args:
+        capabilities: List of device capabilities (may be None or malformed)
+        capability_name: Name of capability to check for
+
+    Returns:
+        True if capability is found, False otherwise
+    """
+    if not capabilities:
+        _LOGGER.debug("No capabilities provided for capability check: %s", capability_name)
+        return False
+
+    if not isinstance(capabilities, list):
+        _LOGGER.warning("Capabilities is not a list, cannot check for capability: %s", capability_name)
+        return False
+
+    try:
+        # Normalize the search term
+        search_term = capability_name.lower().strip()
+        if not search_term:
+            _LOGGER.warning("Empty capability name provided for search")
+            return False
+
+        # Convert capabilities to lowercase strings for comparison
+        normalized_caps = []
+        for cap in capabilities:
+            try:
+                if cap is not None:
+                    normalized_caps.append(str(cap).lower().strip())
+            except Exception as e:
+                _LOGGER.warning("Failed to normalize capability for comparison %s: %s", cap, e)
+                continue
+
+        # Check for matches
+        has_capability = search_term in normalized_caps
+        _LOGGER.debug("Capability check: '%s' in %s = %s", search_term, normalized_caps, has_capability)
+        return has_capability
+
+    except Exception as e:
+        _LOGGER.error("Error during capability check for '%s': %s", capability_name, e)
+        return False
+
+
+def has_any_capability_safe(capabilities: Optional[List[str]], capability_names: List[str]) -> bool:
+    """Safely check if device has any of the specified capabilities.
+
+    Args:
+        capabilities: List of device capabilities (may be None or malformed)
+        capability_names: List of capability names to check for
+
+    Returns:
+        True if any capability is found, False otherwise
+    """
+    if not capability_names:
+        _LOGGER.debug("No capability names provided for any-capability check")
+        return False
+
+    for capability_name in capability_names:
+        if has_capability_safe(capabilities, capability_name):
+            _LOGGER.debug("Found capability '%s' in any-capability check", capability_name)
+            return True
+
+    _LOGGER.debug("No capabilities found in any-capability check for: %s", capability_names)
+    return False
+
+
+def get_sensor_data_safe(data: Optional[Dict[str, Any]], key: str, device_serial: str = "unknown") -> Any:
+    """Safely extract sensor data with proper error handling and logging.
+
+    Args:
+        data: Dictionary containing sensor data (may be None)
+        key: Key to extract from data
+        device_serial: Device serial for logging context
+
+    Returns:
+        The value if found and valid, None otherwise
+    """
+    if data is None:
+        _LOGGER.debug("No data available for sensor key '%s' on device %s", key, device_serial)
+        return None
+
+    if not isinstance(data, dict):
+        _LOGGER.warning(
+            "Data is not a dictionary for sensor key '%s' on device %s (type: %s)", key, device_serial, type(data)
+        )
+        return None
+
+    try:
+        value = data.get(key)
+        if value is None:
+            _LOGGER.debug("Sensor key '%s' not found in data for device %s", key, device_serial)
+            return None
+
+        # Log successful data access
+        _LOGGER.debug("Successfully extracted sensor data for key '%s' on device %s: %s", key, device_serial, value)
+        return value
+
+    except Exception as e:
+        _LOGGER.error("Error accessing sensor data for key '%s' on device %s: %s", key, device_serial, e)
+        return None
+
+
+def convert_sensor_value_safe(
+    value: Any, target_type: type, device_serial: str = "unknown", sensor_name: str = "unknown"
+) -> Any:
+    """Safely convert sensor value to target type with proper error handling.
+
+    Args:
+        value: Raw sensor value
+        target_type: Target type to convert to (int, float, str)
+        device_serial: Device serial for logging context
+        sensor_name: Sensor name for logging context
+
+    Returns:
+        Converted value or None if conversion fails
+    """
+    if value is None:
+        _LOGGER.debug("Cannot convert None value for %s sensor on device %s", sensor_name, device_serial)
+        return None
+
+    try:
+        converted_value: Any = None
+        if target_type == int:
+            converted_value = int(value)
+        elif target_type == float:
+            converted_value = float(value)
+        elif target_type == str:
+            converted_value = str(value)
+        else:
+            _LOGGER.warning(
+                "Unsupported target type %s for %s sensor on device %s", target_type, sensor_name, device_serial
+            )
+            return None
+
+        _LOGGER.debug(
+            "Successfully converted %s sensor value for device %s: %s -> %s (%s)",
+            sensor_name,
+            device_serial,
+            value,
+            converted_value,
+            target_type.__name__,
+        )
+        return converted_value
+
+    except (ValueError, TypeError, OverflowError) as e:
+        _LOGGER.warning(
+            "Failed to convert %s sensor value for device %s: %s -> %s (%s)",
+            sensor_name,
+            device_serial,
+            value,
+            target_type.__name__,
+            e,
+        )
+        return None
+    except Exception as e:
+        _LOGGER.error("Unexpected error converting %s sensor value for device %s: %s", sensor_name, device_serial, e)
+        return None
 
 
 def create_device_config_data(

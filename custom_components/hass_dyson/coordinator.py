@@ -365,17 +365,51 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """Extract device capabilities from config entry or API response."""
         from .device_utils import normalize_capabilities
 
-        # Extract capabilities from config entry or API
-        config_capabilities = self.config_entry.data.get("capabilities")
-        if config_capabilities and len(config_capabilities) > 0:
-            # Use capabilities from config entry if non-empty
-            self._device_capabilities = normalize_capabilities(config_capabilities)
-            _LOGGER.debug("Using capabilities from config entry: %s", self._device_capabilities)
-        else:
-            # Extract capabilities from API response
-            api_capabilities = self._extract_capabilities(device_info)
-            self._device_capabilities = normalize_capabilities(api_capabilities)
-            _LOGGER.debug("Extracted capabilities from API: %s", self._device_capabilities)
+        try:
+            # Extract capabilities from config entry or API
+            config_capabilities = self.config_entry.data.get("capabilities")
+
+            if config_capabilities and len(config_capabilities) > 0:
+                # Use capabilities from config entry if non-empty
+                self._device_capabilities = normalize_capabilities(config_capabilities)
+                _LOGGER.debug(
+                    "Using capabilities from config entry for %s: %s", self.serial_number, self._device_capabilities
+                )
+
+                # Validate that we got meaningful capabilities
+                if not self._device_capabilities:
+                    _LOGGER.warning(
+                        "Config capabilities for %s resulted in empty list after normalization: %s",
+                        self.serial_number,
+                        config_capabilities,
+                    )
+            else:
+                # Extract capabilities from API response
+                try:
+                    api_capabilities = self._extract_capabilities(device_info)
+                    self._device_capabilities = normalize_capabilities(api_capabilities)
+                    _LOGGER.debug(
+                        "Extracted capabilities from API for %s: %s", self.serial_number, self._device_capabilities
+                    )
+
+                    # Validate that we got meaningful capabilities from API
+                    if not self._device_capabilities:
+                        _LOGGER.warning(
+                            "API capabilities for %s resulted in empty list after normalization: %s",
+                            self.serial_number,
+                            api_capabilities,
+                        )
+                except Exception as api_error:
+                    _LOGGER.error("Failed to extract capabilities from API for %s: %s", self.serial_number, api_error)
+                    self._device_capabilities = []
+
+        except Exception as e:
+            _LOGGER.error("Critical error during capability extraction for %s: %s", self.serial_number, e)
+            # Fallback to empty capabilities to prevent integration failure
+            self._device_capabilities = []
+
+        # Log final capability state for debugging
+        _LOGGER.info("Final capabilities for device %s: %s", self.serial_number, self._device_capabilities)
 
     def _extract_firmware_version(self, device_info) -> None:
         """Extract firmware version from device info."""
