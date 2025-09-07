@@ -1,5 +1,5 @@
 # Use the official Python devcontainer image as base
-FROM mcr.microsoft.com/devcontainers/python:3.11-bullseye
+FROM mcr.microsoft.com/devcontainers/python:3.13-bookworm
 
 # Install system dependencies needed for Home Assistant
 RUN apt-get update && apt-get install -y \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     autoconf \
     libopenjp2-7 \
-    libtiff5 \
+    libtiff6 \
     libturbojpeg0-dev \
     tzdata \
     libxml2-dev \
@@ -26,20 +26,27 @@ RUN apt-get update && apt-get install -y \
     libxcb1-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements to temporary location for installation
+COPY requirements-dev.txt /tmp/
+COPY requirements.txt /tmp/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir homeassistant && \
+    pip install --no-cache-dir -r /tmp/requirements-dev.txt
+
 # Install additional development tools
 RUN pip install --no-cache-dir \
-    homeassistant \
     pytest-asyncio \
     pytest-mock \
     bandit \
     safety
 
-# Set up workspace
-WORKDIR /workspaces
-ENV PYTHONPATH=/workspaces
+# Create workspace directory but don't set it as WORKDIR during build
+RUN mkdir -p /workspaces
 
-# Copy requirements and install dependencies
-COPY requirements-dev.txt /tmp/
-RUN pip install --no-cache-dir -r /tmp/requirements-dev.txt
+# Note: Project files will be available via volume mount
+# Package installation in development mode happens in postCreate script
 
+# Switch to vscode user (created by base image)
 USER vscode

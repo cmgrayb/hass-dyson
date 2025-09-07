@@ -1,28 +1,63 @@
 version: '3.8'
 
 services:
+  # Development container with all tools
   devcontainer:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
     volumes:
-      - ../..:/workspaces:cached
-      - ha-dyson-dev-data:/data
+      - ..:/workspaces/${localWorkspaceFolderBasename}:cached
+    working_dir: /workspaces/${localWorkspaceFolderBasename}
     command: sleep infinity
     environment:
       - PYTHONPATH=/workspaces/${localWorkspaceFolderBasename}
+      - HASS_SERVER=http://homeassistant:8123
+      - MQTT_BROKER=mosquitto
+    depends_on:
+      - homeassistant
+      - mosquitto
+    networks:
+      - ha-dyson-network
+
+  # Home Assistant test instance  
+  homeassistant:
+    image: homeassistant/home-assistant:stable
+    container_name: ha-dyson-homeassistant-dev
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - ../custom_components:/config/custom_components:ro
     ports:
       - "8123:8123"
+    depends_on:
+      - mosquitto
+    networks:
+      - ha-dyson-network
     
   # MQTT broker for testing
   mosquitto:
     image: eclipse-mosquitto:2.0
+    container_name: ha-dyson-mosquitto-dev
+    restart: unless-stopped
     ports:
       - "1883:1883"
       - "9001:9001"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    restart: unless-stopped
+      - ha-dyson-mosquitto-data:/mosquitto/data
+      - ha-dyson-mosquitto-logs:/mosquitto/log
+    networks:
+      - ha-dyson-network
 
 volumes:
-  ha-dyson-dev-data:
+  ha-dyson-mosquitto-data:
+  ha-dyson-mosquitto-logs:
+
+networks:
+  ha-dyson-network:
+    driver: bridge
