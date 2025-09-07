@@ -6,7 +6,7 @@
 **/*.log.*
 **/*-data**
 **/.HA_VERSION
-
+**/blueprints/**
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
