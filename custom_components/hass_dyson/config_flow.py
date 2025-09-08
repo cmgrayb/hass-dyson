@@ -18,12 +18,14 @@ from .const import (
     AVAILABLE_DEVICE_CATEGORIES,
     CONF_AUTO_ADD_DEVICES,
     CONF_CREDENTIAL,
+    CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
     CONF_POLL_FOR_DEVICES,
     CONF_SERIAL_NUMBER,
     DEFAULT_AUTO_ADD_DEVICES,
     DEFAULT_POLL_FOR_DEVICES,
+    DISCOVERY_CLOUD,
     DOMAIN,
     MDNS_SERVICE_DYSON,
 )
@@ -563,6 +565,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "auth_token": getattr(self._cloud_client, "auth_token", None),
                 CONF_POLL_FOR_DEVICES: poll_for_devices,
                 CONF_AUTO_ADD_DEVICES: auto_add_devices,
+                CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
             },
         )
 
@@ -597,8 +600,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle discovery of a Dyson device from cloud account."""
         _LOGGER.info("Discovery step triggered for device: %s", discovery_info)
 
-        # Extract device information
+        # Extract device information - check both direct and properties patterns
         device_serial = discovery_info.get("serial_number")
+        if not device_serial and "properties" in discovery_info:
+            device_serial = discovery_info["properties"].get("serial")
+
         device_name = discovery_info.get("name", f"Dyson {device_serial}")
 
         if not device_serial:

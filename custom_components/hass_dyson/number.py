@@ -32,21 +32,17 @@ async def async_setup_entry(
     if "Scheduling" in device_capabilities:
         entities.append(DysonSleepTimerNumber(coordinator))
 
-    # Add oscillation angle control if supported - temporarily enable for all devices for testing
-    device_capabilities = coordinator.device_capabilities
+    # Add oscillation angle control if supported
     _LOGGER.debug("Device capabilities for %s: %s", coordinator.serial_number, device_capabilities)
 
-    # Check if device has oscillation capability or is an environment cleaner - temporarily allow all
-    has_oscillation = "AdvanceOscillationDay1" in device_capabilities
-    is_environment_cleaner = any("ec" in cat.lower() for cat in coordinator.device_category)
-
-    # Temporarily enable for all devices for testing
-    if has_oscillation or is_environment_cleaner or True:
+    # Check if device has oscillation capability
+    if "AdvanceOscillationDay1" in device_capabilities:
         _LOGGER.info("Adding oscillation angle controls for %s", coordinator.serial_number)
         entities.append(DysonOscillationLowerAngleNumber(coordinator))
         entities.append(DysonOscillationUpperAngleNumber(coordinator))
         entities.append(DysonOscillationCenterAngleNumber(coordinator))
         entities.append(DysonOscillationAngleSpanNumber(coordinator))
+        entities.append(DysonOscillationAngleNumber(coordinator))
 
     async_add_entities(entities, True)
 
@@ -73,15 +69,18 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Get sleep timer from device state (sltm)
             product_state = self.coordinator.data.get("product-state", {})
-            timer_data = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
-            if timer_data == "OFF":
-                self._attr_native_value = 0
-            else:
-                try:
-                    # Convert timer data to minutes
-                    self._attr_native_value = int(timer_data)
-                except (ValueError, TypeError):
+            try:
+                timer_data = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
+                if timer_data == "OFF":
                     self._attr_native_value = 0
+                else:
+                    try:
+                        # Convert timer data to minutes
+                        self._attr_native_value = int(timer_data)
+                    except (ValueError, TypeError):
+                        self._attr_native_value = 0
+            except Exception:
+                self._attr_native_value = 0
         else:
             self._attr_native_value = None
         self._handle_coordinator_update_safe()
