@@ -42,7 +42,6 @@ async def async_setup_entry(
         entities.append(DysonOscillationUpperAngleNumber(coordinator))
         entities.append(DysonOscillationCenterAngleNumber(coordinator))
         entities.append(DysonOscillationAngleSpanNumber(coordinator))
-        entities.append(DysonOscillationAngleNumber(coordinator))
 
     async_add_entities(entities, True)
 
@@ -310,7 +309,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation angle span number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle_span"
-        self._attr_name = f"{coordinator.device_name} Oscillation Custom Angle"
+        self._attr_name = f"{coordinator.device_name} Oscillation Angle"
         self._attr_icon = "mdi:angle-acute"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 10
@@ -374,50 +373,3 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
             )
         except Exception as err:
             _LOGGER.error("Failed to set oscillation angle span for %s: %s", self.coordinator.serial_number, err)
-
-
-# Keep the original single angle class for backward compatibility
-class DysonOscillationAngleNumber(DysonEntity, NumberEntity):
-    """Number entity for oscillation angle control."""
-
-    coordinator: DysonDataUpdateCoordinator
-
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the oscillation angle number."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle"
-        self._attr_name = f"{coordinator.device_name} Oscillation Angle"
-        self._attr_icon = "mdi:rotate-3d-variant"
-        self._attr_mode = NumberMode.SLIDER
-        self._attr_native_min_value = 45
-        self._attr_native_max_value = 350
-        self._attr_native_step = 15
-        self._attr_native_unit_of_measurement = "°"
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self.coordinator.device:
-            # Get oscillation angle from device state (ancp)
-            product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device._get_current_value(product_state, "ancp", "0045")
-            try:
-                # Convert angle data to number (e.g., "0180" -> 180)
-                self._attr_native_value = int(angle_data.lstrip("0") or "45")
-            except (ValueError, TypeError):
-                self._attr_native_value = 45
-        else:
-            self._attr_native_value = None
-        self._handle_coordinator_update_safe()
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the oscillation angle."""
-        if not self.coordinator.device:
-            return
-
-        try:
-            # Use device method with angle parameter
-            await self.coordinator.device.set_oscillation(True, int(value))
-            # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug("Set oscillation angle to %s for %s", int(value), self.coordinator.serial_number)
-        except Exception as err:
-            _LOGGER.error("Failed to set oscillation angle for %s: %s", self.coordinator.serial_number, err)
