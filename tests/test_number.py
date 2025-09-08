@@ -8,7 +8,6 @@ from homeassistant.const import CONF_HOST
 
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 from custom_components.hass_dyson.number import (
-    DysonOscillationAngleNumber,
     DysonOscillationAngleSpanNumber,
     DysonOscillationCenterAngleNumber,
     DysonOscillationLowerAngleNumber,
@@ -98,12 +97,11 @@ class TestNumberPlatformSetup:
         # Should add 5 oscillation entities
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 5
+        assert len(entities) == 4
         assert isinstance(entities[0], DysonOscillationLowerAngleNumber)
         assert isinstance(entities[1], DysonOscillationUpperAngleNumber)
         assert isinstance(entities[2], DysonOscillationCenterAngleNumber)
         assert isinstance(entities[3], DysonOscillationAngleSpanNumber)
-        assert isinstance(entities[4], DysonOscillationAngleNumber)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_both_capabilities(self, mock_hass, mock_config_entry):
@@ -120,10 +118,10 @@ class TestNumberPlatformSetup:
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
-        # Should add all 6 entities
+        # Should add all 5 entities
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 6
+        assert len(entities) == 5
         assert isinstance(entities[0], DysonSleepTimerNumber)
         assert isinstance(entities[1], DysonOscillationLowerAngleNumber)
 
@@ -397,7 +395,7 @@ class TestDysonOscillationAngleSpanNumber:
         entity = DysonOscillationAngleSpanNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_angle_span"
-        assert entity._attr_name == "Test Dyson Oscillation Custom Angle"
+        assert entity._attr_name == "Test Dyson Oscillation Angle"
         assert entity._attr_icon == "mdi:angle-acute"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
@@ -450,67 +448,6 @@ class TestDysonOscillationAngleSpanNumber:
         mock_coordinator.device.set_oscillation_angles.assert_called_once_with(150, 350)
 
 
-class TestDysonOscillationAngleNumber:
-    """Test the legacy Dyson oscillation angle number entity."""
-
-    def test_initialization(self, mock_coordinator):
-        """Test oscillation angle number initialization."""
-        entity = DysonOscillationAngleNumber(mock_coordinator)
-
-        assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_angle"
-        assert entity._attr_name == "Test Dyson Oscillation Angle"
-        assert entity._attr_icon == "mdi:rotate-3d-variant"
-        assert entity._attr_mode == NumberMode.SLIDER
-        assert entity._attr_native_min_value == 45
-        assert entity._attr_native_max_value == 350
-        assert entity._attr_native_step == 15
-        assert entity._attr_native_unit_of_measurement == "°"
-
-    def test_handle_coordinator_update_with_device(self, mock_coordinator):
-        """Test handling coordinator update with device."""
-        entity = DysonOscillationAngleNumber(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "0180"
-
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
-            entity._handle_coordinator_update()
-
-        assert entity._attr_native_value == 180
-        mock_safe.assert_called_once()
-
-    def test_handle_coordinator_update_empty_value(self, mock_coordinator):
-        """Test handling coordinator update with empty value."""
-        entity = DysonOscillationAngleNumber(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "0000"
-
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
-            entity._handle_coordinator_update()
-
-        assert entity._attr_native_value == 45  # Default when empty
-        mock_safe.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_async_set_native_value_success(self, mock_coordinator):
-        """Test setting oscillation angle value successfully."""
-        entity = DysonOscillationAngleNumber(mock_coordinator)
-
-        with patch("custom_components.hass_dyson.number._LOGGER") as mock_logger:
-            await entity.async_set_native_value(180.0)
-
-        mock_coordinator.device.set_oscillation.assert_called_once_with(True, 180)
-        mock_logger.debug.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_async_set_native_value_exception(self, mock_coordinator):
-        """Test setting oscillation angle value with exception."""
-        entity = DysonOscillationAngleNumber(mock_coordinator)
-        mock_coordinator.device.set_oscillation.side_effect = Exception("Test error")
-
-        with patch("custom_components.hass_dyson.number._LOGGER") as mock_logger:
-            await entity.async_set_native_value(180.0)
-
-        mock_logger.error.assert_called_once()
-
-
 class TestErrorHandling:
     """Test error handling across all number entities."""
 
@@ -525,14 +462,13 @@ class TestErrorHandling:
             DysonOscillationUpperAngleNumber(mock_coordinator),
             DysonOscillationCenterAngleNumber(mock_coordinator),
             DysonOscillationAngleSpanNumber(mock_coordinator),
-            DysonOscillationAngleNumber(mock_coordinator),
         ]
 
         # All should handle coordinator update without device
         for entity in entities:
             with patch.object(entity, "_handle_coordinator_update_safe"):
                 entity._handle_coordinator_update()
-            assert entity._attr_native_value is None or entity._attr_native_value == 45  # Default for legacy angle
+            assert entity._attr_native_value is None
 
         # All should handle async_set_native_value without device
         for entity in entities:
@@ -546,7 +482,6 @@ class TestErrorHandling:
             DysonOscillationUpperAngleNumber(mock_coordinator),
             DysonOscillationCenterAngleNumber(mock_coordinator),
             DysonOscillationAngleSpanNumber(mock_coordinator),
-            DysonOscillationAngleNumber(mock_coordinator),
         ]
 
         # Set up invalid data that can't be converted to int
