@@ -21,7 +21,7 @@ async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-) -> None:
+) -> bool:
     """Set up Dyson switch platform."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
@@ -46,6 +46,7 @@ async def async_setup_entry(
         entities.append(DysonContinuousMonitoringSwitch(coordinator))
 
     async_add_entities(entities, True)
+    return True
 
 
 class DysonAutoModeSwitch(DysonEntity, SwitchEntity):

@@ -18,7 +18,6 @@
         "GitHub.copilot-chat",
         "github.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
-        "keesschollaart.vscode-home-assistant",
         "eamodio.gitlens"
       ],
       "settings": {
