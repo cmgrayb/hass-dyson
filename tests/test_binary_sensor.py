@@ -1,6 +1,6 @@
 """Tests for the binary sensor platform."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -46,7 +46,7 @@ class TestBinarySensorPlatformSetup:
     @pytest.mark.asyncio
     async def test_async_setup_entry_creates_basic_sensors(self, mock_coordinator):
         """Test setup creates basic binary sensors."""
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
         mock_hass = Mock()
         mock_config_entry = Mock()
         mock_config_entry.entry_id = "test_entry"
@@ -70,7 +70,7 @@ class TestBinarySensorPlatformSetup:
     @pytest.mark.asyncio
     async def test_async_setup_entry_creates_fault_sensors(self, mock_coordinator):
         """Test setup creates fault sensors for relevant fault codes."""
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
         mock_hass = Mock()
         mock_config_entry = Mock()
         mock_config_entry.entry_id = "test_entry"

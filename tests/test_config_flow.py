@@ -612,3 +612,156 @@ class TestDysonConfigFlowEdgeCases:
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "device_reconfigure_connection"
+
+
+class TestDysonConfigFlowAdvancedCoverage:
+    """Test advanced scenarios to improve coverage."""
+
+    @pytest.mark.asyncio
+    async def test_async_step_verify_form_display(self, config_flow):
+        """Test verify step form display."""
+        config_flow._email = "test@example.com"
+        config_flow._challenge_id = "test_challenge"
+
+        result = await config_flow.async_step_verify()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "verify"
+
+    @pytest.mark.asyncio
+    async def test_async_step_verify_with_empty_otp(self, config_flow):
+        """Test verify step with empty OTP."""
+        config_flow._email = "test@example.com"
+        config_flow._password = "testpass"
+        config_flow._challenge_id = "test_challenge"
+        config_flow._cloud_client = MagicMock()
+
+        user_input = {"otp": ""}
+
+        result = await config_flow.async_step_verify(user_input)
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "verify"
+
+    @pytest.mark.asyncio
+    async def test_async_step_connection_form_display(self, config_flow):
+        """Test connection step form display."""
+        result = await config_flow.async_step_connection()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "connection"
+
+    @pytest.mark.asyncio
+    async def test_discover_device_via_mdns_timeout(self, config_flow):
+        """Test mDNS discovery with timeout."""
+        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns") as mock_discover:
+            mock_discover.return_value = None
+
+            result = await config_flow._resolve_device_hostname("TEST123456", "")
+
+            # Should fallback to serial.local
+            assert result == "TEST123456.local"
+
+    @pytest.mark.asyncio
+    async def test_process_manual_device_input_missing_required_fields(self, config_flow):
+        """Test processing manual device input with missing required fields."""
+        user_input = {
+            CONF_SERIAL_NUMBER: "",  # Missing
+            CONF_CREDENTIAL: "test_cred",
+            CONF_MQTT_PREFIX: "",  # Missing
+        }
+
+        errors = await config_flow._process_manual_device_input(user_input)
+
+        assert "serial_number" in errors
+        assert "mqtt_prefix" in errors
+        assert errors["serial_number"] == "required"
+        assert errors["mqtt_prefix"] == "required"
+
+    @pytest.mark.asyncio
+    async def test_create_manual_device_entry_with_mdns_discovery(self, config_flow):
+        """Test creating manual device entry with mDNS discovery."""
+        user_input = {
+            CONF_SERIAL_NUMBER: "TEST123456",
+            CONF_CREDENTIAL: "test_credential",
+            CONF_MQTT_PREFIX: "475",
+            # No hostname provided - should trigger mDNS discovery
+        }
+
+        with patch.object(config_flow, "_resolve_device_hostname", return_value="192.168.1.100"):
+            with patch("custom_components.hass_dyson.device_utils.create_manual_device_config") as mock_create:
+                mock_create.return_value = {
+                    "serial": "TEST123456",
+                    "discovery_method": DISCOVERY_MANUAL,
+                    "hostname": "192.168.1.100",
+                }
+
+                result = await config_flow._create_manual_device_entry(user_input)
+
+                assert result["type"] == FlowResultType.CREATE_ENTRY
+                assert result["title"] == "Dyson TEST123456"
+
+    @pytest.mark.asyncio
+    async def test_show_manual_device_form_exception_handling(self, config_flow):
+        """Test manual device form creation with exception handling."""
+        with patch("voluptuous.Schema", side_effect=Exception("Schema error")):
+            with pytest.raises(Exception, match="Schema error"):
+                config_flow._show_manual_device_form({})
+
+    @pytest.mark.asyncio
+    async def test_async_step_cloud_account_form_display(self, config_flow):
+        """Test cloud account form display."""
+        result = await config_flow.async_step_cloud_account()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "cloud_account"
+
+    @pytest.mark.asyncio
+    async def test_async_step_cloud_preferences_form_display(self, config_flow):
+        """Test cloud preferences form display."""
+        result = await config_flow.async_step_cloud_preferences()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "cloud_preferences"
+
+    @pytest.mark.asyncio
+    async def test_resolve_device_hostname_with_provided_hostname(self, config_flow):
+        """Test hostname resolution when hostname is provided."""
+        result = await config_flow._resolve_device_hostname("TEST123456", "192.168.1.100")
+
+        assert result == "192.168.1.100"
+
+    @pytest.mark.asyncio
+    async def test_resolve_device_hostname_mdns_fallback(self, config_flow):
+        """Test hostname resolution with mDNS fallback."""
+        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns", return_value="192.168.1.50"):
+            result = await config_flow._resolve_device_hostname("TEST123456", "")
+
+            assert result == "192.168.1.50"
+
+
+class TestDysonConfigFlowValidationEdgeCases:
+    """Test validation and edge case scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_manual_device_input_validation_edge_cases(self, config_flow):
+        """Test manual device input with edge case values."""
+        user_input = {
+            CONF_SERIAL_NUMBER: "   TEST123456   ",  # With whitespace
+            CONF_CREDENTIAL: "test_credential",
+            CONF_MQTT_PREFIX: "475",
+        }
+
+        errors = await config_flow._process_manual_device_input(user_input)
+
+        # Should handle whitespace trimming
+        assert errors == {}
+
+    @pytest.mark.asyncio
+    async def test_manual_device_form_with_all_optional_fields(self, config_flow):
+        """Test manual device form with all optional fields."""
+        result = config_flow._show_manual_device_form({})
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "manual_device"
+        assert "data_schema" in result

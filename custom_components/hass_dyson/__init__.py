@@ -324,7 +324,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         _LOGGER.error("Failed to set up Dyson device '%s': %s", entry.title, err)
         raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
-        raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

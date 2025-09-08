@@ -266,7 +266,7 @@ class DysonDevice:
             _LOGGER.debug("Using MQTT client ID: %s", client_id)
             _LOGGER.debug("Using MQTT username: %s", username)
 
-            mqtt_client = mqtt.Client(client_id=client_id)
+            mqtt_client = mqtt.Client(client_id=client_id, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
             self._mqtt_client = mqtt_client
 
             # Set up authentication
@@ -437,7 +437,7 @@ class DysonDevice:
         # Attempt reconnection with full intelligent logic
         return await self.connect()
 
-    def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int) -> None:
+    def _on_connect(self, client: mqtt.Client, userdata: Any, flags, rc, properties=None) -> None:
         """Handle MQTT connection callback."""
         if rc == mqtt.CONNACK_ACCEPTED:
             _LOGGER.info("MQTT connected to device %s", self.serial_number)
@@ -457,12 +457,12 @@ class DysonDevice:
                 client.subscribe(topic)
                 _LOGGER.debug("Subscribed to topic: %s", topic)
 
-            # Request initial device state
-            self.hass.create_task(self._request_current_state())
+            # Request initial device state (schedule safely from callback)
+            self.hass.loop.call_soon_threadsafe(lambda: self.hass.async_create_task(self._request_current_state()))
         else:
             _LOGGER.error("MQTT connection failed for device %s with code: %s", self.serial_number, rc)
 
-    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int) -> None:
+    def _on_disconnect(self, client: mqtt.Client, userdata: Any, flags, rc, properties=None) -> None:
         """Handle MQTT disconnection callback."""
         _LOGGER.warning("MQTT client disconnected for %s, code: %s", self.serial_number, rc)
         self._connected = False
@@ -1021,6 +1021,96 @@ class DysonDevice:
             return None
 
     @property
+    def voc(self) -> Optional[float]:
+        """Return VOC (Volatile Organic Compounds) reading in ppb."""
+        try:
+            # Take a snapshot of environmental data to avoid race conditions
+            env_data_snapshot = dict(self._environmental_data)
+            voc_raw = env_data_snapshot.get("va10")
+            if voc_raw is None:
+                _LOGGER.debug("VOC property for %s: no data available", self.serial_number)
+                return None
+
+            # Convert from index to ppb (divide by 10 as per libdyson-neon)
+            value = float(voc_raw) / 10.0
+            import datetime
+
+            _LOGGER.debug(
+                "VOC property accessed for %s at %s: raw='%s', value=%.1f ppb",
+                self.serial_number,
+                datetime.datetime.now().isoformat(),
+                voc_raw,
+                value,
+            )
+            return value
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Invalid VOC value for %s: %s, error: %s", self.serial_number, self._environmental_data.get("va10"), e
+            )
+            return None
+
+    @property
+    def no2(self) -> Optional[float]:
+        """Return NO2 (Nitrogen Dioxide) reading in ppb."""
+        try:
+            # Take a snapshot of environmental data to avoid race conditions
+            env_data_snapshot = dict(self._environmental_data)
+            no2_raw = env_data_snapshot.get("noxl")
+            if no2_raw is None:
+                _LOGGER.debug("NO2 property for %s: no data available", self.serial_number)
+                return None
+
+            # Convert from index to ppb (divide by 10 as per libdyson-neon)
+            value = float(no2_raw) / 10.0
+            import datetime
+
+            _LOGGER.debug(
+                "NO2 property accessed for %s at %s: raw='%s', value=%.1f ppb",
+                self.serial_number,
+                datetime.datetime.now().isoformat(),
+                no2_raw,
+                value,
+            )
+            return value
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Invalid NO2 value for %s: %s, error: %s", self.serial_number, self._environmental_data.get("noxl"), e
+            )
+            return None
+
+    @property
+    def formaldehyde(self) -> Optional[float]:
+        """Return formaldehyde reading in ppb."""
+        try:
+            # Take a snapshot of environmental data to avoid race conditions
+            env_data_snapshot = dict(self._environmental_data)
+            formaldehyde_raw = env_data_snapshot.get("hchr")
+            if formaldehyde_raw is None:
+                _LOGGER.debug("Formaldehyde property for %s: no data available", self.serial_number)
+                return None
+
+            # Convert from index to ppb (divide by 1000 as per libdyson-neon)
+            value = float(formaldehyde_raw) / 1000.0
+            import datetime
+
+            _LOGGER.debug(
+                "Formaldehyde property accessed for %s at %s: raw='%s', value=%.3f ppb",
+                self.serial_number,
+                datetime.datetime.now().isoformat(),
+                formaldehyde_raw,
+                value,
+            )
+            return value
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Invalid formaldehyde value for %s: %s, error: %s",
+                self.serial_number,
+                self._environmental_data.get("hchr"),
+                e,
+            )
+            return None
+
+    @property
     def rssi(self) -> int:
         """Return WiFi signal strength."""
         try:
@@ -1324,6 +1414,21 @@ class DysonDevice:
         command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         command = json.dumps(
             {"msg": "STATE-SET", "time": self._get_command_timestamp(), "data": {"hmod": mode}, "mode-reason": "RAPP"}
+        )
+
+        if self._mqtt_client:
+            await self.hass.async_add_executor_job(self._mqtt_client.publish, command_topic, command)
+
+    async def set_continuous_monitoring(self, enabled: bool) -> None:
+        """Set continuous monitoring on/off."""
+        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+        command = json.dumps(
+            {
+                "msg": "STATE-SET",
+                "time": self._get_command_timestamp(),
+                "data": {"rhtm": "ON" if enabled else "OFF"},
+                "mode-reason": "RAPP",
+            }
         )
 
         if self._mqtt_client:

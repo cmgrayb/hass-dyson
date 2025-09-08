@@ -17,7 +17,7 @@ from .entity import DysonEntity
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(
+async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
@@ -54,6 +54,25 @@ async def async_setup_entry(
             )
         else:
             _LOGGER.debug("Skipping PM2.5/PM10 sensors for device %s - no ExtendedAQ capability", device_serial)
+
+        # Add VOC and NO2 sensors only for devices with VOC capability
+        if has_any_capability_safe(capabilities, ["VOC", "voc"]):
+            _LOGGER.debug("Adding VOC and NO2 sensors for device %s", device_serial)
+            entities.extend(
+                [
+                    DysonVOCSensor(coordinator),
+                    DysonNO2Sensor(coordinator),
+                ]
+            )
+        else:
+            _LOGGER.debug("Skipping VOC/NO2 sensors for device %s - no VOC capability", device_serial)
+
+        # Add formaldehyde sensor only for devices with Formaldehyde capability
+        if has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"]):
+            _LOGGER.debug("Adding formaldehyde sensor for device %s", device_serial)
+            entities.append(DysonFormaldehydeSensor(coordinator))
+        else:
+            _LOGGER.debug("Skipping formaldehyde sensor for device %s - no formaldehyde capability", device_serial)
 
         # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
         if any(cat in ["ec", "robot"] for cat in device_category):
@@ -425,6 +444,140 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
 
         except Exception as e:
             _LOGGER.error("Error updating PM10 sensor for device %s: %s", device_serial, e)
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonVOCSensor(DysonEntity, SensorEntity):
+    """VOC (Volatile Organic Compounds) sensor for Dyson devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the VOC sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_voc"
+        self._attr_name = f"{coordinator.device_name} VOC"
+        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_icon = "mdi:chemical-weapon"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = getattr(self.coordinator.device, "voc", None)
+
+            # Validate the new value is reasonable for VOC
+            if new_value is not None:
+                if isinstance(new_value, (int, float)) and 0 <= new_value <= 500:
+                    self._attr_native_value = new_value
+                    _LOGGER.debug("VOC sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                else:
+                    _LOGGER.warning("Invalid VOC value for device %s: %s (expected 0-500)", device_serial, new_value)
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
+                _LOGGER.debug("No VOC data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error("Error updating VOC sensor for device %s: %s", device_serial, e)
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonNO2Sensor(DysonEntity, SensorEntity):
+    """NO2 (Nitrogen Dioxide) sensor for Dyson devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the NO2 sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_no2"
+        self._attr_name = f"{coordinator.device_name} NO2"
+        self._attr_device_class = SensorDeviceClass.NITROGEN_DIOXIDE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_icon = "mdi:molecule"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = getattr(self.coordinator.device, "no2", None)
+
+            # Validate the new value is reasonable for NO2
+            if new_value is not None:
+                if isinstance(new_value, (int, float)) and 0 <= new_value <= 200:
+                    self._attr_native_value = new_value
+                    _LOGGER.debug("NO2 sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                else:
+                    _LOGGER.warning("Invalid NO2 value for device %s: %s (expected 0-200)", device_serial, new_value)
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
+                _LOGGER.debug("No NO2 data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error("Error updating NO2 sensor for device %s: %s", device_serial, e)
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
+    """Formaldehyde sensor for Dyson devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the formaldehyde sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_formaldehyde"
+        self._attr_name = f"{coordinator.device_name} Formaldehyde"
+        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_icon = "mdi:chemical-weapon"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = getattr(self.coordinator.device, "formaldehyde", None)
+
+            # Validate the new value is reasonable for formaldehyde
+            if new_value is not None:
+                if isinstance(new_value, (int, float)) and 0 <= new_value <= 100:
+                    self._attr_native_value = new_value
+                    _LOGGER.debug("Formaldehyde sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                else:
+                    _LOGGER.warning(
+                        "Invalid formaldehyde value for device %s: %s (expected 0-100)", device_serial, new_value
+                    )
+                    self._attr_native_value = None
+            else:
+                self._attr_native_value = None
+                _LOGGER.debug("No formaldehyde data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error("Error updating formaldehyde sensor for device %s: %s", device_serial, e)
             self._attr_native_value = None
 
         super()._handle_coordinator_update()

@@ -3,6 +3,7 @@ services:
     container_name: hass-dyson-test
     image: ghcr.io/home-assistant/home-assistant:stable
     volumes:
+      - ./docker/ha-config:/config:rw
       - ./custom_components:/config/custom_components:rw
     ports:
       - "8123:8123"

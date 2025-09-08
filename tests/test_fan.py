@@ -52,7 +52,7 @@ class TestFanPlatformSetup:
         hass = MagicMock()
         config_entry = MagicMock(spec=ConfigEntry)
         config_entry.entry_id = "test_entry"
-        async_add_entities = AsyncMock()
+        async_add_entities = MagicMock()
 
         hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
         mock_coordinator.device_category = "ec"  # Environment Cleaner
@@ -78,7 +78,7 @@ class TestFanPlatformSetup:
         hass = MagicMock()
         config_entry = MagicMock(spec=ConfigEntry)
         config_entry.entry_id = "test_entry"
-        async_add_entities = AsyncMock()
+        async_add_entities = MagicMock()
 
         hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
         mock_coordinator.device_category = "robot"  # Not EC
@@ -103,7 +103,7 @@ class TestFanPlatformSetup:
         hass = MagicMock()
         config_entry = MagicMock(spec=ConfigEntry)
         config_entry.entry_id = "test_entry"
-        async_add_entities = AsyncMock()
+        async_add_entities = MagicMock()
 
         hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
         mock_coordinator.device_category = "ec"

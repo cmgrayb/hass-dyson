@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CAPABILITY_ENVIRONMENTAL_DATA, CAPABILITY_HEATING, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -32,6 +32,13 @@ async def async_setup_entry(
 
     # Auto mode switch removed - now handled by fan platform preset modes
 
+    # Add firmware auto-update switch for cloud-discovered devices only
+    from .const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+
+    if config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
+        entities.append(DysonFirmwareAutoUpdateSwitch(coordinator))
+        _LOGGER.debug("Adding firmware auto-update switch for cloud device %s", coordinator.serial_number)
+
     # Add additional switches based on capabilities
     device_capabilities = coordinator.device_capabilities
 
@@ -39,10 +46,10 @@ async def async_setup_entry(
     # if "AdvanceOscillationDay1" in device_capabilities:
     #     entities.append(DysonOscillationSwitch(coordinator))
 
-    if "Heating" in device_capabilities:
+    if CAPABILITY_HEATING in device_capabilities:
         entities.append(DysonHeatingSwitch(coordinator))
 
-    if "ContinuousMonitoring" in device_capabilities:
+    if CAPABILITY_ENVIRONMENTAL_DATA in device_capabilities:
         entities.append(DysonContinuousMonitoringSwitch(coordinator))
 
     async_add_entities(entities, True)
@@ -249,7 +256,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_heating", {"hmod": "HEAT"})
+            await self.coordinator.device.set_heating_mode("HEAT")
             _LOGGER.debug("Turned on heating for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn on heating for %s: %s", self.coordinator.serial_number, err)
@@ -260,7 +267,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_heating", {"hmod": "OFF"})
+            await self.coordinator.device.set_heating_mode("OFF")
             _LOGGER.debug("Turned off heating for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn off heating for %s: %s", self.coordinator.serial_number, err)
@@ -305,6 +312,9 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_continuous_monitoring"
         self._attr_name = f"{coordinator.device_name} Continuous Monitoring"
         self._attr_icon = "mdi:monitor-eye"
+        from homeassistant.const import EntityCategory
+
+        self._attr_entity_category = EntityCategory.CONFIG
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -323,7 +333,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_monitoring", {"rhtm": "ON"})
+            await self.coordinator.device.set_continuous_monitoring(True)
             _LOGGER.debug("Turned on continuous monitoring for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn on continuous monitoring for %s: %s", self.coordinator.serial_number, err)
@@ -334,7 +344,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
             return
 
         try:
-            await self.coordinator.async_send_command("set_monitoring", {"rhtm": "OFF"})
+            await self.coordinator.device.set_continuous_monitoring(False)
             _LOGGER.debug("Turned off continuous monitoring for %s", self.coordinator.serial_number)
         except Exception as err:
             _LOGGER.error("Failed to turn off continuous monitoring for %s: %s", self.coordinator.serial_number, err)
@@ -355,3 +365,62 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         attributes["monitoring_mode"] = rhtm
 
         return attributes
+
+
+class DysonFirmwareAutoUpdateSwitch(DysonEntity, SwitchEntity):
+    """Switch to control firmware auto-update setting."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the firmware auto-update switch."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_firmware_auto_update"
+        self._attr_name = f"{coordinator.device_name} Firmware Auto Update"
+        self._attr_icon = "mdi:cloud-sync"
+        from homeassistant.const import EntityCategory
+
+        self._attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True if firmware auto-update is enabled."""
+        return self.coordinator.firmware_auto_update_enabled
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return the state attributes."""
+        attrs = dict(super().extra_state_attributes or {})
+        attrs.update(
+            {
+                "current_firmware_version": self.coordinator.firmware_version,
+            }
+        )
+        return attrs
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on firmware auto-update."""
+        success = await self.coordinator.async_set_firmware_auto_update(True)
+        if success:
+            _LOGGER.info("Enabled firmware auto-update for %s", self.coordinator.serial_number)
+        else:
+            _LOGGER.error("Failed to enable firmware auto-update for %s", self.coordinator.serial_number)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off firmware auto-update."""
+        success = await self.coordinator.async_set_firmware_auto_update(False)
+        if success:
+            _LOGGER.info("Disabled firmware auto-update for %s", self.coordinator.serial_number)
+        else:
+            _LOGGER.error("Failed to disable firmware auto-update for %s", self.coordinator.serial_number)
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        _LOGGER.debug(
+            "Firmware auto-update switch updated for %s: enabled=%s, version=%s",
+            self.coordinator.serial_number,
+            self.coordinator.firmware_auto_update_enabled,
+            self.coordinator.firmware_version,
+        )
+        super()._handle_coordinator_update()

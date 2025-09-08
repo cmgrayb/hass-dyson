@@ -46,6 +46,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self._device_capabilities: List[str] = []
         self._device_category: list[str] = []
         self._firmware_version: str = "Unknown"
+        self._firmware_auto_update_enabled: bool = False
+        # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
+        # self._firmware_update_available: bool = False
 
         super().__init__(
             hass,
@@ -68,6 +71,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def firmware_version(self) -> str:
         """Return device firmware version."""
         return self._firmware_version
+
+    @property
+    def firmware_auto_update_enabled(self) -> bool:
+        """Return whether firmware auto-update is enabled."""
+        return self._firmware_auto_update_enabled
+
+    # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
+    # @property
+    # def firmware_update_available(self) -> bool:
+    #     """Return whether a firmware update is available."""
+    #     return self._firmware_update_available
 
     def _on_environmental_update(self) -> None:
         """Handle environmental data update from device."""
@@ -412,16 +426,62 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         _LOGGER.info("Final capabilities for device %s: %s", self.serial_number, self._device_capabilities)
 
     def _extract_firmware_version(self, device_info) -> None:
-        """Extract firmware version from device info."""
+        """Extract firmware version and update information from device info."""
         self._firmware_version = "Unknown"
+        self._firmware_auto_update_enabled = False
+        # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
+        # self._firmware_update_available = False
+
         connected_config = getattr(device_info, "connected_configuration", None)
         if connected_config:
             firmware_obj = getattr(connected_config, "firmware", None)
             if firmware_obj:
+                # Debug: Log all firmware object attributes
+                _LOGGER.debug("Firmware object: %s", firmware_obj)
+                _LOGGER.debug("Firmware object type: %s", type(firmware_obj))
+                if hasattr(firmware_obj, "__dict__"):
+                    _LOGGER.debug("Firmware object attributes: %s", vars(firmware_obj))
+                _LOGGER.debug(
+                    "Firmware object dir: %s", [attr for attr in dir(firmware_obj) if not attr.startswith("_")]
+                )
+
+                # Extract firmware version
                 firmware_version = getattr(firmware_obj, "version", "Unknown")
                 if firmware_version and firmware_version != "Unknown":
                     self._firmware_version = firmware_version
                     _LOGGER.debug("Found firmware version: %s", firmware_version)
+
+                # Extract auto-update setting
+                auto_update = getattr(firmware_obj, "auto_update_enabled", None)
+                if auto_update is not None:
+                    self._firmware_auto_update_enabled = bool(auto_update)
+                    _LOGGER.debug("Found firmware auto-update enabled: %s", self._firmware_auto_update_enabled)
+
+                # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
+                # Extract update availability - try multiple possible field names
+                # update_available = None
+                # possible_update_fields = [
+                #     "new_version_available",
+                #     "update_available",
+                #     "upgrade_available",
+                #     "pending_update",
+                #     "has_update",
+                #     "available_update"
+                # ]
+                #
+                # for field_name in possible_update_fields:
+                #     update_available = getattr(firmware_obj, field_name, None)
+                #     if update_available is not None:
+                #         _LOGGER.debug("Found firmware update field '%s' with value: %s", field_name, update_available)
+                #         self._firmware_update_available = bool(update_available)
+                #         break
+                # else:
+                #     _LOGGER.debug("No firmware update availability field found in: %s",
+                #                   [attr for attr in dir(firmware_obj) if not attr.startswith("_")])
+            else:
+                _LOGGER.debug("No firmware object found in connected configuration")
+        else:
+            _LOGGER.debug("No connected configuration found in device info")
 
     async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:
         """Extract MQTT credentials from device info."""
@@ -706,6 +766,37 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         except Exception as err:
             _LOGGER.error("Failed to send command to device %s: %s", self.serial_number, err)
             return False
+
+    async def async_set_firmware_auto_update(self, enabled: bool) -> bool:
+        """Set firmware auto-update setting.
+
+        Note: This function updates the local state immediately for UI responsiveness,
+        but the actual API call to change the setting is not yet implemented as the
+        libdyson-rest API endpoint for this feature is not documented.
+        """
+        if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
+            _LOGGER.warning("Firmware auto-update setting only available for cloud-discovered devices")
+            return False
+
+        _LOGGER.info("Setting firmware auto-update for %s to %s", self.serial_number, enabled)
+
+        # Update local state immediately for UI responsiveness
+        old_value = self._firmware_auto_update_enabled
+        self._firmware_auto_update_enabled = enabled
+
+        # Notify listeners of the state change
+        self.async_update_listeners()
+
+        # TODO: Implement actual API call to Dyson cloud service
+        # when the libdyson-rest API endpoint for this feature becomes available
+        _LOGGER.debug(
+            "Updated firmware auto-update setting for %s from %s to %s (API call not yet implemented)",
+            self.serial_number,
+            old_value,
+            enabled,
+        )
+
+        return True
 
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator and cleanup connections."""

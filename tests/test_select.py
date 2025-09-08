@@ -1,6 +1,6 @@
 """Tests for the Dyson select platform."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from homeassistant.components.select import SelectEntity
@@ -64,7 +64,7 @@ class TestSelectPlatformSetup:
         coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -80,7 +80,7 @@ class TestSelectPlatformSetup:
         coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["Heating"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -96,7 +96,7 @@ class TestSelectPlatformSetup:
         coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["AdvanceOscillationDay1", "Heating"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -113,7 +113,7 @@ class TestSelectPlatformSetup:
         coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = []
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -1196,7 +1196,7 @@ class TestSelectPlatformSetupCoverage:
         mock_hass = Mock()
         mock_config_entry = Mock()
         mock_config_entry.entry_id = "missing_entry"
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         mock_hass.data = {"hass-dyson": {}}  # No coordinator for this entry
 

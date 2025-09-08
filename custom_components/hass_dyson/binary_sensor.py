@@ -5,21 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    CAPABILITY_FAULT_CODES,
-    DEVICE_CATEGORY_FAULT_CODES,
-    DOMAIN,
-    FAULT_TRANSLATIONS,
-)
+from .const import CAPABILITY_FAULT_CODES, DEVICE_CATEGORY_FAULT_CODES, DOMAIN, FAULT_TRANSLATIONS
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -125,6 +117,14 @@ async def async_setup_entry(
             DysonFilterReplacementSensor(coordinator),
         ]
     )
+
+    # Add firmware update available sensor for cloud-discovered devices only
+    # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
+    # Will be re-enabled when libdyson-rest properly supports firmware update availability
+    # from .const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+    # if config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
+    #     entities.append(DysonFirmwareUpdateAvailableSensor(coordinator))
+    #     _LOGGER.debug("Adding firmware update available sensor for cloud device %s", coordinator.serial_number)
 
     # Individual fault binary sensors - filter by device category and capabilities
     device_categories = coordinator.device_category
@@ -392,3 +392,50 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
             return "Maintenance"
         else:
             return "Unknown"
+
+
+# TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
+# Will be re-enabled when libdyson-rest properly supports firmware update availability
+#
+# class DysonFirmwareUpdateAvailableSensor(DysonEntity, BinarySensorEntity):
+#     """Binary sensor to indicate if a firmware update is available."""
+#
+#     coordinator: DysonDataUpdateCoordinator
+#
+#     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+#         """Initialize the firmware update available sensor."""
+#         super().__init__(coordinator)
+#
+#         self._attr_unique_id = f"{coordinator.serial_number}_firmware_update_available"
+#         self._attr_name = f"{coordinator.device_name} Firmware Update Available"
+#         self._attr_device_class = BinarySensorDeviceClass.UPDATE
+#         self._attr_entity_category = EntityCategory.DIAGNOSTIC
+#         self._attr_icon = "mdi:cloud-download"
+#
+#     @property
+#     def is_on(self) -> bool | None:
+#         """Return True if firmware update is available."""
+#         return self.coordinator.firmware_update_available
+#
+#     @property
+#     def extra_state_attributes(self) -> dict[str, Any] | None:
+#         """Return the state attributes."""
+#         attrs = dict(super().extra_state_attributes or {})
+#         attrs.update({
+#             "current_firmware_version": self.coordinator.firmware_version,
+#             "auto_update_enabled": self.coordinator.firmware_auto_update_enabled,
+#         })
+#         return attrs
+#
+#     def _handle_coordinator_update(self) -> None:
+#         """Handle updated data from the coordinator."""
+#         # The coordinator already handles firmware update information extraction
+#         # during cloud device setup, so we just need to update our state
+#         _LOGGER.debug(
+#             "Firmware update sensor updated for %s: update_available=%s, version=%s, auto_update=%s",
+#             self.coordinator.serial_number,
+#             self.coordinator.firmware_update_available,
+#             self.coordinator.firmware_version,
+#             self.coordinator.firmware_auto_update_enabled,
+#         )
+#         super()._handle_coordinator_update()
