@@ -29,11 +29,11 @@ async def async_setup_entry(
 
     # Fan control mode moved to fan platform preset modes
 
-    # Add additional selects based on capabilities - temporarily enable all for testing
+    # Add additional selects based on capabilities
     device_capabilities = coordinator.device_capabilities
 
-    # Temporarily enable oscillation for all devices for testing
-    if "AdvanceOscillationDay1" in device_capabilities or True:
+    # Only show oscillation mode select for devices with advanced oscillation capability
+    if "AdvanceOscillationDay1" in device_capabilities:
         entities.append(DysonOscillationModeSelect(coordinator))
 
     if "Heating" in device_capabilities:
