@@ -1,44 +1,12 @@
 # TODO List
 
-## Recent Completions (v0.11.1)
+## High Priority
 
-### ✅ Code Coverage Improvements (COMPLETED)
-
-**Overall Coverage: 70% (+34% improvement from 36%)**
-
-**Perfect Coverage Modules (100%):**
-- ✅ `const.py`: 100% - constants validation
-- ✅ `entity.py`: 100% - base entity functionality  
-- ✅ `button.py`: 100% - button platform coverage
-
-**Excellent Coverage Modules (90%+):**
-- ✅ `climate.py`: 98% - climate entity platform
-- ✅ `binary_sensor.py`: 96% - binary sensor platform 
-- ✅ `services.py`: 95% - service handlers and schemas
-- ✅ `number.py`: 90% - number entity platform
-
-**Strong Coverage Modules (80%+):**
-- ✅ `fan.py`: 86% - fan entity platform
-- ✅ `switch.py`: 84% - switch entity platform
-- ✅ `select.py`: 80% - select entity platform
-
-**Good Coverage Modules (70%+):**
-- ✅ `device_utils.py`: 78% - device utility functions
-- ✅ `sensor.py`: 76% - sensor platform
-- ✅ `__init__.py`: 71% - integration initialization
-
-**Core Infrastructure Modules:**
-- � `config_flow.py`: 59% - UI configuration flows (complex user interaction paths)
-- � `device.py`: 51% - MQTT device communication (low-level network handling)
-- � `coordinator.py`: 42% - data coordination (complex async workflows)
-
-**Test Suite Statistics:**
-- ✅ **672 tests passing** (100% success rate)
-- ✅ **27 test files** (cleaned up from 34 files)
-- ✅ **Zero failing tests**
-- ✅ **Perfect test reliability**
-
-**Achievement: 70% coverage - excellent progress toward 80% target! 🎯**
+- ✅ **Firmware Update Sensors and Controls**: For Cloud-discovered devices, support a configuration switch for auto-update per device, as well as a sensor to notify when a firmware update is available. Both of these are exposed as part of the device response from libdyson-rest.
+  - ✅ **Firmware Update Available Binary Sensor**: Shows when updates are available
+  - ✅ **Firmware Auto-Update Switch**: Toggle auto-update setting per device
+  - ✅ **Cloud-only feature**: Only works with cloud-discovered devices
+  - ⚠️ **API Integration**: Update Available Sensor ready for implementation when libdyson-rest provides a working API endpoint
 
 ## Medium Priority
 

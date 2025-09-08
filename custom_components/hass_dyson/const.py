@@ -74,16 +74,18 @@ CAPABILITY_EXTENDED_AQ: Final = "ExtendedAQ"
 CAPABILITY_CHANGE_WIFI: Final = "ChangeWifi"
 CAPABILITY_HEATING: Final = "Heating"
 CAPABILITY_FORMALDEHYDE: Final = "Formaldehyde"
+CAPABILITY_VOC: Final = "VOC"
 CAPABILITY_HUMIDIFIER: Final = "Humidifier"
 
 # Available capabilities for manual device setup
 AVAILABLE_CAPABILITIES: Final = {
-    CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation (precise angle control)",
+    CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation (wide angle control)",
     CAPABILITY_SCHEDULING: "Scheduling (timer and schedule controls)",
-    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (meta-capability, no specific sensors created)",
-    CAPABILITY_EXTENDED_AQ: "Extended Air Quality (PM2.5, PM10 sensors with continuous monitoring)",
+    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (Continuous Monitoring controls)",
+    CAPABILITY_EXTENDED_AQ: "Extended Air Quality (PM2.5, PM10 sensors)",
     CAPABILITY_HEATING: "Heating (heat mode, temperature control, and temperature sensors)",
-    CAPABILITY_FORMALDEHYDE: "Formaldehyde Detection (carbon filter, HCHO sensor, VOC/NO2 sensors, continuous monitoring)",
+    CAPABILITY_VOC: "VOC/NO2 Detection (VOC/NO2 sensors)",
+    CAPABILITY_FORMALDEHYDE: "Formaldehyde Detection (carbon filter, HCHO sensor)",
     CAPABILITY_HUMIDIFIER: "Humidifier (humidification controls and humidity sensors)",
 }
 
@@ -132,6 +134,10 @@ STATE_KEY_PM25: Final = "pm25"  # PM2.5 particulate matter
 STATE_KEY_PM10: Final = "pm10"  # PM10 particulate matter
 STATE_KEY_P25R: Final = "p25r"  # P25R level
 STATE_KEY_P10R: Final = "p10r"  # P10R level
+STATE_KEY_VOC: Final = "va10"  # VOC (Volatile Organic Compounds)
+STATE_KEY_NO2: Final = "noxl"  # NO2 (Nitrogen Dioxide)
+STATE_KEY_FORMALDEHYDE: Final = "hcho"  # Formaldehyde raw value
+STATE_KEY_FORMALDEHYDE_DISPLAY: Final = "hchr"  # Formaldehyde display value
 
 # Filter values
 FILTER_TYPE_GCOM: Final = "GCOM"  # Genuine Combi Filter
@@ -311,10 +317,13 @@ CAPABILITY_FAULT_CODES: Final = {
     "Heating": [
         "temp",  # Temperature sensor
     ],
-    # TODO: Identify formaldehyde capability name when we have a formaldehyde device
-    # "Formaldehyde": [
-    #     "cflr",  # Carbon filter
-    # ],
+    "VOC": [
+        "aqs",  # Air quality sensor (VOC/NO2 sensors)
+    ],
+    "Formaldehyde": [
+        "cflr",  # Carbon filter
+        "aqs",  # Air quality sensor
+    ],
     # TODO: Identify humidifier capability name when we have a humidifier device
     # "Humidifier": [
     #     "humi",  # Humidity sensor

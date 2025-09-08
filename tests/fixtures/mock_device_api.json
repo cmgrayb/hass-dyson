@@ -36,6 +36,8 @@
         },
         "firmware": {
           "version": "21.01.08",
+          "auto_update_enabled": true,
+          "new_version_available": false,
           "capabilities": [
             "AdvanceOscillationDay1",
             "Scheduling",

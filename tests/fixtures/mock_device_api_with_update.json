@@ -1,0 +1,45 @@
+{
+  "devices": [
+    {
+      "name": "Test Dyson Device With Firmware Update",
+      "serial_number": "MOCK-SERIAL-UPDATE123",
+      "product_type": "438E",
+      "version": "21.01.08",
+      "auto_connect": false,
+      "connected_configuration": {
+        "mqtt": {
+          "local_broker_credentials": "ENCRYPTED_MQTT_CREDENTIALS_STRING_HERE",
+          "local_broker_credentials_decrypted": "MOCK_DECRYPTED_CREDENTIALS"
+        },
+        "wifi": {
+          "ssid": "MOCK_NETWORK",
+          "password": "mock_wifi_password",
+          "security": "wpa2"
+        },
+        "firmware": {
+          "version": "21.01.08",
+          "auto_update_enabled": false,
+          "new_version_available": true,
+          "capabilities": [
+            "AdvanceOscillationDay1",
+            "Scheduling",
+            "EnvironmentalData",
+            "ExtendedAQ",
+            "ChangeWifi"
+          ]
+        }
+      },
+      "mqtt_analysis": {
+        "local_mqtt": {
+          "username": "MOCK-SERIAL-UPDATE123",
+          "password": "mock_encrypted_password_base64_string_longer_than_50_chars_for_testing",
+          "root_topic": "438M",
+          "ports": {
+            "mqtt": 1883,
+            "mqtt_tls": 8883
+          }
+        }
+      }
+    }
+  ]
+}

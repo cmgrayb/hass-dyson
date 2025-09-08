@@ -7,7 +7,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from custom_components.hass_dyson.const import DOMAIN
+from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DOMAIN
 from custom_components.hass_dyson.switch import (
     DysonAutoModeSwitch,
     DysonContinuousMonitoringSwitch,
@@ -25,7 +25,7 @@ def mock_coordinator():
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device = MagicMock()
-    coordinator.device_capabilities = ["Heating", "ContinuousMonitoring"]
+    coordinator.device_capabilities = ["Heating", "EnvironmentalData"]
     coordinator.data = {"product-state": {}}
     coordinator.async_send_command = AsyncMock()
     return coordinator
@@ -36,6 +36,7 @@ def mock_config_entry():
     """Create a mock config entry."""
     config_entry = MagicMock(spec=ConfigEntry)
     config_entry.entry_id = "test-entry-id"
+    config_entry.data = {CONF_DISCOVERY_METHOD: "manual"}  # Default to manual
     return config_entry
 
 
@@ -79,10 +80,36 @@ class TestSwitchPlatformSetup:
         mock_add_entities.assert_called_once()
         added_entities = mock_add_entities.call_args[0][0]
 
-        # Should have night mode, heating, and continuous monitoring switches
+        # Should have night mode, heating, and continuous monitoring switches (no firmware switch for manual)
         assert len(added_entities) == 3
         entity_types = [type(entity).__name__ for entity in added_entities]
         assert "DysonNightModeSwitch" in entity_types
+        assert "DysonHeatingSwitch" in entity_types
+        assert "DysonContinuousMonitoringSwitch" in entity_types
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_cloud_device_with_firmware_switch(self, mock_hass, mock_coordinator):
+        """Test that cloud devices get firmware auto-update switch."""
+        # Arrange
+        cloud_config_entry = MagicMock(spec=ConfigEntry)
+        cloud_config_entry.entry_id = "test-cloud-entry"
+        cloud_config_entry.data = {CONF_DISCOVERY_METHOD: "cloud"}
+
+        mock_hass.data[DOMAIN][cloud_config_entry.entry_id] = mock_coordinator
+        mock_add_entities = AsyncMock()
+
+        # Act
+        await async_setup_entry(mock_hass, cloud_config_entry, mock_add_entities)
+
+        # Assert
+        mock_add_entities.assert_called_once()
+        added_entities = mock_add_entities.call_args[0][0]
+
+        # Should have night mode, firmware auto-update, heating, and continuous monitoring switches
+        assert len(added_entities) == 4
+        entity_types = [type(entity).__name__ for entity in added_entities]
+        assert "DysonNightModeSwitch" in entity_types
+        assert "DysonFirmwareAutoUpdateSwitch" in entity_types
         assert "DysonHeatingSwitch" in entity_types
         assert "DysonContinuousMonitoringSwitch" in entity_types
 
@@ -420,25 +447,27 @@ class TestDysonHeatingSwitch:
     async def test_async_turn_on_success(self, mock_coordinator):
         """Test successful heating turn on."""
         # Arrange
+        mock_coordinator.device.set_heating_mode = AsyncMock()
         switch = DysonHeatingSwitch(mock_coordinator)
 
         # Act
         await switch.async_turn_on()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_heating", {"hmod": "HEAT"})
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("HEAT")
 
     @pytest.mark.asyncio
     async def test_async_turn_off_success(self, mock_coordinator):
         """Test successful heating turn off."""
         # Arrange
+        mock_coordinator.device.set_heating_mode = AsyncMock()
         switch = DysonHeatingSwitch(mock_coordinator)
 
         # Act
         await switch.async_turn_off()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_heating", {"hmod": "OFF"})
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("OFF")
 
     def test_extra_state_attributes_with_device(self, mock_coordinator):
         """Test extra_state_attributes when device is available."""
@@ -472,6 +501,9 @@ class TestDysonContinuousMonitoringSwitch:
         assert switch._attr_unique_id == "TEST-SERIAL-123_continuous_monitoring"
         assert switch._attr_name == "Test Device Continuous Monitoring"
         assert switch._attr_icon == "mdi:monitor-eye"
+        from homeassistant.const import EntityCategory
+
+        assert switch._attr_entity_category == EntityCategory.CONFIG
 
     def test_handle_coordinator_update_monitoring_on(self, mock_coordinator):
         """Test coordinator update when continuous monitoring is on."""
@@ -493,25 +525,27 @@ class TestDysonContinuousMonitoringSwitch:
     async def test_async_turn_on_success(self, mock_coordinator):
         """Test successful continuous monitoring turn on."""
         # Arrange
+        mock_coordinator.device.set_continuous_monitoring = AsyncMock()
         switch = DysonContinuousMonitoringSwitch(mock_coordinator)
 
         # Act
         await switch.async_turn_on()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_monitoring", {"rhtm": "ON"})
+        mock_coordinator.device.set_continuous_monitoring.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_async_turn_off_success(self, mock_coordinator):
         """Test successful continuous monitoring turn off."""
         # Arrange
+        mock_coordinator.device.set_continuous_monitoring = AsyncMock()
         switch = DysonContinuousMonitoringSwitch(mock_coordinator)
 
         # Act
         await switch.async_turn_off()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_monitoring", {"rhtm": "OFF"})
+        mock_coordinator.device.set_continuous_monitoring.assert_called_once_with(False)
 
 
 class TestSwitchIntegration:
@@ -539,7 +573,7 @@ class TestSwitchIntegration:
     ):
         """Test that multiple capabilities create multiple switches."""
         # Arrange
-        mock_coordinator.device_capabilities = ["Heating", "ContinuousMonitoring"]
+        mock_coordinator.device_capabilities = ["Heating", "EnvironmentalData"]
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
         mock_add_entities = AsyncMock()
 
