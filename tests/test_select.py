@@ -84,12 +84,11 @@ class TestSelectPlatformSetup:
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
-        # Should add both oscillation (due to "or True") and heating select entities
+        # Should add only heating select entity (oscillation requires AdvanceOscillationDay1 capability)
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 2
-        assert isinstance(entities[0], DysonOscillationModeSelect)
-        assert isinstance(entities[1], DysonHeatingModeSelect)
+        assert len(entities) == 1
+        assert isinstance(entities[0], DysonHeatingModeSelect)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_both_capabilities(self, mock_hass, mock_config_entry):
@@ -118,11 +117,10 @@ class TestSelectPlatformSetup:
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
-        # Should add oscillation entity only (due to "or True" in the code)
+        # Should not add any select entities when device has no relevant capabilities
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 1
-        assert isinstance(entities[0], DysonOscillationModeSelect)
+        assert len(entities) == 0
 
 
 class TestDysonFanControlModeSelect:
