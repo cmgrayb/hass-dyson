@@ -221,7 +221,8 @@ async def test_fan_entity_commands(mock_coordinator):
     mock_hass = MagicMock()
     mock_hass.async_add_executor_job = AsyncMock()
     fan.hass = mock_hass
-    fan.async_write_ha_state = AsyncMock()
+    # async_write_ha_state returns None, not a coroutine
+    fan.async_write_ha_state = MagicMock()
 
     # Test turn on
     await fan.async_turn_on(percentage=80)

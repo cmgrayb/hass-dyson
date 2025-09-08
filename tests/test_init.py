@@ -33,7 +33,8 @@ def mock_hass():
     hass = MagicMock(spec=HomeAssistant)
     hass.config_entries = MagicMock()
     hass.data = {}
-    hass.async_create_task = AsyncMock()
+    # async_create_task should return a Task, not a coroutine
+    hass.async_create_task = MagicMock(return_value=MagicMock())
     return hass
 
 

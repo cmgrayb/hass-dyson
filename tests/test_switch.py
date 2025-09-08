@@ -71,7 +71,7 @@ class TestSwitchPlatformSetup:
         """Test that async_setup_entry creates basic switches."""
         # Arrange
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
@@ -96,7 +96,7 @@ class TestSwitchPlatformSetup:
         cloud_config_entry.data = {CONF_DISCOVERY_METHOD: "cloud"}
 
         mock_hass.data[DOMAIN][cloud_config_entry.entry_id] = mock_coordinator
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, cloud_config_entry, mock_add_entities)
@@ -119,7 +119,7 @@ class TestSwitchPlatformSetup:
         # Arrange
         mock_coordinator.device_capabilities = []  # No optional capabilities
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
@@ -575,7 +575,7 @@ class TestSwitchIntegration:
         # Arrange
         mock_coordinator.device_capabilities = ["Heating", "EnvironmentalData"]
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)

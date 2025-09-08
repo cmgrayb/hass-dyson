@@ -45,7 +45,7 @@ class TestButtonPlatformSetup:
         """Test that async_setup_entry creates a reconnect button."""
         # Arrange
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
@@ -210,7 +210,7 @@ class TestButtonPlatformIntegration:
         """Test button entity works correctly in Home Assistant context."""
         # Arrange
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
@@ -248,7 +248,7 @@ class TestButtonPlatformIntegration:
         mock_hass.data[DOMAIN]["entry-1"] = coordinator1
         mock_hass.data[DOMAIN]["entry-2"] = coordinator2
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         # Act
         await async_setup_entry(mock_hass, config_entry1, mock_add_entities)

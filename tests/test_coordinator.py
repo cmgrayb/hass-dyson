@@ -279,6 +279,8 @@ class TestDysonDataUpdateCoordinatorScheduling:
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
             mock_hass = MagicMock()
+            # async_create_task should return a Task, not a coroutine
+            mock_hass.async_create_task = MagicMock(return_value=MagicMock())
             coordinator.hass = mock_hass
 
             coordinator._create_coordinator_update_task()

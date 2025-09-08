@@ -1,6 +1,6 @@
 """Test the number platform."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from homeassistant.components.number import NumberMode
@@ -72,7 +72,7 @@ class TestNumberPlatformSetup:
         # Set device_category to not be an environment cleaner
         coordinator.device_category = ["other"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -90,7 +90,7 @@ class TestNumberPlatformSetup:
         # Mock the device_capabilities property to return a list
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -114,7 +114,7 @@ class TestNumberPlatformSetup:
         # Mock the device_capabilities property to return a list
         coordinator.device_capabilities = ["Scheduling", "AdvanceOscillationDay1"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
@@ -135,7 +135,7 @@ class TestNumberPlatformSetup:
         # Mock device_category to NOT be an environment cleaner
         coordinator.device_category = ["other"]
 
-        mock_add_entities = AsyncMock()
+        mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 

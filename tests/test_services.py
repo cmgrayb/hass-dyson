@@ -34,8 +34,9 @@ def mock_hass():
     hass = MagicMock(spec=HomeAssistant)
     hass.data = {DOMAIN: {}}
     hass.services = MagicMock()
-    hass.services.async_register = AsyncMock()
-    hass.services.async_remove = AsyncMock()
+    # async_register and async_remove return None, not coroutines
+    hass.services.async_register = MagicMock()
+    hass.services.async_remove = MagicMock()
     hass.services.has_service = MagicMock(return_value=True)
     return hass
 
