@@ -305,6 +305,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = coordinator
 
+        # Check for firmware updates if this is a cloud device
+        from .const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+
+        if entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
+            try:
+                await coordinator.async_check_firmware_update()
+            except Exception as err:
+                _LOGGER.debug("Initial firmware update check failed for %s: %s", coordinator.serial_number, err)
+
         # Determine which platforms to set up based on device capabilities
         platforms_to_setup = _get_platforms_for_device(coordinator)
 
@@ -415,6 +424,12 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
     # Add switch platform for devices with switching capabilities
     if "Switch" in device_capabilities or any(cat in ["ec"] for cat in device_category):
         platforms.append("switch")
+
+    # Add update platform for cloud-discovered devices (for firmware updates)
+    from .const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+
+    if coordinator.config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
+        platforms.append("update")
 
     # Remove duplicates and return
     return list(set(platforms))
