@@ -45,8 +45,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.device: Optional[DysonDevice] = None
         self._device_capabilities: List[str] = []
         self._device_category: list[str] = []
+        self._device_type: str = ""  # Will be extracted from device info
         self._firmware_version: str = "Unknown"
         self._firmware_auto_update_enabled: bool = False
+        self._firmware_latest_version: str | None = None
+        self._firmware_update_in_progress: bool = False
         # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
         # self._firmware_update_available: bool = False
 
@@ -68,6 +71,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return self._device_category
 
     @property
+    def device_type(self) -> str:
+        """Return device type."""
+        return self._device_type
+
+    @property
     def firmware_version(self) -> str:
         """Return device firmware version."""
         return self._firmware_version
@@ -76,6 +84,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def firmware_auto_update_enabled(self) -> bool:
         """Return whether firmware auto-update is enabled."""
         return self._firmware_auto_update_enabled
+
+    @property
+    def firmware_latest_version(self) -> str | None:
+        """Return the latest available firmware version."""
+        return self._firmware_latest_version
+
+    @property
+    def firmware_update_in_progress(self) -> bool:
+        """Return whether a firmware update is in progress."""
+        return self._firmware_update_in_progress
 
     # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
     # @property
@@ -306,6 +324,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         _LOGGER.debug("Device info dir: %s", [attr for attr in dir(device_info) if not attr.startswith("_")])
 
         self._debug_connected_configuration(device_info)
+        self._extract_device_type(device_info)
         self._extract_device_category(device_info)
         self._extract_device_capabilities(device_info)
         self._extract_firmware_version(device_info)
@@ -358,6 +377,19 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     _LOGGER.debug(
                         "Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0
                     )
+
+    def _extract_device_type(self, device_info) -> None:
+        """Extract device type from device info."""
+        # Extract device type from device_info using both possible field names
+        device_type = getattr(device_info, "product_type", None)
+        if device_type is None:
+            device_type = getattr(device_info, "type", None)
+
+        if device_type is None:
+            raise ValueError(f"Device type not available for device {self.serial_number}")
+
+        self._device_type = str(device_type)
+        _LOGGER.debug("Extracted device type: %s", self._device_type)
 
     def _extract_device_category(self, device_info) -> None:
         """Extract device category from config entry or API response."""
@@ -629,15 +661,24 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             device_category = self.config_entry.data.get("device_category", ["ec"])
             capabilities = self.config_entry.data.get("capabilities", [])
 
-            # Set device category and capabilities from config entry
+            # Set device type, category and capabilities from config entry
             from .device_utils import normalize_capabilities, normalize_device_category
 
+            device_type = self.config_entry.data.get("device_type", "438")
             device_category = self.config_entry.data.get("device_category", ["ec"])
             capabilities = self.config_entry.data.get("capabilities", [])
 
             # Ensure consistent normalization
+            self._device_type = str(device_type)
             self._device_category = normalize_device_category(device_category)
             self._device_capabilities = normalize_capabilities(capabilities)
+
+            _LOGGER.debug(
+                "Manual device setup - device_type: %s, category: %s, capabilities: %s",
+                self._device_type,
+                self._device_category,
+                self._device_capabilities,
+            )
 
             # Validate that we have required information for manual setup
             if not hostname:
@@ -797,6 +838,90 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
 
         return True
+
+    async def async_check_firmware_update(self) -> bool:
+        """Check for available firmware updates using libdyson-rest 0.6.0b1."""
+        if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
+            _LOGGER.debug("Firmware update check only available for cloud-discovered devices")
+            return False
+
+        try:
+            # Create a temporary cloud client for the update check
+            cloud_client = await self._authenticate_cloud_client()
+
+            # Use new libdyson-rest 0.6.0b1 method
+            pending_release = await self.hass.async_add_executor_job(
+                cloud_client.get_pending_release, self.serial_number
+            )
+
+            if pending_release:
+                self._firmware_latest_version = pending_release.version
+                _LOGGER.info("Firmware update available for %s: %s", self.serial_number, pending_release.version)
+
+                # Notify listeners of the update
+                self.async_update_listeners()
+                return True
+            else:
+                self._firmware_latest_version = self._firmware_version
+                _LOGGER.debug("No firmware update available for %s", self.serial_number)
+                return False
+
+        except Exception as e:
+            # This includes DysonAPIError when no update is available
+            _LOGGER.debug("No firmware update available for %s: %s", self.serial_number, e)
+            self._firmware_latest_version = self._firmware_version
+            return False
+
+    async def async_install_firmware_update(self, version: str) -> bool:
+        """Install firmware update via MQTT command."""
+        if not self.device:
+            _LOGGER.error("No device connection available for firmware update")
+            return False
+
+        try:
+            # Use the extracted device type for the firmware URL
+            device_type = self._device_type
+
+            # Construct firmware URL following the pattern from MQTT trace
+            firmware_url = f"http://ota-firmware.cp.dyson.com/{device_type}/M__SC04.WF02/{version}/manifest.bin"
+
+            _LOGGER.info("Using device type %s for firmware URL: %s", device_type, firmware_url)
+
+            # Prepare MQTT command with current timestamp
+            from datetime import datetime
+
+            command_data = {
+                "msg": "SOFTWARE-UPGRADE",
+                "time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",
+                "version": version,
+                "url": firmware_url,
+            }
+
+            _LOGGER.info("Initiating firmware update for %s to version %s", self.serial_number, version)
+
+            # Mark update as in progress
+            self._firmware_update_in_progress = True
+            self.async_update_listeners()
+
+            # Send the command using device's send_command method
+            success = await self.device.send_command("SOFTWARE-UPGRADE", command_data)
+
+            if success:
+                _LOGGER.info("Firmware update command sent successfully for %s", self.serial_number)
+                # Note: Update progress tracking would require monitoring device state
+                # but MQTT doesn't provide progress updates based on the trace
+                return True
+            else:
+                _LOGGER.error("Failed to send firmware update command for %s", self.serial_number)
+                self._firmware_update_in_progress = False
+                self.async_update_listeners()
+                return False
+
+        except Exception as e:
+            _LOGGER.error("Error installing firmware update for %s: %s", self.serial_number, e)
+            self._firmware_update_in_progress = False
+            self.async_update_listeners()
+            return False
 
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator and cleanup connections."""
