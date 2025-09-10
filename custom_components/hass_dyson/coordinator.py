@@ -904,18 +904,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             self.async_update_listeners()
 
             # Send the command using device's send_command method
-            success = await self.device.send_command("SOFTWARE-UPGRADE", command_data)
+            # send_command returns None on success and raises on failure
+            await self.device.send_command("SOFTWARE-UPGRADE", command_data)
 
-            if success:
-                _LOGGER.info("Firmware update command sent successfully for %s", self.serial_number)
-                # Note: Update progress tracking would require monitoring device state
-                # but MQTT doesn't provide progress updates based on the trace
-                return True
-            else:
-                _LOGGER.error("Failed to send firmware update command for %s", self.serial_number)
-                self._firmware_update_in_progress = False
-                self.async_update_listeners()
-                return False
+            _LOGGER.info("Firmware update command sent successfully for %s", self.serial_number)
+            # Note: Update progress tracking would require monitoring device state
+            # but MQTT doesn't provide progress updates based on the trace
+            return True
 
         except Exception as e:
             _LOGGER.error("Error installing firmware update for %s: %s", self.serial_number, e)
