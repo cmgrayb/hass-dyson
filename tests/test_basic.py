@@ -20,7 +20,7 @@ def test_const_import():
         DOMAIN,
     )
 
-    assert DOMAIN == "hass-dyson"
+    assert DOMAIN == "hass_dyson"
     assert DEFAULT_TIMEOUT == 10
     assert CONF_POLL_FOR_DEVICES == "poll_for_devices"
     assert CONF_AUTO_ADD_DEVICES == "auto_add_devices"

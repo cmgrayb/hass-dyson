@@ -219,7 +219,7 @@ Required information from device sticker, libdyson-rest, or opendyson:
 ### YAML Configuration (Optional, **Not** Recommended)
 
 ```yaml
-hass-dyson:
+hass_dyson:
   devices:
     - serial_number: "MOCK-SERIAL-TEST123"
       discovery_method: "sticker"
@@ -315,7 +315,7 @@ grep "MQTT prefix" /config/home-assistant.log
 # In configuration.yaml
 logger:
   logs:
-    custom_components.hass-dyson: debug
+    custom_components.hass_dyson: debug
 ```
 
 ## 📚 Documentation
