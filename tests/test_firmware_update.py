@@ -325,7 +325,7 @@ class TestCoordinatorFirmwareMethods:
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_command_failure(self, coordinator):
         """Test firmware update installation when MQTT command fails."""
-        coordinator.device.send_command = AsyncMock(return_value=False)
+        coordinator.device.send_command = AsyncMock(side_effect=Exception("MQTT send failed"))
 
         result = await coordinator.async_install_firmware_update("1.0.1")
 

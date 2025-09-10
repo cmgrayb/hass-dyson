@@ -490,3 +490,79 @@ class TestErrorHandling:
         # All should handle invalid data gracefully by returning None
         for entity in entities:
             assert entity.native_value is None
+
+
+class TestNumberCoverageEnhancement:
+    """Test class to enhance number coverage to 95%+."""
+
+    def test_sleep_timer_device_exception_handling(self, mock_coordinator):
+        """Test sleep timer handles device exceptions properly."""
+        mock_coordinator.device._get_current_value.side_effect = Exception("Device error")
+
+        sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
+            sleep_timer._handle_coordinator_update()
+
+        # Should catch exception and set value to 0
+        assert sleep_timer._attr_native_value == 0
+
+    def test_sleep_timer_invalid_data_conversion(self, mock_coordinator):
+        """Test sleep timer handles invalid data conversion properly."""
+        mock_coordinator.device._get_current_value.return_value = "invalid_data"
+
+        sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
+            sleep_timer._handle_coordinator_update()
+
+        # Should catch ValueError/TypeError and set value to 0
+        assert sleep_timer._attr_native_value == 0
+
+    def test_sleep_timer_extra_state_attributes_with_device(self, mock_coordinator):
+        """Test sleep timer extra_state_attributes with device."""
+        mock_coordinator.device._get_current_value.return_value = "0120"
+
+        sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        sleep_timer._attr_native_value = 120
+
+        attributes = sleep_timer.extra_state_attributes
+
+        assert attributes is not None
+        assert attributes["sleep_timer_minutes"] == 120
+        assert attributes["sleep_timer_raw"] == "0120"
+        assert attributes["sleep_timer_enabled"] is True
+
+    def test_sleep_timer_extra_state_attributes_no_device(self, mock_coordinator):
+        """Test sleep timer extra_state_attributes without device."""
+        mock_coordinator.device = None
+
+        sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+
+        attributes = sleep_timer.extra_state_attributes
+
+        assert attributes is None
+
+    def test_sleep_timer_extra_state_attributes_off_timer(self, mock_coordinator):
+        """Test sleep timer extra_state_attributes with OFF timer."""
+        mock_coordinator.device._get_current_value.return_value = "OFF"
+
+        sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        sleep_timer._attr_native_value = 0
+
+        attributes = sleep_timer.extra_state_attributes
+
+        assert attributes is not None
+        assert attributes["sleep_timer_minutes"] == 0
+        assert attributes["sleep_timer_raw"] == "OFF"
+        assert attributes["sleep_timer_enabled"] is False
+
+    def test_sleep_timer_value_error_conversion_path(self, mock_coordinator):
+        """Test sleep timer ValueError path in conversion."""
+        # Set up device to return non-OFF value that can't be converted to int
+        mock_coordinator.device._get_current_value.return_value = "not_off_but_invalid"
+
+        sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
+            sleep_timer._handle_coordinator_update()
+
+        # Should catch ValueError/TypeError and set value to 0 (line 80)
+        assert sleep_timer._attr_native_value == 0

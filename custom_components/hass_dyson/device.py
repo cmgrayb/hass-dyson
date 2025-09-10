@@ -338,7 +338,8 @@ class DysonDevice:
             self._mqtt_client = mqtt_client
 
             # Set up TLS for secure WebSocket connection
-            mqtt_client.tls_set()
+            # Use executor to avoid blocking SSL operations in the event loop
+            await self.hass.async_add_executor_job(mqtt_client.tls_set)
 
             # Set up WebSocket headers for AWS IoT Custom Authorizer
             # Following OpenDyson Go implementation: use HTTP headers instead of query parameters
@@ -462,7 +463,7 @@ class DysonDevice:
         else:
             _LOGGER.error("MQTT connection failed for device %s with code: %s", self.serial_number, rc)
 
-    def _on_disconnect(self, client: mqtt.Client, userdata: Any, flags, rc, properties=None) -> None:
+    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc, properties=None) -> None:
         """Handle MQTT disconnection callback."""
         _LOGGER.warning("MQTT client disconnected for %s, code: %s", self.serial_number, rc)
         self._connected = False

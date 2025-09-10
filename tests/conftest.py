@@ -80,3 +80,11 @@ def mock_paho_mqtt():
         mock_instance.loop_start = MagicMock()
         mock_instance.loop_stop = MagicMock()
         yield mock_instance
+
+
+@pytest.fixture
+def mock_hass():
+    """Create a mock Home Assistant instance for testing."""
+    hass = MagicMock()
+    hass.data = {}
+    return hass
