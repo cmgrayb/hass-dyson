@@ -1,6 +1,6 @@
 """Tests for the binary sensor platform."""
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import pytest
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -350,6 +350,28 @@ class TestDysonFilterReplacementSensor:
 
         assert sensor._attr_is_on is False
 
+    def test_filter_sensor_main_exception_handling(self, mock_coordinator):
+        """Test filter replacement sensor handles main method exceptions."""
+        # Set up normal coordinator for initialization
+        mock_coordinator.serial_number = "12345"
+        mock_coordinator.data = {"product-state": {"hflr": "1000"}}
+        mock_coordinator.device = Mock()
+
+        sensor = DysonFilterReplacementSensor(mock_coordinator)
+        sensor.hass = Mock()
+
+        # Now cause an exception during the update by making the device property fail
+        type(mock_coordinator).device = PropertyMock(side_effect=RuntimeError("Device access error"))
+
+        with patch("custom_components.hass_dyson.binary_sensor._LOGGER") as mock_logger:
+            with patch.object(sensor, "async_write_ha_state"):
+                sensor._handle_coordinator_update()
+            # Should log error during filter replacement sensor update (line 231-233)
+            mock_logger.error.assert_called()
+
+        # Should default to False when there's an error
+        assert sensor._attr_is_on is False
+
 
 class TestDysonFaultSensor:
     """Test fault binary sensor."""
@@ -639,3 +661,44 @@ class TestBinarySensorIntegration:
         # Check type annotations exist
         assert hasattr(filter_sensor, "coordinator")
         assert hasattr(fault_sensor, "coordinator")
+
+    def test_filter_sensor_exception_handling(self, mock_coordinator):
+        """Test filter replacement sensor handles exceptions in HEPA filter parsing."""
+        mock_coordinator.data = {
+            "product-state": {
+                "hflt": "GCOM",  # HEPA filter type exists
+            }
+        }
+
+        # Mock device that raises exception when accessing hepa_filter_life property
+        mock_device = Mock()
+        # Make getattr raise an exception when trying to access hepa_filter_life
+        type(mock_device).hepa_filter_life = PropertyMock(side_effect=RuntimeError("Device error"))
+        mock_coordinator.device = mock_device
+
+        sensor = DysonFilterReplacementSensor(mock_coordinator)
+        sensor.hass = Mock()
+
+        with patch("custom_components.hass_dyson.binary_sensor._LOGGER") as mock_logger:
+            with patch.object(sensor, "async_write_ha_state"):
+                sensor._handle_coordinator_update()
+            # Should log error about getting HEPA filter life (line 192-193)
+            mock_logger.error.assert_called()
+
+        # Should default to False when there's an error
+        assert sensor._attr_is_on is False
+
+    def test_fault_sensor_no_device_condition(self, mock_coordinator):
+        """Test fault sensor handles no device condition properly."""
+        mock_coordinator.device = None  # No device
+
+        fault_info = {"FAIL": "Sensor failed"}
+        sensor = DysonFaultSensor(mock_coordinator, "aqs", fault_info)
+        sensor.hass = Mock()
+
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Should set proper state when no device
+        assert sensor._attr_is_on is False
+        assert sensor._attr_extra_state_attributes == {}

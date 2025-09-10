@@ -699,3 +699,81 @@ class TestGetCoordinatorFromDeviceId:
 
             # Assert
             assert result is None
+
+
+class TestServicesCoverage:
+    """Additional tests to improve services coverage."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_sleep_timer_with_logging(self, mock_hass, mock_coordinator):
+        """Test cancel sleep timer success with logging verification."""
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"device_id": "test-device"}
+
+        with (
+            patch(
+                "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.hass_dyson.services._LOGGER") as mock_logger,
+        ):
+            await _handle_cancel_sleep_timer(mock_hass, call)
+
+            # Verify the success logging (line 90)
+            mock_logger.info.assert_called_once_with(
+                "Cancelled sleep timer for device %s", mock_coordinator.serial_number
+            )
+
+    @pytest.mark.asyncio
+    async def test_set_oscillation_angles_with_logging(self, mock_hass, mock_coordinator):
+        """Test set oscillation angles success with logging verification."""
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"device_id": "test-device", "lower_angle": 30, "upper_angle": 90}
+
+        with (
+            patch(
+                "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.hass_dyson.services._LOGGER") as mock_logger,
+        ):
+            await _handle_set_oscillation_angles(mock_hass, call)
+
+            # Verify the success logging (line 149)
+            mock_logger.info.assert_called_once_with(
+                "Set oscillation angles %d°-%d° for device %s", 30, 90, mock_coordinator.serial_number
+            )
+
+    @pytest.mark.asyncio
+    async def test_fetch_account_data_with_device_error_logging(self, mock_hass, mock_coordinator):
+        """Test fetch account data with device error to cover error logging."""
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"device_id": "test-device"}
+
+        # Make the device fetch fail
+        mock_coordinator.async_refresh.side_effect = Exception("Network error")
+
+        with (
+            patch(
+                "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+                return_value=mock_coordinator,
+            ),
+            patch("custom_components.hass_dyson.services._LOGGER") as mock_logger,
+        ):
+            with pytest.raises(HomeAssistantError):
+                await _handle_fetch_account_data(mock_hass, call)
+
+            # Verify error logging (line 202)
+            mock_logger.error.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_async_remove_services_no_services_registered(self, mock_hass):
+        """Test remove services when no services are registered."""
+        # Mock that services don't exist
+        mock_hass.services.has_service.return_value = False
+
+        # This should not call async_remove since services don't exist
+        await async_remove_services(mock_hass)
+
+        # Verify no removal calls were made
+        mock_hass.services.async_remove.assert_not_called()

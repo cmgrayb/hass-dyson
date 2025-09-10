@@ -891,3 +891,153 @@ class TestDysonConnectionStatusSensor:
         # Act
         # Assert - use the property directly since this sensor uses @property
         assert sensor.native_value == "Disconnected"
+
+
+class TestSensorCoverageEnhancement:
+    """Test class to enhance sensor coverage to 90%+."""
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_exception_handling_fallback(self, mock_coordinator, mock_hass):
+        """Test sensor setup exception handling with fallback to basic sensors."""
+        # Arrange
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+        mock_async_add_entities = MagicMock()
+
+        # Mock coordinator to have device capabilities that would normally create sensors
+        mock_coordinator.device_capabilities = ["ExtendedAQ", "Heating"]
+        mock_coordinator.device_category = ["EC"]
+        mock_coordinator.serial_number = "TEST-SERIAL-123"
+        mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        # Mock coordinator.device_capabilities to raise an exception during entity creation
+        with (
+            patch("custom_components.hass_dyson.sensor._LOGGER") as mock_logger,
+            patch(
+                "custom_components.hass_dyson.sensor.DysonPM25Sensor", side_effect=Exception("Entity creation error")
+            ),
+        ):
+            # Act - This should trigger the exception handling path (lines 145-149)
+            result = await async_setup_entry(mock_hass, config_entry, mock_async_add_entities)
+
+            # Assert
+            # The function should still return True even when entity creation fails
+            # It should log the error and warning (fallback behavior)
+            assert result is True
+            mock_logger.error.assert_called_once_with(
+                "Error during sensor setup for device %s: %s",
+                "TEST-SERIAL-123",
+                mock_logger.error.call_args[0][2],  # The exception object
+            )
+            mock_logger.warning.assert_called_once_with(
+                "Falling back to basic sensor setup for device %s", "TEST-SERIAL-123"
+            )
+            # async_add_entities should be called with empty entities list
+            mock_async_add_entities.assert_called_once_with([], True)
+
+    @pytest.mark.asyncio
+    async def test_sensor_platform_setup_robot_device_battery_debug_log(self, mock_coordinator, mock_hass):
+        """Test robot device debug logging for battery sensor placeholder."""
+        # Create mock config entry
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+
+        # Mock async_add_entities
+        mock_async_add_entities = MagicMock()
+
+        # Set up coordinator for robot device (should trigger debug log on lines 141-142)
+        mock_coordinator.device_category = ["robot"]  # lowercase to match the condition in sensor.py
+        mock_coordinator.device_capabilities = []
+        mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        with patch("custom_components.hass_dyson.sensor._LOGGER") as mock_logger:
+            await async_setup_entry(mock_hass, config_entry, mock_async_add_entities)
+
+            # Assert that the debug log was called for robot device battery sensor placeholder
+            mock_logger.debug.assert_any_call(
+                "Robot device detected for %s, but battery sensor not yet implemented",
+                mock_coordinator.serial_number,
+            )
+
+    def test_sensor_data_safety_methods_coverage(self, mock_coordinator):
+        """Test sensor data safety method coverage for missing lines."""
+        # Test with no device to trigger None value paths
+        mock_coordinator.device = None
+
+        # Create sensors when device is None to avoid sync issues
+        sensors = [
+            DysonPM25Sensor(mock_coordinator),
+            DysonPM10Sensor(mock_coordinator),
+            DysonTemperatureSensor(mock_coordinator),
+            DysonHumiditySensor(mock_coordinator),
+            DysonVOCSensor(mock_coordinator),
+            DysonNO2Sensor(mock_coordinator),
+            DysonFormaldehydeSensor(mock_coordinator),
+        ]
+
+        for sensor in sensors:
+            # These should return None when no device is available
+            value = sensor.native_value
+            assert value is None
+
+        # Test with device but no sensor properties
+        mock_device = MagicMock()
+        # Explicitly set sensor properties to None to test missing data paths
+        mock_device.pm25 = None
+        mock_device.pm10 = None
+        mock_device.temperature = None
+        mock_device.humidity = None
+        mock_device.volatile_organic_compounds = None
+        mock_device.nitrogen_dioxide = None
+        mock_device.formaldehyde = None
+        mock_device._environmental_data = {}  # No environmental data
+        mock_coordinator.device = mock_device
+        mock_coordinator.data = {}  # Empty data should trigger fallback paths
+
+        # Trigger coordinator update to test device property paths
+        for sensor in sensors:
+            sensor.hass = MagicMock()  # Set hass to avoid RuntimeError
+            with patch.object(sensor, "async_write_ha_state"):
+                sensor._handle_coordinator_update()
+            # These should handle missing data gracefully and return None
+            value = sensor.native_value
+            assert value is None
+
+    def test_filter_life_sensors_missing_coverage(self, mock_coordinator):
+        """Test filter life sensor paths that need coverage."""
+        # Test HEPA filter life sensor
+        hepa_sensor = DysonHEPAFilterLifeSensor(mock_coordinator)
+        carbon_sensor = DysonCarbonFilterLifeSensor(mock_coordinator)
+        hepa_type_sensor = DysonHEPAFilterTypeSensor(mock_coordinator)
+        carbon_type_sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+
+        # Test with no device
+        mock_coordinator.device = None
+        assert hepa_sensor.native_value is None
+        assert carbon_sensor.native_value is None
+        assert hepa_type_sensor.native_value is None
+        assert carbon_type_sensor.native_value is None
+
+        # Test with device but no data
+        mock_coordinator.device = MagicMock()
+        mock_coordinator.data = {}
+        # These should handle missing data gracefully
+        hepa_sensor.native_value
+        carbon_sensor.native_value
+        hepa_type_sensor.native_value
+        carbon_type_sensor.native_value
+
+    def test_wifi_sensor_missing_coverage(self, mock_coordinator):
+        """Test WiFi sensor missing coverage paths."""
+        wifi_sensor = DysonWiFiSensor(mock_coordinator)
+
+        # Test with no device (should return None)
+        mock_coordinator.device = None
+        assert wifi_sensor.native_value is None
+
+        # Test with device but missing RSSI data
+        mock_coordinator.device = MagicMock()
+        mock_coordinator.data = {"product-state": {}}  # Missing RSSI data
+        value = wifi_sensor.native_value
+        # Should handle missing RSSI gracefully
+        assert value is None or isinstance(value, (int, float))

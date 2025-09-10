@@ -510,3 +510,150 @@ class TestFanIntegration:
         assert initial_state == final_state
         assert initial_percentage == final_percentage
         assert final_percentage == 70  # 7 * 10
+
+
+class TestFanCoverageEnhancement:
+    """Test class to enhance fan coverage to 90%+."""
+
+    def test_handle_coordinator_update_no_device_no_data_preset_mode(self, mock_coordinator):
+        """Test coordinator update when no device and no data (line 141)."""
+        # Arrange - remove device and data
+        mock_coordinator.device = None
+        mock_coordinator.data = None
+        fan = DysonFan(mock_coordinator)
+
+        # Act - this should trigger line 141 (_attr_preset_mode = None)
+        with patch.object(fan, "_handle_coordinator_update_safe"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode is None
+
+    def test_start_command_pending_debug_logging(self, mock_coordinator):
+        """Test _start_command_pending debug logging (lines 177-179)."""
+        fan = DysonFan(mock_coordinator)
+
+        with patch("custom_components.hass_dyson.fan._LOGGER") as mock_logger:
+            # Act - this should trigger debug logging on lines 177-179
+            fan._start_command_pending(5.0)
+
+            # Assert - verify debug logging was called
+            mock_logger.debug.assert_called_with(
+                "Fan %s started command pending period for %.1f seconds", "TEST-SERIAL-123", 5.0
+            )
+            assert fan._command_pending is True
+
+    def test_stop_command_pending_debug_logging(self, mock_coordinator):
+        """Test _stop_command_pending debug logging (lines 185-187)."""
+        fan = DysonFan(mock_coordinator)
+
+        with patch("custom_components.hass_dyson.fan._LOGGER") as mock_logger:
+            # Act - this should trigger debug logging on lines 185-187
+            fan._stop_command_pending()
+
+            # Assert - verify debug logging was called
+            mock_logger.debug.assert_called_with("Fan %s stopped command pending period", "TEST-SERIAL-123")
+            assert fan._command_pending is False
+            assert fan._command_end_time is None
+
+    def test_extra_state_attributes_missing_coverage(self, mock_coordinator):
+        """Test extra_state_attributes missing coverage paths."""
+        fan = DysonFan(mock_coordinator)
+
+        # Test with no device (should return None - line 358)
+        mock_coordinator.device = None
+        attributes = fan.extra_state_attributes
+        assert attributes is None
+
+    def test_command_pending_logic_coverage(self, mock_coordinator):
+        """Test command pending logic edge cases - debug logging coverage."""
+        fan = DysonFan(mock_coordinator)
+
+        # Initialize command pending attributes by starting a command pending period
+        fan._start_command_pending()
+
+        # Test command pending attributes are properly set
+        assert fan._command_pending is True
+        assert fan._command_end_time is not None
+
+        # Test command pending stop functionality
+        fan._stop_command_pending()
+        assert fan._command_pending is False
+        assert fan._command_end_time is None
+
+    @pytest.mark.asyncio
+    async def test_async_set_percentage_command_pending_integration(self, mock_coordinator):
+        """Test async_set_percentage with percentage conversion (lines 241-246)."""
+        fan = DysonFan(mock_coordinator)
+        fan.hass = MagicMock()  # Set hass to avoid RuntimeError
+
+        # Act - test percentage conversion and device method call
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_set_percentage(75)
+
+        # Assert - verify device set_fan_speed was called with correct conversion
+        mock_coordinator.device.set_fan_speed.assert_called_once_with(8)  # 75% -> speed 8
+
+    def test_supported_features_property_coverage(self, mock_coordinator):
+        """Test supported_features property coverage."""
+        fan = DysonFan(mock_coordinator)
+
+        # Test that supported features includes expected features (based on __init__)
+        features = fan.supported_features
+        expected_features = (
+            FanEntityFeature.SET_SPEED
+            | FanEntityFeature.PRESET_MODE
+            | FanEntityFeature.DIRECTION
+            | FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+        )
+        assert features == expected_features
+
+    @pytest.mark.asyncio
+    async def test_async_set_direction_error_handling_coverage(self, mock_coordinator):
+        """Test async_set_direction error handling coverage (lines 356-358)."""
+        fan = DysonFan(mock_coordinator)
+
+        # Test with device command failure
+        mock_coordinator.device.send_command.side_effect = Exception("Command failed")
+
+        with patch("custom_components.hass_dyson.fan._LOGGER") as mock_logger:
+            await fan.async_set_direction("forward")
+
+            # Should log error when command fails
+            assert mock_logger.error.called
+
+    def test_extra_state_attributes_comprehensive_coverage(self, mock_coordinator):
+        """Test extra_state_attributes comprehensive coverage (lines 364-376)."""
+        fan = DysonFan(mock_coordinator)
+
+        # Set up coordinator data for comprehensive attribute testing
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0007",
+                "auto": "ON",
+            }
+        }
+
+        attributes = fan.extra_state_attributes
+
+        # Should include fan state attributes for scene support
+        assert attributes is not None
+        # Check for actual attributes that exist in the implementation
+        expected_keys = [
+            "fan_speed",
+            "preset_mode",
+            "direction",
+            "is_on",
+            "fan_power",
+            "fan_state",
+            "fan_speed_setting",
+            "auto_mode",
+            "night_mode",
+            "oscillation_enabled",
+            "sleep_timer",
+        ]
+        for key in expected_keys:
+            assert key in attributes
