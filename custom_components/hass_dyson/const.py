@@ -3,7 +3,7 @@
 from typing import Final
 
 # Integration domain
-DOMAIN: Final = "hass-dyson"
+DOMAIN: Final = "hass_dyson"
 
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds

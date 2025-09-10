@@ -50,7 +50,7 @@ class TestClimatePlatformSetup:
         async_add_entities = MagicMock()
         mock_coordinator.device_capabilities = ["Heating"]
 
-        mock_hass.data = {"hass-dyson": {mock_config_entry.entry_id: mock_coordinator}}
+        mock_hass.data = {"hass_dyson": {mock_config_entry.entry_id: mock_coordinator}}
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, async_add_entities)
@@ -68,7 +68,7 @@ class TestClimatePlatformSetup:
         async_add_entities = MagicMock()
         mock_coordinator.device_capabilities = ["Fan"]  # No heating capability
 
-        mock_hass.data = {"hass-dyson": {mock_config_entry.entry_id: mock_coordinator}}
+        mock_hass.data = {"hass_dyson": {mock_config_entry.entry_id: mock_coordinator}}
 
         # Act
         await async_setup_entry(mock_hass, mock_config_entry, async_add_entities)

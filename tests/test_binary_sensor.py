@@ -51,7 +51,7 @@ class TestBinarySensorPlatformSetup:
         mock_config_entry = Mock()
         mock_config_entry.entry_id = "test_entry"
 
-        mock_hass.data = {"hass-dyson": {"test_entry": mock_coordinator}}
+        mock_hass.data = {"hass_dyson": {"test_entry": mock_coordinator}}
 
         with patch(
             "custom_components.hass_dyson.binary_sensor.FAULT_TRANSLATIONS",
@@ -75,7 +75,7 @@ class TestBinarySensorPlatformSetup:
         mock_config_entry = Mock()
         mock_config_entry.entry_id = "test_entry"
 
-        mock_hass.data = {"hass-dyson": {"test_entry": mock_coordinator}}
+        mock_hass.data = {"hass_dyson": {"test_entry": mock_coordinator}}
 
         fault_translations = {
             "aqs": {"FAIL": "Air quality sensor failed"},

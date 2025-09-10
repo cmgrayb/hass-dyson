@@ -41,7 +41,7 @@ def mock_coordinator():
 def mock_hass(mock_coordinator):
     """Create a mock Home Assistant instance."""
     hass = Mock()
-    hass.data = {"hass-dyson": {"NK6-EU-MHA0000A": mock_coordinator}}
+    hass.data = {"hass_dyson": {"NK6-EU-MHA0000A": mock_coordinator}}
     return hass
 
 
@@ -61,7 +61,7 @@ class TestSelectPlatformSetup:
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_oscillation_capability(self, mock_hass, mock_config_entry):
         """Test setting up entry with oscillation capability."""
-        coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
+        coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
 
         mock_add_entities = MagicMock()
@@ -77,7 +77,7 @@ class TestSelectPlatformSetup:
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_heating_capability(self, mock_hass, mock_config_entry):
         """Test setting up entry with heating capability."""
-        coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
+        coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["Heating"]
 
         mock_add_entities = MagicMock()
@@ -93,7 +93,7 @@ class TestSelectPlatformSetup:
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_both_capabilities(self, mock_hass, mock_config_entry):
         """Test setting up entry with both capabilities."""
-        coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
+        coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["AdvanceOscillationDay1", "Heating"]
 
         mock_add_entities = MagicMock()
@@ -110,7 +110,7 @@ class TestSelectPlatformSetup:
     @pytest.mark.asyncio
     async def test_async_setup_entry_no_capabilities(self, mock_hass, mock_config_entry):
         """Test setting up entry with no relevant capabilities."""
-        coordinator = mock_hass.data["hass-dyson"]["NK6-EU-MHA0000A"]
+        coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = []
 
         mock_add_entities = MagicMock()
@@ -1198,7 +1198,7 @@ class TestSelectPlatformSetupCoverage:
         mock_config_entry.entry_id = "missing_entry"
         mock_add_entities = MagicMock()
 
-        mock_hass.data = {"hass-dyson": {}}  # No coordinator for this entry
+        mock_hass.data = {"hass_dyson": {}}  # No coordinator for this entry
 
         with pytest.raises(KeyError):
             await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)

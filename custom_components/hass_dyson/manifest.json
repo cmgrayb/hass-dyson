@@ -1,5 +1,5 @@
 {
-  "domain": "hass-dyson",
+  "domain": "hass_dyson",
   "name": "Dyson",
   "codeowners": ["@cmgrayb"],
   "config_flow": true,
@@ -12,6 +12,6 @@
   "requirements": [
     "libdyson-rest==0.6.0"
   ],
-  "version": "0.13.0"
+  "version": "0.14.0"
 }
 
