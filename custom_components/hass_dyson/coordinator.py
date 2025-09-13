@@ -279,7 +279,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _authenticate_cloud_client(self):
         """Authenticate and return a cloud client."""
-        from libdyson_rest.async_client import AsyncDysonClient
+        from libdyson_rest import AsyncDysonClient
 
         auth_token = self.config_entry.data.get("auth_token")
         username = self.config_entry.data.get("username")
@@ -1115,7 +1115,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
 
         # Initialize libdyson-rest client
-        from libdyson_rest.async_client import AsyncDysonClient
+        from libdyson_rest import AsyncDysonClient
 
         if not self._auth_token:
             _LOGGER.warning("No auth token available for cloud account %s", self._email)

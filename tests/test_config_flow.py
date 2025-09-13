@@ -143,7 +143,7 @@ class TestDysonConfigFlowCloudAccount:
         mock_challenge = MagicMock()
         mock_challenge.challenge_id = "test_challenge_123"
 
-        with patch("libdyson_rest.async_client.AsyncDysonClient") as mock_client_class:
+        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.begin_login = AsyncMock(return_value=mock_challenge)
@@ -164,7 +164,7 @@ class TestDysonConfigFlowCloudAccount:
         """Test cloud account with invalid credentials."""
         user_input = {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "wrongpassword"}
 
-        with patch("libdyson_rest.async_client.AsyncDysonClient") as mock_client_class:
+        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_client.begin_login = AsyncMock(side_effect=Exception("Invalid credentials"))

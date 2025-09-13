@@ -547,7 +547,7 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             }
             coordinator.config_entry = mock_config_entry
 
-            with patch("libdyson_rest.async_client.AsyncDysonClient") as mock_client_class:
+            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -579,7 +579,7 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             }
             coordinator.config_entry = mock_config_entry
 
-            with patch("libdyson_rest.async_client.AsyncDysonClient") as mock_client_class:
+            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
                 mock_challenge = MagicMock()
