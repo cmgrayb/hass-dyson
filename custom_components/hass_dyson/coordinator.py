@@ -279,7 +279,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _authenticate_cloud_client(self):
         """Authenticate and return a cloud client."""
-        from libdyson_rest import DysonClient
+        from libdyson_rest.async_client import AsyncDysonClient
 
         auth_token = self.config_entry.data.get("auth_token")
         username = self.config_entry.data.get("username")
@@ -294,23 +294,27 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         # Initialize cloud client
         if auth_token:
-            # Use existing auth token from config flow
-            return DysonClient(email=username, auth_token=auth_token)
+            # Use existing auth token from config flow (in executor to avoid blocking SSL calls)
+            def create_client_with_token():
+                return AsyncDysonClient(email=username, auth_token=auth_token)
+
+            return await self.hass.async_add_executor_job(create_client_with_token)
         elif username and password:
-            # Legacy authentication method
-            cloud_client = DysonClient(email=username, password=password)
+            # Legacy authentication method (in executor to avoid blocking SSL calls)
+            def create_client():
+                return AsyncDysonClient(email=username)
+
+            cloud_client = await self.hass.async_add_executor_job(create_client)
             # Authenticate using proper flow
-            challenge = await self.hass.async_add_executor_job(lambda: cloud_client.begin_login())
-            await self.hass.async_add_executor_job(
-                lambda: cloud_client.complete_login(str(challenge.challenge_id), password)
-            )
+            challenge = await cloud_client.begin_login()
+            await cloud_client.complete_login(str(challenge.challenge_id), "", username, password)
             return cloud_client
         else:
             raise UpdateFailed("Missing cloud credentials (auth_token or username/password)")
 
     async def _find_cloud_device(self, cloud_client):
         """Find our device in the cloud device list."""
-        devices = await self.hass.async_add_executor_job(cloud_client.get_devices)
+        devices = await cloud_client.get_devices()
 
         for device in devices:
             if device.serial_number == self.serial_number:
@@ -517,45 +521,104 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:
         """Extract MQTT credentials from device info."""
-        mqtt_password = ""
         mqtt_username = self.serial_number
+        mqtt_password = ""
 
-        # Check connected_configuration for MQTT details
-        connected_config = getattr(device_info, "connected_configuration", None)
-        if connected_config:
-            mqtt_obj = getattr(connected_config, "mqtt", None)
-            if mqtt_obj:
-                # Try to get the decoded/plain password first
-                for attr in ["password", "decoded_password", "local_password", "device_password"]:
-                    mqtt_password = getattr(mqtt_obj, attr, "")
-                    if mqtt_password:
-                        _LOGGER.debug(
-                            "Found MQTT password using attribute: mqtt.%s (length: %s)", attr, len(mqtt_password)
-                        )
-                        break
-
-                # Fall back to decrypting the encoded credentials if no plain password found
-                if not mqtt_password:
-                    encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
-                    if encrypted_credentials:
-                        try:
-                            # Use libdyson-rest to decrypt the local MQTT credentials
-                            mqtt_password = cloud_client.decrypt_local_credentials(
-                                encrypted_credentials, self.serial_number
-                            )
-                            _LOGGER.debug("Successfully decrypted MQTT password (length: %s)", len(mqtt_password))
-                        except Exception as e:
-                            _LOGGER.error("Failed to decrypt MQTT credentials: %s", e)
-                            mqtt_password = ""  # nosec B105
+        mqtt_obj = self._get_mqtt_object(device_info)
+        if mqtt_obj:
+            mqtt_username = self._get_mqtt_username(mqtt_obj)
+            mqtt_password = self._get_mqtt_password(cloud_client, mqtt_obj)
 
         if not mqtt_password:
             _LOGGER.error("MQTT password cannot be empty for device %s", self.serial_number)
             raise UpdateFailed("MQTT password cannot be empty")
 
+        self._log_mqtt_credentials(mqtt_username, mqtt_password)
+
         return {
             "mqtt_username": mqtt_username,
             "mqtt_password": mqtt_password,
         }
+
+    def _get_mqtt_object(self, device_info):
+        """Extract MQTT object from device info."""
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if connected_config:
+            return getattr(connected_config, "mqtt", None)
+        return None
+
+    def _get_mqtt_username(self, mqtt_obj) -> str:
+        """Extract MQTT username from mqtt object."""
+        # Debug: Log all available attributes on the mqtt object
+        mqtt_attrs = [attr for attr in dir(mqtt_obj) if not attr.startswith("_")]
+        _LOGGER.debug("Available MQTT attributes: %s", mqtt_attrs)
+
+        # Check for alternative username fields
+        for username_attr in ["username", "local_username", "broker_username"]:
+            alt_username = getattr(mqtt_obj, username_attr, "")
+            if alt_username:
+                _LOGGER.debug("Found alternative username: mqtt.%s = %s", username_attr, alt_username)
+                return alt_username
+
+        return self.serial_number
+
+    def _get_mqtt_password(self, cloud_client, mqtt_obj) -> str:
+        """Extract MQTT password from mqtt object."""
+        # Try to get the decoded/plain password first
+        password = self._get_plain_password(mqtt_obj)
+        if password:
+            return password
+
+        # If no plain password found, decrypt local_broker_credentials
+        return self._decrypt_mqtt_credentials(cloud_client, mqtt_obj)
+
+    def _get_plain_password(self, mqtt_obj) -> str:
+        """Try to get plain text MQTT password from mqtt object."""
+        for attr in [
+            "password",
+            "decoded_password",
+            "local_password",
+            "device_password",
+        ]:
+            mqtt_password = getattr(mqtt_obj, attr, "")
+            if mqtt_password:
+                _LOGGER.debug("Found MQTT password using attribute: mqtt.%s (length: %s)", attr, len(mqtt_password))
+                return mqtt_password
+        return ""
+
+    def _decrypt_mqtt_credentials(self, cloud_client, mqtt_obj) -> str:
+        """Decrypt MQTT credentials from local_broker_credentials."""
+        encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
+        if not encrypted_credentials:
+            return ""
+
+        try:
+            # Use libdyson-rest's decrypt method to get local MQTT password
+            mqtt_password = cloud_client.decrypt_local_credentials(encrypted_credentials, self.serial_number)
+            _LOGGER.debug(
+                "Decrypted local MQTT password from local_broker_credentials (length: %s)",
+                len(mqtt_password),
+            )
+            return mqtt_password
+        except Exception as e:
+            _LOGGER.error("Failed to decrypt local credentials for %s: %s", self.serial_number, e)
+            # Fall back to using encrypted credentials directly (likely won't work)
+            _LOGGER.debug(
+                "Using encrypted local_broker_credentials as fallback (length: %s)",
+                len(encrypted_credentials),
+            )
+            return encrypted_credentials
+
+    def _log_mqtt_credentials(self, mqtt_username: str, mqtt_password: str) -> None:
+        """Log MQTT credentials for debugging (partially masked)."""
+        _LOGGER.debug(
+            "MQTT credentials for device %s - Username: %s, Password: %s...%s (length: %s)",
+            self.serial_number,
+            mqtt_username,
+            mqtt_password[:10] if mqtt_password else "None",
+            mqtt_password[-10:] if len(mqtt_password) > 20 else "",
+            len(mqtt_password),
+        )
 
     async def _extract_cloud_credentials(self, cloud_client, device_info) -> dict:
         """Extract cloud credentials from device info."""
@@ -565,7 +628,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         try:
             # Check for IoT credentials using separate API call
             _LOGGER.debug("Requesting IoT credentials for device %s", self.serial_number)
-            iot_data = await self.hass.async_add_executor_job(cloud_client.get_iot_credentials, self.serial_number)
+            iot_data = await cloud_client.get_iot_credentials(self.serial_number)
 
             if iot_data:
                 # Extract AWS IoT endpoint
@@ -840,7 +903,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return True
 
     async def async_check_firmware_update(self) -> bool:
-        """Check for available firmware updates using libdyson-rest 0.6.0b1."""
+        """Check for available firmware updates using libdyson-rest 0.7.0b1."""
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
+
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug("Firmware update check only available for cloud-discovered devices")
             return False
@@ -849,26 +914,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Create a temporary cloud client for the update check
             cloud_client = await self._authenticate_cloud_client()
 
-            # Use new libdyson-rest 0.6.0b1 method
-            pending_release = await self.hass.async_add_executor_job(
-                cloud_client.get_pending_release, self.serial_number
-            )
+            try:
+                # Use new libdyson-rest 0.7.0b1 async method
+                pending_release = await cloud_client.get_pending_release(self.serial_number)
 
-            if pending_release:
-                self._firmware_latest_version = pending_release.version
-                _LOGGER.info("Firmware update available for %s: %s", self.serial_number, pending_release.version)
+                if pending_release:
+                    self._firmware_latest_version = pending_release.version
+                    _LOGGER.info("Firmware update available for %s: %s", self.serial_number, pending_release.version)
 
-                # Notify listeners of the update
-                self.async_update_listeners()
-                return True
-            else:
-                self._firmware_latest_version = self._firmware_version
-                _LOGGER.debug("No firmware update available for %s", self.serial_number)
-                return False
+                    # Notify listeners of the update
+                    self.async_update_listeners()
+                    return True
+                else:
+                    self._firmware_latest_version = self._firmware_version
+                    _LOGGER.debug("No firmware update available for %s", self.serial_number)
+                    return False
+            finally:
+                # Ensure client is properly closed
+                await cloud_client.close()
 
+        except (DysonAPIError, DysonAuthError, DysonConnectionError) as e:
+            # Handle specific Dyson API errors
+            _LOGGER.debug("Dyson API error checking firmware update for %s: %s", self.serial_number, e)
+            self._firmware_latest_version = self._firmware_version
+            return False
         except Exception as e:
-            # This includes DysonAPIError when no update is available
-            _LOGGER.debug("No firmware update available for %s: %s", self.serial_number, e)
+            # Handle other unexpected errors
+            _LOGGER.debug("Unexpected error checking firmware update for %s: %s", self.serial_number, e)
             self._firmware_latest_version = self._firmware_version
             return False
 
@@ -1043,23 +1115,22 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
 
         # Initialize libdyson-rest client
-        from libdyson_rest import DysonClient
+        from libdyson_rest.async_client import AsyncDysonClient
 
         if not self._auth_token:
             _LOGGER.warning("No auth token available for cloud account %s", self._email)
             return []
 
         # Create client with auth token
-        client = DysonClient(auth_token=self._auth_token)
+        async with AsyncDysonClient(auth_token=self._auth_token) as client:
+            # Get devices from cloud API
+            devices = await client.get_devices()
 
-        # Get devices from cloud API
-        devices = await self.hass.async_add_executor_job(client.get_devices)
+            if not devices:
+                _LOGGER.debug("No devices found in cloud account %s", self._email)
+                return []
 
-        if not devices:
-            _LOGGER.debug("No devices found in cloud account %s", self._email)
-            return []
-
-        return devices
+            return devices
 
     def _build_device_list(self, devices):
         """Build device info list from cloud devices."""

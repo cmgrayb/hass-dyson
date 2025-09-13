@@ -529,6 +529,16 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
         """Test cloud client authentication with existing token."""
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+
+            # Mock hass with async_add_executor_job
+            mock_hass = AsyncMock()
+
+            async def mock_executor_job(func):
+                return func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
+            coordinator.hass = mock_hass
+
             mock_config_entry = MagicMock()
             mock_config_entry.data = {
                 CONF_SERIAL_NUMBER: "TEST123456",
@@ -537,8 +547,8 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             }
             coordinator.config_entry = mock_config_entry
 
-            with patch("libdyson_rest.DysonClient") as mock_client_class:
-                mock_client = MagicMock()
+            with patch("libdyson_rest.async_client.AsyncDysonClient") as mock_client_class:
+                mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
                 result = await coordinator._authenticate_cloud_client()
@@ -551,8 +561,14 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
         """Test cloud client authentication with username/password."""
         with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
-            mock_hass = MagicMock()
-            mock_hass.async_add_executor_job = AsyncMock()
+
+            # Mock hass with async_add_executor_job
+            mock_hass = AsyncMock()
+
+            async def mock_executor_job(func):
+                return func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
             coordinator.hass = mock_hass
 
             mock_config_entry = MagicMock()
@@ -563,20 +579,22 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             }
             coordinator.config_entry = mock_config_entry
 
-            with patch("libdyson_rest.DysonClient") as mock_client_class:
-                mock_client = MagicMock()
+            with patch("libdyson_rest.async_client.AsyncDysonClient") as mock_client_class:
+                mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
                 mock_challenge = MagicMock()
                 mock_challenge.challenge_id = 12345
 
-                # Mock the executor job calls
-                mock_hass.async_add_executor_job.side_effect = [mock_challenge, None]
+                # Mock the async methods
+                mock_client.begin_login = AsyncMock(return_value=mock_challenge)
+                mock_client.complete_login = AsyncMock()
 
                 result = await coordinator._authenticate_cloud_client()
 
-                mock_client_class.assert_called_once_with(email="test@example.com", password="testpass")
+                mock_client_class.assert_called_once_with(email="test@example.com")
                 assert result == mock_client
-                assert mock_hass.async_add_executor_job.call_count == 2
+                mock_client.begin_login.assert_called_once()
+                mock_client.complete_login.assert_called_once_with("12345", "", "test@example.com", "testpass")
 
     @pytest.mark.asyncio
     async def test_authenticate_cloud_client_missing_credentials(self):
@@ -598,21 +616,18 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             mock_config_entry = MagicMock()
             mock_config_entry.data = {CONF_SERIAL_NUMBER: "TEST123456"}
             coordinator.config_entry = mock_config_entry
-            mock_hass = MagicMock()
-            mock_hass.async_add_executor_job = AsyncMock()
-            coordinator.hass = mock_hass
 
-            mock_cloud_client = MagicMock()
+            mock_cloud_client = AsyncMock()
             mock_device = MagicMock()
             mock_device.serial_number = "TEST123456"
             mock_devices = [mock_device]
 
-            mock_hass.async_add_executor_job.return_value = mock_devices
+            mock_cloud_client.get_devices = AsyncMock(return_value=mock_devices)
 
             result = await coordinator._find_cloud_device(mock_cloud_client)
 
             assert result == mock_device
-            mock_hass.async_add_executor_job.assert_called_once()
+            mock_cloud_client.get_devices.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_find_cloud_device_not_found(self):
@@ -622,16 +637,13 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             mock_config_entry = MagicMock()
             mock_config_entry.data = {CONF_SERIAL_NUMBER: "TEST123456"}
             coordinator.config_entry = mock_config_entry
-            mock_hass = MagicMock()
-            mock_hass.async_add_executor_job = AsyncMock()
-            coordinator.hass = mock_hass
 
-            mock_cloud_client = MagicMock()
+            mock_cloud_client = AsyncMock()
             mock_other_device = MagicMock()
             mock_other_device.serial_number = "OTHER123456"
             mock_devices = [mock_other_device]
 
-            mock_hass.async_add_executor_job.return_value = mock_devices
+            mock_cloud_client.get_devices = AsyncMock(return_value=mock_devices)
 
             with pytest.raises(UpdateFailed, match="Device TEST123456 not found in cloud account"):
                 await coordinator._find_cloud_device(mock_cloud_client)

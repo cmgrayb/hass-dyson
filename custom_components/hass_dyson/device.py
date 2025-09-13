@@ -438,7 +438,7 @@ class DysonDevice:
         # Attempt reconnection with full intelligent logic
         return await self.connect()
 
-    def _on_connect(self, client: mqtt.Client, userdata: Any, flags, rc, properties=None) -> None:
+    def _on_connect(self, client: mqtt.Client, userdata: Any, flags, rc, properties=None, *args) -> None:
         """Handle MQTT connection callback."""
         if rc == mqtt.CONNACK_ACCEPTED:
             _LOGGER.info("MQTT connected to device %s", self.serial_number)
@@ -463,7 +463,7 @@ class DysonDevice:
         else:
             _LOGGER.error("MQTT connection failed for device %s with code: %s", self.serial_number, rc)
 
-    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc, properties=None) -> None:
+    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc, properties=None, *args) -> None:
         """Handle MQTT disconnection callback."""
         _LOGGER.warning("MQTT client disconnected for %s, code: %s", self.serial_number, rc)
         self._connected = False

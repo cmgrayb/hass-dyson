@@ -1,0 +1,5 @@
+{
+  "domain": "hass_dyson",
+  "name": "Dyson",
+  "integrations": ["hass_dyson"]
+}

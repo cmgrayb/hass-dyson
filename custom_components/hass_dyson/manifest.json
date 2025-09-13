@@ -4,14 +4,16 @@
   "codeowners": ["@cmgrayb"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/cmgrayb/ha-dyson-alt",
+  "documentation": "https://github.com/cmgrayb/hass-dyson",
   "homekit": {},
+  "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/cmgrayb/ha-dyson-alt/issues",
+  "quality_scale": "gold",
+  "issue_tracker": "https://github.com/cmgrayb/hass-dyson/issues",
   "loggers": ["custom_components.hass_dyson"],
   "requirements": [
-    "libdyson-rest==0.6.0"
+    "libdyson-rest==0.7.0"
   ],
-  "version": "0.14.1"
+  "version": "0.15.0"
 }
 
