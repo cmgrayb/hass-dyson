@@ -1,10 +1,11 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+# Cache-bust for GitHub Actions: AsyncDysonClient import fix 2025-09-13
 
 [project]
 name = "hass-dyson"
-version = "0.14.1"
+version = "0.15.0"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -32,7 +33,7 @@ dependencies = [
     "aiohttp>=3.8.0",
     "cryptography>=3.4.0",
     "requests>=2.28.0",
-    "libdyson-rest==0.6.0",
+    "libdyson-rest==0.7.0",
     "paho-mqtt>=1.6.0",
 ]
 
@@ -169,9 +170,33 @@ addopts = [
     "--strict-markers",
     "-v"
 ]
+# Configure asyncio settings to handle event loop cleanup better
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+filterwarnings = [
+    "ignore::RuntimeWarning:asyncio.*",
+    "ignore::RuntimeWarning:.*asyncio.*",
+    "ignore::DeprecationWarning:datetime.*",
+    "ignore::ResourceWarning",
+    "ignore:Event loop is closed:RuntimeWarning",
+    "ignore:coroutine.*was never awaited:RuntimeWarning",
+    "ignore:.*shutdown_default_executor.*was never awaited:RuntimeWarning", 
+    "ignore:.*BaseEventLoop.shutdown_default_executor.*:RuntimeWarning",
+    "ignore:.*unawaited coroutine.*:RuntimeWarning",
+    "ignore:.*was never awaited.*:RuntimeWarning",
+    "ignore::RuntimeWarning:_pytest.*",
+    "ignore::RuntimeWarning:coverage.*",
+    "ignore::RuntimeWarning:unittest.mock.*",
+    "ignore::RuntimeWarning:pytest.*",
+    "ignore::RuntimeWarning:gc.*",
+    "ignore::RuntimeWarning:weakref.*",
+    "ignore::RuntimeWarning:functools.*",
+    "ignore::RuntimeWarning",
+]
 markers = [
     "asyncio: marks tests as async",
-    "integration: marks tests as integration tests",
+    "integration: marks tests as integration tests", 
     "unit: marks tests as unit tests",
 ]
 

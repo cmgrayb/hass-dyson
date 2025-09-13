@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Test script for firmware update functionality with libdyson-rest 0.6.0b1."""
+"""Test script for firmware update functionality with libdyson-rest 0.7.0."""
 
 import asyncio
 import os
 
-from libdyson_rest import DysonClient
+from libdyson_rest import AsyncDysonClient
 
 
 async def test_firmware_methods():
     """Test that the new firmware methods are available."""
-    print("🔍 Testing libdyson-rest 0.6.0b1 firmware update capabilities...")
+    print("🔍 Testing libdyson-rest 0.7.0 firmware update capabilities...")
 
     # Check if the get_pending_release method exists
-    client = DysonClient()
+    client = AsyncDysonClient()
 
     if hasattr(client, "get_pending_release"):
         print("✅ get_pending_release method is available")
@@ -41,18 +41,18 @@ async def test_firmware_methods():
 
     try:
         # Create authenticated client
-        auth_client = DysonClient(email=email, password=password)
+        auth_client = AsyncDysonClient(email=email, password=password)
 
         print("🔄 Authenticating with Dyson cloud...")
-        challenge = auth_client.begin_login()
-        auth_client.complete_login(str(challenge.challenge_id), password)
+        challenge = await auth_client.begin_login()
+        await auth_client.complete_login(str(challenge.challenge_id), "", email, password)
 
         print("✅ Authentication successful")
 
         # Test get_pending_release
         print(f"🔄 Checking for firmware updates for device {device_serial}...")
         try:
-            pending_release = auth_client.get_pending_release(device_serial)
+            pending_release = await auth_client.get_pending_release(device_serial)
             if pending_release:
                 print(f"🎉 Firmware update available: {pending_release.version}")
                 print(f"   Release details: {pending_release}")

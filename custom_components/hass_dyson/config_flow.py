@@ -116,6 +116,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_devices = None  # type: ignore
         self._connection_type: str | None = None
 
+    async def _cleanup_cloud_client(self) -> None:
+        """Clean up the cloud client."""
+        if self._cloud_client is not None:
+            try:
+                await self._cloud_client.close()
+            except Exception as e:
+                _LOGGER.debug("Error closing cloud client: %s", e)
+            finally:
+                self._cloud_client = None
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step - setup method selection."""
         try:
@@ -161,65 +171,105 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Top-level exception in async_step_user: %s", e)
             raise
 
+    async def _authenticate_with_dyson_api(self, email: str, password: str) -> tuple[str | None, dict[str, str]]:
+        """Authenticate with Dyson API and return challenge ID and any errors."""
+        # Import here to avoid scoping issues
+        from libdyson_rest import AsyncDysonClient
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
+
+        errors = {}
+
+        try:
+            _LOGGER.info("Attempting to authenticate with Dyson API using email: %s", email)
+
+            # Initialize libdyson-rest client with credentials (in executor to avoid blocking SSL calls)
+            self._cloud_client = await self.hass.async_add_executor_job(
+                lambda: AsyncDysonClient(email=email)
+            )  # type: ignore[func-returns-value]
+
+            # Begin the login process to get challenge_id - this triggers the OTP email
+            if self._cloud_client is None:
+                raise ValueError("Failed to initialize Dyson client")
+            challenge = await self._cloud_client.begin_login()
+
+            # Validate and store challenge ID for verification step
+            if challenge is None or challenge.challenge_id is None:
+                _LOGGER.error("No challenge received from Dyson API")
+                errors["base"] = "cannot_connect"
+                return None, errors
+            else:
+                challenge_id = str(challenge.challenge_id)
+                _LOGGER.info("Successfully initiated login process, challenge ID received")
+                return challenge_id, errors
+
+        except DysonAuthError as e:
+            _LOGGER.exception("Dyson authentication failed: %s", e)
+            await self._cleanup_cloud_client()
+            errors["base"] = "invalid_auth"
+        except DysonConnectionError as e:
+            _LOGGER.exception("Dyson connection error: %s", e)
+            await self._cleanup_cloud_client()
+            errors["base"] = "cannot_connect"
+        except DysonAPIError as e:
+            _LOGGER.exception("Dyson API error: %s", e)
+            await self._cleanup_cloud_client()
+            errors["base"] = "api_error"
+        except Exception as e:
+            _LOGGER.exception("Error during Dyson authentication: %s", e)
+            await self._cleanup_cloud_client()
+            errors["base"] = "auth_failed"
+
+        return None, errors
+
+    def _create_cloud_account_form(self, errors: dict[str, str]) -> ConfigFlowResult:
+        """Create the cloud account authentication form."""
+        _LOGGER.info("Showing Dyson account authentication form")
+        try:
+            data_schema = vol.Schema(
+                {
+                    vol.Required("username"): str,
+                    vol.Required("password"): str,
+                }
+            )
+            _LOGGER.info("Authentication form schema created successfully")
+
+            return self.async_show_form(
+                step_id="cloud_account",
+                data_schema=data_schema,
+                errors=errors,
+                description_placeholders={"docs_url": "https://www.dyson.com/support/account"},
+            )
+        except Exception as e:
+            _LOGGER.exception("Error creating authentication form: %s", e)
+            raise
+
     async def async_step_cloud_account(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the cloud account authentication step."""
         try:
             _LOGGER.info(
                 "Starting async_step_cloud_account - Dyson account authentication with user_input: %s", user_input
             )
-            errors = {}
+            errors: dict[str, str] = {}
 
             if user_input is not None:
-                try:
-                    # Store email and password for verification step
-                    self._email = user_input.get("email", "")
-                    self._password = user_input.get("password", "")
+                # Store email and password for verification step (convert username to email)
+                self._email = user_input.get("username", "")
+                self._password = user_input.get("password", "")
 
-                    _LOGGER.info("Attempting to authenticate with Dyson API using email: %s", self._email)
+                # Ensure we have valid strings before calling authentication
+                if self._email and self._password:
+                    # Attempt authentication with Dyson API
+                    challenge_id, errors = await self._authenticate_with_dyson_api(self._email, self._password)
 
-                    # Initialize libdyson-rest client with credentials
-                    from libdyson_rest import DysonClient
-
-                    self._cloud_client = DysonClient(email=self._email, password=self._password)
-
-                    # Begin the login process to get challenge_id - this triggers the OTP email
-                    if self._cloud_client is None:
-                        raise ValueError("Failed to initialize Dyson client")
-                    challenge = await self.hass.async_add_executor_job(lambda: self._cloud_client.begin_login())
-
-                    # Validate and store challenge ID for verification step
-                    if challenge is None or challenge.challenge_id is None:
-                        _LOGGER.error("No challenge received from Dyson API")
-                        errors["base"] = "cannot_connect"
-                    else:
-                        self._challenge_id = str(challenge.challenge_id)
-                        _LOGGER.info("Successfully initiated login process, challenge ID received")
+                    if challenge_id is not None:
+                        self._challenge_id = challenge_id
                         return await self.async_step_verify()
-
-                except Exception as e:
-                    _LOGGER.exception("Error during Dyson authentication: %s", e)
+                else:
                     errors["base"] = "auth_failed"
 
             # Show the Dyson account authentication form
-            _LOGGER.info("Showing Dyson account authentication form")
-            try:
-                data_schema = vol.Schema(
-                    {
-                        vol.Required("email"): str,
-                        vol.Required("password"): str,
-                    }
-                )
-                _LOGGER.info("Authentication form schema created successfully")
+            return self._create_cloud_account_form(errors)
 
-                return self.async_show_form(
-                    step_id="cloud_account",
-                    data_schema=data_schema,
-                    errors=errors,
-                    description_placeholders={"docs_url": "https://www.dyson.com/support/account"},
-                )
-            except Exception as e:
-                _LOGGER.exception("Error creating authentication form: %s", e)
-                raise
         except Exception as e:
             _LOGGER.exception("Top-level exception in async_step_cloud_account: %s", e)
             raise
@@ -371,8 +421,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         )
 
                         try:
-                            await self.hass.async_add_executor_job(
-                                lambda: self._cloud_client.complete_login(self._challenge_id, verification_code)
+                            # Ensure we have all required values
+                            if not self._email or not self._password or not self._challenge_id:
+                                raise ValueError("Missing required authentication parameters")
+
+                            await self._cloud_client.complete_login(
+                                self._challenge_id, verification_code, self._email, self._password
                             )
                             _LOGGER.info("Successfully authenticated with Dyson API, got auth token")
                             return await self.async_step_connection()
@@ -432,7 +486,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         # Discover devices using libdyson-rest
                         _LOGGER.info("Discovering devices from Dyson API")
                         try:
-                            devices = await self.hass.async_add_executor_job(self._cloud_client.get_devices)
+                            devices = await self._cloud_client.get_devices()
                         except Exception as device_error:
                             _LOGGER.error("Failed to retrieve devices from Dyson API: %s", device_error)
                             if "Missing required field: productType" in str(device_error):
@@ -556,13 +610,19 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
                 device_list.append(device_info)
 
+        # Get auth token before cleanup
+        auth_token = getattr(self._cloud_client, "auth_token", None)
+
+        # Clean up the cloud client
+        await self._cleanup_cloud_client()
+
         return self.async_create_entry(
             title=f"Dyson Account ({self._email})",
             data={
                 "email": self._email,
                 "connection_type": self._connection_type,
                 "devices": device_list,
-                "auth_token": getattr(self._cloud_client, "auth_token", None),
+                "auth_token": auth_token,
                 CONF_POLL_FOR_DEVICES: poll_for_devices,
                 CONF_AUTO_ADD_DEVICES: auto_add_devices,
                 CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,

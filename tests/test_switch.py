@@ -19,19 +19,6 @@ from custom_components.hass_dyson.switch import (
 
 
 @pytest.fixture
-def mock_coordinator():
-    """Create a mock coordinator."""
-    coordinator = MagicMock()
-    coordinator.serial_number = "TEST-SERIAL-123"
-    coordinator.device_name = "Test Device"
-    coordinator.device = MagicMock()
-    coordinator.device_capabilities = ["Heating", "EnvironmentalData"]
-    coordinator.data = {"product-state": {}}
-    coordinator.async_send_command = AsyncMock()
-    return coordinator
-
-
-@pytest.fixture
 def mock_config_entry():
     """Create a mock config entry."""
     config_entry = MagicMock(spec=ConfigEntry)
@@ -142,7 +129,7 @@ class TestDysonAutoModeSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_auto_mode"
-        assert switch._attr_name == "Test Device Auto Mode"
+        assert switch._attr_name == "Test Dyson Auto Mode"
         assert switch._attr_icon == "mdi:auto-mode"
 
     def test_handle_coordinator_update_auto_on(self, mock_coordinator):
@@ -265,7 +252,7 @@ class TestDysonNightModeSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_night_mode"
-        assert switch._attr_name == "Test Device Night Mode"
+        assert switch._attr_name == "Test Dyson Night Mode"
         assert switch._attr_icon == "mdi:weather-night"
 
     def test_handle_coordinator_update_night_mode_on(self, mock_coordinator):
@@ -322,7 +309,7 @@ class TestDysonOscillationSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_oscillation"
-        assert switch._attr_name == "Test Device Oscillation"
+        assert switch._attr_name == "Test Dyson Oscillation"
         assert switch._attr_icon == "mdi:rotate-3d-variant"
 
     def test_handle_coordinator_update_oscillation_on(self, mock_coordinator):
@@ -411,7 +398,7 @@ class TestDysonHeatingSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_heating"
-        assert switch._attr_name == "Test Device Heating"
+        assert switch._attr_name == "Test Dyson Heating"
         assert switch._attr_icon == "mdi:radiator"
 
     def test_handle_coordinator_update_heating_on(self, mock_coordinator):
@@ -499,7 +486,7 @@ class TestDysonContinuousMonitoringSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_continuous_monitoring"
-        assert switch._attr_name == "Test Device Continuous Monitoring"
+        assert switch._attr_name == "Test Dyson Continuous Monitoring"
         assert switch._attr_icon == "mdi:monitor-eye"
         from homeassistant.const import EntityCategory
 

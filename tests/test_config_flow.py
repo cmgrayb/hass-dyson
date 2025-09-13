@@ -143,15 +143,18 @@ class TestDysonConfigFlowCloudAccount:
         mock_challenge = MagicMock()
         mock_challenge.challenge_id = "test_challenge_123"
 
-        with patch("libdyson_rest.DysonClient") as mock_client_class:
-            mock_client = MagicMock()
+        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+            mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            mock_client.begin_login.return_value = mock_challenge
+            mock_client.begin_login = AsyncMock(return_value=mock_challenge)
+            mock_client.close = AsyncMock()
 
-            # Mock the async_add_executor_job to return the mock challenge
-            config_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_challenge)
+            # Mock the executor job to return the mock client directly
+            async def mock_executor_job(func):
+                return func()
 
-            result = await config_flow.async_step_cloud_account(user_input)
+            with patch.object(config_flow.hass, "async_add_executor_job", side_effect=mock_executor_job):
+                result = await config_flow.async_step_cloud_account(user_input)
 
             assert result["type"] == FlowResultType.FORM
             assert result["step_id"] == "verify"
@@ -161,12 +164,18 @@ class TestDysonConfigFlowCloudAccount:
         """Test cloud account with invalid credentials."""
         user_input = {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "wrongpassword"}
 
-        with patch("libdyson_rest.DysonClient") as mock_client_class:
-            mock_client = MagicMock()
+        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+            mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            mock_client.login.side_effect = Exception("Invalid credentials")
+            mock_client.begin_login = AsyncMock(side_effect=Exception("Invalid credentials"))
+            mock_client.close = AsyncMock()
 
-            result = await config_flow.async_step_cloud_account(user_input)
+            # Mock the executor job to return the mock client directly
+            async def mock_executor_job(func):
+                return func()
+
+            with patch.object(config_flow.hass, "async_add_executor_job", side_effect=mock_executor_job):
+                result = await config_flow.async_step_cloud_account(user_input)
 
             assert result["type"] == FlowResultType.FORM
             assert result["step_id"] == "cloud_account"

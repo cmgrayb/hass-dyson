@@ -15,28 +15,10 @@ class TestDysonFirmwareUpdateEntity:
     """Test the DysonFirmwareUpdateEntity class."""
 
     @pytest.fixture
-    def mock_coordinator(self) -> Mock:
-        """Create a mock coordinator."""
-        coordinator = Mock(spec=DysonDataUpdateCoordinator)
-        coordinator.device_name = "Test Dyson"
-        coordinator.serial_number = "TEST-DEVICE"
-        coordinator.firmware_version = "1.0.0"
-        coordinator.firmware_latest_version = "1.0.1"
-        coordinator.firmware_update_in_progress = False
-        coordinator.device = Mock()
-        coordinator.device.is_connected = True
-        coordinator.last_update_success = True
-        coordinator.config_entry = Mock()
-        coordinator.config_entry.data = {"discovery_method": DISCOVERY_CLOUD}
-        coordinator.async_check_firmware_update = AsyncMock(return_value=True)
-        coordinator.async_install_firmware_update = AsyncMock(return_value=True)
-        return coordinator
-
-    @pytest.fixture
     def mock_config_entry(self) -> Mock:
         """Create a mock config entry."""
         config_entry = Mock()
-        config_entry.data = {"discovery_method": DISCOVERY_CLOUD, "serial_number": "TEST-DEVICE"}
+        config_entry.data = {"discovery_method": DISCOVERY_CLOUD, "serial_number": "TEST-SERIAL-123"}
         return config_entry
 
     @pytest.fixture
@@ -48,7 +30,7 @@ class TestDysonFirmwareUpdateEntity:
         """Test entity properties."""
         # Test basic properties
         assert update_entity.name == "Test Dyson Firmware Update"
-        assert update_entity.unique_id == "TEST-DEVICE_firmware_update"
+        assert update_entity.unique_id == "TEST-SERIAL-123_firmware_update"  # Updated to match centralized fixture
         assert update_entity.device_class == "firmware"
 
         # Test version properties
@@ -117,14 +99,14 @@ class TestDysonFirmwareUpdateEntity:
         """Test device info properties."""
         # Mock the device_info property to return a dict
         mock_coordinator.device.device_info = {
-            "identifiers": {("hass_dyson", "TEST-DEVICE")},
+            "identifiers": {("hass_dyson", "TEST-SERIAL-123")},
             "name": "Test Dyson",
             "manufacturer": "Dyson",
         }
 
         device_info = update_entity.device_info
 
-        assert device_info["identifiers"] == {("hass_dyson", "TEST-DEVICE")}
+        assert device_info["identifiers"] == {("hass_dyson", "TEST-SERIAL-123")}
         assert device_info["name"] == "Test Dyson"
         assert device_info["manufacturer"] == "Dyson"
 
@@ -201,7 +183,7 @@ class TestCoordinatorFirmwareMethods:
         config_entry = Mock()
         config_entry.data = {
             "discovery_method": DISCOVERY_CLOUD,
-            "serial_number": "TEST-DEVICE",
+            "serial_number": "TEST-SERIAL-123",
             "auth_token": "test_token",
             "username": "test@example.com",
         }
@@ -233,11 +215,12 @@ class TestCoordinatorFirmwareMethods:
     async def test_async_check_firmware_update_available(self, coordinator, mock_hass):
         """Test checking for firmware updates when update is available."""
         # Mock the cloud client and pending release
-        mock_client = Mock()
+        mock_client = AsyncMock()
         mock_pending_release = Mock()
         mock_pending_release.version = "1.0.1"
 
-        mock_hass.async_add_executor_job.return_value = mock_pending_release
+        mock_client.get_pending_release = AsyncMock(return_value=mock_pending_release)
+        mock_client.close = AsyncMock()
 
         with patch.object(coordinator, "_authenticate_cloud_client") as mock_auth:
             mock_auth.return_value = mock_client
@@ -247,13 +230,15 @@ class TestCoordinatorFirmwareMethods:
             assert result is True
             assert coordinator._firmware_latest_version == "1.0.1"
             coordinator.async_update_listeners.assert_called_once()
+            mock_client.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_check_firmware_update_none_available(self, coordinator, mock_hass):
         """Test checking for firmware updates when no update is available."""
-        mock_client = Mock()
+        mock_client = AsyncMock()
 
-        mock_hass.async_add_executor_job.return_value = None
+        mock_client.get_pending_release = AsyncMock(return_value=None)
+        mock_client.close = AsyncMock()
 
         with patch.object(coordinator, "_authenticate_cloud_client") as mock_auth:
             mock_auth.return_value = mock_client
@@ -262,6 +247,7 @@ class TestCoordinatorFirmwareMethods:
 
             assert result is False
             assert coordinator._firmware_latest_version == "1.0.0"  # Same as current
+            mock_client.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_check_firmware_update_manual_device(self, coordinator):
@@ -372,7 +358,7 @@ class TestCoordinatorFirmwareMethods:
             coordinator._extract_device_type(device_info)
 
         assert "Device type not available" in str(exc_info.value)
-        assert "TEST-DEVICE" in str(exc_info.value)
+        assert "TEST-SERIAL-123" in str(exc_info.value)
 
     def test_firmware_properties(self, coordinator):
         """Test firmware-related properties."""
