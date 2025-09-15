@@ -1,0 +1,23 @@
+name: HACS Validation
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"  # Daily at midnight
+  workflow_dispatch:  # Allow manual runs
+
+permissions: {}
+
+jobs:
+  validate-hacs:
+    runs-on: ubuntu-latest
+    name: Validate with HACS
+    steps:
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration

@@ -77,9 +77,6 @@
       "already_configured": "This Dyson device is already configured."
     }
   },
-  "discovery": {
-    "title": "{name}"
-  },
   "options": {
     "step": {
       "init": {

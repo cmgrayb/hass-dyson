@@ -1,7 +1,7 @@
 # Dyson Integration for Home Assistant
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cmgrayb/ha-dyson-alt/main/logo.png" alt="Dyson Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/logo.png" alt="Dyson Logo" width="400"/>
 </p>
 
 [![GitHub Release][releases-shield]][releases]
@@ -454,15 +454,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <!-- Badge Links -->
 
-[releases-shield]: https://img.shields.io/github/release/cmgrayb/ha-dyson-alt.svg?style=for-the-badge
-[releases]: https://github.com/cmgrayb/ha-dyson-alt/releases
-[commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/ha-dyson-alt.svg?style=for-the-badge
-[commits]: https://github.com/cmgrayb/ha-dyson-alt/commits/main
+[releases-shield]: https://img.shields.io/github/release/cmgrayb/hass-dyson.svg?style=for-the-badge
+[releases]: https://github.com/cmgrayb/hass-dyson/releases
+[commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/hass-dyson.svg?style=for-the-badge
+[commits]: https://github.com/cmgrayb/hass-dyson/commits/main
 [hacs]: https://github.com/hacs/integration
 [hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
 [forum]: https://community.home-assistant.io/
-[license-shield]: https://img.shields.io/github/license/cmgrayb/ha-dyson-alt.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/cmgrayb/hass-dyson.svg?style=for-the-badge
 
 ---
 
