@@ -8,9 +8,9 @@
   "homekit": {},
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "quality_scale": "gold",
   "issue_tracker": "https://github.com/cmgrayb/hass-dyson/issues",
   "loggers": ["custom_components.hass_dyson"],
+  "quality_scale": "gold",
   "requirements": [
     "libdyson-rest==0.7.0"
   ],
