@@ -585,14 +585,25 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
                 mock_challenge = MagicMock()
                 mock_challenge.challenge_id = 12345
 
-                # Mock the async methods
+                # Mock user status object
+                mock_user_status = MagicMock()
+                mock_user_status.account_status.value = "ACTIVE"
+
+                # Mock the async methods that the coordinator calls
+                mock_client.provision = AsyncMock()
+                mock_client.get_user_status = AsyncMock(return_value=mock_user_status)
                 mock_client.begin_login = AsyncMock(return_value=mock_challenge)
                 mock_client.complete_login = AsyncMock()
 
                 result = await coordinator._authenticate_cloud_client()
 
-                mock_client_class.assert_called_once_with(email="test@example.com")
+                # Expect the client to be created with all required parameters
+                mock_client_class.assert_called_once_with(
+                    email="test@example.com", password="testpass", country="US", culture="en-US"
+                )
                 assert result == mock_client
+                mock_client.provision.assert_called_once()
+                mock_client.get_user_status.assert_called_once()
                 mock_client.begin_login.assert_called_once()
                 mock_client.complete_login.assert_called_once_with("12345", "", "test@example.com", "testpass")
 

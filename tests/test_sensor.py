@@ -122,7 +122,7 @@ class TestDysonPM25Sensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_pm25"
-        assert sensor._attr_name == "Test Device PM2.5"
+        assert sensor._attr_translation_key == "pm25"
         assert sensor._attr_device_class == SensorDeviceClass.PM25
         assert sensor._attr_state_class == SensorStateClass.MEASUREMENT
         assert sensor._attr_native_unit_of_measurement == CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -165,7 +165,7 @@ class TestDysonPM10Sensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_pm10"
-        assert sensor._attr_name == "Test Device PM10"
+        assert sensor._attr_translation_key == "pm10"
         assert sensor._attr_device_class == SensorDeviceClass.PM10
         assert sensor._attr_state_class == SensorStateClass.MEASUREMENT
 
@@ -194,7 +194,7 @@ class TestDysonTemperatureSensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_temperature"
-        assert sensor._attr_name == "Test Device Temperature"
+        assert sensor._attr_translation_key == "temperature"
         assert sensor._attr_device_class == SensorDeviceClass.TEMPERATURE
 
     def test_native_value_with_valid_temperature(self, mock_coordinator):
@@ -238,7 +238,7 @@ class TestDysonHumiditySensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_humidity"
-        assert sensor._attr_name == "Humidity"
+        assert sensor._attr_translation_key == "humidity"
         assert sensor._attr_device_class == SensorDeviceClass.HUMIDITY
 
     def test_native_value_with_valid_humidity(self, mock_coordinator):
@@ -263,15 +263,15 @@ class TestDysonFilterLifeSensor:
     """Test DysonFilterLifeSensor."""
 
     def test_init_sets_attributes_correctly(self, mock_coordinator):
-        """Test that __init__ sets all attributes correctly."""
+        """Test that filter life sensor initializes with correct attributes."""
         # Act
         sensor = DysonFilterLifeSensor(mock_coordinator, "hepa")
 
         # Assert
-        assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_hepa_filter_life"
-        assert sensor._attr_name == "Test Device HEPA Filter Life"
+        assert sensor._attr_translation_key == "filter_life"
         assert sensor._attr_native_unit_of_measurement == PERCENTAGE
+        assert sensor._attr_icon == "mdi:air-filter"
 
     def test_native_value_with_valid_filter_life(self, mock_coordinator):
         """Test sensor updates when device has filter life data."""
@@ -311,7 +311,7 @@ class TestDysonWiFiSensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_wifi"
-        assert sensor._attr_name == "Test Device WiFi Signal"
+        assert sensor._attr_translation_key == "wifi_signal"
         assert sensor._attr_device_class == SensorDeviceClass.SIGNAL_STRENGTH
 
     def test_native_value_with_valid_rssi(self, mock_coordinator):
@@ -351,7 +351,7 @@ class TestDysonAirQualitySensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_pm25"
-        assert sensor._attr_name == "PM25"
+        assert sensor._attr_name == "PM25"  # This sensor still uses _attr_name dynamically
         assert sensor._attr_device_class == SensorDeviceClass.PM25
         assert sensor.sensor_type == "pm25"
 
@@ -563,7 +563,7 @@ class TestDysonVOCSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_voc"
-        assert sensor._attr_name == "Test Device VOC"
+        assert sensor._attr_translation_key == "voc"
         assert sensor._attr_native_unit_of_measurement == "ppb"
         assert sensor._attr_icon == "mdi:chemical-weapon"
 
@@ -605,7 +605,7 @@ class TestDysonNO2Sensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_no2"
-        assert sensor._attr_name == "Test Device NO2"
+        assert sensor._attr_translation_key == "no2"
         assert sensor._attr_native_unit_of_measurement == "ppb"
         assert sensor._attr_icon == "mdi:molecule"
 
@@ -647,7 +647,7 @@ class TestDysonFormaldehydeSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_formaldehyde"
-        assert sensor._attr_name == "Test Device Formaldehyde"
+        assert sensor._attr_translation_key == "formaldehyde"
         assert sensor._attr_native_unit_of_measurement == "ppb"
         assert sensor._attr_icon == "mdi:chemical-weapon"
 
@@ -689,7 +689,7 @@ class TestDysonHEPAFilterLifeSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_hepa_filter_life"
-        assert sensor._attr_name == "Test Device HEPA Filter Life"
+        assert sensor._attr_translation_key == "hepa_filter_life"
         assert sensor._attr_native_unit_of_measurement == PERCENTAGE
         assert sensor._attr_icon == "mdi:air-filter"
 
@@ -731,7 +731,7 @@ class TestDysonCarbonFilterLifeSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_carbon_filter_life"
-        assert sensor._attr_name == "Carbon Filter Life"
+        assert sensor._attr_translation_key == "carbon_filter_life"
         assert sensor._attr_native_unit_of_measurement == PERCENTAGE
         assert sensor._attr_icon == "mdi:air-filter"
 
@@ -773,7 +773,7 @@ class TestDysonHEPAFilterTypeSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_hepa_filter_type"
-        assert sensor._attr_name == "Test Device HEPA Filter Type"
+        assert sensor._attr_translation_key == "hepa_filter_type"
         assert sensor._attr_icon == "mdi:air-filter"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
@@ -857,7 +857,7 @@ class TestDysonConnectionStatusSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_connection_status"
-        assert sensor._attr_name == "Test Device Connection Status"
+        assert sensor._attr_translation_key == "connection_status"
         assert sensor._attr_icon == "mdi:connection"
 
     def test_native_value_with_connected_device(self, mock_coordinator):

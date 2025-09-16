@@ -192,10 +192,10 @@ class TestSelectCoverageEnhancement:
         # Act - Trigger operations that may have debug logging
         oscillation_select._calculate_current_center()
 
-        # Test name properties
-        assert fan_control_select.name is not None
-        assert oscillation_select.name is not None
-        assert heating_select.name is not None
+        # Test translation key properties
+        assert fan_control_select._attr_translation_key == "fan_control_mode"
+        assert oscillation_select._attr_translation_key == "oscillation_mode"
+        assert heating_select._attr_translation_key == "heating_mode"
 
     def test_oscillation_mode_select_detect_mode_coverage(self):
         """Test oscillation mode detect mode from angles coverage."""

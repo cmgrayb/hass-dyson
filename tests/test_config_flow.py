@@ -137,15 +137,22 @@ class TestDysonConfigFlowCloudAccount:
     @pytest.mark.asyncio
     async def test_async_step_cloud_account_valid_input(self, config_flow):
         """Test cloud account with valid credentials."""
-        user_input = {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "testpassword"}
+        user_input = {"email": "test@example.com", "password": "testpassword"}
 
         # Mock the challenge object that begin_login returns
         mock_challenge = MagicMock()
         mock_challenge.challenge_id = "test_challenge_123"
 
+        # Mock user status object
+        mock_user_status = MagicMock()
+        mock_user_status.account_status.value = "ACTIVE"
+        mock_user_status.authentication_method.value = "EMAIL_OTP"
+
         with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
+            mock_client.provision = AsyncMock()
+            mock_client.get_user_status = AsyncMock(return_value=mock_user_status)
             mock_client.begin_login = AsyncMock(return_value=mock_challenge)
             mock_client.close = AsyncMock()
 
@@ -162,7 +169,7 @@ class TestDysonConfigFlowCloudAccount:
     @pytest.mark.asyncio
     async def test_async_step_cloud_account_invalid_credentials(self, config_flow):
         """Test cloud account with invalid credentials."""
-        user_input = {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "wrongpassword"}
+        user_input = {"email": "test@example.com", "password": "wrongpassword"}
 
         with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -184,7 +191,7 @@ class TestDysonConfigFlowCloudAccount:
     @pytest.mark.asyncio
     async def test_async_step_cloud_account_connection_error(self, config_flow):
         """Test cloud account with connection error."""
-        user_input = {CONF_USERNAME: "test@example.com", CONF_PASSWORD: "testpassword"}
+        user_input = {"email": "test@example.com", "password": "testpassword"}
 
         with patch("libdyson_rest.DysonClient") as mock_client_class:
             mock_client_class.side_effect = ConnectionError("Network error")
