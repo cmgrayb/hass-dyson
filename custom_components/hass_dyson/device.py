@@ -848,14 +848,14 @@ class DysonDevice:
 
     def _translate_fault_code(self, fault_key: str, fault_value: str) -> str:
         """Translate a fault code and value to human-readable description."""
-        # Get translation for this fault key
+        # Use static translation from const.py
         fault_translations = FAULT_TRANSLATIONS.get(fault_key, {})
 
         # Try to get specific translation for this value
         if fault_value in fault_translations:
             return fault_translations[fault_value]
 
-        # Fallback to generic description
+        # Final fallback to generic description
         return f"{fault_key.upper()} fault: {fault_value}"
 
     async def _get_faults_from_client(self) -> List[Dict[str, Any]]:

@@ -49,7 +49,7 @@ class DysonFirmwareUpdateEntity(DysonEntity, UpdateEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_firmware_update"
-        self._attr_name = f"{coordinator.device_name} Firmware Update"
+        self._attr_translation_key = "firmware_update"
         self._attr_icon = "mdi:cellphone-arrow-down"
 
     @property

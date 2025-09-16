@@ -46,6 +46,49 @@ def _get_connection_type_display_name(connection_type: str) -> str:
     return CONNECTION_TYPE_NAMES.get(connection_type, connection_type)
 
 
+def _get_setup_method_options() -> dict[str, str]:
+    """Get setup method options for the config flow."""
+    return {
+        "cloud_account": "Dyson Cloud Account (Recommended)",
+        "manual_device": "Manual Device Setup",
+    }
+
+
+def _get_connection_type_options() -> dict[str, str]:
+    """Get connection type options for the config flow."""
+    return CONNECTION_TYPE_NAMES.copy()
+
+
+def _get_connection_type_options_detailed() -> dict[str, str]:
+    """Get detailed connection type options for the config flow."""
+    return {
+        "local_only": "Local Only (Maximum Privacy, No Internet Required)",
+        "local_cloud_fallback": "Local with Cloud Fallback (Recommended)",
+        "cloud_local_fallback": "Cloud with Local Fallback (More Reliable)",
+        "cloud_only": "Cloud Only (For Networks Without mDNS/Zeroconf)",
+    }
+
+
+def _get_management_actions() -> dict[str, str]:
+    """Get management action options for the options flow."""
+    return {
+        "reload_all": "🔄 Reload All Devices",
+        "reconfigure_connection": "⚙️ Reconfigure Default Connection Settings",
+        "cloud_preferences": "☁️ Configure Cloud Account Settings",
+    }
+
+
+def _get_device_connection_options(account_connection_type: str) -> dict[str, str]:
+    """Get device-specific connection options for individual device configuration."""
+    return {
+        "use_account_default": f"📋 Use Account Default ({_get_connection_type_display_name(account_connection_type)})",
+        "local_only": "🔒 Local Only (Maximum Privacy, No Internet Required)",
+        "local_cloud_fallback": "🏠 Local with Cloud Fallback (Recommended)",
+        "cloud_local_fallback": "☁️ Cloud with Local Fallback (More Reliable)",
+        "cloud_only": "🌐 Cloud Only (For Networks Without mDNS/Zeroconf)",
+    }
+
+
 async def _discover_device_via_mdns(hass, serial_number: str, timeout: int = 10) -> str | None:  # noqa: C901
     """Discover Dyson device via mDNS using Home Assistant's shared zeroconf instance.
 
@@ -149,12 +192,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 data_schema = vol.Schema(
                     {
-                        vol.Required("setup_method"): vol.In(
-                            {
-                                "cloud_account": "Dyson Cloud Account (Recommended)",
-                                "manual_device": "Manual Device Setup",
-                            }
-                        ),
+                        vol.Required("setup_method"): vol.In(_get_setup_method_options()),
                     }
                 )
                 _LOGGER.info("Setup method selection form schema created successfully")
@@ -182,20 +220,37 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             _LOGGER.info("Attempting to authenticate with Dyson API using email: %s", email)
 
-            # Initialize libdyson-rest client with credentials (in executor to avoid blocking SSL calls)
+            # Initialize libdyson-rest client with full credentials (matching working script pattern)
+            # Include password, country, and culture parameters as required by the API
             self._cloud_client = await self.hass.async_add_executor_job(
-                lambda: AsyncDysonClient(email=email)
+                lambda: AsyncDysonClient(email=email, password=password, country="US", culture="en-US")
             )  # type: ignore[func-returns-value]
 
-            # Begin the login process to get challenge_id - this triggers the OTP email
             if self._cloud_client is None:
                 raise ValueError("Failed to initialize Dyson client")
+
+            # Step 1: Provision API access (required first step)
+            _LOGGER.debug("Provisioning API access...")
+            await self._cloud_client.provision()
+            _LOGGER.debug("API provisioned successfully")
+
+            # Step 2: Check user status (validates account before auth)
+            _LOGGER.debug("Checking account status...")
+            user_status = await self._cloud_client.get_user_status()
+            _LOGGER.debug(
+                "Account status: %s, Auth method: %s",
+                user_status.account_status.value,
+                user_status.authentication_method.value,
+            )
+
+            # Step 3: Begin the login process to get challenge_id - this triggers the OTP email
+            _LOGGER.debug("Beginning login process...")
             challenge = await self._cloud_client.begin_login()
 
             # Validate and store challenge ID for verification step
             if challenge is None or challenge.challenge_id is None:
                 _LOGGER.error("No challenge received from Dyson API")
-                errors["base"] = "cannot_connect"
+                errors["base"] = "connection_failed"
                 return None, errors
             else:
                 challenge_id = str(challenge.challenge_id)
@@ -205,15 +260,15 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except DysonAuthError as e:
             _LOGGER.exception("Dyson authentication failed: %s", e)
             await self._cleanup_cloud_client()
-            errors["base"] = "invalid_auth"
+            errors["base"] = "auth_failed"
         except DysonConnectionError as e:
             _LOGGER.exception("Dyson connection error: %s", e)
             await self._cleanup_cloud_client()
-            errors["base"] = "cannot_connect"
+            errors["base"] = "connection_failed"
         except DysonAPIError as e:
             _LOGGER.exception("Dyson API error: %s", e)
             await self._cleanup_cloud_client()
-            errors["base"] = "api_error"
+            errors["base"] = "cloud_api_error"
         except Exception as e:
             _LOGGER.exception("Error during Dyson authentication: %s", e)
             await self._cleanup_cloud_client()
@@ -227,7 +282,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         try:
             data_schema = vol.Schema(
                 {
-                    vol.Required("username"): str,
+                    vol.Required("email"): str,
                     vol.Required("password"): str,
                 }
             )
@@ -252,8 +307,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors: dict[str, str] = {}
 
             if user_input is not None:
-                # Store email and password for verification step (convert username to email)
-                self._email = user_input.get("username", "")
+                # Store email and password for verification step
+                self._email = user_input.get("email", "")
                 self._password = user_input.get("password", "")
 
                 # Ensure we have valid strings before calling authentication
@@ -437,7 +492,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             # Check if it's specifically an auth error vs other errors
                             if "401" in str(complete_error) or "Unauthorized" in str(complete_error):
                                 _LOGGER.error("Authentication failed - invalid credentials or expired challenge")
-                                errors["base"] = "invalid_auth"
+                                errors["base"] = "auth_failed"
                             else:
                                 errors["base"] = "verification_failed"
 
@@ -524,12 +579,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema = vol.Schema(
                     {
                         vol.Required("connection_type", default="local_cloud_fallback"): vol.In(
-                            {
-                                "local_only": "Local Only (Maximum Privacy, No Internet Required)",
-                                "local_cloud_fallback": "Local with Cloud Fallback (Recommended)",
-                                "cloud_local_fallback": "Cloud with Local Fallback (More Reliable)",
-                                "cloud_only": "Cloud Only (For Networks Without mDNS/Zeroconf)",
-                            }
+                            _get_connection_type_options_detailed()
                         ),
                     }
                 )
@@ -901,11 +951,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         ]
 
         # Build actions for account-level operations only
-        action_options = {
-            "reload_all": "🔄 Reload All Devices",
-            "reconfigure_connection": "⚙️ Reconfigure Default Connection Settings",
-            "cloud_preferences": "☁️ Configure Cloud Account Settings",
-        }
+        action_options = _get_management_actions()
 
         # Show device status for reference (but no individual actions since devices have native controls)
         device_status_info = []
@@ -1068,12 +1114,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required("connection_type", default=current_connection_type): vol.In(
-                        {
-                            "local_only": "Local Only (Maximum Privacy, No Internet Required)",
-                            "local_cloud_fallback": "Local with Cloud Fallback (Recommended)",
-                            "cloud_local_fallback": "Cloud with Local Fallback (More Reliable)",
-                            "cloud_only": "Cloud Only (For Networks Without mDNS/Zeroconf)",
-                        }
+                        _get_connection_type_options_detailed()
                     )
                 }
             ),
@@ -1131,13 +1172,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         else:
             current_selection = "use_account_default"
 
-        connection_options = {
-            "use_account_default": f"📋 Use Account Default ({_get_connection_type_display_name(account_connection_type)})",
-            "local_only": "🔒 Local Only (Maximum Privacy, No Internet Required)",
-            "local_cloud_fallback": "🏠 Local with Cloud Fallback (Recommended)",
-            "cloud_local_fallback": "☁️ Cloud with Local Fallback (More Reliable)",
-            "cloud_only": "🌐 Cloud Only (For Networks Without mDNS/Zeroconf)",
-        }
+        connection_options = _get_device_connection_options(account_connection_type)
 
         device_name = self.config_entry.data.get("device_name", "This Device")
 

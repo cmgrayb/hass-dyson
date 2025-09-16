@@ -55,7 +55,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         """Initialize the sleep timer number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_sleep_timer"
-        self._attr_name = f"{coordinator.device_name} Sleep Timer"
+        self._attr_translation_key = "sleep_timer"
         self._attr_icon = "mdi:timer"
         self._attr_mode = NumberMode.BOX
         self._attr_native_min_value = 0
@@ -128,7 +128,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation lower angle number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_lower_angle"
-        self._attr_name = f"{coordinator.device_name} Oscillation Low Angle"
+        self._attr_translation_key = "oscillation_low_angle"
         self._attr_icon = "mdi:rotate-left"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
@@ -181,7 +181,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation upper angle number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_upper_angle"
-        self._attr_name = f"{coordinator.device_name} Oscillation High Angle"
+        self._attr_translation_key = "oscillation_high_angle"
         self._attr_icon = "mdi:rotate-right"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
