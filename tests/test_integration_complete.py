@@ -123,7 +123,7 @@ def test_temperature_sensor_creation(mock_coordinator):
     sensor.hass = MagicMock()
 
     assert sensor.unique_id == "MOCK-SERIAL-TEST123_temperature"
-    assert sensor.name == "Dyson MOCK-SERIAL-TEST123 Temperature"
+    assert sensor._attr_translation_key == "temperature"
     assert sensor.device_class == "temperature"
     assert sensor.native_unit_of_measurement == "°C"
 
@@ -144,7 +144,7 @@ def test_humidity_sensor_creation(mock_coordinator):
     sensor.hass = MagicMock()
 
     assert sensor.unique_id == "MOCK-SERIAL-TEST123_humidity"
-    assert sensor.name == "Humidity"
+    assert sensor._attr_translation_key == "humidity"
     assert sensor.device_class == "humidity"
     assert sensor.native_unit_of_measurement == "%"
 
@@ -191,11 +191,13 @@ def test_filter_life_sensors_creation(mock_coordinator):
     carbon_sensor.hass = MagicMock()
 
     assert hepa_sensor.unique_id == "MOCK-SERIAL-TEST123_hepa_filter_life"
-    assert hepa_sensor.name == "Dyson MOCK-SERIAL-TEST123 HEPA Filter Life"
+    assert hepa_sensor._attr_translation_key == "filter_life"
+    assert hepa_sensor._attr_translation_placeholders == {"filter_type": "HEPA"}
     assert hepa_sensor.native_unit_of_measurement == "%"
 
     assert carbon_sensor.unique_id == "MOCK-SERIAL-TEST123_carbon_filter_life"
-    assert carbon_sensor.name == "Dyson MOCK-SERIAL-TEST123 CARBON Filter Life"
+    assert carbon_sensor._attr_translation_key == "filter_life"
+    assert carbon_sensor._attr_translation_placeholders == {"filter_type": "CARBON"}
 
     # Test that the sensors can process coordinator data correctly
     if mock_coordinator.data:

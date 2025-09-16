@@ -163,7 +163,8 @@ class DysonFilterLifeSensor(DysonEntity, SensorEntity):
 
         self.filter_type = filter_type
         self._attr_unique_id = f"{coordinator.serial_number}_{filter_type}_filter_life"
-        self._attr_name = f"{coordinator.device_name} {filter_type.upper()} Filter Life"
+        self._attr_translation_key = "filter_life"
+        self._attr_translation_placeholders = {"filter_type": filter_type.upper()}
         self._attr_native_unit_of_measurement = PERCENTAGE
         # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -236,7 +237,7 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_temperature"
-        self._attr_name = f"{coordinator.device_name} Temperature"
+        self._attr_translation_key = "temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "°C"
@@ -272,7 +273,7 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_humidity"
-        self._attr_name = "Humidity"
+        self._attr_translation_key = "humidity"
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = PERCENTAGE
@@ -317,7 +318,7 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_pm25"
-        self._attr_name = f"{coordinator.device_name} PM2.5"
+        self._attr_translation_key = "pm25"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -388,7 +389,7 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_pm10"
-        self._attr_name = f"{coordinator.device_name} PM10"
+        self._attr_translation_key = "pm10"
         self._attr_device_class = SensorDeviceClass.PM10
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
@@ -459,7 +460,7 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_voc"
-        self._attr_name = f"{coordinator.device_name} VOC"
+        self._attr_translation_key = "voc"
         self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "ppb"
@@ -503,7 +504,7 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_no2"
-        self._attr_name = f"{coordinator.device_name} NO2"
+        self._attr_translation_key = "no2"
         self._attr_device_class = SensorDeviceClass.NITROGEN_DIOXIDE
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "ppb"
@@ -547,7 +548,7 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_formaldehyde"
-        self._attr_name = f"{coordinator.device_name} Formaldehyde"
+        self._attr_translation_key = "formaldehyde"
         self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "ppb"
@@ -593,7 +594,7 @@ class DysonWiFiSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_wifi"
-        self._attr_name = f"{coordinator.device_name} WiFi Signal"
+        self._attr_translation_key = "wifi_signal"
         self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "dBm"
@@ -621,7 +622,7 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_life"
-        self._attr_name = f"{coordinator.device_name} HEPA Filter Life"
+        self._attr_translation_key = "hepa_filter_life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -673,7 +674,7 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_life"
-        self._attr_name = "Carbon Filter Life"
+        self._attr_translation_key = "carbon_filter_life"
         self._attr_native_unit_of_measurement = PERCENTAGE
         # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -725,7 +726,7 @@ class DysonFilterStatusSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_filter_status"
-        self._attr_name = "Filter Status"
+        self._attr_translation_key = "filter_status"
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -749,7 +750,7 @@ class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_type"
-        self._attr_name = f"{coordinator.device_name} HEPA Filter Type"
+        self._attr_translation_key = "hepa_filter_type"
         self._attr_icon = "mdi:air-filter"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -844,7 +845,7 @@ class DysonConnectionStatusSensor(DysonEntity, SensorEntity):
         """Initialize the connection status sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_connection_status"
-        self._attr_name = f"{coordinator.device_name} Connection Status"
+        self._attr_translation_key = "connection_status"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_icon = "mdi:connection"
         self._attr_device_class = None

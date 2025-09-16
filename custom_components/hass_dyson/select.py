@@ -51,7 +51,7 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
         """Initialize the fan control mode select."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_fan_control_mode"
-        self._attr_name = f"{coordinator.device_name} Fan Control Mode"
+        self._attr_translation_key = "fan_control_mode"
         self._attr_icon = "mdi:fan-auto"
 
         # For manual devices, only show Auto and Manual (no Sleep)
@@ -119,7 +119,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         """Initialize the oscillation mode select."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode"
-        self._attr_name = f"{coordinator.device_name} Oscillation"  # Renamed from "Oscillation Mode"
+        self._attr_translation_key = "oscillation_mode"
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "45°", "90°", "180°", "350°", "Custom"]
         # Hybrid approach: event-driven + state-based center preservation
@@ -473,7 +473,7 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
         """Initialize the heating mode select."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_heating_mode"
-        self._attr_name = f"{coordinator.device_name} Heating Mode"
+        self._attr_translation_key = "heating_mode"
         self._attr_icon = "mdi:radiator"
         self._attr_options = ["Off", "Heating", "Auto Heat"]
 

@@ -129,7 +129,7 @@ class TestDysonAutoModeSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_auto_mode"
-        assert switch._attr_name == "Test Dyson Auto Mode"
+        assert switch._attr_translation_key == "auto_mode"
         assert switch._attr_icon == "mdi:auto-mode"
 
     def test_handle_coordinator_update_auto_on(self, mock_coordinator):
@@ -252,7 +252,7 @@ class TestDysonNightModeSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_night_mode"
-        assert switch._attr_name == "Test Dyson Night Mode"
+        assert switch._attr_translation_key == "night_mode"
         assert switch._attr_icon == "mdi:weather-night"
 
     def test_handle_coordinator_update_night_mode_on(self, mock_coordinator):
@@ -309,7 +309,7 @@ class TestDysonOscillationSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_oscillation"
-        assert switch._attr_name == "Test Dyson Oscillation"
+        assert switch._attr_translation_key == "oscillation"
         assert switch._attr_icon == "mdi:rotate-3d-variant"
 
     def test_handle_coordinator_update_oscillation_on(self, mock_coordinator):
@@ -398,7 +398,7 @@ class TestDysonHeatingSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_heating"
-        assert switch._attr_name == "Test Dyson Heating"
+        assert switch._attr_translation_key == "heating"
         assert switch._attr_icon == "mdi:radiator"
 
     def test_handle_coordinator_update_heating_on(self, mock_coordinator):
@@ -486,7 +486,7 @@ class TestDysonContinuousMonitoringSwitch:
         # Assert
         assert switch.coordinator == mock_coordinator
         assert switch._attr_unique_id == "TEST-SERIAL-123_continuous_monitoring"
-        assert switch._attr_name == "Test Dyson Continuous Monitoring"
+        assert switch._attr_translation_key == "continuous_monitoring"
         assert switch._attr_icon == "mdi:monitor-eye"
         from homeassistant.const import EntityCategory
 

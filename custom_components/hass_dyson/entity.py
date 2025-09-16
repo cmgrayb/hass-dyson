@@ -11,6 +11,7 @@ class DysonEntity(CoordinatorEntity):
     """Base class for all Dyson entities."""
 
     coordinator: DysonDataUpdateCoordinator
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Dyson entity."""

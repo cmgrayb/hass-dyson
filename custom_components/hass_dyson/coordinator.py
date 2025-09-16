@@ -300,15 +300,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             return await self.hass.async_add_executor_job(create_client_with_token)
         elif username and password:
-            # Legacy authentication method (in executor to avoid blocking SSL calls)
+            # Legacy authentication method - follow same pattern as config_flow
             def create_client():
-                return AsyncDysonClient(email=username)
+                return AsyncDysonClient(email=username, password=password, country="US", culture="en-US")
 
             cloud_client = await self.hass.async_add_executor_job(create_client)
-            # Authenticate using proper flow
-            challenge = await cloud_client.begin_login()
-            await cloud_client.complete_login(str(challenge.challenge_id), "", username, password)
-            return cloud_client
+
+            # Follow the same authentication sequence as the working script
+            try:
+                # Step 1: Provision API access
+                await cloud_client.provision()
+                _LOGGER.debug("API provisioned for device %s", self.serial_number)
+
+                # Step 2: Check user status
+                user_status = await cloud_client.get_user_status()
+                _LOGGER.debug(
+                    "Account status for device %s: %s",
+                    self.serial_number,
+                    user_status.account_status.value,
+                )
+
+                # Step 3: Authenticate using proper flow
+                challenge = await cloud_client.begin_login()
+                await cloud_client.complete_login(str(challenge.challenge_id), "", username, password)
+                return cloud_client
+            except Exception as e:
+                await cloud_client.close()
+                raise UpdateFailed(f"Cloud authentication failed for {self.serial_number}: {e}") from e
         else:
             raise UpdateFailed("Missing cloud credentials (auth_token or username/password)")
 

@@ -153,7 +153,7 @@ class TestDysonSleepTimerNumber:
         entity = DysonSleepTimerNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_sleep_timer"
-        assert entity._attr_name == "Test Dyson Sleep Timer"
+        assert entity._attr_translation_key == "sleep_timer"
         assert entity._attr_icon == "mdi:timer"
         assert entity._attr_mode == NumberMode.BOX
         assert entity._attr_native_min_value == 0
@@ -235,7 +235,7 @@ class TestDysonOscillationLowerAngleNumber:
         entity = DysonOscillationLowerAngleNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_lower_angle"
-        assert entity._attr_name == "Test Dyson Oscillation Low Angle"
+        assert entity._attr_translation_key == "oscillation_low_angle"
         assert entity._attr_icon == "mdi:rotate-left"
         assert entity._attr_mode == NumberMode.SLIDER
         assert entity._attr_native_min_value == 0
@@ -299,7 +299,7 @@ class TestDysonOscillationUpperAngleNumber:
         entity = DysonOscillationUpperAngleNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_upper_angle"
-        assert entity._attr_name == "Test Dyson Oscillation High Angle"
+        assert entity._attr_translation_key == "oscillation_high_angle"
         assert entity._attr_icon == "mdi:rotate-right"
 
     @pytest.mark.asyncio

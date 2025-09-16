@@ -10,10 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD, DOMAIN
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
-from custom_components.hass_dyson.update import (
-    DysonFirmwareUpdateEntity,
-    async_setup_entry,
-)
+from custom_components.hass_dyson.update import DysonFirmwareUpdateEntity, async_setup_entry
 
 
 class TestUpdatePlatformSetup:
@@ -119,7 +116,7 @@ class TestDysonFirmwareUpdateEntity:
     def test_entity_properties(self, update_entity, mock_coordinator):
         """Test basic entity properties."""
         assert update_entity.unique_id == f"{mock_coordinator.serial_number}_firmware_update"
-        assert update_entity.name == f"{mock_coordinator.device_name} Firmware Update"
+        assert update_entity._attr_translation_key == "firmware_update"
         assert update_entity.device_class == UpdateDeviceClass.FIRMWARE
         assert update_entity.supported_features == UpdateEntityFeature.INSTALL
 
@@ -239,7 +236,7 @@ class TestUpdateEntityIntegration:
 
         # Test all properties
         assert entity.unique_id == "ABC123_firmware_update"
-        assert entity.name == "Test Device Firmware Update"
+        assert entity._attr_translation_key == "firmware_update"
         assert entity.device_class == UpdateDeviceClass.FIRMWARE
         assert entity.supported_features == UpdateEntityFeature.INSTALL
         assert entity.installed_version == "21.08.01"

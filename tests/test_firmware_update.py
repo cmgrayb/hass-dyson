@@ -29,7 +29,7 @@ class TestDysonFirmwareUpdateEntity:
     def test_entity_properties(self, update_entity, mock_coordinator):
         """Test entity properties."""
         # Test basic properties
-        assert update_entity.name == "Test Dyson Firmware Update"
+        assert update_entity._attr_translation_key == "firmware_update"
         assert update_entity.unique_id == "TEST-SERIAL-123_firmware_update"  # Updated to match centralized fixture
         assert update_entity.device_class == "firmware"
 

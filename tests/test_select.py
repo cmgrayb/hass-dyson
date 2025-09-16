@@ -132,7 +132,7 @@ class TestDysonFanControlModeSelect:
         entity = DysonFanControlModeSelect(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_fan_control_mode"
-        assert entity._attr_name == "Test Device Fan Control Mode"
+        assert entity._attr_translation_key == "fan_control_mode"
         assert entity._attr_icon == "mdi:fan-auto"
         assert entity._attr_options == ["Auto", "Manual", "Sleep"]
 
@@ -142,7 +142,7 @@ class TestDysonFanControlModeSelect:
         entity = DysonFanControlModeSelect(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_fan_control_mode"
-        assert entity._attr_name == "Test Device Fan Control Mode"
+        assert entity._attr_translation_key == "fan_control_mode"
         assert entity._attr_icon == "mdi:fan-auto"
         assert entity._attr_options == ["Auto", "Manual"]
 
@@ -367,7 +367,7 @@ class TestDysonOscillationModeSelect:
         entity = DysonOscillationModeSelect(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_mode"
-        assert entity._attr_name == "Test Device Oscillation"
+        assert entity._attr_translation_key == "oscillation_mode"
         assert entity._attr_icon == "mdi:rotate-3d-variant"
         assert entity._attr_options == ["Off", "45°", "90°", "180°", "350°", "Custom"]
         assert entity._saved_center_angle is None
@@ -531,7 +531,7 @@ class TestDysonHeatingModeSelect:
         entity = DysonHeatingModeSelect(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_heating_mode"
-        assert entity._attr_name == "Test Device Heating Mode"
+        assert entity._attr_translation_key == "heating_mode"
         assert entity._attr_icon == "mdi:radiator"
         assert entity._attr_options == ["Off", "Heating", "Auto Heat"]
 
@@ -726,7 +726,7 @@ class TestSelectIntegration:
 
         for entity in entities:
             assert hasattr(entity, "_attr_unique_id")
-            assert hasattr(entity, "_attr_name")
+            assert hasattr(entity, "_attr_translation_key")
             assert hasattr(entity, "_attr_icon")
             assert hasattr(entity, "_attr_options")
             assert isinstance(entity._attr_options, list)
@@ -1051,7 +1051,7 @@ class TestDysonHeatingModeSelectCoverage:
         select = DysonHeatingModeSelect(mock_coordinator)
 
         assert select._attr_unique_id == "NK6-EU-MHA0000A_heating_mode"
-        assert select._attr_name == "Test Device Heating Mode"
+        assert select._attr_translation_key == "heating_mode"
         assert select._attr_icon == "mdi:radiator"
         assert select._attr_options == ["Off", "Heating", "Auto Heat"]
 
