@@ -1,4 +1,10 @@
-# Real-World Testing Guide for Dyson Integration
+# Testing Guide for Dyson Integration
+
+This guide covers **real-world testing** with actual Dyson devices to validate the integration's functionality.
+
+> **Note**: For development testing patterns, unit testing, and mock setups, see the [Testing Patterns Documentation](.github/design/testing-patterns.md).
+
+## Real-World Testing with Physical Devices
 
 ## Prerequisites
 1. **Dyson Device**: A physical Dyson device (fan, purifier, etc.)
