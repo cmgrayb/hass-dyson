@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Create Release Asset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create ZIP for HACS
+        run: |
+          # Create a temporary directory for the release
+          mkdir -p /tmp/hass_dyson_release
+          
+          # Copy the custom_components directory
+          cp -r custom_components /tmp/hass_dyson_release/
+          
+          # Create the ZIP file
+          cd /tmp/hass_dyson_release
+          zip -r hass_dyson.zip custom_components/
+          
+          # Move the ZIP to the workspace
+          mv hass_dyson.zip $GITHUB_WORKSPACE/
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./hass_dyson.zip
+          asset_name: hass_dyson.zip
+          asset_content_type: application/zip
