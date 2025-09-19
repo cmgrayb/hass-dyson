@@ -38,6 +38,8 @@ Design documentation may be found in the `.github/design/` directory of the proj
 - Target quality rating by Home Assistant should aim to meet Platinum designation <https://www.home-assistant.io/docs/quality_scale/>.
 
 ### Testing and Validation
+- As the devices being integrated are costly to acquire, comprehensive mocking and simulation of device behavior is essential to ensure comprehensive test coverage without requiring physical hardware for every test scenario.
+- All defined tests must pass before merging code changes
 - Unit tests must cover all new features and bug fixes
 - Integration tests must validate interactions with external APIs and services
 - End-to-end tests should simulate real user scenarios
@@ -114,11 +116,216 @@ The following tasks should be available:
 - **Setup Dev Environment**: Create venv and install dependencies
 
 ## Testing Strategy
-- Unit tests for individual functions and classes
-- Integration tests for API interactions
-- Mock external API calls in unit tests
-- Use real API endpoints in integration tests (with proper credentials)
-- Maintain test coverage above 80%
+
+### Test Categories and Scope
+- **Unit tests**: Individual functions and classes in isolation
+- **Integration tests**: API interactions with external services
+- **Component tests**: Home Assistant platform setup and entity functionality
+- **Mock external dependencies**: API calls, MQTT connections, device communication
+- **Use real endpoints sparingly**: Only for integration tests with proper credentials
+- **Target coverage**: Maintain test coverage above 80%
+
+### Home Assistant Integration Testing Patterns
+
+#### Required Testing Infrastructure
+The project includes comprehensive Home Assistant testing setup:
+
+- **`pytest-homeassistant-custom-component==0.13.277`**: HA-specific pytest fixtures
+- **Comprehensive `conftest.py`**: Event loop cleanup and warning suppression
+- **Mock patterns**: Proper mocking for HA components and async operations
+
+#### Essential Mock Patterns for HA Integration Tests
+
+```python
+# 1. Mock Home Assistant Instance
+@pytest.fixture
+def mock_hass():
+    """Create a properly mocked Home Assistant instance."""
+    hass = MagicMock(spec=HomeAssistant)
+    hass.data = {DOMAIN: {}}
+    hass.loop = MagicMock()
+    hass.loop.call_soon_threadsafe = MagicMock()
+    hass.async_create_task = MagicMock()
+    hass.add_job = MagicMock()
+    hass.bus = MagicMock()
+    hass.bus.async_fire = MagicMock()
+    hass.config_entries = MagicMock()
+    hass.config_entries.async_entries_for_config_entry_id = MagicMock(return_value=[])
+    return hass
+
+# 2. Mock Config Entry
+@pytest.fixture  
+def mock_config_entry():
+    """Create a mock config entry."""
+    config_entry = MagicMock()
+    config_entry.data = {
+        CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
+        # Add other required config data
+    }
+    return config_entry
+
+# 3. Mock Coordinator (Method 1: Direct Mock)
+@pytest.fixture
+def mock_coordinator():
+    """Create a mock coordinator."""
+    coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
+    coordinator.serial_number = "TEST-SERIAL-123"
+    coordinator.device = MagicMock()
+    coordinator.device.set_sleep_timer = AsyncMock()
+    return coordinator
+
+# 4. Mock Coordinator (Method 2: Patched Initialization)
+@pytest.mark.asyncio
+async def test_coordinator_method(mock_hass, mock_config_entry):
+    """Test coordinator method with patched initialization."""
+    with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+        
+        # Manually set required attributes normally set by parent __init__
+        coordinator.hass = mock_hass
+        coordinator.config_entry = mock_config_entry
+        coordinator._listeners = {}  # Set by HA DataUpdateCoordinator parent
+        coordinator.async_update_listeners = MagicMock()
+        
+        # Test the specific method logic
+        result = coordinator.some_method()
+        assert result == expected_value
+```
+
+#### Testing Complex HA Components
+
+**For DataUpdateCoordinators:**
+- **Never call real `__init__`**: Always patch `DataUpdateCoordinator.__init__`
+- **Set required attributes manually**: `hass`, `_listeners`, `async_update_listeners`
+- **Mock HA framework calls**: `hass.loop.call_soon_threadsafe`, `hass.async_create_task`
+- **Test method logic**: Focus on business logic, not HA framework integration
+
+**For Platform Setup (setup_entry functions):**
+- **Mock add_entities**: Use `MagicMock()` for the add_entities callback
+- **Mock coordinator**: Create coordinator mocks with required attributes
+- **Test entity creation**: Verify correct entities are created and configured
+- **Mock async operations**: Use `AsyncMock` for async setup methods
+
+**For Entity Classes:**
+- **Mock coordinator dependencies**: Provide mock coordinator with required data
+- **Test state properties**: Verify entity reports correct state from device data
+- **Test service calls**: Mock device methods and verify they're called correctly
+- **Mock async operations**: Use `AsyncMock` for async entity methods
+
+#### Common Testing Pitfalls to Avoid
+
+1. **DON'T initialize real HA components in unit tests**:
+   ```python
+   # ❌ This will fail - requires full HA context
+   coordinator = DysonDataUpdateCoordinator(hass, config_entry)
+   
+   # ✅ This works - patches parent initialization
+   with patch("...DataUpdateCoordinator.__init__"):
+       coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+   ```
+
+2. **DON'T forget to set required attributes after patching**:
+   ```python
+   # ❌ Missing required attributes
+   with patch("...DataUpdateCoordinator.__init__"):
+       coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+       result = coordinator.some_method()  # May fail
+   
+   # ✅ Set required attributes manually
+   with patch("...DataUpdateCoordinator.__init__"):
+       coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+       coordinator.hass = mock_hass
+       coordinator._listeners = {}
+       result = coordinator.some_method()  # Works
+   ```
+
+3. **DO use proper async mocking**:
+   ```python
+   # ✅ Use AsyncMock for async methods
+   mock_device.connect = AsyncMock(return_value=True)
+   mock_device.get_state = AsyncMock(return_value={"fan": {"speed": 5}})
+   ```
+
+4. **DO follow existing patterns in the codebase**:
+   - Check `tests/test_services.py` for service testing patterns
+   - Check `tests/test_switch.py` for entity platform testing patterns
+   - Use the same fixture names and mock setups for consistency
+
+#### Test File Organization
+- **One test file per module**: `test_coordinator.py` for `coordinator.py`
+- **Group related tests in classes**: `TestCoordinatorDeviceSetup`, `TestCoordinatorMQTT`
+- **Descriptive test names**: `test_async_update_data_device_reconnection_success`
+- **Comprehensive docstrings**: Explain what scenario each test covers
+
+#### Coverage Improvement Strategy
+- **Focus on complex logic first**: Error handling, reconnection scenarios, validation
+- **Test edge cases**: Missing data, network failures, invalid responses
+- **Mock external dependencies**: APIs, MQTT, device connections
+- **Verify error paths**: Exception handling and recovery logic
+- **Test async operations**: Connection setup, data updates, background tasks
+
+### Testing Environment Setup
+
+#### Available Testing Tools
+The development environment includes all necessary Home Assistant testing infrastructure:
+
+- **Home Assistant Core**: Pre-installed in devcontainer
+- **pytest-homeassistant-custom-component**: HA-specific testing utilities and fixtures
+- **Comprehensive conftest.py**: Handles async teardown, warning suppression, event loop cleanup
+- **Mock libraries**: pytest-mock, unittest.mock, aioresponses, responses
+- **MQTT testing**: paho-mqtt for MQTT protocol testing
+
+#### Troubleshooting Common Test Issues
+
+**Issue: "RuntimeError: Frame helper not set up"**
+```python
+# ❌ Don't try to initialize real HA coordinators in unit tests
+coordinator = DysonDataUpdateCoordinator(hass, config_entry)
+
+# ✅ Use proper mocking instead
+with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+    coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+    coordinator.hass = mock_hass  # Set manually
+```
+
+**Issue: "Event loop is closed" warnings**
+- Handled automatically by `conftest.py` 
+- Comprehensive warning suppression already configured
+- Event loop cleanup patches applied
+
+**Issue: "AttributeError: '_mock_methods'"**
+```python
+# ❌ Avoid complex mock nesting
+mock_obj.attr = another_mock_obj  # Can cause issues
+
+# ✅ Use simpler mock setup
+mock_obj = MagicMock()
+mock_obj.attr.configure_mock(**{"method.return_value": "value"})
+```
+
+**Issue: Missing coordinator attributes**
+```python
+# ✅ Always set these after patching parent __init__
+coordinator.hass = mock_hass
+coordinator.config_entry = mock_config_entry
+coordinator._listeners = {}
+coordinator.async_update_listeners = MagicMock()
+```
+
+#### Test Execution Commands
+```bash
+# Run specific test file with coverage
+python -m pytest tests/test_coordinator.py --cov=custom_components/hass_dyson/coordinator
+
+# Run specific test method
+python -m pytest tests/test_coordinator.py::TestClass::test_method -v
+
+# Run with coverage report
+python -m pytest --cov=custom_components/hass_dyson --cov-report=term-missing
+
+# Run only unit tests (excluding integration tests)
+python -m pytest tests/ -m 'not integration'
+```
 
 ## Security Considerations
 - No hardcoded credentials or sensitive data
@@ -157,11 +364,16 @@ When updating development tool versions, ensure consistency across all configura
 - isort: 6.0.1
 - pytest: 8.4.1
 - pytest-cov: 6.2.1
+- pytest-asyncio: 1.1.0
+- pytest-homeassistant-custom-component: 0.13.277
+- pytest-mock: 3.15.0
 - mypy: 1.17.1
 - pre-commit: 4.3.0
 - types-requests: 2.32.4.20250809
 - types-cryptography: 3.3.23.2
-- peach-fuzzer: unknown (please update)
+- aioresponses: 0.7.7
+- responses: 0.25.8
+- paho-mqtt: 2.1.0
 
 ### Step-by-Step Version Update Process
 

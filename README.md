@@ -331,7 +331,7 @@ logger:
 ### **Quick References**
 
 - **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
-- **[Testing Guide](docs/TESTING_GUIDE.md)** - How to run tests and validate functionality
+- **[Testing Guide](docs/TESTING_GUIDE.md)** - How to test with real Dyson devices
 - **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)** - Technical architecture overview
 
 ## 🛠️ Development
@@ -424,9 +424,18 @@ custom_components/hass_dyson/
    python -m pytest
    ```
 
-5. Commit changes (`git commit -am 'Add amazing feature'`)
-6. Push branch (`git push origin feature/amazing-feature`)
-7. Open Pull Request
+5. **For developers**: See [Testing Patterns Documentation](.github/design/testing-patterns.md) for unit testing guidance and mock setups
+
+   # Lint code
+   python -m flake8 .
+
+   # Sort imports
+   python -m isort .
+
+5. **For developers**: See [Testing Patterns Documentation](.github/design/testing-patterns.md) for unit testing guidance and mock setups
+6. Commit changes (`git commit -am 'Add amazing feature'`)
+7. Push branch (`git push origin feature/amazing-feature`)
+8. Open Pull Request
 
 ## 📋 Requirements
 
