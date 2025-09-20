@@ -68,7 +68,8 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
       - When selected, the cloud account will inform Home Assistant of discovered devices
    2. `Automatically add discovered devices`
       - When selected, the cloud account will add all devices discovered by `Poll for new devices` using the information from the API without prompting the user for additional information
-      - When deselected, the cloud account will prompt the user to configure all devices discovered by `Poll for new devices` using Home Assistant native "Add" prompt
+      - When deselected, the cloud account will prompt the user to configure all devices discovered by `Poll for new devices` using Home Assistant native "Add" prompt.
+    3. If neither of the above is selected, the Cloud Account will only be used for Home Assistant Actions such as `Get Cloud Devices`.
 
 **Pros**: Automatic setup, gets all device info from cloud
 **Cons**: Requires internet, shares credentials with cloud
@@ -114,9 +115,9 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
    ```
 6. Click **Submit**
 
-### **Option 3: YAML Configuration (Advanced)**
+### **Option 3: YAML Configuration (Advanced, Not Recommended)**
 
-**When to use**: You want to configure multiple devices at once
+**When to use**: You want to pre-configure manual devices, such as in a testing lab
 
 **Configuration example**:
 ```yaml
@@ -171,15 +172,15 @@ hass-dyson:
 
 **Sticker Information**:
 ```
-Serial Number: MOCK-SERIAL-TEST123  ← Use this
-Device Password: AAAABBBB         ← Use this
-Model: 438                      ← Use this for device_type
+Serial Number: MOCK-SERIAL-TEST123  ← Use this for device serial number
+Device Password: AAAABBBB         ← Use this for device password
+Model: 438                      ← Use this for device_type and MQTT prefix
 ```
 
 **Auto-detection**: Integration automatically determines MQTT prefix from device type
 
 ### **Device Capabilities**
-**Capabilities determine which features and sensors are available for your device. Most are automatically detected, but for manual setup you may need to specify them.**
+**Capabilities determine which features and sensors are available for your device. If using cloud discovery they are automatically detected, but for manual setup you will need to specify them.**
 
 **Available Capabilities:**
 
@@ -235,13 +236,6 @@ Model: 438                      ← Use this for device_type
   - Moisture level control
   - Water tank monitoring
   - Enables: Humidity sensor, humidifier controls
-
-- **`ChangeWifi`** (WiFi Management)
-  - WiFi network configuration
-  - Connection status monitoring
-  - Network signal strength reporting
-  - Remote connectivity features
-  - Enables: WiFi signal sensor, connection status sensor
 
 **Capability Detection:**
 - **Cloud devices**: Capabilities automatically detected from Dyson API
@@ -415,7 +409,7 @@ ping 192.168.1.100
 - Verify Home Assistant system resources
 - Consider ethernet connection if possible
 
-## 📞 Getting Help
+## Getting Help
 
 ### **Before Requesting Support**
 1. Enable debug logging:
@@ -439,7 +433,7 @@ ping 192.168.1.100
 ### **Information to Include**
 - Home Assistant version
 - Integration version  
-- Output from Get Cloud Devices in Sanitize mode
+- **Output from Get Cloud Devices in Sanitize mode**
 - Setup method used
 - Error messages from logs
 - Network configuration details 
