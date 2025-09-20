@@ -102,9 +102,9 @@ set_oscillation_angles:
           step: 5
           unit_of_measurement: "°"
 
-fetch_account_data:
-  name: Fetch Account Data
-  description: Refresh device information from Dyson cloud account
+refresh_account_data:
+  name: Refresh Account Data
+  description: Refresh device information from Dyson cloud account (updates entity states in background)
   fields:
     device_id:
       name: Device
@@ -160,3 +160,22 @@ set_angle:
           max: 350
           step: 5
           unit_of_measurement: "°"
+
+get_cloud_devices:
+  name: Get Cloud Devices
+  description: Retrieve device information from Dyson cloud accounts for manual setup and troubleshooting.
+  fields:
+    account_email:
+      name: Account Email
+      description: Specific cloud account email (optional - uses first account if not specified).
+      example: "user@example.com"
+      required: false
+      selector:
+        text:
+    sanitize:
+      name: Sanitize Data
+      description: Remove sensitive information for safe public posting.
+      default: false
+      required: false
+      selector:
+        boolean:

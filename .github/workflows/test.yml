@@ -103,8 +103,22 @@ jobs:
             --cov-report=html \
             --cov-report=term-missing \
             --cov-branch \
-            --cov-fail-under=80 \
             -v
+
+      - name: Check coverage threshold
+        run: |
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          coverage = float(root.get('line-rate')) * 100
+          print(f'Coverage: {coverage:.2f}%')
+          if coverage < 80:
+              print(f'❌ Coverage {coverage:.2f}% is below 80% threshold')
+              exit(1)
+          else:
+              print(f'✅ Coverage {coverage:.2f}% meets 80% threshold')
+          "
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

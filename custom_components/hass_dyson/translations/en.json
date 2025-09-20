@@ -224,5 +224,108 @@
         "name": "Firmware Update"
       }
     }
+  },
+  "services": {
+    "set_sleep_timer": {
+      "name": "Set Sleep Timer",
+      "description": "Set a sleep timer for the device. The device will turn off after the specified time.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to set the sleep timer for."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Sleep timer duration in minutes (15-540)."
+        }
+      }
+    },
+    "cancel_sleep_timer": {
+      "name": "Cancel Sleep Timer",
+      "description": "Cancel the currently active sleep timer for the device.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to cancel the sleep timer for."
+        }
+      }
+    },
+    "schedule_operation": {
+      "name": "Schedule Operation",
+      "description": "Schedule a future operation for the device.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to schedule the operation for."
+        },
+        "schedule_time": {
+          "name": "Schedule Time",
+          "description": "When to execute the operation (ISO 8601 format)."
+        },
+        "operation": {
+          "name": "Operation",
+          "description": "The operation to perform (JSON format)."
+        }
+      }
+    },
+    "set_oscillation_angles": {
+      "name": "Set Oscillation Angles",
+      "description": "Set custom oscillation angles for the device.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to set oscillation angles for."
+        },
+        "lower_angle": {
+          "name": "Lower Angle",
+          "description": "Lower oscillation angle (5-355 degrees)."
+        },
+        "upper_angle": {
+          "name": "Upper Angle",
+          "description": "Upper oscillation angle (5-355 degrees)."
+        }
+      }
+    },
+    "fetch_account_data": {
+      "name": "Fetch Account Data",
+      "description": "Fetch device data from Dyson cloud account for troubleshooting.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to fetch account data for (optional - fetch all if not specified)."
+        }
+      }
+    },
+    "reset_filter": {
+      "name": "Reset Filter Life",
+      "description": "Reset the filter life counter for the device.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to reset the filter for."
+        },
+        "filter_type": {
+          "name": "Filter Type",
+          "description": "Type of filter to reset (hepa, carbon, or both)."
+        }
+      }
+    },
+    "get_cloud_devices": {
+      "name": "Get Cloud Devices",
+      "description": "Retrieve device information from Dyson cloud accounts for manual setup and troubleshooting.",
+      "fields": {
+        "account_email": {
+          "name": "Account Email",
+          "description": "Specific cloud account email (optional - uses first account if not specified)."
+        },
+        "sanitize": {
+          "name": "Sanitize Data",
+          "description": "Remove sensitive information for safe public posting.",
+          "selector": {
+            "boolean": {}
+          }
+        }
+      }
+    }
   }
 }

@@ -26,7 +26,12 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import DysonCloudAccountCoordinator, DysonDataUpdateCoordinator
-from .services import async_remove_services, async_setup_services
+from .services import (
+    async_remove_services,
+    async_setup_cloud_services,
+    async_setup_device_services,
+    async_setup_services,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -352,10 +357,8 @@ async def _setup_platforms_and_services(
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_setup)
 
-    # Set up services (only once when first device is added)
-    if not any(key == "services_setup" for key in hass.data.get(DOMAIN, {})):
-        await async_setup_services(hass)
-        hass.data.setdefault(DOMAIN, {})["services_setup"] = True
+    # Set up platforms
+    await hass.config_entries.async_forward_entry_setups(entry, platforms_to_setup)
 
     _LOGGER.info("Set up platforms: %s", platforms_to_setup)
 
@@ -365,6 +368,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     _LOGGER.debug("Setting up Dyson integration for device: %s", entry.title)
 
     try:
+        # Set up services (only once, regardless of entry type)
+        if not any(key == "services_setup" for key in hass.data.get(DOMAIN, {})):
+            await async_setup_services(hass)
+            hass.data.setdefault(DOMAIN, {})["services_setup"] = True
+            _LOGGER.info("Dyson services registered")
+
         # Check if this is a new account-level config entry with multiple devices
         if "devices" in entry.data and entry.data.get("devices"):
             return await _setup_account_level_entry(hass, entry)

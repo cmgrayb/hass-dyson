@@ -185,7 +185,8 @@ SERVICE_SET_SLEEP_TIMER: Final = "set_sleep_timer"
 SERVICE_CANCEL_SLEEP_TIMER: Final = "cancel_sleep_timer"
 SERVICE_SCHEDULE_OPERATION: Final = "schedule_operation"
 SERVICE_SET_OSCILLATION_ANGLES: Final = "set_oscillation_angles"
-SERVICE_FETCH_ACCOUNT_DATA: Final = "fetch_account_data"
+SERVICE_REFRESH_ACCOUNT_DATA: Final = "refresh_account_data"
+SERVICE_GET_CLOUD_DEVICES: Final = "get_cloud_devices"
 
 # Event types
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
