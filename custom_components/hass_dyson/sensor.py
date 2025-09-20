@@ -6,7 +6,7 @@ import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory
+from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -240,7 +240,7 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "°C"
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

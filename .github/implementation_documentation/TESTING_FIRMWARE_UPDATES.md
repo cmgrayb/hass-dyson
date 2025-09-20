@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-1. **Updated Dependencies**: The integration now uses `libdyson-rest==0.6.0b1` which includes firmware update support.
+1. **Updated Dependencies**: The integration now uses `libdyson-rest>=0.6.0b1` which includes firmware update support.
 
 2. **Environment Setup**: 
    ```bash
