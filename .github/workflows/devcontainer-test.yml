@@ -85,9 +85,7 @@ jobs:
             # Verify packages are installed
             python -c "import homeassistant; print(f'Home Assistant: {homeassistant.__version__}')"
             python -c "import pytest; print(f'Pytest: {pytest.__version__}')"
-            python -c "import black; print('Black: OK')"
-            python -c "import flake8; print('Flake8: OK')"
-            python -c "import isort; print('isort: OK')"
+            python -c "import ruff; print('Ruff: OK')"
             python -c "import mypy; print('mypy: OK')"
 
             # Verify our package installs correctly
@@ -98,9 +96,8 @@ jobs:
             python -m pytest tests/test_basic.py -v
 
             # Run code quality checks
-            python -m black --check .
-            python -m flake8 .
-            python -m isort --check-only .
+            python -m ruff format --check .
+            python -m ruff check .
 
             echo "✅ DevContainer environment verified successfully!"
 

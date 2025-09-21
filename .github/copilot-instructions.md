@@ -17,11 +17,9 @@ Design documentation may be found in the `.github/design/` directory of the proj
 
 ### Code Quality Tools
 
-- **Black**: Python code formatting (line length: 120 characters)
+- **Ruff**: Python code formatting and linting (line length: 88 characters, Home Assistant compliance)
 - **mdformat**: Markdown file formatting
-- **Flake8**: Python linting and style checking
 - **markdownlint**: Markdown file linting
-- **isort**: Python import sorting and organization
 - **Pytest**: Python unit and integration testing
 - **MyPy**: Python static type checking
 - **Bandit**: Python security static analysis
@@ -47,9 +45,7 @@ Design documentation may be found in the `.github/design/` directory of the proj
 - Test results must be included in the CI/CD pipeline reports
 
 ### Code Quality Requirements
-- All code must pass black formatting
-- All code must pass flake8 linting (PEP 8 compliance)
-- All imports must be sorted with isort
+- All code must pass Ruff formatting and linting (PEP 8 compliance)
 - All tests must pass before commits
 - All code must pass mypy static type checks
 - Minimum test coverage should be maintained
@@ -88,29 +84,22 @@ Design documentation may be found in the `.github/design/` directory of the proj
 ## Configuration Files
 
 ### pyproject.toml
-- Black configuration
-- isort configuration
+- Ruff configuration
 - Project metadata
 - Build system configuration
-
-### .flake8
-- Flake8 configuration
-- Ignore rules if necessary
-- Max line length: 120 (to match Black)
 
 ### requirements.txt
 - Production dependencies only
 - Pinned versions for reproducibility
 
 ### requirements-dev.txt
-- Development dependencies (black, flake8, isort, pytest, etc.)
+- Development dependencies (ruff, pytest, mypy, etc.)
 - Pre-commit hooks
 
 ## VSCode Tasks
 The following tasks should be available:
-- **Format Code**: Run black on the entire codebase
-- **Lint Code**: Run flake8 on the entire codebase
-- **Sort Imports**: Run isort on the entire codebase
+- **Format Code**: Run Ruff formatting on the entire codebase
+- **Ruff Check**: Run Ruff linting on the entire codebase
 - **Run Tests**: Execute pytest with coverage
 - **Check All**: Run all quality checks in sequence
 - **Setup Dev Environment**: Create venv and install dependencies
@@ -402,10 +391,9 @@ When updating development tool versions, ensure consistency across all configura
    pip install -r requirements-dev.txt
 
    # Verify all tools work locally
-   python -m black --check .
-   python -m flake8 .
-   python -m isort --check-only .
-   python -m mypy src/
+   python -m ruff format --check .
+   python -m ruff check .
+   python -m mypy custom_components/hass_dyson
    python -m pytest
    python -m peach_fuzzer
    ```
@@ -442,10 +430,9 @@ pip install -r requirements-dev.txt
 pip install -e .  # Install package in development mode for testing
 
 # Code quality checks
-python -m black --check .
-python -m flake8 .
-python -m isort --check-only .
-python -m mypy src/
+python -m ruff format --check .
+python -m ruff check .
+python -m mypy custom_components/hass_dyson
 python -m pytest
 python -m peach_fuzzer
 
@@ -459,9 +446,8 @@ The project includes comprehensive VSCode tasks accessible via Ctrl+Shift+P → 
 ### Development Tasks
 - **Setup Dev Environment**: Create virtual environment
 - **Install Dev Dependencies**: Install development packages
-- **Format Code**: Run Black code formatting
-- **Lint Code**: Run Flake8 linting with problem matchers
-- **Sort Imports**: Run isort import sorting
+- **Format Code**: Run Ruff code formatting
+- **Ruff Check**: Run Ruff linting with problem matchers
 - **Type Check**: Run mypy type checking with problem matchers
 - **Check All**: Run complete quality check sequence
 
@@ -481,7 +467,7 @@ The project includes comprehensive VSCode tasks accessible via Ctrl+Shift+P → 
 The project must include comprehensive GitHub Actions workflows for continuous integration, quality assurance, and security testing:
 
 ### Quality Assurance Workflows
-- **Code Quality Checks**: Black formatting, Flake8 linting, isort imports, mypy types, pytest tests across Python 3.9-3.13
+- **Code Quality Checks**: Ruff formatting and linting, mypy types, pytest tests across Python 3.9-3.13
 - **Build Testing**: Cross-platform package building and installation testing (Ubuntu/Windows/macOS)
 
 ### Security Testing Workflows

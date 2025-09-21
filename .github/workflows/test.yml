@@ -165,17 +165,13 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e .
 
-      - name: Run Black formatting check
+      - name: Run Ruff formatting check
         run: |
-          python -m black --check --diff .
+          python -m ruff format --check --diff .
 
-      - name: Run isort import sorting check
+      - name: Run Ruff linting check
         run: |
-          python -m isort --check-only --diff .
-
-      - name: Run Flake8 linting
-        run: |
-          python -m flake8 . --count --show-source --statistics
+          python -m ruff check . --output-format=github
 
       - name: Run MyPy type checking
         continue-on-error: true

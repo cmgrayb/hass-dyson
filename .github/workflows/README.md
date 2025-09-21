@@ -197,8 +197,8 @@ See `.github/BRANCH_PROTECTION.md` for detailed configuration.
 
 **Quality checks failing:**
 
-- Run local quality tools: `black .`, `isort .`, `flake8 .`
-- Check `.flake8` and `pyproject.toml` configurations
+- Run local quality tools: `ruff format .`, `ruff check . --fix`
+- Check `pyproject.toml` configuration
 - Ensure code follows project style guidelines
 
 ### Local Development Commands

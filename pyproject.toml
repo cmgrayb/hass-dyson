@@ -39,6 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "ruff==0.8.4",
     "black==25.1.0",
     "flake8==7.3.0",
     "isort==6.0.1",
@@ -83,6 +84,46 @@ extend-exclude = '''
   | dist
 )/
 '''
+
+[tool.ruff]
+# Home Assistant Core compliance settings
+line-length = 88  # Home Assistant standard
+target-version = "py312"
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Use spaces around the equals sign in keyword arguments
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+select = [
+    # Pycodestyle
+    "E", "W",
+    # Pyflakes  
+    "F",
+    # Import sorting (isort)
+    "I",
+    # Comprehensions
+    "C4",
+    # Builtin type comparisons
+    "UP",
+    # Quotes
+    "Q",
+]
+ignore = [
+    # Allow line too long if black can't fix it
+    "E501",
+    # Allow lambda assignments
+    "E731",
+    # Disable trailing comma rule to avoid formatter conflicts
+    "COM812",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components.hass_dyson"]
+known-third-party = ["homeassistant"]
+combine-as-imports = true
 
 [tool.isort]
 profile = "black"

@@ -36,7 +36,7 @@
         {
             "label": "Format Code",
             "type": "shell",
-            "command": "python -m black .",
+            "command": ".venv/bin/python -m ruff format .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -50,9 +50,9 @@
             "problemMatcher": []
         },
         {
-            "label": "Lint Code",
-            "type": "shell", 
-            "command": "python -m flake8 .",
+            "label": "Ruff Check",
+            "type": "shell",
+            "command": ".venv/bin/python -m ruff check .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -67,7 +67,7 @@
                 "owner": "python",
                 "fileLocation": "absolute",
                 "pattern": {
-                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(E|W)(\\d+)\\s+(.*)$",
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(E|W|F)(\\d+)\\s+(.*)$",
                     "file": 1,
                     "line": 2,
                     "column": 3,
@@ -78,20 +78,32 @@
             }
         },
         {
-            "label": "Sort Imports",
+            "label": "Ruff Fix",
             "type": "shell",
-            "command": "python -m isort .",
+            "command": ".venv/bin/python -m ruff check . --fix",
             "group": "build",
             "presentation": {
                 "echo": true,
-                "reveal": "silent",
+                "reveal": "always",
                 "focus": false,
                 "panel": "shared"
             },
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": []
+            "problemMatcher": {
+                "owner": "python",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(E|W|F)(\\d+)\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "code": 5,
+                    "message": 6
+                }
+            }
         },
         {
             "label": "Type Check",
@@ -206,6 +218,7 @@
             "dependsOn": [
                 "Format Code",
                 "Sort Imports", 
+                "Ruff Check",
                 "Lint Code",
                 "Type Check",
                 "Run Tests"

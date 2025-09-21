@@ -1,8 +1,6 @@
 # Development dependencies - exact versions for reproducibility
-black==25.1.0
+ruff==0.8.4
 bandit==1.8.0
-flake8==7.3.0
-isort==6.0.1
 pytest==8.4.1
 pytest-cov==6.2.1
 pytest-asyncio==1.1.0

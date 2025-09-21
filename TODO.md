@@ -12,7 +12,7 @@
 
 #### **Code Quality Requirements (Platinum Standard)**
 - 🎯 **Test Coverage Target**: 80%+ (Current: 74%, Need: +6 percentage points)
-- 🎯 **Code Quality**: Maintain flake8, mypy, black compliance (✅ Currently achieved)
+- 🎯 **Code Quality**: Maintain Ruff and mypy compliance (✅ Currently achieved)
 - 🎯 **Documentation**: Comprehensive docstrings and inline documentation
 - 🎯 **Type Safety**: Full type hint coverage across all public methods
 
@@ -116,7 +116,7 @@
 Current Status (v0.15.0):
 ✅ Test Coverage: 74% (Target: 80%+)
 ✅ Test Success Rate: 100% (910/910 passing)
-✅ Code Quality: 100% compliance (flake8, mypy, black)
+✅ Code Quality: 100% compliance (Ruff, mypy)
 ✅ Async Implementation: Complete libdyson-rest v0.7.0 integration
 ✅ CI/CD Pipeline: All GitHub Actions passing
 ```
