@@ -52,6 +52,10 @@
 
 ## 🎯 **IMMEDIATE ACTION ITEMS (Next 30 Days)**
 
+### **Service Separation**
+- **Get Cloud Devices** - Being registered when a manually added device is added
+- **Refresh Account Data** - Being registered when a manually added device is added
+
 ### **Coverage Enhancement to 80%** (Phase 2a - High ROI)
 - 🎯 **sensor.py** (87% → 95%): Error handling in value conversion, missing sensor states
 - 🎯 **fan.py** (90% → 98%): Oscillation mode edge cases, speed validation errors  
