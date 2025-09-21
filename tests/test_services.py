@@ -8,7 +8,11 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.service import SupportsResponse
 
-from custom_components.hass_dyson.const import DOMAIN, SERVICE_GET_CLOUD_DEVICES, SERVICE_REFRESH_ACCOUNT_DATA
+from custom_components.hass_dyson.const import (
+    DOMAIN,
+    SERVICE_GET_CLOUD_DEVICES,
+    SERVICE_REFRESH_ACCOUNT_DATA,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 from custom_components.hass_dyson.services import (
     SERVICE_CANCEL_SLEEP_TIMER_SCHEMA,
@@ -117,7 +121,11 @@ class TestServiceSchemas:
 
     def test_set_oscillation_angles_schema_invalid_range(self):
         """Test invalid angle range in oscillation schema."""
-        invalid_data = {"device_id": "test-device", "lower_angle": 45, "upper_angle": 500}
+        invalid_data = {
+            "device_id": "test-device",
+            "lower_angle": 45,
+            "upper_angle": 500,
+        }
         with pytest.raises(vol.Invalid):
             SERVICE_SET_OSCILLATION_ANGLES_SCHEMA(invalid_data)
 
@@ -179,7 +187,9 @@ class TestSetSleepTimer:
             return_value=None,
         ):
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device test-device not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device test-device not found"
+            ):
                 await _handle_set_sleep_timer(mock_hass, call)
 
     @pytest.mark.asyncio
@@ -195,11 +205,15 @@ class TestSetSleepTimer:
             return_value=mock_coordinator,
         ):
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device test-device not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device test-device not found"
+            ):
                 await _handle_set_sleep_timer(mock_hass, call)
 
     @pytest.mark.asyncio
-    async def test_handle_set_sleep_timer_device_error(self, mock_hass, mock_coordinator):
+    async def test_handle_set_sleep_timer_device_error(
+        self, mock_hass, mock_coordinator
+    ):
         """Test sleep timer setting with device error."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -236,7 +250,9 @@ class TestCancelSleepTimer:
             mock_coordinator.device.set_sleep_timer.assert_called_once_with(0)
 
     @pytest.mark.asyncio
-    async def test_handle_cancel_sleep_timer_device_error(self, mock_hass, mock_coordinator):
+    async def test_handle_cancel_sleep_timer_device_error(
+        self, mock_hass, mock_coordinator
+    ):
         """Test sleep timer cancellation with device error."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -248,7 +264,9 @@ class TestCancelSleepTimer:
             return_value=mock_coordinator,
         ):
             # Act & Assert
-            with pytest.raises(HomeAssistantError, match="Failed to cancel sleep timer"):
+            with pytest.raises(
+                HomeAssistantError, match="Failed to cancel sleep timer"
+            ):
                 await _handle_cancel_sleep_timer(mock_hass, call)
 
 
@@ -287,7 +305,9 @@ class TestScheduleOperation:
                 assert call_args[1] == "turn_on"
 
     @pytest.mark.asyncio
-    async def test_handle_schedule_operation_no_parameters(self, mock_hass, mock_coordinator):
+    async def test_handle_schedule_operation_no_parameters(
+        self, mock_hass, mock_coordinator
+    ):
         """Test operation scheduling without parameters."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -309,7 +329,9 @@ class TestScheduleOperation:
                 mock_logger.warning.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handle_schedule_operation_invalid_time(self, mock_hass, mock_coordinator):
+    async def test_handle_schedule_operation_invalid_time(
+        self, mock_hass, mock_coordinator
+    ):
         """Test operation scheduling with invalid time format."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -328,7 +350,9 @@ class TestScheduleOperation:
                 await _handle_schedule_operation(mock_hass, call)
 
     @pytest.mark.asyncio
-    async def test_handle_schedule_operation_invalid_json(self, mock_hass, mock_coordinator):
+    async def test_handle_schedule_operation_invalid_json(
+        self, mock_hass, mock_coordinator
+    ):
         """Test operation scheduling with invalid JSON parameters."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -352,7 +376,9 @@ class TestSetOscillationAngles:
     """Test set oscillation angles service handler."""
 
     @pytest.mark.asyncio
-    async def test_handle_set_oscillation_angles_success(self, mock_hass, mock_coordinator):
+    async def test_handle_set_oscillation_angles_success(
+        self, mock_hass, mock_coordinator
+    ):
         """Test successful oscillation angles setting."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -366,10 +392,14 @@ class TestSetOscillationAngles:
             await _handle_set_oscillation_angles(mock_hass, call)
 
             # Assert
-            mock_coordinator.device.set_oscillation_angles.assert_called_once_with(45, 315)
+            mock_coordinator.device.set_oscillation_angles.assert_called_once_with(
+                45, 315
+            )
 
     @pytest.mark.asyncio
-    async def test_handle_set_oscillation_angles_invalid_range(self, mock_hass, mock_coordinator):
+    async def test_handle_set_oscillation_angles_invalid_range(
+        self, mock_hass, mock_coordinator
+    ):
         """Test oscillation angles setting with invalid angle range."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -380,23 +410,32 @@ class TestSetOscillationAngles:
             return_value=mock_coordinator,
         ):
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Lower angle must be less than upper angle"):
+            with pytest.raises(
+                ServiceValidationError,
+                match="Lower angle must be less than upper angle",
+            ):
                 await _handle_set_oscillation_angles(mock_hass, call)
 
     @pytest.mark.asyncio
-    async def test_handle_set_oscillation_angles_device_error(self, mock_hass, mock_coordinator):
+    async def test_handle_set_oscillation_angles_device_error(
+        self, mock_hass, mock_coordinator
+    ):
         """Test oscillation angles setting with device error."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
         call.data = {"device_id": "test-device", "lower_angle": 45, "upper_angle": 315}
-        mock_coordinator.device.set_oscillation_angles.side_effect = Exception("Device error")
+        mock_coordinator.device.set_oscillation_angles.side_effect = Exception(
+            "Device error"
+        )
 
         with patch(
             "custom_components.hass_dyson.services._get_coordinator_from_device_id",
             return_value=mock_coordinator,
         ):
             # Act & Assert
-            with pytest.raises(HomeAssistantError, match="Failed to set oscillation angles"):
+            with pytest.raises(
+                HomeAssistantError, match="Failed to set oscillation angles"
+            ):
                 await _handle_set_oscillation_angles(mock_hass, call)
 
 
@@ -404,7 +443,9 @@ class TestFetchAccountData:
     """Test fetch account data service handler."""
 
     @pytest.mark.asyncio
-    async def test_handle_fetch_account_data_specific_device(self, mock_hass, mock_coordinator):
+    async def test_handle_fetch_account_data_specific_device(
+        self, mock_hass, mock_coordinator
+    ):
         """Test fetching account data for specific device."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -460,11 +501,15 @@ class TestFetchAccountData:
             return_value=None,
         ):
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device test-device not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device test-device not found"
+            ):
                 await async_handle_refresh_account_data(mock_hass, call)
 
     @pytest.mark.asyncio
-    async def test_handle_fetch_account_data_device_error(self, mock_hass, mock_coordinator):
+    async def test_handle_fetch_account_data_device_error(
+        self, mock_hass, mock_coordinator
+    ):
         """Test fetching account data with device error."""
         # Arrange
         call = MagicMock(spec=ServiceCall)
@@ -476,7 +521,9 @@ class TestFetchAccountData:
             return_value=mock_coordinator,
         ):
             # Act & Assert
-            with pytest.raises(HomeAssistantError, match="Failed to refresh account data"):
+            with pytest.raises(
+                HomeAssistantError, match="Failed to refresh account data"
+            ):
                 await async_handle_refresh_account_data(mock_hass, call)
 
     @pytest.mark.asyncio
@@ -489,7 +536,9 @@ class TestFetchAccountData:
 
         mock_coordinator2 = MagicMock(spec=DysonDataUpdateCoordinator)
         mock_coordinator2.serial_number = "DEVICE-002"
-        mock_coordinator2.async_refresh = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator2.async_refresh = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         mock_hass.data[DOMAIN] = {
             "entry1": mock_coordinator1,
@@ -572,7 +621,9 @@ class TestResetFilter:
         # Arrange
         call = MagicMock(spec=ServiceCall)
         call.data = {"device_id": "test-device", "filter_type": "hepa"}
-        mock_coordinator.device.reset_hepa_filter_life.side_effect = Exception("Device error")
+        mock_coordinator.device.reset_hepa_filter_life.side_effect = Exception(
+            "Device error"
+        )
 
         with patch(
             "custom_components.hass_dyson.services._get_coordinator_from_device_id",
@@ -589,6 +640,9 @@ class TestServiceManagement:
     @pytest.mark.asyncio
     async def test_async_setup_services(self, mock_hass):
         """Test service setup."""
+        # Configure mock to show services are not yet registered
+        mock_hass.services.has_service = MagicMock(return_value=False)
+
         # Act
         await async_setup_services(mock_hass)
 
@@ -597,7 +651,9 @@ class TestServiceManagement:
         assert mock_hass.services.async_register.call_count == 2
 
         # Verify cloud services are registered
-        registered_services = [call[0][1] for call in mock_hass.services.async_register.call_args_list]
+        registered_services = [
+            call[0][1] for call in mock_hass.services.async_register.call_args_list
+        ]
         assert "get_cloud_devices" in registered_services
         assert "refresh_account_data" in registered_services
 
@@ -615,6 +671,9 @@ class TestServiceManagement:
     @pytest.mark.asyncio
     async def test_async_setup_cloud_services_registration_details(self, mock_hass):
         """Test detailed cloud services registration behavior."""
+        # Configure mock to show services are not yet registered
+        mock_hass.services.has_service = MagicMock(return_value=False)
+
         # Act
         await async_setup_cloud_services(mock_hass)
 
@@ -635,7 +694,9 @@ class TestServiceManagement:
         second_call = calls[1]
         assert second_call[0][0] == DOMAIN  # domain
         assert second_call[0][1] == SERVICE_REFRESH_ACCOUNT_DATA  # service name
-        assert "supports_response" not in second_call[1]  # No supports_response for this service
+        assert (
+            "supports_response" not in second_call[1]
+        )  # No supports_response for this service
 
 
 class TestGetCoordinatorFromDeviceId:
@@ -745,7 +806,9 @@ class TestServicesCoverage:
             )
 
     @pytest.mark.asyncio
-    async def test_set_oscillation_angles_with_logging(self, mock_hass, mock_coordinator):
+    async def test_set_oscillation_angles_with_logging(
+        self, mock_hass, mock_coordinator
+    ):
         """Test set oscillation angles success with logging verification."""
         call = MagicMock(spec=ServiceCall)
         call.data = {"device_id": "test-device", "lower_angle": 30, "upper_angle": 90}
@@ -761,11 +824,16 @@ class TestServicesCoverage:
 
             # Verify the success logging (line 149)
             mock_logger.info.assert_called_once_with(
-                "Set oscillation angles %d°-%d° for device %s", 30, 90, mock_coordinator.serial_number
+                "Set oscillation angles %d°-%d° for device %s",
+                30,
+                90,
+                mock_coordinator.serial_number,
             )
 
     @pytest.mark.asyncio
-    async def test_fetch_account_data_with_device_error_logging(self, mock_hass, mock_coordinator):
+    async def test_fetch_account_data_with_device_error_logging(
+        self, mock_hass, mock_coordinator
+    ):
         """Test fetch account data with device error to cover error logging."""
         call = MagicMock(spec=ServiceCall)
         call.data = {"device_id": "test-device"}
@@ -884,11 +952,13 @@ class TestCloudDevicesService:
 
         with patch(
             "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": mock_coordinator,
-                "config_entry_id": "entry1",
-            }],
+            return_value=[
+                {
+                    "email": "test@example.com",
+                    "coordinator": mock_coordinator,
+                    "config_entry_id": "entry1",
+                }
+            ],
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
@@ -921,11 +991,13 @@ class TestCloudDevicesService:
 
         with patch(
             "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": mock_coordinator,
-                "config_entry_id": "entry1",
-            }],
+            return_value=[
+                {
+                    "email": "test@example.com",
+                    "coordinator": mock_coordinator,
+                    "config_entry_id": "entry1",
+                }
+            ],
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
@@ -952,7 +1024,10 @@ class TestCloudDevicesService:
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
-        assert result["message"] == "No cloud accounts found. Please configure a cloud account first."
+        assert (
+            result["message"]
+            == "No cloud accounts found. Please configure a cloud account first."
+        )
         assert result["total_devices"] == 0
         assert result["devices"] == []
         assert "available_setup_methods" in result
@@ -968,11 +1043,13 @@ class TestCloudDevicesService:
 
         with patch(
             "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": mock_coordinator,
-                "config_entry_id": "entry1",
-            }],
+            return_value=[
+                {
+                    "email": "test@example.com",
+                    "coordinator": mock_coordinator,
+                    "config_entry_id": "entry1",
+                }
+            ],
         ):
             with pytest.raises(ServiceValidationError) as exc_info:
                 await _handle_get_cloud_devices(mock_hass, call)
@@ -1016,7 +1093,7 @@ class TestCloudDevicesService:
 
     @pytest.mark.asyncio
     async def test_handle_get_cloud_devices_coordinator_error(self, mock_hass):
-        """Test error when coordinator data retrieval fails."""
+        """Test error when device coordinator has no device available."""
         mock_coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.device = None  # No device available
 
@@ -1025,16 +1102,19 @@ class TestCloudDevicesService:
 
         with patch(
             "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": mock_coordinator,
-                "config_entry_id": "entry1",
-            }],
+            return_value=[
+                {
+                    "email": "test@example.com",
+                    "coordinator": mock_coordinator,
+                    "config_entry_id": "entry1",
+                    "type": "device",  # Specify this is a device coordinator
+                }
+            ],
         ):
             with pytest.raises(HomeAssistantError) as exc_info:
                 await _handle_get_cloud_devices(mock_hass, call)
 
-        assert "Coordinator device not available" in str(exc_info.value)
+        assert "Device coordinator has no device" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_handle_get_cloud_devices_live_api_success(self, mock_hass):
@@ -1044,7 +1124,7 @@ class TestCloudDevicesService:
         mock_config_entry.data = {
             "email": "test@example.com",
             "auth_token": "test-auth-token",
-            "devices": [{"serial_number": "OLD-123", "name": "Old Device"}]
+            "devices": [{"serial_number": "OLD-123", "name": "Old Device"}],
         }
 
         call = MagicMock(spec=ServiceCall)
@@ -1063,7 +1143,11 @@ class TestCloudDevicesService:
         # Mock connected_configuration structure
         mock_firmware = MagicMock()
         mock_firmware.version = "438MPF.00.01.007.0002"
-        mock_firmware.capabilities = ["AdvanceOscillationDay1", "Scheduling", "EnvironmentalData"]
+        mock_firmware.capabilities = [
+            "AdvanceOscillationDay1",
+            "Scheduling",
+            "EnvironmentalData",
+        ]
 
         mock_mqtt = MagicMock()
         mock_mqtt.mqtt_root_topic_level = "438M"
@@ -1074,31 +1158,42 @@ class TestCloudDevicesService:
 
         mock_live_device.connected_configuration = mock_connected_config
 
-        with patch(
-            "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": None,
-                "config_entry_id": "entry1",
-                "config_entry": mock_config_entry,
-                "type": "config_entry",
-            }],
-        ), patch(
-            "custom_components.hass_dyson.services._fetch_live_cloud_devices",
-            return_value=[{
-                "device": mock_live_device,
-                "enhanced_data": {
-                    "name": "Live API Device",
-                    "product_type": "438M",
-                    "device_category": ["ec"],
-                    "capabilities": ["AdvanceOscillationDay1", "Scheduling", "EnvironmentalData"],
-                    "mqtt_prefix": "438M",
-                    "model": "TP11",
-                    "firmware_version": "438MPF.00.01.007.0002",
-                    "connection_category": "lecAndWifi",
-                    "decrypted_mqtt_password": "decrypted_password_123"
-                }
-            }],
+        with (
+            patch(
+                "custom_components.hass_dyson.services._find_cloud_coordinators",
+                return_value=[
+                    {
+                        "email": "test@example.com",
+                        "coordinator": None,
+                        "config_entry_id": "entry1",
+                        "config_entry": mock_config_entry,
+                        "type": "config_entry",
+                    }
+                ],
+            ),
+            patch(
+                "custom_components.hass_dyson.services._fetch_live_cloud_devices",
+                return_value=[
+                    {
+                        "device": mock_live_device,
+                        "enhanced_data": {
+                            "name": "Live API Device",
+                            "product_type": "438M",
+                            "device_category": ["ec"],
+                            "capabilities": [
+                                "AdvanceOscillationDay1",
+                                "Scheduling",
+                                "EnvironmentalData",
+                            ],
+                            "mqtt_prefix": "438M",
+                            "model": "TP11",
+                            "firmware_version": "438MPF.00.01.007.0002",
+                            "connection_category": "lecAndWifi",
+                            "decrypted_mqtt_password": "decrypted_password_123",
+                        },
+                    }
+                ],
+            ),
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
@@ -1114,8 +1209,14 @@ class TestCloudDevicesService:
         assert device["name"] == "Live API Device"
         assert device["product_type"] == "438M"  # Constructed from type + variant
         assert device["device_category"] == ["ec"]  # Derived from category
-        assert device["capabilities"] == ["AdvanceOscillationDay1", "Scheduling", "EnvironmentalData"]
-        assert device["mqtt_prefix"] == "438M"  # From connected_configuration.mqtt.mqtt_root_topic_level
+        assert device["capabilities"] == [
+            "AdvanceOscillationDay1",
+            "Scheduling",
+            "EnvironmentalData",
+        ]
+        assert (
+            device["mqtt_prefix"] == "438M"
+        )  # From connected_configuration.mqtt.mqtt_root_topic_level
         assert device["model"] == "TP11"
         assert device["firmware_version"] == "438MPF.00.01.007.0002"
         assert device["connection_category"] == "lecAndWifi"
@@ -1133,28 +1234,35 @@ class TestCloudDevicesService:
         mock_config_entry.data = {
             "email": "test@example.com",
             "auth_token": "test-auth-token",
-            "devices": [{
-                "serial_number": "STORED-789",
-                "name": "Stored Device",
-                "product_type": "stored_type"
-            }]
+            "devices": [
+                {
+                    "serial_number": "STORED-789",
+                    "name": "Stored Device",
+                    "product_type": "stored_type",
+                }
+            ],
         }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"account_email": "test@example.com", "sanitize": False}
 
-        with patch(
-            "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": None,
-                "config_entry_id": "entry1",
-                "config_entry": mock_config_entry,
-                "type": "config_entry",
-            }],
-        ), patch(
-            "custom_components.hass_dyson.services._fetch_live_cloud_devices",
-            side_effect=Exception("API connection failed"),
+        with (
+            patch(
+                "custom_components.hass_dyson.services._find_cloud_coordinators",
+                return_value=[
+                    {
+                        "email": "test@example.com",
+                        "coordinator": None,
+                        "config_entry_id": "entry1",
+                        "config_entry": mock_config_entry,
+                        "type": "config_entry",
+                    }
+                ],
+            ),
+            patch(
+                "custom_components.hass_dyson.services._fetch_live_cloud_devices",
+                side_effect=Exception("API connection failed"),
+            ),
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
@@ -1183,24 +1291,31 @@ class TestCloudDevicesService:
                 {"serial_number": "DEV2", "device_category": ["fan", "heater"]},  # list
                 {"serial_number": "DEV3", "device_category": None},  # None
                 {"serial_number": "DEV4"},  # missing
-            ]
+            ],
         }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"account_email": "test@example.com", "sanitize": False}
 
-        with patch(
-            "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": None,
-                "config_entry_id": "entry1",
-                "config_entry": mock_config_entry,
-                "type": "config_entry",
-            }],
-        ), patch(
-            "custom_components.hass_dyson.services._fetch_live_cloud_devices",
-            side_effect=Exception("API unavailable"),  # Force fallback to stored data
+        with (
+            patch(
+                "custom_components.hass_dyson.services._find_cloud_coordinators",
+                return_value=[
+                    {
+                        "email": "test@example.com",
+                        "coordinator": None,
+                        "config_entry_id": "entry1",
+                        "config_entry": mock_config_entry,
+                        "type": "config_entry",
+                    }
+                ],
+            ),
+            patch(
+                "custom_components.hass_dyson.services._fetch_live_cloud_devices",
+                side_effect=Exception(
+                    "API unavailable"
+                ),  # Force fallback to stored data
+            ),
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
@@ -1229,19 +1344,35 @@ class TestCloudDevicesService:
             "email": "test@example.com",
             "auth_token": "test-auth-token",
             "devices": [
-                {"serial_number": "DEV1", "device_category": MockDeviceCategory.ENVIRONMENT_CLEANER},  # single enum
-                {"serial_number": "DEV2", "device_category": [
-                    MockDeviceCategory.FAN, MockDeviceCategory.ENVIRONMENT_CLEANER]},  # list of enums
-            ]
+                {
+                    "serial_number": "DEV1",
+                    "device_category": MockDeviceCategory.ENVIRONMENT_CLEANER,
+                },  # single enum
+                {
+                    "serial_number": "DEV2",
+                    "device_category": [
+                        MockDeviceCategory.FAN,
+                        MockDeviceCategory.ENVIRONMENT_CLEANER,
+                    ],
+                },  # list of enums
+            ],
         }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"account_email": "test@example.com", "sanitize": False}
 
         # Mock _find_cloud_coordinators to return config entry
-        with patch("custom_components.hass_dyson.services._find_cloud_coordinators") as mock_find:
-            mock_find.return_value = [{"config_entry": mock_config_entry,
-                                       "coordinator": None, "email": "test@example.com", "type": "config_entry"}]
+        with patch(
+            "custom_components.hass_dyson.services._find_cloud_coordinators"
+        ) as mock_find:
+            mock_find.return_value = [
+                {
+                    "config_entry": mock_config_entry,
+                    "coordinator": None,
+                    "email": "test@example.com",
+                    "type": "config_entry",
+                }
+            ]
 
             # Call service with sanitize=False to get full details
             result = await _handle_get_cloud_devices(mock_hass, call)
@@ -1250,8 +1381,13 @@ class TestCloudDevicesService:
             assert len(devices) == 2
 
             # Verify enum values are converted to their string values, not representations
-            assert devices[0]["device_category"] == ["ec"]  # MockDeviceCategory.ENVIRONMENT_CLEANER.value
-            assert devices[1]["device_category"] == ["fan", "ec"]  # List of enum values converted to strings
+            assert devices[0]["device_category"] == [
+                "ec"
+            ]  # MockDeviceCategory.ENVIRONMENT_CLEANER.value
+            assert devices[1]["device_category"] == [
+                "fan",
+                "ec",
+            ]  # List of enum values converted to strings
 
     @pytest.mark.asyncio
     async def test_sanitized_output_includes_required_fields(self, mock_hass):
@@ -1261,7 +1397,7 @@ class TestCloudDevicesService:
         mock_config_entry.data = {
             "email": "test@example.com",
             "auth_token": "test-auth-token",
-            "devices": [{"serial_number": "TEST-123", "name": "Test Device"}]
+            "devices": [{"serial_number": "TEST-123", "name": "Test Device"}],
         }
 
         call = MagicMock(spec=ServiceCall)
@@ -1290,31 +1426,38 @@ class TestCloudDevicesService:
 
         mock_live_device.connected_configuration = mock_connected_config
 
-        with patch(
-            "custom_components.hass_dyson.services._find_cloud_coordinators",
-            return_value=[{
-                "email": "test@example.com",
-                "coordinator": None,
-                "config_entry_id": "entry1",
-                "config_entry": mock_config_entry,
-                "type": "config_entry",
-            }],
-        ), patch(
-            "custom_components.hass_dyson.services._fetch_live_cloud_devices",
-            return_value=[{
-                "device": mock_live_device,
-                "enhanced_data": {
-                    "name": "Test Device",
-                    "product_type": "438M",
-                    "device_category": ["ec"],
-                    "capabilities": ["Scheduling", "EnvironmentalData"],
-                    "mqtt_prefix": "438M",
-                    "model": "TP11",
-                    "firmware_version": "438MPF.00.01.007.0002",
-                    "connection_category": "lecAndWifi",
-                    "decrypted_mqtt_password": "decrypted_password_123"
-                }
-            }],
+        with (
+            patch(
+                "custom_components.hass_dyson.services._find_cloud_coordinators",
+                return_value=[
+                    {
+                        "email": "test@example.com",
+                        "coordinator": None,
+                        "config_entry_id": "entry1",
+                        "config_entry": mock_config_entry,
+                        "type": "config_entry",
+                    }
+                ],
+            ),
+            patch(
+                "custom_components.hass_dyson.services._fetch_live_cloud_devices",
+                return_value=[
+                    {
+                        "device": mock_live_device,
+                        "enhanced_data": {
+                            "name": "Test Device",
+                            "product_type": "438M",
+                            "device_category": ["ec"],
+                            "capabilities": ["Scheduling", "EnvironmentalData"],
+                            "mqtt_prefix": "438M",
+                            "model": "TP11",
+                            "firmware_version": "438MPF.00.01.007.0002",
+                            "connection_category": "lecAndWifi",
+                            "decrypted_mqtt_password": "decrypted_password_123",
+                        },
+                    }
+                ],
+            ),
         ):
             result = await _handle_get_cloud_devices(mock_hass, call)
 
@@ -1324,8 +1467,13 @@ class TestCloudDevicesService:
         assert device["model"] == "TP11"  # Model
         assert device["mqtt_prefix"] == "438M"  # MQTT Topic
         assert device["device_category"] == ["ec"]  # Device Category
-        assert device["connection_category"] == "lecAndWifi"  # Device Connection Category
-        assert device["capabilities"] == ["Scheduling", "EnvironmentalData"]  # Device Capabilities
+        assert (
+            device["connection_category"] == "lecAndWifi"
+        )  # Device Connection Category
+        assert device["capabilities"] == [
+            "Scheduling",
+            "EnvironmentalData",
+        ]  # Device Capabilities
 
         # Verify no sensitive fields are included
         assert "mqtt_password" not in device  # Should not be in sanitized output
@@ -1337,11 +1485,15 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_success(self):
         """Test successful MQTT credentials decryption."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
-        mock_cloud_client.decrypt_local_credentials.return_value = "decrypted_password_123"
+        mock_cloud_client.decrypt_local_credentials.return_value = (
+            "decrypted_password_123"
+        )
 
         mock_device = MagicMock()
         mock_device.serial_number = "TEST-SERIAL-123"
@@ -1366,7 +1518,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_connected_config(self):
         """Test MQTT credentials decryption with no connected configuration."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1382,7 +1536,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_mqtt_config(self):
         """Test MQTT credentials decryption with no MQTT configuration."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1402,7 +1558,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_credentials(self):
         """Test MQTT credentials decryption with no encrypted credentials."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1425,11 +1583,15 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_exception_handling(self):
         """Test MQTT credentials decryption with exception."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
-        mock_cloud_client.decrypt_local_credentials.side_effect = Exception("Decryption error")
+        mock_cloud_client.decrypt_local_credentials.side_effect = Exception(
+            "Decryption error"
+        )
 
         mock_device = MagicMock()
         mock_device.serial_number = "TEST-SERIAL-123"
@@ -1499,7 +1661,9 @@ class TestCancelSleepTimerErrorHandling:
     async def test_cancel_sleep_timer_device_not_found(self, mock_hass):
         """Test cancel sleep timer with device not found."""
         # Arrange
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = None
 
             call_data = {"device_id": "nonexistent"}
@@ -1507,16 +1671,22 @@ class TestCancelSleepTimerErrorHandling:
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device nonexistent not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device nonexistent not found"
+            ):
                 await _handle_cancel_sleep_timer(mock_hass, mock_call)
 
     @pytest.mark.asyncio
     async def test_cancel_sleep_timer_device_error(self, mock_hass, mock_coordinator):
         """Test cancel sleep timer with device communication error."""
         # Arrange
-        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_sleep_timer = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
             call_data = {"device_id": "test-id"}
@@ -1524,7 +1694,9 @@ class TestCancelSleepTimerErrorHandling:
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(HomeAssistantError, match="Failed to cancel sleep timer"):
+            with pytest.raises(
+                HomeAssistantError, match="Failed to cancel sleep timer"
+            ):
                 await _handle_cancel_sleep_timer(mock_hass, mock_call)
 
 
@@ -1535,38 +1707,49 @@ class TestScheduleOperationErrorHandling:
     async def test_schedule_operation_device_not_found(self, mock_hass):
         """Test schedule operation with device not found."""
         # Arrange
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = None
 
             call_data = {
                 "device_id": "nonexistent",
                 "operation": "start",
-                "schedule_time": "2025-01-01T12:00:00Z"
+                "schedule_time": "2025-01-01T12:00:00Z",
             }
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device nonexistent not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device nonexistent not found"
+            ):
                 await _handle_schedule_operation(mock_hass, mock_call)
 
     @pytest.mark.asyncio
-    async def test_schedule_operation_invalid_time_format(self, mock_hass, mock_coordinator):
+    async def test_schedule_operation_invalid_time_format(
+        self, mock_hass, mock_coordinator
+    ):
         """Test schedule operation with invalid time format."""
         # Arrange
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
             call_data = {
                 "device_id": "test-id",
                 "operation": "start",
-                "schedule_time": "invalid-time-format"
+                "schedule_time": "invalid-time-format",
             }
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Invalid schedule time or parameters format"):
+            with pytest.raises(
+                ServiceValidationError,
+                match="Invalid schedule time or parameters format",
+            ):
                 await _handle_schedule_operation(mock_hass, mock_call)
 
 
@@ -1580,32 +1763,38 @@ class TestSetOscillationAnglesErrorHandling:
         call_data = {
             "device_id": "test-id",
             "lower_angle": 45,
-            "upper_angle": 30  # upper angle less than lower angle
+            "upper_angle": 30,  # upper angle less than lower angle
         }
         mock_call = MagicMock(spec=ServiceCall)
         mock_call.data = call_data
 
         # Act & Assert
-        with pytest.raises(ServiceValidationError, match="Lower angle must be less than upper angle"):
+        with pytest.raises(
+            ServiceValidationError, match="Lower angle must be less than upper angle"
+        ):
             await _handle_set_oscillation_angles(mock_hass, mock_call)
 
     @pytest.mark.asyncio
     async def test_set_oscillation_angles_device_not_found(self, mock_hass):
         """Test set oscillation angles with device not found."""
         # Arrange
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = None
 
             call_data = {
                 "device_id": "nonexistent",
                 "lower_angle": 10,
-                "upper_angle": 30
+                "upper_angle": 30,
             }
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device nonexistent not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device nonexistent not found"
+            ):
                 await _handle_set_oscillation_angles(mock_hass, mock_call)
 
 
@@ -1616,18 +1805,19 @@ class TestResetFilterErrorHandling:
     async def test_reset_filter_device_not_found(self, mock_hass):
         """Test reset filter with device not found."""
         # Arrange
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = None
 
-            call_data = {
-                "device_id": "nonexistent",
-                "filter_type": "hepa"
-            }
+            call_data = {"device_id": "nonexistent", "filter_type": "hepa"}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device nonexistent not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device nonexistent not found"
+            ):
                 await _handle_reset_filter(mock_hass, mock_call)
 
 
@@ -1638,33 +1828,35 @@ class TestSetSleepTimerErrorHandling:
     async def test_set_sleep_timer_device_not_found(self, mock_hass):
         """Test set sleep timer with device not found."""
         # Arrange
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = None
 
-            call_data = {
-                "device_id": "nonexistent",
-                "minutes": 60
-            }
+            call_data = {"device_id": "nonexistent", "minutes": 60}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(ServiceValidationError, match="Device nonexistent not found"):
+            with pytest.raises(
+                ServiceValidationError, match="Device nonexistent not found"
+            ):
                 await _handle_set_sleep_timer(mock_hass, mock_call)
 
     @pytest.mark.asyncio
     async def test_set_sleep_timer_device_error(self, mock_hass, mock_coordinator):
         """Test set sleep timer with device communication error."""
         # Arrange
-        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_sleep_timer = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
-            call_data = {
-                "device_id": "test-id",
-                "minutes": 60
-            }
+            call_data = {"device_id": "test-id", "minutes": 60}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
@@ -1680,15 +1872,16 @@ class TestResetFilterAdvancedErrorHandling:
     async def test_reset_filter_device_error(self, mock_hass, mock_coordinator):
         """Test reset filter with device communication error."""
         # Arrange
-        mock_coordinator.device.reset_hepa_filter_life = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.reset_hepa_filter_life = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
-            call_data = {
-                "device_id": "test-id",
-                "filter_type": "hepa"
-            }
+            call_data = {"device_id": "test-id", "filter_type": "hepa"}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
@@ -1702,13 +1895,12 @@ class TestResetFilterAdvancedErrorHandling:
         # Arrange
         mock_coordinator.device.reset_carbon_filter_life = AsyncMock()
 
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
-            call_data = {
-                "device_id": "test-id",
-                "filter_type": "carbon"
-            }
+            call_data = {"device_id": "test-id", "filter_type": "carbon"}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
@@ -1725,13 +1917,12 @@ class TestResetFilterAdvancedErrorHandling:
         mock_coordinator.device.reset_hepa_filter_life = AsyncMock()
         mock_coordinator.device.reset_carbon_filter_life = AsyncMock()
 
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
-            call_data = {
-                "device_id": "test-id",
-                "filter_type": "both"
-            }
+            call_data = {"device_id": "test-id", "filter_type": "both"}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
@@ -1747,22 +1938,26 @@ class TestSetOscillationAnglesDeviceError:
     """Test device communication error in set oscillation angles."""
 
     @pytest.mark.asyncio
-    async def test_set_oscillation_angles_device_error(self, mock_hass, mock_coordinator):
+    async def test_set_oscillation_angles_device_error(
+        self, mock_hass, mock_coordinator
+    ):
         """Test set oscillation angles with device communication error."""
         # Arrange
-        mock_coordinator.device.set_oscillation_angles = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_oscillation_angles = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
-        with patch("custom_components.hass_dyson.services._get_coordinator_from_device_id") as mock_get_coord:
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id"
+        ) as mock_get_coord:
             mock_get_coord.return_value = mock_coordinator
 
-            call_data = {
-                "device_id": "test-id",
-                "lower_angle": 10,
-                "upper_angle": 30
-            }
+            call_data = {"device_id": "test-id", "lower_angle": 10, "upper_angle": 30}
             mock_call = MagicMock(spec=ServiceCall)
             mock_call.data = call_data
 
             # Act & Assert
-            with pytest.raises(HomeAssistantError, match="Failed to set oscillation angles"):
+            with pytest.raises(
+                HomeAssistantError, match="Failed to set oscillation angles"
+            ):
                 await _handle_set_oscillation_angles(mock_hass, mock_call)

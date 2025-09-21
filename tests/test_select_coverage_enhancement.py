@@ -73,14 +73,18 @@ class TestSelectCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {
-            "product-state": {"osal": {"value": "invalid"}, "osau": {"value": "invalid"}, "ancp": {"value": "invalid"}}
+            "product-state": {
+                "osal": {"value": "invalid"},
+                "osau": {"value": "invalid"},
+                "ancp": {"value": "invalid"},
+            }
         }
 
         select = DysonOscillationModeSelect(coordinator)
 
         # Act - Should handle invalid values gracefully
         center = select._calculate_current_center()
-        assert isinstance(center, (int, float))
+        assert isinstance(center, int | float)
 
     def test_oscillation_mode_select_boundary_edge_cases(self):
         """Test oscillation mode select boundary conditions."""
@@ -88,7 +92,11 @@ class TestSelectCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {
-            "product-state": {"osal": {"value": "0001"}, "osau": {"value": "3599"}, "oson": {"value": "ON"}}
+            "product-state": {
+                "osal": {"value": "0001"},
+                "osau": {"value": "3599"},
+                "oson": {"value": "ON"},
+            }
         }
 
         select = DysonOscillationModeSelect(coordinator)
@@ -213,7 +221,11 @@ class TestSelectCoverageEnhancement:
 
         # Test with ON mode and angle span calculation
         coordinator.device._get_current_value = MagicMock(
-            side_effect=lambda state, key, default: {"oson": "ON", "osal": "0005", "osau": "0355"}.get(key, default)
+            side_effect=lambda state, key, default: {
+                "oson": "ON",
+                "osal": "0005",
+                "osau": "0355",
+            }.get(key, default)
         )
         mode = select._detect_mode_from_angles()
         assert mode is not None

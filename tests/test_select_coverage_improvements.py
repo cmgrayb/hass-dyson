@@ -36,13 +36,17 @@ class TestSelectCoverageImprovements:
         # Should have Auto, Manual, and Sleep for cloud devices
         assert select._attr_options == ["Auto", "Manual", "Sleep"]
 
-    def test_fan_control_mode_coordinator_update_sleep_mode_detection(self, mock_coordinator):
+    def test_fan_control_mode_coordinator_update_sleep_mode_detection(
+        self, mock_coordinator
+    ):
         """Test sleep mode detection for cloud devices."""
         mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "auto": "OFF",
-            "nmod": "ON",  # Night mode ON = Sleep mode
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "auto": "OFF",
+                "nmod": "ON",  # Night mode ON = Sleep mode
+            }.get(key, default)
+        )
         mock_coordinator.data = {"product-state": {}}
 
         select = DysonFanControlModeSelect(mock_coordinator)
@@ -55,11 +59,13 @@ class TestSelectCoverageImprovements:
 
     def test_oscillation_mode_detect_mode_exception_handling(self, mock_coordinator):
         """Test oscillation mode detection with invalid angle data."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "oson": "ON",
-            "osal": "invalid",  # Invalid data should trigger exception
-            "osau": "0350",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "oson": "ON",
+                "osal": "invalid",  # Invalid data should trigger exception
+                "osau": "0350",
+            }.get(key, default)
+        )
         mock_coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(mock_coordinator)
@@ -68,7 +74,9 @@ class TestSelectCoverageImprovements:
         mode = select._detect_mode_from_angles()
         assert mode == "Custom"
 
-    def test_oscillation_mode_boundary_constraints_lower_violation(self, mock_coordinator):
+    def test_oscillation_mode_boundary_constraints_lower_violation(
+        self, mock_coordinator
+    ):
         """Test oscillation angle boundary handling for lower bound violation."""
         select = DysonOscillationModeSelect(mock_coordinator)
 
@@ -78,7 +86,9 @@ class TestSelectCoverageImprovements:
         assert lower == 0  # Should be constrained to minimum
         assert upper <= 350  # Should not exceed maximum
 
-    def test_oscillation_mode_boundary_constraints_upper_violation(self, mock_coordinator):
+    def test_oscillation_mode_boundary_constraints_upper_violation(
+        self, mock_coordinator
+    ):
         """Test oscillation angle boundary handling for upper bound violation."""
         select = DysonOscillationModeSelect(mock_coordinator)
 
@@ -138,14 +148,18 @@ class TestSelectCoverageImprovements:
 
         assert attributes is None
 
-    def test_oscillation_mode_extra_state_attributes_invalid_data(self, mock_coordinator):
+    def test_oscillation_mode_extra_state_attributes_invalid_data(
+        self, mock_coordinator
+    ):
         """Test extra state attributes with invalid angle data."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "oson": "OFF",
-            "osal": "invalid",  # Invalid data
-            "osau": "invalid",  # Invalid data
-            "ancp": "invalid",  # Invalid data
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "oson": "OFF",
+                "osal": "invalid",  # Invalid data
+                "osau": "invalid",  # Invalid data
+                "ancp": "invalid",  # Invalid data
+            }.get(key, default)
+        )
         mock_coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(mock_coordinator)
@@ -162,10 +176,12 @@ class TestSelectCoverageImprovements:
 
     def test_heating_mode_coordinator_update_unknown_mode(self, mock_coordinator):
         """Test heating mode with unknown heating state."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "hmod": "UNKNOWN",  # Unknown heating mode
-            "hsta": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "hmod": "UNKNOWN",  # Unknown heating mode
+                "hsta": "OFF",
+            }.get(key, default)
+        )
         mock_coordinator.data = {"product-state": {}}
 
         select = DysonHeatingModeSelect(mock_coordinator)
@@ -219,13 +235,17 @@ class TestSelectCoverageImprovements:
 
         assert attributes is None
 
-    def test_heating_mode_extra_state_attributes_with_temperature(self, mock_coordinator):
+    def test_heating_mode_extra_state_attributes_with_temperature(
+        self, mock_coordinator
+    ):
         """Test heating mode extra state attributes with temperature data."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "hmod": "HEAT",
-            "hsta": "HEAT",
-            "hmax": "3003",  # 300.3K = 27.15°C target temperature
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "hmod": "HEAT",
+                "hsta": "HEAT",
+                "hmax": "3003",  # 300.3K = 27.15°C target temperature
+            }.get(key, default)
+        )
         mock_coordinator.data = {"product-state": {}}
 
         select = DysonHeatingModeSelect(mock_coordinator)
@@ -239,13 +259,17 @@ class TestSelectCoverageImprovements:
         assert attributes["heating_enabled"] is True
         assert attributes["target_temperature"] == 27.2  # Rounded to 1 decimal
 
-    def test_heating_mode_extra_state_attributes_invalid_temperature(self, mock_coordinator):
+    def test_heating_mode_extra_state_attributes_invalid_temperature(
+        self, mock_coordinator
+    ):
         """Test heating mode extra state attributes with invalid temperature data."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "hmod": "HEAT",
-            "hsta": "OFF",
-            "hmax": "invalid",  # Invalid temperature data
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "hmod": "HEAT",
+                "hsta": "OFF",
+                "hmax": "invalid",  # Invalid temperature data
+            }.get(key, default)
+        )
         mock_coordinator.data = {"product-state": {}}
 
         select = DysonHeatingModeSelect(mock_coordinator)

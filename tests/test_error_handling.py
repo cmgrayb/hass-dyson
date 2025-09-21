@@ -81,7 +81,9 @@ class TestCapabilityErrorHandling:
         capabilities = ["ExtendedAQ", "Heating"]
         assert has_capability_safe(capabilities, "extendedAQ") is True
         assert has_capability_safe(capabilities, "HEATING") is True
-        assert has_capability_safe(capabilities, "extended_aq") is False  # Exact match needed
+        assert (
+            has_capability_safe(capabilities, "extended_aq") is False
+        )  # Exact match needed
 
     def test_has_capability_safe_with_malformed_capability_entries(self):
         """Test safe capability checking with malformed entries in capabilities list."""
@@ -95,11 +97,16 @@ class TestCapabilityErrorHandling:
         capabilities = ["ExtendedAQ", "Heating"]
 
         # Should find existing capability
-        assert has_any_capability_safe(capabilities, ["ExtendedAQ", "NonExistent"]) is True
+        assert (
+            has_any_capability_safe(capabilities, ["ExtendedAQ", "NonExistent"]) is True
+        )
         assert has_any_capability_safe(capabilities, ["heating", "NonExistent"]) is True
 
         # Should not find non-existing capabilities
-        assert has_any_capability_safe(capabilities, ["NonExistent1", "NonExistent2"]) is False
+        assert (
+            has_any_capability_safe(capabilities, ["NonExistent1", "NonExistent2"])
+            is False
+        )
 
         # Should handle empty search list
         assert has_any_capability_safe(capabilities, []) is False
@@ -156,21 +163,29 @@ class TestSensorDataErrorHandling:
         assert convert_sensor_value_safe(42.7, int, "device123", "test_sensor") == 42
 
         # Float conversion
-        assert convert_sensor_value_safe("42.5", float, "device123", "test_sensor") == 42.5
+        assert (
+            convert_sensor_value_safe("42.5", float, "device123", "test_sensor") == 42.5
+        )
         assert convert_sensor_value_safe(42, float, "device123", "test_sensor") == 42.0
 
         # String conversion
         assert convert_sensor_value_safe(42, str, "device123", "test_sensor") == "42"
-        assert convert_sensor_value_safe(42.5, str, "device123", "test_sensor") == "42.5"
+        assert (
+            convert_sensor_value_safe(42.5, str, "device123", "test_sensor") == "42.5"
+        )
 
     def test_convert_sensor_value_safe_invalid_conversions(self):
         """Test safe sensor value conversion with invalid conversions."""
         # Invalid int conversion
-        result = convert_sensor_value_safe("not_a_number", int, "device123", "test_sensor")
+        result = convert_sensor_value_safe(
+            "not_a_number", int, "device123", "test_sensor"
+        )
         assert result is None
 
         # Invalid float conversion
-        result = convert_sensor_value_safe("not_a_float", float, "device123", "test_sensor")
+        result = convert_sensor_value_safe(
+            "not_a_float", float, "device123", "test_sensor"
+        )
         assert result is None
 
         # Unsupported target type
@@ -361,7 +376,9 @@ class TestBinarySensorErrorHandling:
         """Test filter replacement sensor handles malformed data gracefully."""
         from unittest.mock import patch
 
-        from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonFilterReplacementSensor,
+        )
 
         # Test with non-dict coordinator data
         mock_coordinator.data = "not_a_dict"
@@ -380,7 +397,9 @@ class TestBinarySensorErrorHandling:
         """Test filter replacement sensor handles invalid filter life values."""
         from unittest.mock import patch
 
-        from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonFilterReplacementSensor,
+        )
 
         # Test with non-numeric filter life
         mock_coordinator.device.hepa_filter_life = "not_a_number"
@@ -398,7 +417,9 @@ class TestBinarySensorErrorHandling:
         """Test filter replacement sensor handles missing device gracefully."""
         from unittest.mock import patch
 
-        from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonFilterReplacementSensor,
+        )
 
         mock_coordinator.device = None
 
@@ -424,5 +445,7 @@ class TestBinarySensorErrorHandling:
         assert isinstance(result, bool)
 
         # Test with both malformed
-        result = _is_fault_code_relevant("TEST_FAULT", Exception("bad"), Exception("bad"))
+        result = _is_fault_code_relevant(
+            "TEST_FAULT", Exception("bad"), Exception("bad")
+        )
         assert isinstance(result, bool)

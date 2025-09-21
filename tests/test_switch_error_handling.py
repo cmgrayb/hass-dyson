@@ -30,7 +30,9 @@ class TestSwitchErrorHandling:
         switch = DysonAutoModeSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -44,7 +46,9 @@ class TestSwitchErrorHandling:
         switch = DysonNightModeSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_night_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -53,12 +57,16 @@ class TestSwitchErrorHandling:
         # Verify device method was called
         mock_coordinator.device.set_night_mode.assert_called_once_with(True)
 
-    async def test_night_mode_switch_turn_off_exception_handling(self, mock_coordinator):
+    async def test_night_mode_switch_turn_off_exception_handling(
+        self, mock_coordinator
+    ):
         """Test night mode switch turn off with device exception."""
         switch = DysonNightModeSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_night_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -67,12 +75,16 @@ class TestSwitchErrorHandling:
         # Verify device method was called
         mock_coordinator.device.set_night_mode.assert_called_once_with(False)
 
-    async def test_oscillation_switch_turn_on_exception_handling(self, mock_coordinator):
+    async def test_oscillation_switch_turn_on_exception_handling(
+        self, mock_coordinator
+    ):
         """Test oscillation switch turn on with device exception."""
         switch = DysonOscillationSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_oscillation = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_oscillation = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -81,12 +93,16 @@ class TestSwitchErrorHandling:
         # Verify device method was called
         mock_coordinator.device.set_oscillation.assert_called_once_with(True)
 
-    async def test_oscillation_switch_turn_off_exception_handling(self, mock_coordinator):
+    async def test_oscillation_switch_turn_off_exception_handling(
+        self, mock_coordinator
+    ):
         """Test oscillation switch turn off with device exception."""
         switch = DysonOscillationSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_oscillation = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_oscillation = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -100,7 +116,9 @@ class TestSwitchErrorHandling:
         switch = DysonHeatingSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_heating_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -114,7 +132,9 @@ class TestSwitchErrorHandling:
         switch = DysonHeatingSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_heating_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -123,12 +143,16 @@ class TestSwitchErrorHandling:
         # Verify device method was called
         mock_coordinator.device.set_heating_mode.assert_called_once_with("OFF")
 
-    async def test_continuous_monitoring_switch_turn_on_exception_handling(self, mock_coordinator):
+    async def test_continuous_monitoring_switch_turn_on_exception_handling(
+        self, mock_coordinator
+    ):
         """Test continuous monitoring switch turn on with device exception."""
         switch = DysonContinuousMonitoringSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_continuous_monitoring = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully
@@ -137,12 +161,16 @@ class TestSwitchErrorHandling:
         # Verify device method was called
         mock_coordinator.device.set_continuous_monitoring.assert_called_once_with(True)
 
-    async def test_continuous_monitoring_switch_turn_off_exception_handling(self, mock_coordinator):
+    async def test_continuous_monitoring_switch_turn_off_exception_handling(
+        self, mock_coordinator
+    ):
         """Test continuous monitoring switch turn off with device exception."""
         switch = DysonContinuousMonitoringSwitch(mock_coordinator)
 
         # Mock device to raise exception
-        mock_coordinator.device.set_continuous_monitoring = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch.object(switch, "async_write_ha_state"):
             # Should handle exception gracefully

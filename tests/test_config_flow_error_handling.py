@@ -21,7 +21,11 @@ from custom_components.hass_dyson.config_flow import (
     _get_management_actions,
     _get_setup_method_options,
 )
-from custom_components.hass_dyson.const import CONF_CREDENTIAL, CONF_MQTT_PREFIX, CONF_SERIAL_NUMBER
+from custom_components.hass_dyson.const import (
+    CONF_CREDENTIAL,
+    CONF_MQTT_PREFIX,
+    CONF_SERIAL_NUMBER,
+)
 
 
 class TestConfigFlowErrorHandling:
@@ -61,7 +65,9 @@ class TestConfigFlowErrorHandling:
         mock_cloud_client.request_login_code = AsyncMock(return_value=mock_challenge)
 
         with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            challenge_id, errors = await mock_flow._authenticate_with_dyson_api("test@test.com", "password123")
+            challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
+                "test@test.com", "password123"
+            )
 
         assert challenge_id is None
         assert errors["base"] == "auth_failed"
@@ -75,10 +81,14 @@ class TestConfigFlowErrorHandling:
         mock_cloud_client.begin_login = AsyncMock(return_value=None)
 
         # Mock hass.async_add_executor_job to return our mock client
-        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_cloud_client)
+        mock_flow.hass.async_add_executor_job = AsyncMock(
+            return_value=mock_cloud_client
+        )
 
         with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            challenge_id, errors = await mock_flow._authenticate_with_dyson_api("test@test.com", "password")
+            challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
+                "test@test.com", "password"
+            )
 
         assert challenge_id is None
         assert errors["base"] == "connection_failed"
@@ -113,7 +123,11 @@ class TestConfigFlowErrorHandling:
     @pytest.mark.asyncio
     async def test_process_manual_device_input_missing_fields(self, mock_flow):
         """Test manual device processing with missing required fields."""
-        user_input = {CONF_SERIAL_NUMBER: "", CONF_CREDENTIAL: "credential", CONF_MQTT_PREFIX: "prefix"}
+        user_input = {
+            CONF_SERIAL_NUMBER: "",
+            CONF_CREDENTIAL: "credential",
+            CONF_MQTT_PREFIX: "prefix",
+        }
 
         errors = await mock_flow._process_manual_device_input(user_input)
 
@@ -122,10 +136,16 @@ class TestConfigFlowErrorHandling:
     @pytest.mark.asyncio
     async def test_process_manual_device_input_duplicate_device(self, mock_flow):
         """Test manual device processing with duplicate device."""
-        user_input = {CONF_SERIAL_NUMBER: "TEST123", CONF_CREDENTIAL: "credential", CONF_MQTT_PREFIX: "prefix"}
+        user_input = {
+            CONF_SERIAL_NUMBER: "TEST123",
+            CONF_CREDENTIAL: "credential",
+            CONF_MQTT_PREFIX: "prefix",
+        }
 
         mock_flow.async_set_unique_id = AsyncMock()
-        mock_flow._abort_if_unique_id_configured = MagicMock(side_effect=Exception("Already configured"))
+        mock_flow._abort_if_unique_id_configured = MagicMock(
+            side_effect=Exception("Already configured")
+        )
 
         errors = await mock_flow._process_manual_device_input(user_input)
 
@@ -134,7 +154,10 @@ class TestConfigFlowErrorHandling:
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_mdns_failure(self, mock_flow):
         """Test hostname resolution when mDNS discovery fails."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns", return_value=None):
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns",
+            return_value=None,
+        ):
             hostname = await mock_flow._resolve_device_hostname("TEST123", "")
 
         assert hostname == "TEST123.local"
@@ -195,7 +218,9 @@ class TestConfigFlowErrorHandling:
     async def test_async_step_verify_401_error(self, mock_flow):
         """Test verify step with 401 authentication error."""
         mock_cloud_client = AsyncMock()
-        mock_cloud_client.complete_login = AsyncMock(side_effect=Exception("401 Unauthorized"))
+        mock_cloud_client.complete_login = AsyncMock(
+            side_effect=Exception("401 Unauthorized")
+        )
 
         mock_flow._cloud_client = mock_cloud_client
         mock_flow._challenge_id = "challenge123"
@@ -227,10 +252,14 @@ class TestConfigFlowErrorHandling:
         assert result["errors"]["base"] == "connection_failed"
 
     @pytest.mark.asyncio
-    async def test_async_step_connection_device_discovery_api_format_error(self, mock_flow):
+    async def test_async_step_connection_device_discovery_api_format_error(
+        self, mock_flow
+    ):
         """Test connection step with API format error."""
         mock_cloud_client = AsyncMock()
-        mock_cloud_client.get_devices = AsyncMock(side_effect=Exception("Missing required field: productType"))
+        mock_cloud_client.get_devices = AsyncMock(
+            side_effect=Exception("Missing required field: productType")
+        )
 
         mock_flow._cloud_client = mock_cloud_client
 
@@ -241,10 +270,14 @@ class TestConfigFlowErrorHandling:
         assert result["errors"]["base"] == "api_format_changed"
 
     @pytest.mark.asyncio
-    async def test_async_step_connection_device_discovery_json_validation_error(self, mock_flow):
+    async def test_async_step_connection_device_discovery_json_validation_error(
+        self, mock_flow
+    ):
         """Test connection step with JSON validation error."""
         mock_cloud_client = AsyncMock()
-        mock_cloud_client.get_devices = AsyncMock(side_effect=Exception("JSONValidationError: Invalid format"))
+        mock_cloud_client.get_devices = AsyncMock(
+            side_effect=Exception("JSONValidationError: Invalid format")
+        )
 
         mock_flow._cloud_client = mock_cloud_client
 
@@ -284,7 +317,9 @@ class TestMDNSDiscoveryErrorHandling:
         """Test mDNS discovery when zeroconf instance is unavailable."""
         mock_hass = MagicMock()
 
-        with patch("homeassistant.components.zeroconf.async_get_instance", return_value=None):
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance", return_value=None
+        ):
             result = await _discover_device_via_mdns(mock_hass, "TEST123")
 
         assert result is None
@@ -296,8 +331,14 @@ class TestMDNSDiscoveryErrorHandling:
         mock_zeroconf = MagicMock()
         mock_zeroconf.get_service_info = MagicMock(return_value=None)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance", return_value=mock_zeroconf):
-            with patch("socket.gethostbyname", side_effect=socket.gaierror("Name resolution failed")):
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            return_value=mock_zeroconf,
+        ):
+            with patch(
+                "socket.gethostbyname",
+                side_effect=socket.gaierror("Name resolution failed"),
+            ):
                 result = await _discover_device_via_mdns(mock_hass, "TEST123")
 
         assert result is None
@@ -313,10 +354,17 @@ class TestMDNSDiscoveryErrorHandling:
             time.sleep(2)  # Simulate slow operation
             return None
 
-        with patch("homeassistant.components.zeroconf.async_get_instance", return_value=MagicMock()):
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            return_value=MagicMock(),
+        ):
             with patch("asyncio.get_event_loop") as mock_loop:
-                mock_loop.return_value.run_in_executor = AsyncMock(side_effect=slow_function)
-                result = await _discover_device_via_mdns(mock_hass, "TEST123", timeout=1)
+                mock_loop.return_value.run_in_executor = AsyncMock(
+                    side_effect=slow_function
+                )
+                result = await _discover_device_via_mdns(
+                    mock_hass, "TEST123", timeout=1
+                )
 
         assert result is None
 
@@ -325,7 +373,10 @@ class TestMDNSDiscoveryErrorHandling:
         """Test mDNS discovery with zeroconf exception."""
         mock_hass = MagicMock()
 
-        with patch("homeassistant.components.zeroconf.async_get_instance", side_effect=Exception("Zeroconf error")):
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            side_effect=Exception("Zeroconf error"),
+        ):
             result = await _discover_device_via_mdns(mock_hass, "TEST123")
 
         assert result is None
@@ -339,8 +390,14 @@ class TestMDNSDiscoveryErrorHandling:
         mock_service_info.addresses = []
         mock_zeroconf.get_service_info = MagicMock(return_value=mock_service_info)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance", return_value=mock_zeroconf):
-            with patch("socket.gethostbyname", side_effect=socket.gaierror("Name resolution failed")):
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            return_value=mock_zeroconf,
+        ):
+            with patch(
+                "socket.gethostbyname",
+                side_effect=socket.gaierror("Name resolution failed"),
+            ):
                 result = await _discover_device_via_mdns(mock_hass, "TEST123")
 
         assert result is None
@@ -451,11 +508,15 @@ class TestConfigFlowAuthenticationScenarios:
             class DysonAuthError(Exception):
                 pass
 
-            mock_cloud_client.request_login_code = AsyncMock(side_effect=DysonAuthError("Auth failed"))
+            mock_cloud_client.request_login_code = AsyncMock(
+                side_effect=DysonAuthError("Auth failed")
+            )
 
             # Mock the exception in the config flow
             with patch("libdyson_rest.exceptions.DysonAuthError", DysonAuthError):
-                challenge_id, errors = await mock_flow._authenticate_with_dyson_api("test@test.com", "password")
+                challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
+                    "test@test.com", "password"
+                )
 
         assert challenge_id is None
         assert errors["base"] == "auth_failed"
@@ -464,17 +525,27 @@ class TestConfigFlowAuthenticationScenarios:
     async def test_authenticate_with_dyson_api_connection_error(self, mock_flow):
         """Test authentication with DysonConnectionError."""
         mock_cloud_client = AsyncMock()
-        mock_cloud_client.provision = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_cloud_client.provision = AsyncMock(
+            side_effect=Exception("Connection failed")
+        )
 
         # Mock hass.async_add_executor_job to return our mock client
-        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_cloud_client)
+        mock_flow.hass.async_add_executor_job = AsyncMock(
+            return_value=mock_cloud_client
+        )
 
         # Import and use real exceptions
         from libdyson_rest.exceptions import DysonConnectionError
 
         with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            with patch.object(mock_cloud_client, "provision", side_effect=DysonConnectionError("Connection failed")):
-                challenge_id, errors = await mock_flow._authenticate_with_dyson_api("test@test.com", "password")
+            with patch.object(
+                mock_cloud_client,
+                "provision",
+                side_effect=DysonConnectionError("Connection failed"),
+            ):
+                challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
+                    "test@test.com", "password"
+                )
 
         assert challenge_id is None
         assert errors["base"] == "connection_failed"
@@ -488,14 +559,22 @@ class TestConfigFlowAuthenticationScenarios:
         mock_cloud_client.begin_login = AsyncMock()
 
         # Mock hass.async_add_executor_job to return our mock client
-        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_cloud_client)
+        mock_flow.hass.async_add_executor_job = AsyncMock(
+            return_value=mock_cloud_client
+        )
 
         # Import and use real exceptions
         from libdyson_rest.exceptions import DysonAPIError
 
         with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            with patch.object(mock_cloud_client, "begin_login", side_effect=DysonAPIError("API failed")):
-                challenge_id, errors = await mock_flow._authenticate_with_dyson_api("test@test.com", "password")
+            with patch.object(
+                mock_cloud_client,
+                "begin_login",
+                side_effect=DysonAPIError("API failed"),
+            ):
+                challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
+                    "test@test.com", "password"
+                )
 
         assert challenge_id is None
         assert errors["base"] == "cloud_api_error"
@@ -506,9 +585,13 @@ class TestConfigFlowAuthenticationScenarios:
         with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
             mock_cloud_client = AsyncMock()
             mock_client_class.return_value = mock_cloud_client
-            mock_cloud_client.request_login_code = AsyncMock(side_effect=Exception("Generic error"))
+            mock_cloud_client.request_login_code = AsyncMock(
+                side_effect=Exception("Generic error")
+            )
 
-            challenge_id, errors = await mock_flow._authenticate_with_dyson_api("test@test.com", "password")
+            challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
+                "test@test.com", "password"
+            )
 
         assert challenge_id is None
         assert errors["base"] == "auth_failed"

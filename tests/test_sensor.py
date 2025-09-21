@@ -3,7 +3,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -125,7 +129,10 @@ class TestDysonPM25Sensor:
         assert sensor._attr_translation_key == "pm25"
         assert sensor._attr_device_class == SensorDeviceClass.PM25
         assert sensor._attr_state_class == SensorStateClass.MEASUREMENT
-        assert sensor._attr_native_unit_of_measurement == CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        assert (
+            sensor._attr_native_unit_of_measurement
+            == CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        )
 
     def test_native_value_with_valid_data(self, mock_coordinator):
         """Test sensor updates when device has PM2.5 data."""
@@ -209,7 +216,7 @@ class TestDysonTemperatureSensor:
 
         # Assert
         assert sensor._attr_native_value is not None
-        assert isinstance(sensor._attr_native_value, (int, float))
+        assert isinstance(sensor._attr_native_value, int | float)
         # Should be around 21.85°C (295K - 273.15)
         assert 20 < sensor._attr_native_value < 25
 
@@ -250,8 +257,14 @@ class TestDysonHumiditySensor:
         # Act - trigger update with mocked device_utils
         with (
             patch.object(sensor, "async_write_ha_state"),
-            patch("custom_components.hass_dyson.device_utils.get_sensor_data_safe", return_value="030"),
-            patch("custom_components.hass_dyson.device_utils.convert_sensor_value_safe", return_value=30),
+            patch(
+                "custom_components.hass_dyson.device_utils.get_sensor_data_safe",
+                return_value="030",
+            ),
+            patch(
+                "custom_components.hass_dyson.device_utils.convert_sensor_value_safe",
+                return_value=30,
+            ),
         ):
             sensor._handle_coordinator_update()
 
@@ -351,7 +364,9 @@ class TestDysonAirQualitySensor:
         # Assert
         assert sensor.coordinator == mock_coordinator
         assert sensor._attr_unique_id == "TEST-SERIAL-123_pm25"
-        assert sensor._attr_name == "PM25"  # This sensor still uses _attr_name dynamically
+        assert (
+            sensor._attr_name == "PM25"
+        )  # This sensor still uses _attr_name dynamically
         assert sensor._attr_device_class == SensorDeviceClass.PM25
         assert sensor.sensor_type == "pm25"
 
@@ -401,7 +416,9 @@ class TestSensorIntegration:
             assert isinstance(sensor, SensorEntity)
 
     @pytest.mark.asyncio
-    async def test_multiple_capabilities_creates_multiple_sensors(self, mock_coordinator):
+    async def test_multiple_capabilities_creates_multiple_sensors(
+        self, mock_coordinator
+    ):
         """Test that devices with multiple capabilities create multiple sensors."""
         # Arrange
         hass = MagicMock()
@@ -420,7 +437,9 @@ class TestSensorIntegration:
         assert result is True
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) >= 3  # Should have PM2.5, PM10, temperature, and possibly more
+        assert (
+            len(entities) >= 3
+        )  # Should have PM2.5, PM10, temperature, and possibly more
 
     def test_sensor_data_consistency_across_updates(self, mock_coordinator):
         """Test that sensor values remain consistent across coordinator updates."""
@@ -485,7 +504,9 @@ class TestSensorPlatformSetupAdvanced:
         assert result is True
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) >= 3  # Should have formaldehyde sensor and carbon filter sensors
+        assert (
+            len(entities) >= 3
+        )  # Should have formaldehyde sensor and carbon filter sensors
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_robot_category(self, mock_coordinator):
@@ -782,7 +803,9 @@ class TestDysonHEPAFilterTypeSensor:
         sensor = DysonHEPAFilterTypeSensor(mock_coordinator)
         mock_coordinator.device = MagicMock()
         # Mock the actual data structure the sensor expects
-        mock_coordinator.data = {"product-state": {"hflt": "STD"}}  # Standard filter type code
+        mock_coordinator.data = {
+            "product-state": {"hflt": "STD"}
+        }  # Standard filter type code
 
         # Act
         with patch.object(sensor, "async_write_ha_state"):
@@ -824,7 +847,9 @@ class TestDysonCarbonFilterTypeSensor:
         sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
         mock_coordinator.device = MagicMock()
         # Mock the actual data structure the sensor expects
-        mock_coordinator.data = {"product-state": {"cflt": "ACT"}}  # Activated carbon filter type code
+        mock_coordinator.data = {
+            "product-state": {"cflt": "ACT"}
+        }  # Activated carbon filter type code
 
         # Act
         with patch.object(sensor, "async_write_ha_state"):
@@ -897,7 +922,9 @@ class TestSensorCoverageEnhancement:
     """Test class to enhance sensor coverage to 90%+."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_exception_handling_fallback(self, mock_coordinator, mock_hass):
+    async def test_async_setup_entry_exception_handling_fallback(
+        self, mock_coordinator, mock_hass
+    ):
         """Test sensor setup exception handling with fallback to basic sensors."""
         # Arrange
         config_entry = MagicMock()
@@ -914,11 +941,14 @@ class TestSensorCoverageEnhancement:
         with (
             patch("custom_components.hass_dyson.sensor._LOGGER") as mock_logger,
             patch(
-                "custom_components.hass_dyson.sensor.DysonPM25Sensor", side_effect=Exception("Entity creation error")
+                "custom_components.hass_dyson.sensor.DysonPM25Sensor",
+                side_effect=Exception("Entity creation error"),
             ),
         ):
             # Act - This should trigger the exception handling path (lines 145-149)
-            result = await async_setup_entry(mock_hass, config_entry, mock_async_add_entities)
+            result = await async_setup_entry(
+                mock_hass, config_entry, mock_async_add_entities
+            )
 
             # Assert
             # The function should still return True even when entity creation fails
@@ -936,7 +966,9 @@ class TestSensorCoverageEnhancement:
             mock_async_add_entities.assert_called_once_with([], True)
 
     @pytest.mark.asyncio
-    async def test_sensor_platform_setup_robot_device_battery_debug_log(self, mock_coordinator, mock_hass):
+    async def test_sensor_platform_setup_robot_device_battery_debug_log(
+        self, mock_coordinator, mock_hass
+    ):
         """Test robot device debug logging for battery sensor placeholder."""
         # Create mock config entry
         config_entry = MagicMock()
@@ -946,7 +978,9 @@ class TestSensorCoverageEnhancement:
         mock_async_add_entities = MagicMock()
 
         # Set up coordinator for robot device (should trigger debug log on lines 141-142)
-        mock_coordinator.device_category = ["robot"]  # lowercase to match the condition in sensor.py
+        mock_coordinator.device_category = [
+            "robot"
+        ]  # lowercase to match the condition in sensor.py
         mock_coordinator.device_capabilities = []
         mock_hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
@@ -1040,4 +1074,4 @@ class TestSensorCoverageEnhancement:
         mock_coordinator.data = {"product-state": {}}  # Missing RSSI data
         value = wifi_sensor.native_value
         # Should handle missing RSSI gracefully
-        assert value is None or isinstance(value, (int, float))
+        assert value is None or isinstance(value, int | float)

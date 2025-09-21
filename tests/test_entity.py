@@ -140,7 +140,9 @@ class TestDysonEntity:
         # Assert
         assert available is False
 
-    def test_handle_coordinator_update_safe_with_hass_loop(self, mock_coordinator, mock_hass):
+    def test_handle_coordinator_update_safe_with_hass_loop(
+        self, mock_coordinator, mock_hass
+    ):
         """Test _handle_coordinator_update_safe with hass and loop available."""
         # Arrange
         entity = DysonEntity(mock_coordinator)
@@ -163,21 +165,27 @@ class TestDysonEntity:
         entity = DysonEntity(mock_coordinator)
 
         with patch.object(entity, "hass", None):
-            with patch.object(CoordinatorEntity, "_handle_coordinator_update") as mock_super_update:
+            with patch.object(
+                CoordinatorEntity, "_handle_coordinator_update"
+            ) as mock_super_update:
                 # Act
                 entity._handle_coordinator_update_safe()
 
                 # Assert
                 mock_super_update.assert_called_once()
 
-    def test_handle_coordinator_update_safe_without_loop(self, mock_coordinator, mock_hass):
+    def test_handle_coordinator_update_safe_without_loop(
+        self, mock_coordinator, mock_hass
+    ):
         """Test _handle_coordinator_update_safe with hass but no loop."""
         # Arrange
         entity = DysonEntity(mock_coordinator)
         entity.hass = mock_hass
         delattr(mock_hass, "loop")  # Remove loop attribute
 
-        with patch.object(CoordinatorEntity, "_handle_coordinator_update") as mock_super_update:
+        with patch.object(
+            CoordinatorEntity, "_handle_coordinator_update"
+        ) as mock_super_update:
             # Act
             entity._handle_coordinator_update_safe()
 
@@ -190,7 +198,9 @@ class TestDysonEntity:
         # Arrange
         entity = DysonEntity(mock_coordinator)
 
-        with patch.object(CoordinatorEntity, "_handle_coordinator_update") as mock_super_update:
+        with patch.object(
+            CoordinatorEntity, "_handle_coordinator_update"
+        ) as mock_super_update:
             # Act
             await entity._async_handle_coordinator_update()
 
@@ -239,7 +249,9 @@ class TestDysonEntity:
         new_device_info = entity.device_info
         assert new_device_info == {"identifiers": {("dyson", "NEW-SERIAL-456")}}
 
-    def test_available_property_reflects_coordinator_state_changes(self, mock_coordinator):
+    def test_available_property_reflects_coordinator_state_changes(
+        self, mock_coordinator
+    ):
         """Test that available property reflects coordinator state changes."""
         # Arrange
         entity = DysonEntity(mock_coordinator)

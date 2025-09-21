@@ -41,7 +41,9 @@ class TestButtonPlatformSetup:
     """Test button platform setup."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_creates_reconnect_button(self, mock_hass, mock_config_entry, mock_coordinator):
+    async def test_async_setup_entry_creates_reconnect_button(
+        self, mock_hass, mock_config_entry, mock_coordinator
+    ):
         """Test that async_setup_entry creates a reconnect button."""
         # Arrange
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
@@ -59,7 +61,9 @@ class TestButtonPlatformSetup:
         assert mock_add_entities.call_args[0][1] is True
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_missing_coordinator(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_missing_coordinator(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async_setup_entry with missing coordinator raises KeyError."""
         # Arrange
         mock_add_entities = AsyncMock()
@@ -114,7 +118,9 @@ class TestDysonReconnectButton:
             # Assert
             mock_coordinator.device.force_reconnect.assert_called_once()
             mock_coordinator.async_request_refresh.assert_not_called()
-            mock_logger.warning.assert_called_with("Manual reconnection failed for %s", "TEST-SERIAL-123")
+            mock_logger.warning.assert_called_with(
+                "Manual reconnection failed for %s", "TEST-SERIAL-123"
+            )
 
     @pytest.mark.asyncio
     async def test_async_press_no_device_available(self, mock_coordinator):
@@ -135,7 +141,9 @@ class TestDysonReconnectButton:
         """Test exception handling during button press."""
         # Arrange
         button = DysonReconnectButton(mock_coordinator)
-        mock_coordinator.device.force_reconnect = AsyncMock(side_effect=Exception("Connection error"))
+        mock_coordinator.device.force_reconnect = AsyncMock(
+            side_effect=Exception("Connection error")
+        )
 
         with patch("custom_components.hass_dyson.button._LOGGER") as mock_logger:
             # Act
@@ -175,7 +183,9 @@ class TestDysonReconnectButton:
 
             # Check that info was called with expected arguments
             assert mock_logger.info.call_count == 2
-            for call_args, expected_args in zip(mock_logger.info.call_args_list, expected_calls):
+            for call_args, expected_args in zip(
+                mock_logger.info.call_args_list, expected_calls
+            ):
                 assert call_args[0] == expected_args
 
     def test_inherits_from_correct_base_classes(self, mock_coordinator):
@@ -206,7 +216,9 @@ class TestButtonPlatformIntegration:
     """Test button platform integration scenarios."""
 
     @pytest.mark.asyncio
-    async def test_button_entity_in_home_assistant_context(self, mock_hass, mock_config_entry, mock_coordinator):
+    async def test_button_entity_in_home_assistant_context(
+        self, mock_hass, mock_config_entry, mock_coordinator
+    ):
         """Test button entity works correctly in Home Assistant context."""
         # Arrange
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
@@ -280,7 +292,9 @@ class TestButtonPlatformIntegration:
         mock_coordinator.async_request_refresh.assert_called_once()
 
         # Verify that refresh is called after successful reconnect
-        force_reconnect_call_order = mock_coordinator.device.force_reconnect.call_args_list
+        force_reconnect_call_order = (
+            mock_coordinator.device.force_reconnect.call_args_list
+        )
         refresh_call_order = mock_coordinator.async_request_refresh.call_args_list
         assert len(force_reconnect_call_order) == 1
         assert len(refresh_call_order) == 1

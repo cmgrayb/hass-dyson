@@ -52,10 +52,15 @@ def config_flow(mock_hass):
 def options_flow(mock_hass):
     """Create a DysonOptionsFlow instance."""
     mock_config_entry = MagicMock()
-    mock_config_entry.data = {CONF_SERIAL_NUMBER: "TEST123456", CONF_DEVICE_NAME: "Test Device"}
+    mock_config_entry.data = {
+        CONF_SERIAL_NUMBER: "TEST123456",
+        CONF_DEVICE_NAME: "Test Device",
+    }
 
     # Create the options flow without triggering the deprecated setter
-    flow = DysonOptionsFlow.__new__(DysonOptionsFlow)  # Create instance without calling __init__
+    flow = DysonOptionsFlow.__new__(
+        DysonOptionsFlow
+    )  # Create instance without calling __init__
     # Set attributes manually
     flow._config_entry = mock_config_entry  # Set private attribute directly
     flow.hass = mock_hass
@@ -160,7 +165,11 @@ class TestDysonConfigFlowCloudAccount:
             async def mock_executor_job(func):
                 return func()
 
-            with patch.object(config_flow.hass, "async_add_executor_job", side_effect=mock_executor_job):
+            with patch.object(
+                config_flow.hass,
+                "async_add_executor_job",
+                side_effect=mock_executor_job,
+            ):
                 result = await config_flow.async_step_cloud_account(user_input)
 
             assert result["type"] == FlowResultType.FORM
@@ -174,14 +183,20 @@ class TestDysonConfigFlowCloudAccount:
         with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            mock_client.begin_login = AsyncMock(side_effect=Exception("Invalid credentials"))
+            mock_client.begin_login = AsyncMock(
+                side_effect=Exception("Invalid credentials")
+            )
             mock_client.close = AsyncMock()
 
             # Mock the executor job to return the mock client directly
             async def mock_executor_job(func):
                 return func()
 
-            with patch.object(config_flow.hass, "async_add_executor_job", side_effect=mock_executor_job):
+            with patch.object(
+                config_flow.hass,
+                "async_add_executor_job",
+                side_effect=mock_executor_job,
+            ):
                 result = await config_flow.async_step_cloud_account(user_input)
 
             assert result["type"] == FlowResultType.FORM
@@ -228,7 +243,9 @@ class TestDysonConfigFlowManualDevice:
         config_flow.async_set_unique_id = MagicMock()
 
         with patch.object(config_flow, "_process_manual_device_input", return_value={}):
-            with patch.object(config_flow, "_create_manual_device_entry") as mock_create:
+            with patch.object(
+                config_flow, "_create_manual_device_entry"
+            ) as mock_create:
                 mock_create.return_value = {
                     "type": FlowResultType.CREATE_ENTRY,
                     "title": "Test Device",
@@ -250,7 +267,9 @@ class TestDysonConfigFlowManualDevice:
         }
 
         config_flow.async_set_unique_id = MagicMock()
-        config_flow._abort_if_unique_id_configured.side_effect = Exception("Already configured")
+        config_flow._abort_if_unique_id_configured.side_effect = Exception(
+            "Already configured"
+        )
 
         result = await config_flow.async_step_manual_device(user_input)
 
@@ -290,7 +309,9 @@ class TestDysonConfigFlowProcessMethods:
             CONF_MQTT_PREFIX: "475",
         }
 
-        with patch.object(config_flow, "_resolve_device_hostname", return_value="192.168.1.100"):
+        with patch.object(
+            config_flow, "_resolve_device_hostname", return_value="192.168.1.100"
+        ):
             with patch.object(config_flow, "async_set_unique_id"):
                 with patch.object(config_flow, "_abort_if_unique_id_configured"):
                     errors = await config_flow._process_manual_device_input(user_input)
@@ -313,13 +334,17 @@ class TestDysonConfigFlowProcessMethods:
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_ip(self, config_flow):
         """Test resolving device hostname when already IP."""
-        result = await config_flow._resolve_device_hostname("TEST123456", "192.168.1.100")
+        result = await config_flow._resolve_device_hostname(
+            "TEST123456", "192.168.1.100"
+        )
         assert result == "192.168.1.100"
 
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_mdns_success(self, config_flow):
         """Test resolving device hostname via mDNS."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns") as mock_discover:
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_discover:
             mock_discover.return_value = "192.168.1.100"
 
             result = await config_flow._resolve_device_hostname("TEST123456", "")
@@ -328,7 +353,9 @@ class TestDysonConfigFlowProcessMethods:
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_mdns_failure(self, config_flow):
         """Test resolving device hostname via mDNS failure."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns") as mock_discover:
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_discover:
             mock_discover.return_value = None
 
             result = await config_flow._resolve_device_hostname("TEST123456", "")
@@ -368,8 +395,12 @@ class TestDysonConfigFlowCloudPreferences:
         """Test cloud preferences with valid input."""
         user_input = {CONF_AUTO_ADD_DEVICES: True, CONF_POLL_FOR_DEVICES: True}
 
-        with patch.object(config_flow, "_process_cloud_preferences_input", return_value={}):
-            with patch.object(config_flow, "_create_cloud_account_entry") as mock_create:
+        with patch.object(
+            config_flow, "_process_cloud_preferences_input", return_value={}
+        ):
+            with patch.object(
+                config_flow, "_create_cloud_account_entry"
+            ) as mock_create:
                 mock_create.return_value = {
                     "type": FlowResultType.CREATE_ENTRY,
                     "title": "Dyson Cloud Account",
@@ -387,7 +418,9 @@ class TestDysonConfigFlowCloudPreferences:
 
         # Mock the required cloud client and discovered devices
         config_flow._cloud_client = MagicMock()
-        config_flow._discovered_devices = [{"serial": "TEST123456", "name": "Test Device"}]
+        config_flow._discovered_devices = [
+            {"serial": "TEST123456", "name": "Test Device"}
+        ]
 
         errors = await config_flow._process_cloud_preferences_input(user_input)
         assert errors == {}
@@ -442,7 +475,10 @@ class TestDysonConfigFlowDiscovery:
         user_input = {"confirm": True}
 
         # Set up discovery context and init_data
-        config_flow.context = {"discovered_serial": "TEST123456", "discovered_hostname": "192.168.1.100"}
+        config_flow.context = {
+            "discovered_serial": "TEST123456",
+            "discovered_hostname": "192.168.1.100",
+        }
 
         # Set up init_data as would be done by async_step_discovery
         config_flow.init_data = {
@@ -488,8 +524,12 @@ class TestDysonOptionsFlow:
         """Test options flow manage devices step."""
         # Mock existing config entries
         mock_entries = [
-            MagicMock(data={CONF_SERIAL_NUMBER: "DEV001", CONF_DEVICE_NAME: "Device 1"}),
-            MagicMock(data={CONF_SERIAL_NUMBER: "DEV002", CONF_DEVICE_NAME: "Device 2"}),
+            MagicMock(
+                data={CONF_SERIAL_NUMBER: "DEV001", CONF_DEVICE_NAME: "Device 1"}
+            ),
+            MagicMock(
+                data={CONF_SERIAL_NUMBER: "DEV002", CONF_DEVICE_NAME: "Device 2"}
+            ),
         ]
         options_flow.hass.config_entries.async_entries.return_value = mock_entries
 
@@ -517,7 +557,9 @@ class TestDysonOptionsFlow:
         options_flow.hass.config_entries.async_get_entry.return_value = mock_entry
 
         # Mock devices in the config entry
-        options_flow.config_entry.data = {"devices": [{"serial_number": "DEV001", "name": "Test Device"}]}
+        options_flow.config_entry.data = {
+            "devices": [{"serial_number": "DEV001", "name": "Test Device"}]
+        }
 
         result = await options_flow.async_step_delete_device(user_input)
 
@@ -537,7 +579,10 @@ class TestDysonConfigFlowHelpers:
         mock_zeroconf = MagicMock()
 
         # Mock the async_get_instance function
-        with patch("homeassistant.components.zeroconf.async_get_instance", return_value=mock_zeroconf):
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance",
+            return_value=mock_zeroconf,
+        ):
             mock_service_info = MagicMock()
             # Mock addresses as bytes (IP address in binary format)
             mock_service_info.addresses = [socket.inet_aton("192.168.1.100")]
@@ -575,7 +620,9 @@ class TestDysonConfigFlowHelpers:
 
     def test_get_connection_type_display_name(self):
         """Test connection type display name helper."""
-        from custom_components.hass_dyson.config_flow import _get_connection_type_display_name
+        from custom_components.hass_dyson.config_flow import (
+            _get_connection_type_display_name,
+        )
 
         assert _get_connection_type_display_name("local_only") == "Local Only"
         assert _get_connection_type_display_name("cloud_only") == "Cloud Only"
@@ -604,7 +651,10 @@ class TestDysonConfigFlowEdgeCases:
     @pytest.mark.asyncio
     async def test_async_step_device_auto_create(self, config_flow):
         """Test device auto create step."""
-        user_input = {CONF_SERIAL_NUMBER: "TEST123456", "device_name": "Test Dyson Device"}
+        user_input = {
+            CONF_SERIAL_NUMBER: "TEST123456",
+            "device_name": "Test Dyson Device",
+        }
 
         config_flow.async_set_unique_id = AsyncMock()
 
@@ -670,7 +720,9 @@ class TestDysonConfigFlowAdvancedCoverage:
     @pytest.mark.asyncio
     async def test_discover_device_via_mdns_timeout(self, config_flow):
         """Test mDNS discovery with timeout."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns") as mock_discover:
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_discover:
             mock_discover.return_value = None
 
             result = await config_flow._resolve_device_hostname("TEST123456", "")
@@ -679,7 +731,9 @@ class TestDysonConfigFlowAdvancedCoverage:
             assert result == "TEST123456.local"
 
     @pytest.mark.asyncio
-    async def test_process_manual_device_input_missing_required_fields(self, config_flow):
+    async def test_process_manual_device_input_missing_required_fields(
+        self, config_flow
+    ):
         """Test processing manual device input with missing required fields."""
         user_input = {
             CONF_SERIAL_NUMBER: "",  # Missing
@@ -704,8 +758,12 @@ class TestDysonConfigFlowAdvancedCoverage:
             # No hostname provided - should trigger mDNS discovery
         }
 
-        with patch.object(config_flow, "_resolve_device_hostname", return_value="192.168.1.100"):
-            with patch("custom_components.hass_dyson.device_utils.create_manual_device_config") as mock_create:
+        with patch.object(
+            config_flow, "_resolve_device_hostname", return_value="192.168.1.100"
+        ):
+            with patch(
+                "custom_components.hass_dyson.device_utils.create_manual_device_config"
+            ) as mock_create:
                 mock_create.return_value = {
                     "serial": "TEST123456",
                     "discovery_method": DISCOVERY_MANUAL,
@@ -743,14 +801,19 @@ class TestDysonConfigFlowAdvancedCoverage:
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_with_provided_hostname(self, config_flow):
         """Test hostname resolution when hostname is provided."""
-        result = await config_flow._resolve_device_hostname("TEST123456", "192.168.1.100")
+        result = await config_flow._resolve_device_hostname(
+            "TEST123456", "192.168.1.100"
+        )
 
         assert result == "192.168.1.100"
 
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_mdns_fallback(self, config_flow):
         """Test hostname resolution with mDNS fallback."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns", return_value="192.168.1.50"):
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns",
+            return_value="192.168.1.50",
+        ):
             result = await config_flow._resolve_device_hostname("TEST123456", "")
 
             assert result == "192.168.1.50"

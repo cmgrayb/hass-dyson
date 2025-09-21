@@ -34,14 +34,18 @@ def test_project_structure():
 
 def test_black_works():
     """Test that black is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "black", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "black", "--version"], capture_output=True, text=True
+    )
     assert result.returncode == 0
     assert "black" in result.stdout.lower()
 
 
 def test_flake8_works():
     """Test that flake8 is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "flake8", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "flake8", "--version"], capture_output=True, text=True
+    )
     assert result.returncode == 0
     # flake8 version output just shows version numbers, not the name
     assert "mccabe" in result.stdout.lower()  # mccabe is part of flake8
@@ -49,13 +53,17 @@ def test_flake8_works():
 
 def test_mypy_works():
     """Test that mypy is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "mypy", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "mypy", "--version"], capture_output=True, text=True
+    )
     assert result.returncode == 0
     assert "mypy" in result.stdout.lower()
 
 
 def test_pytest_works():
     """Test that pytest is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "pytest", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--version"], capture_output=True, text=True
+    )
     assert result.returncode == 0
     assert "pytest" in result.stdout.lower()

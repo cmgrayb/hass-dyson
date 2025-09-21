@@ -9,7 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hass_dyson.const import CONF_DEVICE_NAME, CONF_HOSTNAME, CONF_SERIAL_NUMBER, DOMAIN
+from custom_components.hass_dyson.const import (
+    CONF_DEVICE_NAME,
+    CONF_HOSTNAME,
+    CONF_SERIAL_NUMBER,
+    DOMAIN,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 
 
@@ -57,7 +62,9 @@ class TestCoordinatorWorkingPaths:
             # No CONF_DEVICE_NAME
         }
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry
@@ -71,12 +78,19 @@ class TestCoordinatorWorkingPaths:
     async def test_get_effective_connection_type_exception_handling(self, mock_hass):
         """Test connection type fallback when account lookup fails (lines 221-225)."""
         mock_config_entry = MagicMock()
-        mock_config_entry.data = {CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A", "parent_entry_id": "parent_123"}
+        mock_config_entry.data = {
+            CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
+            "parent_entry_id": "parent_123",
+        }
 
         # Mock hass to throw exception during config entry lookup
-        mock_hass.config_entries.async_entries_for_config_entry_id.side_effect = Exception("Config lookup error")
+        mock_hass.config_entries.async_entries_for_config_entry_id.side_effect = (
+            Exception("Config lookup error")
+        )
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry
@@ -86,10 +100,16 @@ class TestCoordinatorWorkingPaths:
             assert connection_type == "local_cloud_fallback"
 
     @pytest.mark.asyncio
-    async def test_debug_connected_configuration_simple(self, mock_hass, mock_config_entry_hostname):
+    async def test_debug_connected_configuration_simple(
+        self, mock_hass, mock_config_entry_hostname
+    ):
         """Test debug logging for connected configuration (lines 360-362)."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
-            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_hostname)
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(
+                mock_hass, mock_config_entry_hostname
+            )
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_hostname
             coordinator._listeners = {}
@@ -106,16 +126,24 @@ class TestCoordinatorWorkingPaths:
 
             mock_device_info = MockDeviceInfo()
 
-            with patch("custom_components.hass_dyson.coordinator._LOGGER") as mock_logger:
+            with patch(
+                "custom_components.hass_dyson.coordinator._LOGGER"
+            ) as mock_logger:
                 coordinator._debug_connected_configuration(mock_device_info)
                 # Should call debug method
                 mock_logger.debug.assert_called()
 
     @pytest.mark.asyncio
-    async def test_extract_firmware_version_no_firmware_object(self, mock_hass, mock_config_entry_hostname):
+    async def test_extract_firmware_version_no_firmware_object(
+        self, mock_hass, mock_config_entry_hostname
+    ):
         """Test firmware version extraction without firmware object (lines 535-536)."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
-            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_hostname)
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(
+                mock_hass, mock_config_entry_hostname
+            )
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_hostname
             coordinator._listeners = {}
@@ -127,18 +155,28 @@ class TestCoordinatorWorkingPaths:
             mock_device_info = MagicMock()
             mock_device_info.connected_configuration = mock_connected_config
 
-            with patch("custom_components.hass_dyson.coordinator._LOGGER") as mock_logger:
+            with patch(
+                "custom_components.hass_dyson.coordinator._LOGGER"
+            ) as mock_logger:
                 coordinator._extract_firmware_version(mock_device_info)
 
                 assert coordinator._firmware_version == "Unknown"
                 assert coordinator._firmware_auto_update_enabled is False
-                mock_logger.debug.assert_called_with("No firmware object found in connected configuration")
+                mock_logger.debug.assert_called_with(
+                    "No firmware object found in connected configuration"
+                )
 
     @pytest.mark.asyncio
-    async def test_extract_capabilities_with_exception_handling(self, mock_hass, mock_config_entry_hostname):
+    async def test_extract_capabilities_with_exception_handling(
+        self, mock_hass, mock_config_entry_hostname
+    ):
         """Test capability extraction exception handling (lines 474-477)."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
-            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_hostname)
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(
+                mock_hass, mock_config_entry_hostname
+            )
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_hostname
             coordinator._listeners = {}
@@ -162,15 +200,23 @@ class TestCoordinatorWorkingPaths:
                 assert coordinator._device_capabilities == []
 
     @pytest.mark.asyncio
-    async def test_async_setup_sticker_device_disabled_path(self, mock_hass, mock_config_entry_hostname):
+    async def test_async_setup_sticker_device_disabled_path(
+        self, mock_hass, mock_config_entry_hostname
+    ):
         """Test sticker device setup method raises disabled error (lines 956-958)."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
-            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_hostname)
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(
+                mock_hass, mock_config_entry_hostname
+            )
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_hostname
             coordinator._listeners = {}
 
-            with pytest.raises(UpdateFailed, match="Sticker discovery method temporarily disabled"):
+            with pytest.raises(
+                UpdateFailed, match="Sticker discovery method temporarily disabled"
+            ):
                 await coordinator._async_setup_sticker_device()
 
     @pytest.mark.asyncio
@@ -184,7 +230,9 @@ class TestCoordinatorWorkingPaths:
             # No hostname - should trigger error
         }
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry
@@ -195,10 +243,16 @@ class TestCoordinatorWorkingPaths:
                 await coordinator._async_setup_manual_device()
 
     @pytest.mark.asyncio
-    async def test_cloud_credentials_api_failure(self, mock_hass, mock_config_entry_hostname):
+    async def test_cloud_credentials_api_failure(
+        self, mock_hass, mock_config_entry_hostname
+    ):
         """Test cloud credentials extraction with API failure (lines 679-682)."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
-            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_hostname)
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(
+                mock_hass, mock_config_entry_hostname
+            )
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_hostname
             coordinator._listeners = {}
@@ -208,15 +262,23 @@ class TestCoordinatorWorkingPaths:
             mock_cloud_client.get_iot_credentials.side_effect = Exception("API Error")
             mock_device_info = MagicMock()
 
-            result = await coordinator._extract_cloud_credentials(mock_cloud_client, mock_device_info)
+            result = await coordinator._extract_cloud_credentials(
+                mock_cloud_client, mock_device_info
+            )
 
             assert result == {"cloud_host": None, "cloud_credentials": {}}
 
     @pytest.mark.asyncio
-    async def test_cloud_credentials_no_iot_data(self, mock_hass, mock_config_entry_hostname):
+    async def test_cloud_credentials_no_iot_data(
+        self, mock_hass, mock_config_entry_hostname
+    ):
         """Test cloud credentials extraction when no IoT data returned (lines 670-673)."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
-            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_hostname)
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(
+                mock_hass, mock_config_entry_hostname
+            )
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_hostname
             coordinator._listeners = {}
@@ -226,6 +288,8 @@ class TestCoordinatorWorkingPaths:
             mock_cloud_client.get_iot_credentials.return_value = None
             mock_device_info = MagicMock()
 
-            result = await coordinator._extract_cloud_credentials(mock_cloud_client, mock_device_info)
+            result = await coordinator._extract_cloud_credentials(
+                mock_cloud_client, mock_device_info
+            )
 
             assert result == {"cloud_host": None, "cloud_credentials": {}}

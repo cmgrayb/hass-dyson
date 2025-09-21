@@ -63,10 +63,15 @@ class TestNumberPlatformSetup:
     """Test number platform setup."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_scheduling_capability(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_scheduling_capability(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with scheduling capability."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
-        coordinator.device.device_info = {"product_type": "469", "capabilities": ["Scheduling"]}
+        coordinator.device.device_info = {
+            "product_type": "469",
+            "capabilities": ["Scheduling"],
+        }
         # Mock the device_capabilities property to return a list
         coordinator.device_capabilities = ["Scheduling"]
         # Set device_category to not be an environment cleaner
@@ -83,10 +88,15 @@ class TestNumberPlatformSetup:
         assert isinstance(entities[0], DysonSleepTimerNumber)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_oscillation_capability(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_oscillation_capability(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with oscillation capability."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
-        coordinator.device.device_info = {"product_type": "469", "capabilities": ["AdvanceOscillationDay1"]}
+        coordinator.device.device_info = {
+            "product_type": "469",
+            "capabilities": ["AdvanceOscillationDay1"],
+        }
         # Mock the device_capabilities property to return a list
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
 
@@ -104,7 +114,9 @@ class TestNumberPlatformSetup:
         assert isinstance(entities[3], DysonOscillationAngleSpanNumber)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_both_capabilities(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_both_capabilities(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with both capabilities."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device.device_info = {
@@ -126,10 +138,15 @@ class TestNumberPlatformSetup:
         assert isinstance(entities[1], DysonOscillationLowerAngleNumber)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_no_capabilities(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_no_capabilities(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with no relevant capabilities."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
-        coordinator.device.device_info = {"product_type": "469", "capabilities": ["SomeOtherCapability"]}
+        coordinator.device.device_info = {
+            "product_type": "469",
+            "capabilities": ["SomeOtherCapability"],
+        }
         # Mock the device_capabilities property to return a list
         coordinator.device_capabilities = ["SomeOtherCapability"]
         # Mock device_category to NOT be an environment cleaner
@@ -166,33 +183,38 @@ class TestDysonSleepTimerNumber:
         entity = DysonSleepTimerNumber(mock_coordinator)
         mock_coordinator.device._get_current_value.return_value = "60"
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
-            entity._handle_coordinator_update()
+        # Mock super()._handle_coordinator_update to avoid HA state machinery
+        with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch("asyncio.create_task") as mock_create_task:
+                entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 60
-        mock_safe.assert_called_once()
+        # Verify task was created for timer polling
+        mock_create_task.assert_called_once()
 
     def test_handle_coordinator_update_no_device(self, mock_coordinator):
         """Test handling coordinator update without device."""
         entity = DysonSleepTimerNumber(mock_coordinator)
         mock_coordinator.device = None
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
-            entity._handle_coordinator_update()
+        # Mock super()._handle_coordinator_update to avoid HA state machinery
+        with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch("asyncio.create_task"):
+                entity._handle_coordinator_update()
 
         assert entity._attr_native_value is None
-        mock_safe.assert_called_once()
 
     def test_handle_coordinator_update_invalid_value(self, mock_coordinator):
         """Test handling coordinator update with invalid value."""
         entity = DysonSleepTimerNumber(mock_coordinator)
         mock_coordinator.device._get_current_value.return_value = "invalid"
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
-            entity._handle_coordinator_update()
+        # Mock super()._handle_coordinator_update to avoid HA state machinery
+        with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch("asyncio.create_task"):
+                entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 0
-        mock_safe.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_success(self, mock_coordinator):
@@ -203,7 +225,8 @@ class TestDysonSleepTimerNumber:
             await entity.async_set_native_value(90.0)
 
         mock_coordinator.device.set_sleep_timer.assert_called_once_with(90)
-        mock_logger.debug.assert_called_once()
+        # Expect 2 debug calls: one for setting and one for waiting
+        assert mock_logger.debug.call_count == 2
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_no_device(self, mock_coordinator):
@@ -452,7 +475,9 @@ class TestErrorHandling:
     """Test error handling across all number entities."""
 
     @pytest.mark.asyncio
-    async def test_all_entities_handle_missing_device_gracefully(self, mock_coordinator):
+    async def test_all_entities_handle_missing_device_gracefully(
+        self, mock_coordinator
+    ):
         """Test that all entities handle missing device gracefully."""
         mock_coordinator.device = None
 
@@ -464,15 +489,22 @@ class TestErrorHandling:
             DysonOscillationAngleSpanNumber(mock_coordinator),
         ]
 
+        # Set hass attribute for all entities to avoid RuntimeError
+        for entity in entities:
+            entity.hass = MagicMock()
+
         # All should handle coordinator update without device
         for entity in entities:
             with patch.object(entity, "_handle_coordinator_update_safe"):
-                entity._handle_coordinator_update()
+                with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                    entity._handle_coordinator_update()
             assert entity._attr_native_value is None
 
         # All should handle async_set_native_value without device
         for entity in entities:
-            await entity.async_set_native_value(100.0)  # Should return early without errors
+            await entity.async_set_native_value(
+                100.0
+            )  # Should return early without errors
 
     def test_all_entities_handle_invalid_coordinator_data(self, mock_coordinator):
         """Test that all entities handle invalid coordinator data."""
@@ -497,11 +529,14 @@ class TestNumberCoverageEnhancement:
 
     def test_sleep_timer_device_exception_handling(self, mock_coordinator):
         """Test sleep timer handles device exceptions properly."""
-        mock_coordinator.device._get_current_value.side_effect = Exception("Device error")
+        mock_coordinator.device._get_current_value.side_effect = Exception(
+            "Device error"
+        )
 
         sleep_timer = DysonSleepTimerNumber(mock_coordinator)
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            sleep_timer._handle_coordinator_update()
+            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                sleep_timer._handle_coordinator_update()
 
         # Should catch exception and set value to 0
         assert sleep_timer._attr_native_value == 0
@@ -511,8 +546,19 @@ class TestNumberCoverageEnhancement:
         mock_coordinator.device._get_current_value.return_value = "invalid_data"
 
         sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        # Mock the hass attribute
+        sleep_timer.hass = MagicMock()
+
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            sleep_timer._handle_coordinator_update()
+            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                sleep_timer._handle_coordinator_update()
+
+        # Should handle invalid data and set value to 0
+        assert sleep_timer._attr_native_value == 0
+
+        with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
+            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                sleep_timer._handle_coordinator_update()
 
         # Should catch ValueError/TypeError and set value to 0
         assert sleep_timer._attr_native_value == 0
@@ -561,8 +607,19 @@ class TestNumberCoverageEnhancement:
         mock_coordinator.device._get_current_value.return_value = "not_off_but_invalid"
 
         sleep_timer = DysonSleepTimerNumber(mock_coordinator)
+        # Mock the hass attribute
+        sleep_timer.hass = MagicMock()
+
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            sleep_timer._handle_coordinator_update()
+            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                sleep_timer._handle_coordinator_update()
+
+        # Should handle ValueError and set value to 0
+        assert sleep_timer._attr_native_value == 0
+
+        with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
+            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                sleep_timer._handle_coordinator_update()
 
         # Should catch ValueError/TypeError and set value to 0 (line 80)
         assert sleep_timer._attr_native_value == 0

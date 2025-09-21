@@ -54,7 +54,9 @@ class TestEndToEndScenarios:
         config_entry.data = sample_device_config
         config_entry.entry_id = "test_entry_123"
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             # Mock the coordinator setup
             coordinator = MagicMock()
             coordinator.serial_number = sample_device_config[CONF_SERIAL_NUMBER]
@@ -73,12 +75,16 @@ class TestEndToEndScenarios:
             assert CAPABILITY_HEATING in coordinator.device_capabilities
 
     @pytest.mark.asyncio
-    async def test_device_state_updates_propagate(self, mock_hass, sample_device_config):
+    async def test_device_state_updates_propagate(
+        self, mock_hass, sample_device_config
+    ):
         """Test that device state updates propagate to Home Assistant entities."""
         config_entry = MagicMock()
         config_entry.data = sample_device_config
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = MagicMock()
             coordinator.data = {"temperature": 22.5, "pm25": 15, "pm10": 20}
 
@@ -93,12 +99,16 @@ class TestEndToEndScenarios:
             mock_entity.async_write_ha_state.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_device_reconnection_after_network_failure(self, mock_hass, sample_device_config):
+    async def test_device_reconnection_after_network_failure(
+        self, mock_hass, sample_device_config
+    ):
         """Test device reconnection after network failure."""
         config_entry = MagicMock()
         config_entry.data = sample_device_config
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             device = MagicMock()
 
             # Simulate initial connection
@@ -123,14 +133,21 @@ class TestEndToEndScenarios:
             assert device.connected is True
 
     @pytest.mark.asyncio
-    async def test_multiple_entities_creation_for_capable_device(self, mock_hass, sample_device_config):
+    async def test_multiple_entities_creation_for_capable_device(
+        self, mock_hass, sample_device_config
+    ):
         """Test that multiple entities are created for a device with multiple capabilities."""
         config_entry = MagicMock()
         config_entry.data = sample_device_config
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = MagicMock()
-            coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ, CAPABILITY_HEATING]
+            coordinator.device_capabilities = [
+                CAPABILITY_EXTENDED_AQ,
+                CAPABILITY_HEATING,
+            ]
             coordinator.device_category = DEVICE_CATEGORY_EC
 
             # Mock entity creation for different platforms
@@ -226,12 +243,16 @@ class TestErrorRecoveryScenarios:
     @pytest.mark.asyncio
     async def test_coordinator_recovery_after_device_failure(self, mock_hass):
         """Test coordinator recovery after device communication failure."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = MagicMock()
             coordinator.device = MagicMock()
 
             # Simulate device failure
-            coordinator.device.get_state.side_effect = ConnectionError("Device unavailable")
+            coordinator.device.get_state.side_effect = ConnectionError(
+                "Device unavailable"
+            )
             coordinator.last_update_success = False
 
             # Test error handling
@@ -252,7 +273,9 @@ class TestErrorRecoveryScenarios:
     @pytest.mark.asyncio
     async def test_partial_entity_failure_handling(self, mock_hass):
         """Test handling when some entities fail but others continue working."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = MagicMock()
 
             # Mock entity data with some failures
@@ -282,15 +305,21 @@ class TestErrorRecoveryScenarios:
             "device_category": DEVICE_CATEGORY_EC,
         }
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             # Simulate coordinator recreation after restart
             coordinator = MagicMock()
             coordinator.config_entry = config_entry
             coordinator.device = MagicMock()
 
             # Test that coordinator can be recreated with config entry data
-            assert coordinator.config_entry.data[CONF_SERIAL_NUMBER] == "RESTART-TEST-123"
-            assert CAPABILITY_EXTENDED_AQ in coordinator.config_entry.data["capabilities"]
+            assert (
+                coordinator.config_entry.data[CONF_SERIAL_NUMBER] == "RESTART-TEST-123"
+            )
+            assert (
+                CAPABILITY_EXTENDED_AQ in coordinator.config_entry.data["capabilities"]
+            )
 
 
 class TestStateConsistencyScenarios:
@@ -332,7 +361,7 @@ class TestStateConsistencyScenarios:
             invalid_update = {"temperature": "invalid", "pm25": -999}
             # In real implementation, this would be validated
             # For test, we simulate validation failure
-            if not isinstance(invalid_update["temperature"], (int, float)):
+            if not isinstance(invalid_update["temperature"], int | float):
                 raise ValueError("Invalid temperature data")
             if invalid_update["pm25"] < 0:
                 raise ValueError("Invalid PM2.5 data")

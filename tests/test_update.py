@@ -8,9 +8,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD, DOMAIN
+from custom_components.hass_dyson.const import (
+    CONF_DISCOVERY_METHOD,
+    DISCOVERY_CLOUD,
+    DOMAIN,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
-from custom_components.hass_dyson.update import DysonFirmwareUpdateEntity, async_setup_entry
+from custom_components.hass_dyson.update import (
+    DysonFirmwareUpdateEntity,
+    async_setup_entry,
+)
 
 
 class TestUpdatePlatformSetup:
@@ -79,7 +86,9 @@ class TestUpdatePlatformSetup:
         mock_add_entities.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_no_coordinator(self, mock_hass, mock_config_entry, mock_add_entities):
+    async def test_async_setup_entry_no_coordinator(
+        self, mock_hass, mock_config_entry, mock_add_entities
+    ):
         """Test setup when coordinator is missing."""
         # No coordinator in hass.data - this will cause KeyError
 
@@ -115,21 +124,30 @@ class TestDysonFirmwareUpdateEntity:
 
     def test_entity_properties(self, update_entity, mock_coordinator):
         """Test basic entity properties."""
-        assert update_entity.unique_id == f"{mock_coordinator.serial_number}_firmware_update"
+        assert (
+            update_entity.unique_id
+            == f"{mock_coordinator.serial_number}_firmware_update"
+        )
         assert update_entity._attr_translation_key == "firmware_update"
         assert update_entity.device_class == UpdateDeviceClass.FIRMWARE
         assert update_entity.supported_features == UpdateEntityFeature.INSTALL
 
-    def test_entity_properties_with_update_available(self, update_entity, mock_coordinator):
+    def test_entity_properties_with_update_available(
+        self, update_entity, mock_coordinator
+    ):
         """Test entity properties when update is available."""
         assert update_entity.installed_version == "21.08.01"
         assert update_entity.latest_version == "21.09.01"
-        assert update_entity.release_summary == "Firmware update from 21.08.01 to 21.09.01"
+        assert (
+            update_entity.release_summary == "Firmware update from 21.08.01 to 21.09.01"
+        )
         assert update_entity.in_progress is False
         assert update_entity.auto_update is False
         assert update_entity.title == "Dyson Device Firmware"
 
-    def test_entity_properties_no_update_available(self, update_entity, mock_coordinator):
+    def test_entity_properties_no_update_available(
+        self, update_entity, mock_coordinator
+    ):
         """Test entity properties when no update is available."""
         mock_coordinator.firmware_version = "21.09.01"
         mock_coordinator.firmware_latest_version = "21.09.01"
@@ -151,7 +169,9 @@ class TestDysonFirmwareUpdateEntity:
 
         await update_entity.async_install(version=None, backup=False)
 
-        mock_coordinator.async_install_firmware_update.assert_called_once_with("21.09.01")
+        mock_coordinator.async_install_firmware_update.assert_called_once_with(
+            "21.09.01"
+        )
 
     @pytest.mark.asyncio
     async def test_async_install_no_device(self, update_entity, mock_coordinator):
@@ -174,13 +194,17 @@ class TestDysonFirmwareUpdateEntity:
         mock_coordinator.async_install_firmware_update.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_async_install_specific_version(self, update_entity, mock_coordinator):
+    async def test_async_install_specific_version(
+        self, update_entity, mock_coordinator
+    ):
         """Test firmware installation with specific version."""
         mock_coordinator.async_install_firmware_update.return_value = True
 
         await update_entity.async_install(version="21.10.01", backup=False)
 
-        mock_coordinator.async_install_firmware_update.assert_called_once_with("21.10.01")
+        mock_coordinator.async_install_firmware_update.assert_called_once_with(
+            "21.10.01"
+        )
 
     @pytest.mark.asyncio
     async def test_async_install_failure(self, update_entity, mock_coordinator):
@@ -195,7 +219,9 @@ class TestDysonFirmwareUpdateEntity:
     @pytest.mark.asyncio
     async def test_async_install_exception(self, update_entity, mock_coordinator):
         """Test firmware installation with exception."""
-        mock_coordinator.async_install_firmware_update.side_effect = Exception("Test error")
+        mock_coordinator.async_install_firmware_update.side_effect = Exception(
+            "Test error"
+        )
 
         # The entity catches exceptions and logs them
         await update_entity.async_install(version=None, backup=False)
@@ -348,9 +374,13 @@ class TestUpdateEntityCoverageEnhancement:
             mock_logger.error.assert_called()
 
     @pytest.mark.asyncio
-    async def test_install_logs_error_on_exception(self, update_entity, mock_coordinator):
+    async def test_install_logs_error_on_exception(
+        self, update_entity, mock_coordinator
+    ):
         """Test that install method logs errors on exception."""
-        mock_coordinator.async_install_firmware_update.side_effect = Exception("Test error")
+        mock_coordinator.async_install_firmware_update.side_effect = Exception(
+            "Test error"
+        )
 
         with patch("custom_components.hass_dyson.update._LOGGER") as mock_logger:
             await update_entity.async_install(version="21.10.01", backup=False)
@@ -361,7 +391,9 @@ class TestUpdateEntityCoverageEnhancement:
     def test_handle_coordinator_update_logs_debug(self, update_entity):
         """Test that coordinator update handler logs debug information."""
         with patch("custom_components.hass_dyson.update._LOGGER") as mock_logger:
-            with patch.object(type(update_entity).__bases__[0], "_handle_coordinator_update"):
+            with patch.object(
+                type(update_entity).__bases__[0], "_handle_coordinator_update"
+            ):
                 update_entity._handle_coordinator_update()
 
                 # Should log debug information

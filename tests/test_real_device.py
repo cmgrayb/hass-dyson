@@ -12,7 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, CONF_SERIAL_NUMBER, DISCOVERY_STICKER
+from custom_components.hass_dyson.const import (
+    CONF_DISCOVERY_METHOD,
+    CONF_SERIAL_NUMBER,
+    DISCOVERY_STICKER,
+)
 from custom_components.hass_dyson.device import DysonDevice
 
 
@@ -31,9 +35,13 @@ def real_device_data():
             data = json.load(f)
             # Sanitize sensitive data even if using real file
             if "devices" in data and len(data["devices"]) > 0:
-                data["devices"][0]["basic_info"]["serial_number"] = "MOCK-SERIAL-TEST123"
+                data["devices"][0]["basic_info"]["serial_number"] = (
+                    "MOCK-SERIAL-TEST123"
+                )
                 data["authentication"]["email"] = "test@example.com"
-                data["authentication"]["account_id"] = "00000000-0000-0000-0000-000000000000"
+                data["authentication"]["account_id"] = (
+                    "00000000-0000-0000-0000-000000000000"
+                )
                 data["authentication"]["bearer_token"] = "MOCK-TOKEN-12345"
             return data
     return None
@@ -70,7 +78,13 @@ async def test_real_device_data_parsing(real_device_data, mock_hass):
 
     # Test capabilities
     capabilities = device_info["connected_configuration"]["firmware"]["capabilities"]
-    expected_capabilities = ["AdvanceOscillationDay1", "Scheduling", "EnvironmentalData", "ExtendedAQ", "ChangeWifi"]
+    expected_capabilities = [
+        "AdvanceOscillationDay1",
+        "Scheduling",
+        "EnvironmentalData",
+        "ExtendedAQ",
+        "ChangeWifi",
+    ]
     assert all(cap in capabilities for cap in expected_capabilities)
 
 
@@ -115,14 +129,20 @@ async def test_sticker_config_from_real_data(real_device_data, mock_hass):
         )
 
         assert device.serial_number == "MOCK-SERIAL-TEST123"
-        assert device.capabilities == ["environmental_data", "advance_oscillation", "scheduling"]
+        assert device.capabilities == [
+            "environmental_data",
+            "advance_oscillation",
+            "scheduling",
+        ]
 
         # Mock the wait for connection to return True and set internal state
         def mock_wait_for_connection(conn_type):
             device._connected = True  # Simulate successful connection
             return True
 
-        with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
+        with patch.object(
+            device, "_wait_for_connection", side_effect=mock_wait_for_connection
+        ):
             # Test connection
             result = await device.connect()
             assert result is True
@@ -136,7 +156,9 @@ async def test_capability_mapping(real_device_data):
         pytest.skip("No real device data available")
 
     device_info = real_device_data["devices"][0]
-    real_capabilities = device_info["connected_configuration"]["firmware"]["capabilities"]
+    real_capabilities = device_info["connected_configuration"]["firmware"][
+        "capabilities"
+    ]
 
     # Test capability mapping logic
     mapped_capabilities = []
@@ -192,7 +214,13 @@ def test_device_categorization(real_device_data):
 
     # Create a mock device info with category field like the API would provide
     mock_device_info = type(
-        "MockDeviceInfo", (), {"category": device_category, "serial_number": "TEST123", "product_type": device_type}
+        "MockDeviceInfo",
+        (),
+        {
+            "category": device_category,
+            "serial_number": "TEST123",
+            "product_type": device_type,
+        },
     )()
 
     # Create a partial coordinator and test that it uses the API category

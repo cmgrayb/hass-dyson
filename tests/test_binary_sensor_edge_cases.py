@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.hass_dyson.binary_sensor import _is_fault_code_relevant
-from custom_components.hass_dyson.const import DEVICE_CATEGORY_EC, DEVICE_CATEGORY_ROBOT, DEVICE_CATEGORY_VACUUM
+from custom_components.hass_dyson.const import (
+    DEVICE_CATEGORY_EC,
+    DEVICE_CATEGORY_ROBOT,
+    DEVICE_CATEGORY_VACUUM,
+)
 
 
 class TestBinarySensorFiltering:
@@ -64,8 +68,12 @@ class TestBinarySensorFiltering:
         assert _is_fault_code_relevant("MFLR", DEVICE_CATEGORY_EC, []) is False
 
         # Test capability-based fault codes - these require capabilities
-        assert _is_fault_code_relevant("fltr", DEVICE_CATEGORY_EC, ["ExtendedAQ"]) is True
-        assert _is_fault_code_relevant("FLTR", DEVICE_CATEGORY_EC, ["ExtendedAQ"]) is False
+        assert (
+            _is_fault_code_relevant("fltr", DEVICE_CATEGORY_EC, ["ExtendedAQ"]) is True
+        )
+        assert (
+            _is_fault_code_relevant("FLTR", DEVICE_CATEGORY_EC, ["ExtendedAQ"]) is False
+        )
         assert _is_fault_code_relevant("Fltr", DEVICE_CATEGORY_EC, []) is False
 
     def test_fault_code_with_special_characters(self):
@@ -229,14 +237,20 @@ class TestFilterReplacementSensorEdgeCases:
 
     def test_filter_sensor_with_invalid_filter_life(self, mock_coordinator):
         """Test filter sensor with invalid filter life data."""
-        mock_coordinator.data = {"filter_life": "invalid", "filter_type": "HEPA"}  # Should be numeric
+        mock_coordinator.data = {
+            "filter_life": "invalid",
+            "filter_type": "HEPA",
+        }  # Should be numeric
 
         # Should handle invalid data gracefully
         assert mock_coordinator.data["filter_life"] == "invalid"
 
     def test_filter_sensor_with_negative_filter_life(self, mock_coordinator):
         """Test filter sensor with negative filter life."""
-        mock_coordinator.data = {"filter_life": -50, "filter_type": "HEPA"}  # Negative value
+        mock_coordinator.data = {
+            "filter_life": -50,
+            "filter_type": "HEPA",
+        }  # Negative value
 
         # Should handle negative values gracefully
         assert mock_coordinator.data["filter_life"] == -50

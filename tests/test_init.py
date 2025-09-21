@@ -33,6 +33,7 @@ def mock_hass():
     hass = MagicMock(spec=HomeAssistant)
     hass.config_entries = MagicMock()
     hass.data = {}
+    hass.services = MagicMock()
     # async_create_task should return a Task, not a coroutine
     hass.async_create_task = MagicMock(return_value=MagicMock())
     return hass
@@ -131,7 +132,9 @@ class TestInitModule:
         # Mock config entries
         mock_hass.config_entries.async_entries.return_value = []
 
-        with patch.object(mock_hass.config_entries.flow, "async_init", new_callable=AsyncMock) as mock_flow_init:
+        with patch.object(
+            mock_hass.config_entries.flow, "async_init", new_callable=AsyncMock
+        ) as mock_flow_init:
             mock_flow_init.return_value = True
             result = await async_setup(mock_hass, config)
 
@@ -142,7 +145,16 @@ class TestInitModule:
     @pytest.mark.asyncio
     async def test_async_setup_device_already_exists(self, mock_hass):
         """Test async_setup when device already exists."""
-        config = {DOMAIN: {"devices": [{CONF_SERIAL_NUMBER: "TEST123456", "discovery_method": DISCOVERY_MANUAL}]}}
+        config = {
+            DOMAIN: {
+                "devices": [
+                    {
+                        CONF_SERIAL_NUMBER: "TEST123456",
+                        "discovery_method": DISCOVERY_MANUAL,
+                    }
+                ]
+            }
+        }
 
         # Mock existing config entry
         existing_entry = MagicMock()
@@ -157,14 +169,18 @@ class TestInitModule:
     async def test_async_setup_entry_basic(self, mock_hass, mock_config_entry):
         """Test basic async_setup_entry functionality."""
         # Patch the actual coordinator init at the import level
-        with patch("custom_components.hass_dyson.DysonDataUpdateCoordinator") as mock_coordinator_class:
+        with patch(
+            "custom_components.hass_dyson.DysonDataUpdateCoordinator"
+        ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator_class.return_value = mock_coordinator
             mock_coordinator.async_config_entry_first_refresh = AsyncMock()
             mock_coordinator.serial_number = "TEST123456"
 
             with patch("custom_components.hass_dyson.async_setup_services"):
-                with patch("custom_components.hass_dyson._get_platforms_for_device") as mock_get_platforms:
+                with patch(
+                    "custom_components.hass_dyson._get_platforms_for_device"
+                ) as mock_get_platforms:
                     mock_get_platforms.return_value = ["sensor", "fan"]
                     mock_hass.config_entries.async_forward_entry_setups = AsyncMock()
 
@@ -188,7 +204,9 @@ class TestInitModule:
 
         mock_hass.config_entries.async_entries.return_value = []
 
-        with patch("custom_components.hass_dyson.DysonCloudAccountCoordinator") as mock_cloud_coordinator:
+        with patch(
+            "custom_components.hass_dyson.DysonCloudAccountCoordinator"
+        ) as mock_cloud_coordinator:
             mock_coordinator = MagicMock()
             mock_cloud_coordinator.return_value = mock_coordinator
             mock_coordinator.async_config_entry_first_refresh = AsyncMock()
@@ -199,12 +217,18 @@ class TestInitModule:
                 assert result is True
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_coordinator_failure(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_coordinator_failure(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async_setup_entry when coordinator refresh fails."""
-        with patch("custom_components.hass_dyson.coordinator.DysonDataUpdateCoordinator") as mock_coordinator_class:
+        with patch(
+            "custom_components.hass_dyson.coordinator.DysonDataUpdateCoordinator"
+        ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator_class.return_value = mock_coordinator
-            mock_coordinator.async_config_entry_first_refresh = AsyncMock(side_effect=Exception("Connection failed"))
+            mock_coordinator.async_config_entry_first_refresh = AsyncMock(
+                side_effect=Exception("Connection failed")
+            )
 
             with pytest.raises(ConfigEntryNotReady):
                 await async_setup_entry(mock_hass, mock_config_entry)
@@ -214,13 +238,18 @@ class TestInitModule:
         """Test async_unload_entry functionality."""
         # Create a proper mock coordinator with device_category
         mock_coordinator = MagicMock()
-        mock_coordinator.device_category = ["FAN", "SENSOR"]  # Example device categories
+        mock_coordinator.device_category = [
+            "FAN",
+            "SENSOR",
+        ]  # Example device categories
         mock_coordinator.async_shutdown = AsyncMock()  # Make shutdown async
 
         # Set up initial data
         mock_hass.data = {DOMAIN: {mock_config_entry.entry_id: mock_coordinator}}
 
-        with patch.object(mock_hass.config_entries, "async_unload_platforms", new_callable=AsyncMock) as mock_unload:
+        with patch.object(
+            mock_hass.config_entries, "async_unload_platforms", new_callable=AsyncMock
+        ) as mock_unload:
             mock_unload.return_value = True
 
             with patch("custom_components.hass_dyson.async_remove_services"):
@@ -237,11 +266,16 @@ class TestInitHelperFunctions:
     async def test_create_config_entry_function(self, mock_hass):
         """Test config entry creation helper."""
         # Test that config flow can be initiated
-        with patch.object(mock_hass.config_entries.flow, "async_init", new_callable=AsyncMock) as mock_flow_init:
+        with patch.object(
+            mock_hass.config_entries.flow, "async_init", new_callable=AsyncMock
+        ) as mock_flow_init:
             mock_flow_init.return_value = True
 
             # Simulate what async_setup does
-            device_data = {CONF_SERIAL_NUMBER: "TEST123456", "discovery_method": DISCOVERY_CLOUD}
+            device_data = {
+                CONF_SERIAL_NUMBER: "TEST123456",
+                "discovery_method": DISCOVERY_CLOUD,
+            }
 
             await mock_hass.config_entries.flow.async_init(
                 DOMAIN,
@@ -290,14 +324,20 @@ class TestInitIntegration:
                 "username": "test@example.com",
                 "password": "testpass",
                 "devices": [
-                    {CONF_SERIAL_NUMBER: "TEST123456", "hostname": "192.168.1.100", "credential": "test_credential"}
+                    {
+                        CONF_SERIAL_NUMBER: "TEST123456",
+                        "hostname": "192.168.1.100",
+                        "credential": "test_credential",
+                    }
                 ],
             }
         }
 
         mock_hass.config_entries.async_entries.return_value = []
 
-        with patch.object(mock_hass.config_entries.flow, "async_init", new_callable=AsyncMock) as mock_flow_init:
+        with patch.object(
+            mock_hass.config_entries.flow, "async_init", new_callable=AsyncMock
+        ) as mock_flow_init:
             mock_flow_init.return_value = True
             result = await async_setup(mock_hass, config)
 
@@ -318,4 +358,4 @@ class TestInitIntegration:
             assert isinstance(result, bool)
         except Exception as e:
             # Should be a known/expected exception type (KeyError for missing serial_number)
-            assert isinstance(e, (ValueError, vol.Invalid, KeyError))
+            assert isinstance(e, ValueError | vol.Invalid | KeyError)
