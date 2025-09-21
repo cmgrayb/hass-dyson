@@ -16,18 +16,10 @@ jobs:
 
       - name: Create ZIP for HACS
         run: |
-          # Create a temporary directory for the release
-          mkdir -p /tmp/hass_dyson_release
-          
-          # Copy the custom_components directory
-          cp -r custom_components /tmp/hass_dyson_release/
-          
-          # Create the ZIP file
-          cd /tmp/hass_dyson_release
-          zip -r hass_dyson.zip custom_components/
-          
-          # Move the ZIP to the workspace
-          mv hass_dyson.zip $GITHUB_WORKSPACE/
+          # Create the ZIP file directly from the hass_dyson directory
+          # This ensures the zip extracts to the correct folder structure for HACS
+          cd custom_components/hass_dyson
+          zip -r ../../hass_dyson.zip .
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
