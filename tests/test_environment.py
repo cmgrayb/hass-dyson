@@ -38,7 +38,7 @@ def test_ruff_works():
         [sys.executable, "-m", "ruff", "--version"],
         capture_output=True,
         text=True,
-        check=False
+        check=False,
     )
     assert result.returncode == 0
     assert "ruff" in result.stdout.lower()
@@ -50,7 +50,7 @@ def test_ruff_format_works():
         [sys.executable, "-m", "ruff", "format", "--check", "--help"],
         capture_output=True,
         text=True,
-        check=False
+        check=False,
     )
     assert result.returncode == 0
     assert "format" in result.stdout.lower()
@@ -62,7 +62,7 @@ def test_ruff_check_works():
         [sys.executable, "-m", "ruff", "check", "--help"],
         capture_output=True,
         text=True,
-        check=False
+        check=False,
     )
     assert result.returncode == 0
     assert "check" in result.stdout.lower()
@@ -74,7 +74,7 @@ def test_mypy_works():
         [sys.executable, "-m", "mypy", "--version"],
         capture_output=True,
         text=True,
-        check=False
+        check=False,
     )
     assert result.returncode == 0
     assert "mypy" in result.stdout.lower()
@@ -86,7 +86,7 @@ def test_pytest_works():
         [sys.executable, "-m", "pytest", "--version"],
         capture_output=True,
         text=True,
-        check=False
+        check=False,
     )
     assert result.returncode == 0
     assert "pytest" in result.stdout.lower()
