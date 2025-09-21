@@ -184,7 +184,9 @@ class TestDysonSleepTimerNumber:
         mock_coordinator.device._get_current_value.return_value = "60"
 
         # Mock super()._handle_coordinator_update to avoid HA state machinery
-        with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
             with patch("asyncio.create_task") as mock_create_task:
                 entity._handle_coordinator_update()
 
@@ -198,7 +200,9 @@ class TestDysonSleepTimerNumber:
         mock_coordinator.device = None
 
         # Mock super()._handle_coordinator_update to avoid HA state machinery
-        with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
             with patch("asyncio.create_task"):
                 entity._handle_coordinator_update()
 
@@ -210,7 +214,9 @@ class TestDysonSleepTimerNumber:
         mock_coordinator.device._get_current_value.return_value = "invalid"
 
         # Mock super()._handle_coordinator_update to avoid HA state machinery
-        with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
             with patch("asyncio.create_task"):
                 entity._handle_coordinator_update()
 
@@ -496,7 +502,9 @@ class TestErrorHandling:
         # All should handle coordinator update without device
         for entity in entities:
             with patch.object(entity, "_handle_coordinator_update_safe"):
-                with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+                with patch(
+                    "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+                ):
                     entity._handle_coordinator_update()
             assert entity._attr_native_value is None
 
@@ -535,7 +543,9 @@ class TestNumberCoverageEnhancement:
 
         sleep_timer = DysonSleepTimerNumber(mock_coordinator)
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch(
+                "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+            ):
                 sleep_timer._handle_coordinator_update()
 
         # Should catch exception and set value to 0
@@ -550,14 +560,18 @@ class TestNumberCoverageEnhancement:
         sleep_timer.hass = MagicMock()
 
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch(
+                "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+            ):
                 sleep_timer._handle_coordinator_update()
 
         # Should handle invalid data and set value to 0
         assert sleep_timer._attr_native_value == 0
 
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch(
+                "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+            ):
                 sleep_timer._handle_coordinator_update()
 
         # Should catch ValueError/TypeError and set value to 0
@@ -611,14 +625,18 @@ class TestNumberCoverageEnhancement:
         sleep_timer.hass = MagicMock()
 
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch(
+                "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+            ):
                 sleep_timer._handle_coordinator_update()
 
         # Should handle ValueError and set value to 0
         assert sleep_timer._attr_native_value == 0
 
         with patch.object(sleep_timer, "_handle_coordinator_update_safe"):
-            with patch("homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"):
+            with patch(
+                "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+            ):
                 sleep_timer._handle_coordinator_update()
 
         # Should catch ValueError/TypeError and set value to 0 (line 80)

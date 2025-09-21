@@ -128,18 +128,18 @@ class TestDysonDataUpdateCoordinatorLogic:
             )()
 
             # Test that coordinator uses API category directly
-            coordinator._device_category = [getattr(
-                mock_device_info, "category", "unknown"
-            )]
+            coordinator._device_category = [
+                getattr(mock_device_info, "category", "unknown")
+            ]
             assert coordinator._device_category == ["ec"]
 
             # Test unknown category fallback
             mock_device_info_unknown = type(
                 "MockDeviceInfo", (), {"serial_number": "TEST456"}
             )()
-            coordinator._device_category = [getattr(
-                mock_device_info_unknown, "category", "unknown"
-            )]
+            coordinator._device_category = [
+                getattr(mock_device_info_unknown, "category", "unknown")
+            ]
             assert coordinator._device_category == ["unknown"]
 
     def test_capability_extraction(self):

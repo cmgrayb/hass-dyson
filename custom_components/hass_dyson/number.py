@@ -131,7 +131,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         for i in range(6):  # 6 polls over 3 minutes
             await asyncio.sleep(30)
 
-            if not await self._poll_timer_once(f"initial poll {i+1}/6"):
+            if not await self._poll_timer_once(f"initial poll {i + 1}/6"):
                 return
 
     async def _do_regular_polling(self) -> None:
