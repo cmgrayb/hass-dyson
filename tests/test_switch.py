@@ -54,7 +54,9 @@ class TestSwitchPlatformSetup:
     """Test switch platform setup."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_basic_switches(self, mock_hass, mock_config_entry, mock_coordinator):
+    async def test_async_setup_entry_basic_switches(
+        self, mock_hass, mock_config_entry, mock_coordinator
+    ):
         """Test that async_setup_entry creates basic switches."""
         # Arrange
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_coordinator
@@ -75,7 +77,9 @@ class TestSwitchPlatformSetup:
         assert "DysonContinuousMonitoringSwitch" in entity_types
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_cloud_device_with_firmware_switch(self, mock_hass, mock_coordinator):
+    async def test_async_setup_entry_cloud_device_with_firmware_switch(
+        self, mock_hass, mock_coordinator
+    ):
         """Test that cloud devices get firmware auto-update switch."""
         # Arrange
         cloud_config_entry = MagicMock(spec=ConfigEntry)
@@ -101,7 +105,9 @@ class TestSwitchPlatformSetup:
         assert "DysonContinuousMonitoringSwitch" in entity_types
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_no_optional_capabilities(self, mock_hass, mock_config_entry, mock_coordinator):
+    async def test_async_setup_entry_no_optional_capabilities(
+        self, mock_hass, mock_config_entry, mock_coordinator
+    ):
         """Test setup with no optional capabilities."""
         # Arrange
         mock_coordinator.device_capabilities = []  # No optional capabilities
@@ -204,7 +210,9 @@ class TestDysonAutoModeSwitch:
         """Test auto mode turn on with device error."""
         # Arrange
         switch = DysonAutoModeSwitch(mock_coordinator)
-        mock_coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch("custom_components.hass_dyson.switch._LOGGER") as mock_logger:
             # Act
@@ -231,7 +239,9 @@ class TestDysonAutoModeSwitch:
         """Test auto mode turn off with device error."""
         # Arrange
         switch = DysonAutoModeSwitch(mock_coordinator)
-        mock_coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         with patch("custom_components.hass_dyson.switch._LOGGER") as mock_logger:
             # Act
@@ -358,10 +368,12 @@ class TestDysonOscillationSwitch:
         """Test extra_state_attributes when device is available."""
         # Arrange
         switch = DysonOscillationSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "osal": "0045",
-            "osau": "0315",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "osal": "0045",
+                "osau": "0315",
+            }.get(key, default)
+        )
 
         # Act
         attributes = switch.extra_state_attributes
@@ -460,8 +472,8 @@ class TestDysonHeatingSwitch:
         """Test extra_state_attributes when device is available."""
         # Arrange
         switch = DysonHeatingSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {"hmax": "2980"}.get(
-            key, default
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {"hmax": "2980"}.get(key, default)
         )
 
         # Act

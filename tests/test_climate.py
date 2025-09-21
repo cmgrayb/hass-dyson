@@ -44,7 +44,9 @@ class TestClimatePlatformSetup:
     """Test climate platform setup."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_heating_capability(self, mock_hass, mock_config_entry, mock_coordinator):
+    async def test_async_setup_entry_with_heating_capability(
+        self, mock_hass, mock_config_entry, mock_coordinator
+    ):
         """Test platform setup when device has heating capability."""
         # Arrange
         async_add_entities = MagicMock()
@@ -62,7 +64,9 @@ class TestClimatePlatformSetup:
         assert isinstance(call_args[0], DysonClimateEntity)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_without_heating_capability(self, mock_hass, mock_config_entry, mock_coordinator):
+    async def test_async_setup_entry_without_heating_capability(
+        self, mock_hass, mock_config_entry, mock_coordinator
+    ):
         """Test platform setup when device lacks heating capability."""
         # Arrange
         async_add_entities = MagicMock()
@@ -109,7 +113,12 @@ class TestDysonClimateEntity:
         assert entity._attr_target_temperature_step == 1
 
         # HVAC modes
-        expected_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.FAN_ONLY, HVACMode.AUTO]
+        expected_hvac_modes = [
+            HVACMode.OFF,
+            HVACMode.HEAT,
+            HVACMode.FAN_ONLY,
+            HVACMode.AUTO,
+        ]
         assert entity._attr_hvac_modes == expected_hvac_modes
 
         # Fan modes
@@ -120,14 +129,16 @@ class TestDysonClimateEntity:
         """Test coordinator update handling when device is available."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "tmp": "2730",  # 0°C in 0.1K (273.0K)
-            "hmax": "2930",  # 20°C in 0.1K (293.0K)
-            "fnst": "FAN",
-            "hmod": "HEAT",
-            "auto": "OFF",
-            "fnsp": "0005",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "tmp": "2730",  # 0°C in 0.1K (273.0K)
+                "hmax": "2930",  # 20°C in 0.1K (293.0K)
+                "fnst": "FAN",
+                "hmod": "HEAT",
+                "auto": "OFF",
+                "fnsp": "0005",
+            }.get(key, default)
+        )
 
         # Act
         with patch.object(entity, "async_write_ha_state"):
@@ -136,7 +147,9 @@ class TestDysonClimateEntity:
         # Assert
         assert entity._attr_current_temperature is not None
         assert entity._attr_target_temperature is not None
-        assert abs(entity._attr_current_temperature - 0.0) < 0.2  # Allow for floating point precision
+        assert (
+            abs(entity._attr_current_temperature - 0.0) < 0.2
+        )  # Allow for floating point precision
         assert abs(entity._attr_target_temperature - 19.85) < 0.2
         assert entity._attr_hvac_mode == HVACMode.HEAT
         assert entity._attr_fan_mode == "5"
@@ -158,10 +171,12 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "tmp": "2980",  # 25°C in 0.1K (298.0K)
-            "hmax": "3000",  # 26.85°C in 0.1K (300.0K)
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "tmp": "2980",  # 25°C in 0.1K (298.0K)
+                "hmax": "3000",  # 26.85°C in 0.1K (300.0K)
+            }.get(key, default)
+        )
 
         # Act
         entity._update_temperatures(device_data)
@@ -169,7 +184,9 @@ class TestDysonClimateEntity:
         # Assert
         assert entity._attr_current_temperature is not None
         assert entity._attr_target_temperature is not None
-        assert abs(entity._attr_current_temperature - 24.85) < 0.01  # Allow for floating point precision
+        assert (
+            abs(entity._attr_current_temperature - 24.85) < 0.01
+        )  # Allow for floating point precision
         assert abs(entity._attr_target_temperature - 26.85) < 0.01
 
     def test_update_temperatures_invalid_values(self, mock_coordinator):
@@ -177,10 +194,12 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "tmp": "invalid",
-            "hmax": "also_invalid",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "tmp": "invalid",
+                "hmax": "also_invalid",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_temperatures(device_data)
@@ -194,11 +213,13 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnst": "OFF",
-            "hmod": "HEAT",
-            "auto": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnst": "OFF",
+                "hmod": "HEAT",
+                "auto": "OFF",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_hvac_mode(device_data)
@@ -211,11 +232,13 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnst": "FAN",
-            "hmod": "HEAT",
-            "auto": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnst": "FAN",
+                "hmod": "HEAT",
+                "auto": "OFF",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_hvac_mode(device_data)
@@ -228,11 +251,13 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnst": "FAN",
-            "hmod": "OFF",
-            "auto": "ON",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnst": "FAN",
+                "hmod": "OFF",
+                "auto": "ON",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_hvac_mode(device_data)
@@ -245,11 +270,13 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnst": "FAN",
-            "hmod": "OFF",
-            "auto": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnst": "FAN",
+                "hmod": "OFF",
+                "auto": "OFF",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_hvac_mode(device_data)
@@ -262,10 +289,12 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnsp": "0007",
-            "auto": "ON",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnsp": "0007",
+                "auto": "ON",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_fan_mode(device_data)
@@ -278,10 +307,12 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnsp": "0003",
-            "auto": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnsp": "0003",
+                "auto": "OFF",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_fan_mode(device_data)
@@ -294,10 +325,12 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "fnsp": "invalid",
-            "auto": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "fnsp": "invalid",
+                "auto": "OFF",
+            }.get(key, default)
+        )
 
         # Act
         entity._update_fan_mode(device_data)
@@ -315,7 +348,9 @@ class TestDysonClimateEntity:
         await entity.async_set_hvac_mode(HVACMode.OFF)
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_power", {"fnst": "OFF"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_power", {"fnst": "OFF"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_heat(self, mock_coordinator):
@@ -355,7 +390,9 @@ class TestDysonClimateEntity:
         await entity.async_set_hvac_mode(HVACMode.AUTO)
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_climate_mode", {"fnst": "FAN", "auto": "ON"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_climate_mode", {"fnst": "FAN", "auto": "ON"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_no_device(self, mock_coordinator):
@@ -381,7 +418,9 @@ class TestDysonClimateEntity:
 
         # Assert
         # 22.5°C = 295.65K = 2956.5 -> 2956 (int conversion)
-        mock_coordinator.async_send_command.assert_called_once_with("set_target_temperature", {"hmax": "2956"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_target_temperature", {"hmax": "2956"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_no_temperature(self, mock_coordinator):
@@ -418,7 +457,9 @@ class TestDysonClimateEntity:
         await entity.async_set_fan_mode("Auto")
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_fan_mode", {"auto": "ON"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_fan_mode", {"auto": "ON"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_fan_mode_manual_speed(self, mock_coordinator):
@@ -430,7 +471,9 @@ class TestDysonClimateEntity:
         await entity.async_set_fan_mode("7")
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_fan_mode", {"auto": "OFF", "fnsp": "0007"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_fan_mode", {"auto": "OFF", "fnsp": "0007"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_fan_mode_no_device(self, mock_coordinator):
@@ -455,7 +498,9 @@ class TestDysonClimateEntity:
         await entity.async_turn_on()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_climate_mode", {"fnst": "FAN", "auto": "ON"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_climate_mode", {"fnst": "FAN", "auto": "ON"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_turn_off(self, mock_coordinator):
@@ -467,7 +512,9 @@ class TestDysonClimateEntity:
         await entity.async_turn_off()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with("set_power", {"fnst": "OFF"})
+        mock_coordinator.async_send_command.assert_called_once_with(
+            "set_power", {"fnst": "OFF"}
+        )
 
     def test_extra_state_attributes_with_device(self, mock_coordinator):
         """Test extra state attributes when device is available."""
@@ -477,12 +524,14 @@ class TestDysonClimateEntity:
         entity._attr_hvac_mode = HVACMode.HEAT
         entity._attr_fan_mode = "5"
 
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "hmod": "HEAT",
-            "auto": "OFF",
-            "fnsp": "0005",
-            "fnst": "FAN",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "hmod": "HEAT",
+                "auto": "OFF",
+                "fnsp": "0005",
+                "fnst": "FAN",
+            }.get(key, default)
+        )
 
         # Act
         attributes = entity.extra_state_attributes

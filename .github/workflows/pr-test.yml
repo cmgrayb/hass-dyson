@@ -65,9 +65,8 @@ jobs:
       - name: Quick code quality check
         run: |
           echo "🔍 Running quick code quality checks..."
-          python -m black --check . || echo "❌ Black formatting failed"
-          python -m isort --check-only . || echo "❌ Import sorting failed"
-          python -m flake8 . --count || echo "❌ Flake8 linting failed"
+          python -m ruff format --check . || echo "❌ Ruff formatting failed"
+          python -m ruff check . || echo "❌ Ruff linting failed"
 
       - name: Test results summary
         if: always()

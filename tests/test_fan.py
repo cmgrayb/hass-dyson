@@ -7,7 +7,7 @@ from homeassistant.components.fan import FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 
 from custom_components.hass_dyson.const import DOMAIN
-from custom_components.hass_dyson.fan import SERVICE_SET_ANGLE, SET_ANGLE_SCHEMA, DysonFan, async_setup_entry
+from custom_components.hass_dyson.fan import DysonFan, async_setup_entry
 
 
 @pytest.fixture
@@ -57,19 +57,14 @@ class TestFanPlatformSetup:
         hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
         mock_coordinator.device_category = "ec"  # Environment Cleaner
 
-        # Mock the entity platform to avoid RuntimeError
-        with patch("custom_components.hass_dyson.fan.entity_platform.async_get_current_platform") as mock_platform:
-            mock_platform_instance = MagicMock()
-            mock_platform.return_value = mock_platform_instance
+        # Act
+        await async_setup_entry(hass, config_entry, async_add_entities)
 
-            # Act
-            await async_setup_entry(hass, config_entry, async_add_entities)
-
-            # Assert
-            async_add_entities.assert_called_once()
-            entities = async_add_entities.call_args[0][0]
-            assert len(entities) == 1
-            assert isinstance(entities[0], DysonFan)
+        # Assert
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) == 1
+        assert isinstance(entities[0], DysonFan)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_no_fan_for_non_ec_device(self, mock_coordinator):
@@ -83,44 +78,13 @@ class TestFanPlatformSetup:
         hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
         mock_coordinator.device_category = "robot"  # Not EC
 
-        # Mock the entity platform to avoid RuntimeError
-        with patch("custom_components.hass_dyson.fan.entity_platform.async_get_current_platform") as mock_platform:
-            mock_platform_instance = MagicMock()
-            mock_platform.return_value = mock_platform_instance
+        # Act
+        await async_setup_entry(hass, config_entry, async_add_entities)
 
-            # Act
-            await async_setup_entry(hass, config_entry, async_add_entities)
-
-            # Assert
-            async_add_entities.assert_called_once()
-            entities = async_add_entities.call_args[0][0]
-            assert len(entities) == 0
-
-    @pytest.mark.asyncio
-    async def test_async_setup_entry_registers_set_angle_service(self, mock_coordinator):
-        """Test that async_setup_entry registers the set_angle service."""
-        # Arrange
-        hass = MagicMock()
-        config_entry = MagicMock(spec=ConfigEntry)
-        config_entry.entry_id = "test_entry"
-        async_add_entities = MagicMock()
-
-        hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
-        mock_coordinator.device_category = "ec"
-
-        with patch("custom_components.hass_dyson.fan.entity_platform.async_get_current_platform") as mock_platform:
-            mock_platform_instance = MagicMock()
-            mock_platform.return_value = mock_platform_instance
-
-            # Act
-            await async_setup_entry(hass, config_entry, async_add_entities)
-
-            # Assert
-            mock_platform_instance.async_register_entity_service.assert_called_once_with(
-                SERVICE_SET_ANGLE,
-                SET_ANGLE_SCHEMA,
-                "async_set_angle",
-            )
+        # Assert
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) == 0
 
 
 class TestDysonFan:
@@ -273,7 +237,9 @@ class TestDysonFan:
 
         # Assert
         mock_coordinator.device.set_fan_power.assert_called_once_with(True)
-        mock_coordinator.device.set_fan_speed.assert_called_once_with(8)  # 75 -> speed 8
+        mock_coordinator.device.set_fan_speed.assert_called_once_with(
+            8
+        )  # 75 -> speed 8
         assert fan._attr_is_on is True
 
     @pytest.mark.asyncio
@@ -285,7 +251,9 @@ class TestDysonFan:
         # Act
         with (
             patch.object(fan, "async_write_ha_state"),
-            patch.object(fan, "async_set_preset_mode", new_callable=AsyncMock) as mock_set_preset,
+            patch.object(
+                fan, "async_set_preset_mode", new_callable=AsyncMock
+            ) as mock_set_preset,
         ):
             await fan.async_turn_on(preset_mode="Auto")
 
@@ -341,7 +309,9 @@ class TestDysonFan:
         await fan.async_set_percentage(60)
 
         # Assert
-        mock_coordinator.device.set_fan_speed.assert_called_once_with(6)  # 60 -> speed 6
+        mock_coordinator.device.set_fan_speed.assert_called_once_with(
+            6
+        )  # 60 -> speed 6
 
     @pytest.mark.asyncio
     async def test_async_set_percentage_zero(self, mock_coordinator):
@@ -350,7 +320,9 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        with patch.object(fan, "async_turn_off", new_callable=AsyncMock) as mock_turn_off:
+        with patch.object(
+            fan, "async_turn_off", new_callable=AsyncMock
+        ) as mock_turn_off:
             await fan.async_set_percentage(0)
 
         # Assert
@@ -375,11 +347,16 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        with patch.object(fan, "async_write_ha_state"), patch("asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(fan, "async_write_ha_state"),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
             await fan.async_set_direction("forward")
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with("STATE-SET", {"fdir": "OFF"})
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"fdir": "OFF"}
+        )
         mock_coordinator.async_request_refresh.assert_called_once()
 
     @pytest.mark.asyncio
@@ -389,11 +366,16 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        with patch.object(fan, "async_write_ha_state"), patch("asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch.object(fan, "async_write_ha_state"),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
             await fan.async_set_direction("reverse")
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with("STATE-SET", {"fdir": "ON"})
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"fdir": "ON"}
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_direction_error_handling(self, mock_coordinator):
@@ -515,7 +497,9 @@ class TestFanIntegration:
 class TestFanCoverageEnhancement:
     """Test class to enhance fan coverage to 90%+."""
 
-    def test_handle_coordinator_update_no_device_no_data_preset_mode(self, mock_coordinator):
+    def test_handle_coordinator_update_no_device_no_data_preset_mode(
+        self, mock_coordinator
+    ):
         """Test coordinator update when no device and no data (line 141)."""
         # Arrange - remove device and data
         mock_coordinator.device = None
@@ -539,7 +523,9 @@ class TestFanCoverageEnhancement:
 
             # Assert - verify debug logging was called
             mock_logger.debug.assert_called_with(
-                "Fan %s started command pending period for %.1f seconds", "TEST-SERIAL-123", 5.0
+                "Fan %s started command pending period for %.1f seconds",
+                "TEST-SERIAL-123",
+                5.0,
             )
             assert fan._command_pending is True
 
@@ -552,7 +538,9 @@ class TestFanCoverageEnhancement:
             fan._stop_command_pending()
 
             # Assert - verify debug logging was called
-            mock_logger.debug.assert_called_with("Fan %s stopped command pending period", "TEST-SERIAL-123")
+            mock_logger.debug.assert_called_with(
+                "Fan %s stopped command pending period", "TEST-SERIAL-123"
+            )
             assert fan._command_pending is False
             assert fan._command_end_time is None
 
@@ -582,7 +570,9 @@ class TestFanCoverageEnhancement:
         assert fan._command_end_time is None
 
     @pytest.mark.asyncio
-    async def test_async_set_percentage_command_pending_integration(self, mock_coordinator):
+    async def test_async_set_percentage_command_pending_integration(
+        self, mock_coordinator
+    ):
         """Test async_set_percentage with percentage conversion (lines 241-246)."""
         fan = DysonFan(mock_coordinator)
         fan.hass = MagicMock()  # Set hass to avoid RuntimeError
@@ -592,7 +582,9 @@ class TestFanCoverageEnhancement:
             await fan.async_set_percentage(75)
 
         # Assert - verify device set_fan_speed was called with correct conversion
-        mock_coordinator.device.set_fan_speed.assert_called_once_with(8)  # 75% -> speed 8
+        mock_coordinator.device.set_fan_speed.assert_called_once_with(
+            8
+        )  # 75% -> speed 8
 
     def test_supported_features_property_coverage(self, mock_coordinator):
         """Test supported_features property coverage."""

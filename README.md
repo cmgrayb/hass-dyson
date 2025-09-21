@@ -348,7 +348,7 @@ The easiest way to get started with development is using the provided devcontain
 The devcontainer includes:
 
 - **Home Assistant Core** with all dependencies
-- **Development Tools**: Black, Flake8, isort, mypy, pytest
+- **Development Tools**: Ruff, mypy, pytest
 - **MQTT Broker**: Local Mosquitto for testing
 - **VS Code Extensions**: Python tools and GitHub Copilot
 - **Pre-configured Settings**: Optimized for HA development
@@ -411,26 +411,13 @@ custom_components/hass_dyson/
 4. Make your changes following the code quality standards:
 
    ```bash
-   # Format code
-   python -m black .
-
-   # Lint code
-   python -m flake8 .
-
-   # Sort imports
-   python -m isort .
+   # Format and lint code (unified with Ruff)
+   python -m ruff format .
+   python -m ruff check . --fix
 
    # Run tests
    python -m pytest
    ```
-
-5. **For developers**: See [Testing Patterns Documentation](.github/design/testing-patterns.md) for unit testing guidance and mock setups
-
-   # Lint code
-   python -m flake8 .
-
-   # Sort imports
-   python -m isort .
 
 5. **For developers**: See [Testing Patterns Documentation](.github/design/testing-patterns.md) for unit testing guidance and mock setups
 6. Commit changes (`git commit -am 'Add amazing feature'`)

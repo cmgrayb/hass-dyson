@@ -29,7 +29,9 @@ def mock_mqtt_client():
     client.connect = MagicMock()
     client.disconnect = MagicMock()
     client.publish = MagicMock()
-    client.get_state = MagicMock(return_value={"product-state": {"fpwr": "ON", "nmdv": "0005"}})
+    client.get_state = MagicMock(
+        return_value={"product-state": {"fpwr": "ON", "nmdv": "0005"}}
+    )
     client.get_faults = MagicMock(return_value=[])
     client.set_message_callback = MagicMock()
     return client
@@ -104,11 +106,15 @@ class TestDysonDevice:
         assert device.capabilities == ["scheduling"]
 
     @pytest.mark.asyncio
-    async def test_connect_success(self, mock_hass, mock_mqtt_client, sample_device_data):
+    async def test_connect_success(
+        self, mock_hass, mock_mqtt_client, sample_device_data
+    ):
         """Test successful device connection."""
         with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
             mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
-            mock_mqtt_client.is_connected.return_value = True  # Mock MQTT client as connected
+            mock_mqtt_client.is_connected.return_value = (
+                True  # Mock MQTT client as connected
+            )
 
             # Mock async_add_executor_job to actually call the function and return the result
             def mock_executor_job(func, *args):
@@ -128,7 +134,9 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
+            with patch.object(
+                device, "_wait_for_connection", side_effect=mock_wait_for_connection
+            ):
                 result = await device.connect()
 
             assert result is True
@@ -178,7 +186,9 @@ class TestDysonDevice:
         # Test unexpected disconnection
         mock_client = MagicMock()
         mock_flags = MagicMock()  # API v2 flags parameter
-        device._on_disconnect(mock_client, None, mock_flags, 1)  # Non-success return code
+        device._on_disconnect(
+            mock_client, None, mock_flags, 1
+        )  # Non-success return code
 
         assert device._connected is False
         assert device._current_connection_type == CONNECTION_STATUS_DISCONNECTED
@@ -202,9 +212,7 @@ class TestDysonDevice:
         # Create mock MQTT message for current state
         mock_message = MagicMock()
         mock_message.topic = "475/MESSAGE123/status/current"
-        mock_message.payload = (
-            b'{"msg":"CURRENT-STATE","product-state":{"fpwr":"ON","nmdv":"0005","hflr":"0100","cflr":"0080"}}'
-        )
+        mock_message.payload = b'{"msg":"CURRENT-STATE","product-state":{"fpwr":"ON","nmdv":"0005","hflr":"0100","cflr":"0080"}}'
 
         # Test message processing
         mock_client = MagicMock()
@@ -235,9 +243,7 @@ class TestDysonDevice:
         # Create mock MQTT message for environmental data
         mock_message = MagicMock()
         mock_message.topic = "475/ENV123/status/current"
-        mock_message.payload = (
-            b'{"msg":"ENVIRONMENTAL-CURRENT-SENSOR-DATA","data":{"pm25":"0010","pm10":"0015","hmax":"0030"}}'
-        )
+        mock_message.payload = b'{"msg":"ENVIRONMENTAL-CURRENT-SENSOR-DATA","data":{"pm25":"0010","pm10":"0015","hmax":"0030"}}'
 
         # Test message processing
         mock_client = MagicMock()
@@ -376,9 +382,10 @@ class TestDysonDevice:
             patch.object(device, "_wait_for_connection", return_value=True),
             patch("paho.mqtt.client.Client") as mock_client_class,
         ):
-
             mock_client = MagicMock()
-            mock_client.connect.return_value = 0  # CONNACK_ACCEPTED for cloud connection
+            mock_client.connect.return_value = (
+                0  # CONNACK_ACCEPTED for cloud connection
+            )
             mock_client_class.return_value = mock_client
 
             result = await device._attempt_cloud_connection(
@@ -401,13 +408,16 @@ class TestDysonDevice:
         )
 
         # Test with invalid JSON
-        result = await device._attempt_cloud_connection("aws-iot-endpoint.amazonaws.com", "invalid_json")
+        result = await device._attempt_cloud_connection(
+            "aws-iot-endpoint.amazonaws.com", "invalid_json"
+        )
 
         assert result is False
 
         # Test with missing required fields
         result = await device._attempt_cloud_connection(
-            "aws-iot-endpoint.amazonaws.com", '{"client_id":"dyson_12345"}'  # Missing other required fields
+            "aws-iot-endpoint.amazonaws.com",
+            '{"client_id":"dyson_12345"}',  # Missing other required fields
         )
 
         assert result is False
@@ -435,15 +445,18 @@ class TestDysonDevice:
             patch.object(device, "_wait_for_connection", return_value=True),
             patch("paho.mqtt.client.Client") as mock_client_class,
         ):
-
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
             mock_client.connect.return_value = 0  # CONNACK_ACCEPTED
 
-            result = await device._attempt_local_connection("192.168.1.100", "local_cred")
+            result = await device._attempt_local_connection(
+                "192.168.1.100", "local_cred"
+            )
 
             assert result is True
-            mock_client.username_pw_set.assert_called_once_with("LOCAL123", "local_cred")
+            mock_client.username_pw_set.assert_called_once_with(
+                "LOCAL123", "local_cred"
+            )
             mock_client.connect.assert_called_once_with("192.168.1.100", 1883, 60)
 
     @pytest.mark.asyncio
@@ -468,7 +481,9 @@ class TestDysonDevice:
             mock_client = MagicMock()
             mock_client_class.return_value = mock_client
 
-            result = await device._attempt_local_connection("192.168.1.100", "local_cred")
+            result = await device._attempt_local_connection(
+                "192.168.1.100", "local_cred"
+            )
 
             assert result is False
 
@@ -520,7 +535,6 @@ class TestDysonDevice:
             patch.object(device, "disconnect") as mock_disconnect,
             patch.object(device, "connect", return_value=True) as mock_connect,
         ):
-
             result = await device.force_reconnect()
 
             assert result is True
@@ -532,7 +546,6 @@ class TestDysonDevice:
     async def test_connect_no_client(self, mock_hass, sample_device_data):
         """Test connection when no MQTT client library is available."""
         with patch("custom_components.hass_dyson.device.DysonDevice", None):
-
             device = DysonDevice(
                 hass=mock_hass,
                 serial_number=sample_device_data["serial_number"],
@@ -569,7 +582,6 @@ class TestDysonDevice:
             patch.object(device, "_attempt_local_connection", return_value=False),
             patch.object(device, "_attempt_cloud_connection", return_value=True),
         ):
-
             result = await device.connect()
 
             assert result is True
@@ -600,7 +612,6 @@ class TestDysonDevice:
             patch.object(device, "_attempt_cloud_connection", return_value=False),
             patch.object(device, "_attempt_local_connection", return_value=True),
         ):
-
             result = await device.connect()
 
             assert result is True
@@ -721,11 +732,15 @@ class TestDysonDevice:
         assert order[1] == ("local", "192.168.1.100", "local_cred")
 
     @pytest.mark.asyncio
-    async def test_send_command_success(self, mock_hass, mock_mqtt_client, sample_device_data):
+    async def test_send_command_success(
+        self, mock_hass, mock_mqtt_client, sample_device_data
+    ):
         """Test successful command sending."""
         with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
             mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
-            mock_mqtt_client.is_connected.return_value = True  # Mock MQTT client as connected
+            mock_mqtt_client.is_connected.return_value = (
+                True  # Mock MQTT client as connected
+            )
 
             # Mock async_add_executor_job to actually call the function and return the result
             def mock_executor_job(func, *args):
@@ -745,7 +760,9 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
+            with patch.object(
+                device, "_wait_for_connection", side_effect=mock_wait_for_connection
+            ):
                 # Connect first
                 await device.connect()
 
@@ -768,17 +785,24 @@ class TestDysonDevice:
             credential=sample_device_data["credential"],
         )
 
-        with pytest.raises(RuntimeError, match=f"Device {sample_device_data['serial_number']} is not connected"):
+        with pytest.raises(
+            RuntimeError,
+            match=f"Device {sample_device_data['serial_number']} is not connected",
+        ):
             await device.send_command("set_fan_speed", {"speed": 5})
 
     @pytest.mark.asyncio
     async def test_get_state(self, mock_hass, mock_mqtt_client, sample_device_data):
         """Test getting device state."""
-        mock_state_data = {"product-state": {"fpwr": "ON", "nmdv": "0007", "wacd": "AUTO"}}
+        mock_state_data = {
+            "product-state": {"fpwr": "ON", "nmdv": "0007", "wacd": "AUTO"}
+        }
 
         with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
             mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
-            mock_mqtt_client.is_connected.return_value = True  # Mock MQTT client as connected
+            mock_mqtt_client.is_connected.return_value = (
+                True  # Mock MQTT client as connected
+            )
 
             # Mock async_add_executor_job to actually call the function and return the result
             def mock_executor_job(func, *args):
@@ -798,7 +822,9 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
+            with patch.object(
+                device, "_wait_for_connection", side_effect=mock_wait_for_connection
+            ):
                 # Connect first
                 await device.connect()
 
@@ -815,7 +841,9 @@ class TestDysonDevice:
         """Test getting device faults."""
         with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
             mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
-            mock_mqtt_client.is_connected.return_value = True  # Mock MQTT client as connected
+            mock_mqtt_client.is_connected.return_value = (
+                True  # Mock MQTT client as connected
+            )
 
             # Mock async_add_executor_job to actually call the function and return the result
             def mock_executor_job(func, *args):
@@ -835,7 +863,9 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
+            with patch.object(
+                device, "_wait_for_connection", side_effect=mock_wait_for_connection
+            ):
                 # Connect first
                 await device.connect()
 
@@ -849,7 +879,9 @@ class TestDysonDevice:
         """Test device disconnection."""
         with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
             mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
-            mock_mqtt_client.is_connected.return_value = True  # Mock MQTT client as connected
+            mock_mqtt_client.is_connected.return_value = (
+                True  # Mock MQTT client as connected
+            )
 
             device = DysonDevice(
                 hass=mock_hass,
@@ -869,13 +901,17 @@ class TestDysonDevice:
                 device._connected = True  # Simulate successful connection
                 return True
 
-            with patch.object(device, "_wait_for_connection", side_effect=mock_wait_for_connection):
+            with patch.object(
+                device, "_wait_for_connection", side_effect=mock_wait_for_connection
+            ):
                 # Connect first
                 await device.connect()
                 assert device.is_connected is True
 
                 # Now disconnect
-                mock_mqtt_client.is_connected.return_value = False  # Mock MQTT client as disconnected
+                mock_mqtt_client.is_connected.return_value = (
+                    False  # Mock MQTT client as disconnected
+                )
                 await device.disconnect()
 
                 assert device.is_connected is False
@@ -948,7 +984,12 @@ class TestDysonDeviceConnectionLogic:
 
     def test_check_reconnect_backoff_active(self, mock_hass):
         """Test reconnect backoff when still in backoff period."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Set last reconnect attempt to current time minus half the backoff period
         device._last_reconnect_attempt = time.time() - (device._reconnect_backoff / 2)
@@ -958,7 +999,12 @@ class TestDysonDeviceConnectionLogic:
 
     def test_check_reconnect_backoff_expired(self, mock_hass):
         """Test reconnect backoff when backoff period has expired."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Set last reconnect attempt to time beyond backoff period
         device._last_reconnect_attempt = time.time() - (device._reconnect_backoff + 1)
@@ -968,7 +1014,12 @@ class TestDysonDeviceConnectionLogic:
 
     def test_get_connection_details_local(self, mock_hass):
         """Test getting connection details for local connection."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         host, credential = device._get_connection_details("local")
         assert host == "192.168.1.100"
@@ -991,7 +1042,12 @@ class TestDysonDeviceConnectionLogic:
 
     def test_get_connection_details_unknown_type(self, mock_hass):
         """Test getting connection details for unknown connection type."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         host, credential = device._get_connection_details("unknown")
         assert host is None
@@ -1010,7 +1066,10 @@ class TestDysonDeviceConnectionLogic:
         )
 
         order = device._get_connection_order()
-        expected = [("local", "192.168.1.100", "test_cred"), ("cloud", "cloud.example.com", "cloud_cred")]
+        expected = [
+            ("local", "192.168.1.100", "test_cred"),
+            ("cloud", "cloud.example.com", "cloud_cred"),
+        ]
         assert order == expected
 
     def test_get_connection_order_cloud_local_fallback(self, mock_hass):
@@ -1026,7 +1085,10 @@ class TestDysonDeviceConnectionLogic:
         )
 
         order = device._get_connection_order()
-        expected = [("cloud", "cloud.example.com", "cloud_cred"), ("local", "192.168.1.100", "test_cred")]
+        expected = [
+            ("cloud", "cloud.example.com", "cloud_cred"),
+            ("local", "192.168.1.100", "test_cred"),
+        ]
         assert order == expected
 
     def test_get_connection_order_cloud_only(self, mock_hass):
@@ -1047,17 +1109,29 @@ class TestDysonDeviceConnectionLogic:
 
     def test_should_retry_preferred_true(self, mock_hass):
         """Test should retry preferred when conditions are met."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Set last preferred retry to time beyond retry interval
-        device._last_preferred_retry = time.time() - (device._preferred_retry_interval + 1)
+        device._last_preferred_retry = time.time() - (
+            device._preferred_retry_interval + 1
+        )
 
         result = device._should_retry_preferred()
         assert result is True
 
     def test_should_retry_preferred_false(self, mock_hass):
         """Test should retry preferred when still in retry interval."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Set last preferred retry to current time
         device._last_preferred_retry = time.time()
@@ -1068,7 +1142,12 @@ class TestDysonDeviceConnectionLogic:
     @pytest.mark.asyncio
     async def test_connect_with_backoff_active(self, mock_hass):
         """Test connect when reconnection backoff is active."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Set last reconnect attempt to current time (backoff active)
         device._last_reconnect_attempt = time.time()
@@ -1078,7 +1157,12 @@ class TestDysonDeviceConnectionLogic:
 
     def test_connection_status_property(self, mock_hass):
         """Test connection status property."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Test disconnected state
         device._current_connection_type = CONNECTION_STATUS_DISCONNECTED
@@ -1105,7 +1189,12 @@ class TestDysonDeviceMessageHandling:
 
     def test_add_and_remove_environmental_callback(self, mock_hass):
         """Test adding and removing environmental callbacks."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         callback = MagicMock()
 
@@ -1119,7 +1208,12 @@ class TestDysonDeviceMessageHandling:
 
     def test_add_and_remove_message_callback(self, mock_hass):
         """Test adding and removing message callbacks."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         callback = MagicMock()
 
@@ -1133,16 +1227,27 @@ class TestDysonDeviceMessageHandling:
 
     def test_handle_current_state(self, mock_hass):
         """Test handling current state updates."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         test_data = {"fpwr": "ON", "nmdv": "0005", "wacd": "AUTO"}
-        device._handle_current_state(test_data)
+        test_topic = "475/TEST123/status/current"
+        device._handle_current_state(test_data, test_topic)
 
         assert device._state_data == test_data
 
     def test_handle_environmental_data(self, mock_hass):
         """Test handling environmental data updates."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Add callback to verify it gets triggered
         callback = MagicMock()
@@ -1151,18 +1256,35 @@ class TestDysonDeviceMessageHandling:
         # Add some PM data to ensure the callback gets triggered
         test_data = {
             "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
-            "data": {"tact": "2990", "hact": "0645", "pact": "0002", "pm25": "010", "pm10": "020"},
+            "data": {
+                "tact": "2990",
+                "hact": "0645",
+                "pact": "0002",
+                "pm25": "010",
+                "pm10": "020",
+            },
         }
         device._handle_environmental_data(test_data)
 
         # Environmental data stores only the "data" part
-        expected_data = {"tact": "2990", "hact": "0645", "pact": "0002", "pm25": "010", "pm10": "020"}
+        expected_data = {
+            "tact": "2990",
+            "hact": "0645",
+            "pact": "0002",
+            "pm25": "010",
+            "pm10": "020",
+        }
         assert device._environmental_data == expected_data
         callback.assert_called_once()
 
     def test_handle_faults_data(self, mock_hass):
         """Test handling faults data updates."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         test_data = {"ercd": "NONE", "filf": "4300", "fmod": "OFF"}
         device._handle_faults_data(test_data)
@@ -1171,9 +1293,17 @@ class TestDysonDeviceMessageHandling:
 
     def test_handle_state_change(self, mock_hass):
         """Test handling state change updates."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
-        test_data = {"msg": "STATE-CHANGE", "product-state": {"fpwr": "OFF", "nmdv": "0001"}}
+        test_data = {
+            "msg": "STATE-CHANGE",
+            "product-state": {"fpwr": "OFF", "nmdv": "0001"},
+        }
         device._handle_state_change(test_data)
 
         # Should update state data with the product state part
@@ -1182,7 +1312,12 @@ class TestDysonDeviceMessageHandling:
 
     def test_notify_callbacks(self, mock_hass):
         """Test notification of message callbacks."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Add callback
         callback = MagicMock()
@@ -1196,7 +1331,12 @@ class TestDysonDeviceMessageHandling:
 
     def test_get_timestamp(self, mock_hass):
         """Test timestamp generation."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         timestamp = device._get_timestamp()
         assert isinstance(timestamp, str)
@@ -1204,7 +1344,12 @@ class TestDysonDeviceMessageHandling:
 
     def test_is_connected_property(self, mock_hass):
         """Test is_connected property."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Test disconnected state (no mqtt client)
         device._connected = False
@@ -1231,7 +1376,12 @@ class TestDysonDeviceFaultHandling:
 
     def test_normalize_faults_to_list_with_dict(self, mock_hass):
         """Test normalizing fault dict to list format."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         fault_dict = {"aqs": "FAIL", "tds": "WARN"}
         result = device._normalize_faults_to_list(fault_dict)
@@ -1252,7 +1402,12 @@ class TestDysonDeviceFaultHandling:
 
     def test_normalize_faults_to_list_with_list(self, mock_hass):
         """Test normalizing fault list (already normalized)."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Provide a list of dict that looks like faults data
         fault_list = [{"aqs": "FAIL", "tds": "OK"}]
@@ -1265,21 +1420,36 @@ class TestDysonDeviceFaultHandling:
 
     def test_normalize_faults_to_list_with_none(self, mock_hass):
         """Test normalizing None faults."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         result = device._normalize_faults_to_list(None)
         assert result == []
 
     def test_normalize_faults_to_list_with_invalid_type(self, mock_hass):
         """Test normalizing invalid fault type."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         result = device._normalize_faults_to_list("invalid_string")
         assert result == []
 
     def test_translate_fault_code_known(self, mock_hass):
         """Test translating known fault codes."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Test with a known fault code (assuming "aqs" exists in FAULT_TRANSLATIONS)
         result = device._translate_fault_code("aqs", "FAIL")
@@ -1289,7 +1459,12 @@ class TestDysonDeviceFaultHandling:
 
     def test_translate_fault_code_unknown(self, mock_hass):
         """Test translating unknown fault codes."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         result = device._translate_fault_code("unknown_code", "FAIL")
         assert result == "UNKNOWN_CODE fault: FAIL"
@@ -1297,7 +1472,12 @@ class TestDysonDeviceFaultHandling:
     @pytest.mark.asyncio
     async def test_get_faults_when_disconnected(self, mock_hass):
         """Test getting faults when device is disconnected."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._connected = False
         result = await device.get_faults()
@@ -1306,7 +1486,12 @@ class TestDysonDeviceFaultHandling:
     @pytest.mark.asyncio
     async def test_get_faults_with_cached_data(self, mock_hass):
         """Test getting faults with cached fault data."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._connected = True
         device._faults_data = {"aqs": "FAIL", "tds": "OK"}
@@ -1340,7 +1525,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_on_connect_success(self, mock_hass, mock_mqtt_client):
         """Test successful MQTT connection callback."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._mqtt_client = mock_mqtt_client
         mock_hass.async_create_task = MagicMock()
@@ -1358,7 +1548,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_on_connect_failure(self, mock_hass, mock_mqtt_client):
         """Test failed MQTT connection callback."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._mqtt_client = mock_mqtt_client
 
@@ -1371,7 +1566,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_on_disconnect(self, mock_hass, mock_mqtt_client):
         """Test MQTT disconnection callback."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._mqtt_client = mock_mqtt_client
         device._connected = True
@@ -1385,7 +1585,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_on_message_valid_json(self, mock_hass, mock_mqtt_client):
         """Test MQTT message callback with valid JSON."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Mock message
         message = MagicMock()
@@ -1398,11 +1603,18 @@ class TestDysonDeviceMQTTCallbacks:
         device._on_message(mock_mqtt_client, None, message)
 
         expected_data = {"msg": "STATE-CHANGE", "product-state": {"fpwr": "ON"}}
-        device._process_message_data.assert_called_once_with(expected_data, "475/TEST123/status/current")
+        device._process_message_data.assert_called_once_with(
+            expected_data, "475/TEST123/status/current"
+        )
 
     def test_on_message_invalid_json(self, mock_hass, mock_mqtt_client):
         """Test MQTT message callback with invalid JSON."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         # Mock message with invalid JSON
         message = MagicMock()
@@ -1419,7 +1631,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_process_message_data_state_change(self, mock_hass):
         """Test processing state change messages."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._handle_state_change = MagicMock()
         device._notify_callbacks = MagicMock()
@@ -1434,7 +1651,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_process_message_data_environmental_current_data(self, mock_hass):
         """Test processing environmental current data messages."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._handle_environmental_data = MagicMock()
         device._notify_callbacks = MagicMock()
@@ -1449,7 +1671,12 @@ class TestDysonDeviceMQTTCallbacks:
 
     def test_process_message_data_current_state(self, mock_hass):
         """Test processing current state messages."""
-        device = DysonDevice(hass=mock_hass, serial_number="TEST123", host="192.168.1.100", credential="test_cred")
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
 
         device._handle_current_state = MagicMock()
         device._notify_callbacks = MagicMock()
@@ -1459,5 +1686,5 @@ class TestDysonDeviceMQTTCallbacks:
 
         device._process_message_data(data, topic)
 
-        device._handle_current_state.assert_called_once_with(data)
+        device._handle_current_state.assert_called_once_with(data, topic)
         device._notify_callbacks.assert_called_once_with(topic, data)

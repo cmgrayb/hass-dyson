@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD, DOMAIN
+from custom_components.hass_dyson.const import (
+    CONF_DISCOVERY_METHOD,
+    DISCOVERY_CLOUD,
+    DOMAIN,
+)
 from custom_components.hass_dyson.switch import (
     DysonAutoModeSwitch,
     DysonContinuousMonitoringSwitch,
@@ -36,7 +40,9 @@ class TestSwitchCoverageEnhancement:
 
         with patch("custom_components.hass_dyson.switch._LOGGER") as mock_logger:
             # Act
-            result = await async_setup_entry(mock_hass, config_entry, mock_async_add_entities)
+            result = await async_setup_entry(
+                mock_hass, config_entry, mock_async_add_entities
+            )
 
             # Assert
             assert result is True
@@ -45,9 +51,12 @@ class TestSwitchCoverageEnhancement:
 
             # Should have: NightMode, FirmwareAutoUpdate, Heating, ContinuousMonitoring
             assert len(entities) == 4
-            assert any(isinstance(entity, DysonFirmwareAutoUpdateSwitch) for entity in entities)
+            assert any(
+                isinstance(entity, DysonFirmwareAutoUpdateSwitch) for entity in entities
+            )
             mock_logger.debug.assert_called_with(
-                "Adding firmware auto-update switch for cloud device %s", coordinator.serial_number
+                "Adding firmware auto-update switch for cloud device %s",
+                coordinator.serial_number,
             )
 
     @pytest.mark.asyncio
@@ -65,7 +74,9 @@ class TestSwitchCoverageEnhancement:
         mock_async_add_entities = MagicMock()
 
         # Act
-        result = await async_setup_entry(mock_hass, config_entry, mock_async_add_entities)
+        result = await async_setup_entry(
+            mock_hass, config_entry, mock_async_add_entities
+        )
 
         # Assert
         assert result is True
@@ -73,7 +84,9 @@ class TestSwitchCoverageEnhancement:
 
         # Should have: NightMode, Heating (no FirmwareAutoUpdate)
         assert len(entities) == 2
-        assert not any(isinstance(entity, DysonFirmwareAutoUpdateSwitch) for entity in entities)
+        assert not any(
+            isinstance(entity, DysonFirmwareAutoUpdateSwitch) for entity in entities
+        )
 
     # COMMENTED OUT: Home Assistant entity setup complexity causing NoEntitySpecifiedError
     # def test_auto_mode_switch_no_device_state_handling(self):
@@ -124,7 +137,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonAutoModeSwitch(coordinator)
 
@@ -145,7 +160,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonAutoModeSwitch(coordinator)
 
@@ -209,7 +226,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_night_mode = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_night_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonNightModeSwitch(coordinator)
 
@@ -230,7 +249,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_night_mode = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_night_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonNightModeSwitch(coordinator)
 
@@ -292,7 +313,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_oscillation = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_oscillation = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonOscillationSwitch(coordinator)
 
@@ -313,7 +336,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_oscillation = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_oscillation = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonOscillationSwitch(coordinator)
 
@@ -346,12 +371,16 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.data = {"product-state": {"oson": "ON", "osal": "0045", "osau": "0315"}}
-        coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "oson": "ON",
-            "osal": "0045",
-            "osau": "0315",
-        }.get(key, default)
+        coordinator.data = {
+            "product-state": {"oson": "ON", "osal": "0045", "osau": "0315"}
+        }
+        coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "oson": "ON",
+                "osal": "0045",
+                "osau": "0315",
+            }.get(key, default)
+        )
 
         switch = DysonOscillationSwitch(coordinator)
 
@@ -370,11 +399,13 @@ class TestSwitchCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {"product-state": {"oson": "ON"}}
-        coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "oson": "ON",
-            "osal": "invalid",  # Invalid angle data
-            "osau": "also_invalid",
-        }.get(key, default)
+        coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "oson": "ON",
+                "osal": "invalid",  # Invalid angle data
+                "osau": "also_invalid",
+            }.get(key, default)
+        )
 
         switch = DysonOscillationSwitch(coordinator)
 
@@ -436,7 +467,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_heating_mode = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonHeatingSwitch(coordinator)
 
@@ -457,7 +490,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_heating_mode = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonHeatingSwitch(coordinator)
 
@@ -491,10 +526,12 @@ class TestSwitchCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {"product-state": {"hmod": "HEAT", "hmax": "2930"}}
-        coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "hmod": "HEAT",
-            "hmax": "2930",  # 20°C in Kelvin * 10
-        }.get(key, default)
+        coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "hmod": "HEAT",
+                "hmax": "2930",  # 20°C in Kelvin * 10
+            }.get(key, default)
+        )
 
         switch = DysonHeatingSwitch(coordinator)
 
@@ -514,10 +551,12 @@ class TestSwitchCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {"product-state": {"hmod": "OFF"}}
-        coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "hmod": "OFF",
-            "hmax": "invalid",  # Invalid temperature data
-        }.get(key, default)
+        coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "hmod": "OFF",
+                "hmax": "invalid",  # Invalid temperature data
+            }.get(key, default)
+        )
 
         switch = DysonHeatingSwitch(coordinator)
 
@@ -579,7 +618,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_continuous_monitoring = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonContinuousMonitoringSwitch(coordinator)
 
@@ -600,7 +641,9 @@ class TestSwitchCoverageEnhancement:
         # Arrange
         coordinator = MagicMock()
         coordinator.device = MagicMock()
-        coordinator.device.set_continuous_monitoring = AsyncMock(side_effect=Exception("Device error"))
+        coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=Exception("Device error")
+        )
         coordinator.serial_number = "TEST-SERIAL-123"
         switch = DysonContinuousMonitoringSwitch(coordinator)
 
@@ -644,7 +687,9 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             coordinator.async_set_firmware_auto_update.assert_called_with(True)
-            mock_logger.info.assert_called_with("Enabled firmware auto-update for %s", "TEST-SERIAL-123")
+            mock_logger.info.assert_called_with(
+                "Enabled firmware auto-update for %s", "TEST-SERIAL-123"
+            )
 
     @pytest.mark.asyncio
     async def test_firmware_auto_update_switch_turn_on_failure(self):
@@ -661,7 +706,9 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             coordinator.async_set_firmware_auto_update.assert_called_with(True)
-            mock_logger.error.assert_called_with("Failed to enable firmware auto-update for %s", "TEST-SERIAL-123")
+            mock_logger.error.assert_called_with(
+                "Failed to enable firmware auto-update for %s", "TEST-SERIAL-123"
+            )
 
     @pytest.mark.asyncio
     async def test_firmware_auto_update_switch_turn_off_success(self):
@@ -678,7 +725,9 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             coordinator.async_set_firmware_auto_update.assert_called_with(False)
-            mock_logger.info.assert_called_with("Disabled firmware auto-update for %s", "TEST-SERIAL-123")
+            mock_logger.info.assert_called_with(
+                "Disabled firmware auto-update for %s", "TEST-SERIAL-123"
+            )
 
     @pytest.mark.asyncio
     async def test_firmware_auto_update_switch_turn_off_failure(self):
@@ -695,7 +744,9 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             coordinator.async_set_firmware_auto_update.assert_called_with(False)
-            mock_logger.error.assert_called_with("Failed to disable firmware auto-update for %s", "TEST-SERIAL-123")
+            mock_logger.error.assert_called_with(
+                "Failed to disable firmware auto-update for %s", "TEST-SERIAL-123"
+            )
 
     # COMMENTED OUT: Home Assistant entity setup complexity causing NoEntitySpecifiedError
     # def test_firmware_auto_update_switch_debug_logging(self):

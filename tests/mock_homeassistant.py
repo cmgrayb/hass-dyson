@@ -1,14 +1,14 @@
 """Mock Home Assistant components for testing and development."""
 
 import sys
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 
 class MockConfigEntry:
     """Mock config entry for testing."""
 
-    def __init__(self, data: Dict[str, Any]):
+    def __init__(self, data: dict[str, Any]):
         self.data = data
         self.entry_id = "test_entry_id"
         self.domain = "hass_dyson"
@@ -79,7 +79,9 @@ homeassistant_mock = MagicMock()
 homeassistant_mock.core.HomeAssistant = MockHomeAssistant
 homeassistant_mock.config_entries.ConfigEntry = MockConfigEntry
 homeassistant_mock.const.Platform = MockPlatform
-homeassistant_mock.helpers.update_coordinator.DataUpdateCoordinator = MockDataUpdateCoordinator
+homeassistant_mock.helpers.update_coordinator.DataUpdateCoordinator = (
+    MockDataUpdateCoordinator
+)
 homeassistant_mock.helpers.entity.Entity = MockEntity
 homeassistant_mock.components.fan.FanEntity = MockFanEntity
 homeassistant_mock.components.sensor.SensorEntity = MockSensorEntity
@@ -90,7 +92,9 @@ sys.modules["homeassistant.core"] = homeassistant_mock.core
 sys.modules["homeassistant.config_entries"] = homeassistant_mock.config_entries
 sys.modules["homeassistant.const"] = homeassistant_mock.const
 sys.modules["homeassistant.helpers"] = homeassistant_mock.helpers
-sys.modules["homeassistant.helpers.update_coordinator"] = homeassistant_mock.helpers.update_coordinator
+sys.modules["homeassistant.helpers.update_coordinator"] = (
+    homeassistant_mock.helpers.update_coordinator
+)
 sys.modules["homeassistant.helpers.entity"] = homeassistant_mock.helpers.entity
 sys.modules["homeassistant.components"] = homeassistant_mock.components
 sys.modules["homeassistant.components.fan"] = homeassistant_mock.components.fan

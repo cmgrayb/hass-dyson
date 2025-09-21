@@ -57,7 +57,9 @@ class TestBinarySensorPlatformSetup:
             "custom_components.hass_dyson.binary_sensor.FAULT_TRANSLATIONS",
             {"aqs": {"FAIL": "Air quality sensor failed"}},
         ):
-            result = await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+            result = await async_setup_entry(
+                mock_hass, mock_config_entry, mock_add_entities
+            )
 
         assert result is True
         mock_add_entities.assert_called_once()
@@ -65,7 +67,9 @@ class TestBinarySensorPlatformSetup:
 
         # Should create filter replacement sensor + fault sensors
         assert len(entities) >= 1
-        assert any(isinstance(entity, DysonFilterReplacementSensor) for entity in entities)
+        assert any(
+            isinstance(entity, DysonFilterReplacementSensor) for entity in entities
+        )
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_creates_fault_sensors(self, mock_coordinator):
@@ -82,9 +86,17 @@ class TestBinarySensorPlatformSetup:
             "fltr": {"WORN": "Filter worn out"},
         }
 
-        with patch("custom_components.hass_dyson.binary_sensor.FAULT_TRANSLATIONS", fault_translations):
-            with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_relevant", return_value=True):
-                result = await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+        with patch(
+            "custom_components.hass_dyson.binary_sensor.FAULT_TRANSLATIONS",
+            fault_translations,
+        ):
+            with patch(
+                "custom_components.hass_dyson.binary_sensor._is_fault_code_relevant",
+                return_value=True,
+            ):
+                result = await async_setup_entry(
+                    mock_hass, mock_config_entry, mock_add_entities
+                )
 
         assert result is True
         entities = mock_add_entities.call_args[0][0]
@@ -140,20 +152,27 @@ class TestFaultCodeRelevance:
 
     def test_is_fault_code_for_category_match(self):
         """Test fault code category matching."""
-        with patch("custom_components.hass_dyson.binary_sensor.DEVICE_CATEGORY_FAULT_CODES", {"ec": ["aqs", "fltr"]}):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor.DEVICE_CATEGORY_FAULT_CODES",
+            {"ec": ["aqs", "fltr"]},
+        ):
             result = _is_fault_code_for_category("aqs", ["ec"])
             assert result is True
 
     def test_is_fault_code_for_category_no_match(self):
         """Test fault code category no match."""
-        with patch("custom_components.hass_dyson.binary_sensor.DEVICE_CATEGORY_FAULT_CODES", {"ec": ["aqs", "fltr"]}):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor.DEVICE_CATEGORY_FAULT_CODES",
+            {"ec": ["aqs", "fltr"]},
+        ):
             result = _is_fault_code_for_category("wifi", ["ec"])
             assert result is False
 
     def test_is_fault_code_for_capability_match(self):
         """Test fault code capability matching."""
         with patch(
-            "custom_components.hass_dyson.binary_sensor.CAPABILITY_FAULT_CODES", {"extended_aq": ["aqs", "temp"]}
+            "custom_components.hass_dyson.binary_sensor.CAPABILITY_FAULT_CODES",
+            {"extended_aq": ["aqs", "temp"]},
         ):
             result = _is_fault_code_for_capability("aqs", ["extended_aq"])
             assert result is True
@@ -161,36 +180,56 @@ class TestFaultCodeRelevance:
     def test_is_fault_code_for_capability_no_match(self):
         """Test fault code capability no match."""
         with patch(
-            "custom_components.hass_dyson.binary_sensor.CAPABILITY_FAULT_CODES", {"extended_aq": ["aqs", "temp"]}
+            "custom_components.hass_dyson.binary_sensor.CAPABILITY_FAULT_CODES",
+            {"extended_aq": ["aqs", "temp"]},
         ):
             result = _is_fault_code_for_capability("wifi", ["extended_aq"])
             assert result is False
 
     def test_is_fault_code_relevant_category_match(self):
         """Test fault code relevance via category match."""
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_for_category", return_value=True):
-            with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_for_capability", return_value=False):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_for_category",
+            return_value=True,
+        ):
+            with patch(
+                "custom_components.hass_dyson.binary_sensor._is_fault_code_for_capability",
+                return_value=False,
+            ):
                 result = _is_fault_code_relevant("aqs", ["ec"], ["heating"])
                 assert result is True
 
     def test_is_fault_code_relevant_capability_match(self):
         """Test fault code relevance via capability match."""
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_for_category", return_value=False):
-            with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_for_capability", return_value=True):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_for_category",
+            return_value=False,
+        ):
+            with patch(
+                "custom_components.hass_dyson.binary_sensor._is_fault_code_for_capability",
+                return_value=True,
+            ):
                 result = _is_fault_code_relevant("temp", ["unknown"], ["extended_aq"])
                 assert result is True
 
     def test_is_fault_code_relevant_no_match(self):
         """Test fault code relevance with no matches."""
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_for_category", return_value=False):
-            with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_for_capability", return_value=False):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_for_category",
+            return_value=False,
+        ):
+            with patch(
+                "custom_components.hass_dyson.binary_sensor._is_fault_code_for_capability",
+                return_value=False,
+            ):
                 result = _is_fault_code_relevant("unknown", ["unknown"], ["unknown"])
                 assert result is False
 
     def test_is_fault_code_relevant_exception_handling(self):
         """Test fault code relevance with exception returns True."""
         with patch(
-            "custom_components.hass_dyson.binary_sensor._normalize_categories", side_effect=Exception("Test error")
+            "custom_components.hass_dyson.binary_sensor._normalize_categories",
+            side_effect=Exception("Test error"),
         ):
             result = _is_fault_code_relevant("aqs", ["ec"], ["heating"])
             assert result is True
@@ -361,7 +400,9 @@ class TestDysonFilterReplacementSensor:
         sensor.hass = Mock()
 
         # Now cause an exception during the update by making the device property fail
-        type(mock_coordinator).device = PropertyMock(side_effect=RuntimeError("Device access error"))
+        type(mock_coordinator).device = PropertyMock(
+            side_effect=RuntimeError("Device access error")
+        )
 
         with patch("custom_components.hass_dyson.binary_sensor._LOGGER") as mock_logger:
             with patch.object(sensor, "async_write_ha_state"):
@@ -469,7 +510,10 @@ class TestDysonFaultSensor:
         sensor = DysonFaultSensor(mock_coordinator, "irrelevant", fault_info)
         sensor.hass = Mock()
 
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_relevant", return_value=False):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_relevant",
+            return_value=False,
+        ):
             with patch.object(sensor, "async_write_ha_state"):
                 sensor._handle_coordinator_update()
 
@@ -485,7 +529,10 @@ class TestDysonFaultSensor:
         sensor = DysonFaultSensor(mock_coordinator, "aqs", fault_info)
         sensor.hass = Mock()
 
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_relevant", return_value=True):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_relevant",
+            return_value=True,
+        ):
             with patch.object(sensor, "async_write_ha_state"):
                 sensor._handle_coordinator_update()
 
@@ -493,7 +540,10 @@ class TestDysonFaultSensor:
         assert sensor._attr_is_on is True
         assert sensor._attr_extra_state_attributes["fault_code"] == "aqs"
         assert sensor._attr_extra_state_attributes["fault_value"] == "FAIL"
-        assert sensor._attr_extra_state_attributes["description"] == "Air quality sensor failed"
+        assert (
+            sensor._attr_extra_state_attributes["description"]
+            == "Air quality sensor failed"
+        )
 
     def test_handle_coordinator_update_fault_ok(self, mock_coordinator):
         """Test coordinator update with fault showing OK."""
@@ -503,7 +553,10 @@ class TestDysonFaultSensor:
         sensor = DysonFaultSensor(mock_coordinator, "aqs", fault_info)
         sensor.hass = Mock()
 
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_relevant", return_value=True):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_relevant",
+            return_value=True,
+        ):
             with patch.object(sensor, "async_write_ha_state"):
                 sensor._handle_coordinator_update()
 
@@ -519,7 +572,10 @@ class TestDysonFaultSensor:
         sensor = DysonFaultSensor(mock_coordinator, "aqs", fault_info)
         sensor.hass = Mock()
 
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_relevant", return_value=True):
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_relevant",
+            return_value=True,
+        ):
             with patch.object(sensor, "async_write_ha_state"):
                 sensor._handle_coordinator_update()
 
@@ -529,14 +585,23 @@ class TestDysonFaultSensor:
 
     def test_handle_coordinator_update_exception(self, mock_coordinator):
         """Test coordinator update with exception."""
-        mock_coordinator.device._faults_data = {"test": "data"}  # Need data to trigger the exception path
+        mock_coordinator.device._faults_data = {
+            "test": "data"
+        }  # Need data to trigger the exception path
         fault_info = {"FAIL": "Failed"}
         sensor = DysonFaultSensor(mock_coordinator, "aqs", fault_info)
         sensor.hass = Mock()
 
-        with patch("custom_components.hass_dyson.binary_sensor._is_fault_code_relevant", return_value=True):
-            with patch.object(sensor, "_search_fault_in_data", side_effect=Exception("Test error")):
-                with patch("custom_components.hass_dyson.binary_sensor._LOGGER") as mock_logger:
+        with patch(
+            "custom_components.hass_dyson.binary_sensor._is_fault_code_relevant",
+            return_value=True,
+        ):
+            with patch.object(
+                sensor, "_search_fault_in_data", side_effect=Exception("Test error")
+            ):
+                with patch(
+                    "custom_components.hass_dyson.binary_sensor._LOGGER"
+                ) as mock_logger:
                     with patch.object(sensor, "async_write_ha_state"):
                         sensor._handle_coordinator_update()
                     mock_logger.warning.assert_called_once()
@@ -673,7 +738,9 @@ class TestBinarySensorIntegration:
         # Mock device that raises exception when accessing hepa_filter_life property
         mock_device = Mock()
         # Make getattr raise an exception when trying to access hepa_filter_life
-        type(mock_device).hepa_filter_life = PropertyMock(side_effect=RuntimeError("Device error"))
+        type(mock_device).hepa_filter_life = PropertyMock(
+            side_effect=RuntimeError("Device error")
+        )
         mock_coordinator.device = mock_device
 
         sensor = DysonFilterReplacementSensor(mock_coordinator)

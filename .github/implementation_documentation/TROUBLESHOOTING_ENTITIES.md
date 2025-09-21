@@ -192,6 +192,7 @@ Incorrect capability or category configuration
 Include:
 - **Device model** (exact model number)
 - **Configuration method** (cloud discovery vs manual)
+- **Get Cloud Devices in Sanitize mode output** (tells us what Dyson identifies your device as)
 - **Selected capabilities** and device category
 - **Expected vs actual entities**
 - **Relevant log entries** (with debug enabled)

@@ -111,9 +111,7 @@ except DysonAPIError:
 - ✅ Context manager support
 - ✅ Exception class imports
 - ✅ Integration module imports
-- ✅ Code formatting (Black)
-- ✅ Import sorting (isort)
-- ✅ Linting (Flake8) - only complexity warning on existing code
+- ✅ Code formatting and linting (Ruff)
 
 ### Installation Notes
 

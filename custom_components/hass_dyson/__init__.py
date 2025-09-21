@@ -26,7 +26,12 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import DysonCloudAccountCoordinator, DysonDataUpdateCoordinator
-from .services import async_remove_services, async_setup_services
+from .services import (
+    async_remove_device_services_for_coordinator,
+    async_remove_services,
+    async_setup_device_services_for_coordinator,
+    async_setup_services,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +54,9 @@ CONFIG_SCHEMA = vol.Schema(
             {
                 vol.Optional("username"): cv.string,
                 vol.Optional("password"): cv.string,
-                vol.Optional("devices", default=[]): vol.All(cv.ensure_list, [DEVICE_SCHEMA]),
+                vol.Optional("devices", default=[]): vol.All(
+                    cv.ensure_list, [DEVICE_SCHEMA]
+                ),
             }
         )
     },
@@ -97,12 +104,15 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
         if existing_entries:
             _LOGGER.debug(
-                "Device %s already configured via config entry, skipping YAML setup", device_config[CONF_SERIAL_NUMBER]
+                "Device %s already configured via config entry, skipping YAML setup",
+                device_config[CONF_SERIAL_NUMBER],
             )
             continue
 
         # Create a config entry from YAML data
-        _LOGGER.debug("Creating config entry for device: %s", device_config[CONF_SERIAL_NUMBER])
+        _LOGGER.debug(
+            "Creating config entry for device: %s", device_config[CONF_SERIAL_NUMBER]
+        )
 
         # Prepare config entry data
         entry_data = {
@@ -139,7 +149,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     return True
 
 
-async def _create_device_entry(hass: HomeAssistant, device_data: dict, device_info: dict) -> None:
+async def _create_device_entry(
+    hass: HomeAssistant, device_data: dict, device_info: dict
+) -> None:
     """Create a device config entry as a background task."""
     device_serial = device_data.get(CONF_SERIAL_NUMBER, "unknown")
 
@@ -154,16 +166,26 @@ async def _create_device_entry(hass: HomeAssistant, device_data: dict, device_in
         _LOGGER.info("Background task: Device entry creation result: %s", result)
 
     except Exception as e:
-        _LOGGER.error("Background task: Failed to create device entry for %s: %s", device_serial, e)
+        _LOGGER.error(
+            "Background task: Failed to create device entry for %s: %s",
+            device_serial,
+            e,
+        )
 
 
-async def _create_discovery_flow(hass: HomeAssistant, entry: ConfigEntry, device_info: dict) -> None:
+async def _create_discovery_flow(
+    hass: HomeAssistant, entry: ConfigEntry, device_info: dict
+) -> None:
     """Create a discovery flow for manual device confirmation as a background task."""
     device_serial = device_info.get("serial_number", "unknown")
     device_name = device_info.get("name", f"Dyson {device_serial}")
 
     try:
-        _LOGGER.info("Background task: Creating discovery flow for %s (%s)", device_name, device_serial)
+        _LOGGER.info(
+            "Background task: Creating discovery flow for %s (%s)",
+            device_name,
+            device_serial,
+        )
 
         # Check if discovery already exists for this device
         existing_flows = [
@@ -197,15 +219,25 @@ async def _create_discovery_flow(hass: HomeAssistant, entry: ConfigEntry, device
                 "parent_entry_id": entry.entry_id,
             },
         )
-        _LOGGER.info("Background task: Discovery flow creation result for %s: %s", device_name, result)
+        _LOGGER.info(
+            "Background task: Discovery flow creation result for %s: %s",
+            device_name,
+            result,
+        )
 
     except Exception as e:
-        _LOGGER.error("Background task: Failed to create discovery flow for %s: %s", device_serial, e)
+        _LOGGER.error(
+            "Background task: Failed to create discovery flow for %s: %s",
+            device_serial,
+            e,
+        )
 
 
 async def _setup_account_level_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up account-level config entry with multiple devices."""
-    _LOGGER.info("Setting up account-level entry with %d devices", len(entry.data["devices"]))
+    _LOGGER.info(
+        "Setting up account-level entry with %d devices", len(entry.data["devices"])
+    )
     devices = entry.data["devices"]
 
     # Get auto_add_devices setting with backward-compatible default
@@ -218,7 +250,9 @@ async def _setup_account_level_entry(hass: HomeAssistant, entry: ConfigEntry) ->
     # Set up cloud account coordinator for device polling if enabled
     await _setup_cloud_coordinator(hass, entry)
 
-    _LOGGER.info("Account entry setup complete - individual device entries will be created")
+    _LOGGER.info(
+        "Account entry setup complete - individual device entries will be created"
+    )
     return True
 
 
@@ -243,7 +277,9 @@ async def _process_account_devices(
             continue
 
         # Get polling setting to determine if devices should be processed
-        poll_for_devices = entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+        poll_for_devices = entry.data.get(
+            CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
+        )
 
         if not poll_for_devices:
             _LOGGER.debug(
@@ -273,7 +309,9 @@ async def _handle_new_device(
             parent_entry_id=entry.entry_id,
         )
 
-        _LOGGER.info("Auto-creating individual config entry for device: %s", device_serial)
+        _LOGGER.info(
+            "Auto-creating individual config entry for device: %s", device_serial
+        )
         # Schedule device entry creation as a background task
         hass.async_create_background_task(
             _create_device_entry(hass, device_data, device_info),
@@ -304,12 +342,19 @@ async def _setup_cloud_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> N
 
         # Start the coordinator
         await cloud_coordinator.async_config_entry_first_refresh()
-        _LOGGER.info("Cloud device polling coordinator started for account: %s", entry.data.get("email"))
+        _LOGGER.info(
+            "Cloud device polling coordinator started for account: %s",
+            entry.data.get("email"),
+        )
     else:
-        _LOGGER.info("Cloud device polling disabled for account: %s", entry.data.get("email"))
+        _LOGGER.info(
+            "Cloud device polling disabled for account: %s", entry.data.get("email")
+        )
 
 
-async def _setup_individual_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def _setup_individual_device_entry(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:
     """Set up individual device config entry."""
     _LOGGER.debug("Setting up individual device config entry")
     coordinator = DysonDataUpdateCoordinator(hass, entry)
@@ -324,6 +369,9 @@ async def _setup_individual_device_entry(hass: HomeAssistant, entry: ConfigEntry
     # Check for firmware updates if this is a cloud device
     await _check_firmware_updates(coordinator, entry)
 
+    # Set up device services for this coordinator
+    await async_setup_device_services_for_coordinator(hass, coordinator)
+
     # Set up platforms and services
     await _setup_platforms_and_services(hass, entry, coordinator)
 
@@ -331,7 +379,9 @@ async def _setup_individual_device_entry(hass: HomeAssistant, entry: ConfigEntry
     return True
 
 
-async def _check_firmware_updates(coordinator: "DysonDataUpdateCoordinator", entry: ConfigEntry) -> None:
+async def _check_firmware_updates(
+    coordinator: DysonDataUpdateCoordinator, entry: ConfigEntry
+) -> None:
     """Check for firmware updates if this is a cloud device."""
     from .const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
 
@@ -339,11 +389,15 @@ async def _check_firmware_updates(coordinator: "DysonDataUpdateCoordinator", ent
         try:
             await coordinator.async_check_firmware_update()
         except Exception as err:
-            _LOGGER.debug("Initial firmware update check failed for %s: %s", coordinator.serial_number, err)
+            _LOGGER.debug(
+                "Initial firmware update check failed for %s: %s",
+                coordinator.serial_number,
+                err,
+            )
 
 
 async def _setup_platforms_and_services(
-    hass: HomeAssistant, entry: ConfigEntry, coordinator: "DysonDataUpdateCoordinator"
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: DysonDataUpdateCoordinator
 ) -> None:
     """Set up platforms and services for the device."""
     # Determine which platforms to set up based on device capabilities
@@ -351,11 +405,6 @@ async def _setup_platforms_and_services(
 
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_setup)
-
-    # Set up services (only once when first device is added)
-    if not any(key == "services_setup" for key in hass.data.get(DOMAIN, {})):
-        await async_setup_services(hass)
-        hass.data.setdefault(DOMAIN, {})["services_setup"] = True
 
     _LOGGER.info("Set up platforms: %s", platforms_to_setup)
 
@@ -365,6 +414,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
     _LOGGER.debug("Setting up Dyson integration for device: %s", entry.title)
 
     try:
+        # Set up services (only once, regardless of entry type)
+        if not any(key == "services_setup" for key in hass.data.get(DOMAIN, {})):
+            await async_setup_services(hass)
+            hass.data.setdefault(DOMAIN, {})["services_setup"] = True
+            _LOGGER.info("Dyson services registered")
+
         # Check if this is a new account-level config entry with multiple devices
         if "devices" in entry.data and entry.data.get("devices"):
             return await _setup_account_level_entry(hass, entry)
@@ -419,15 +474,22 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     platforms_to_unload = _get_platforms_for_device(coordinator)
 
     # Unload platforms
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms_to_unload)
+    unload_ok = await hass.config_entries.async_unload_platforms(
+        entry, platforms_to_unload
+    )
 
     if unload_ok:
+        # Remove device services for this coordinator's categories
+        await async_remove_device_services_for_coordinator(hass, coordinator)
+
         # Clean up coordinator
         await coordinator.async_shutdown()
         hass.data[DOMAIN].pop(entry.entry_id)
 
         # Remove services if this was the last device
-        if not hass.data[DOMAIN] or all(key == "services_setup" for key in hass.data[DOMAIN]):
+        if not hass.data[DOMAIN] or all(
+            key == "services_setup" for key in hass.data[DOMAIN]
+        ):
             await async_remove_services(hass)
 
         _LOGGER.info("Successfully unloaded Dyson device '%s'", entry.title)
@@ -445,7 +507,9 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
     platforms.extend(["sensor", "binary_sensor", "button"])
 
     # Device category specific platforms - check if any category matches
-    if any(cat in ["ec"] for cat in device_category):  # Environment Cleaner (fans with filters)
+    if any(
+        cat in ["ec"] for cat in device_category
+    ):  # Environment Cleaner (fans with filters)
         # For fans, add fan platform and supporting control platforms
         platforms.append("fan")
         # Add number and select platforms for advanced controls
@@ -453,11 +517,16 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
         # Climate platform for heating/cooling modes if device supports it
         platforms.append("climate")
 
-    elif any(cat in ["robot", "vacuum", "flrc"] for cat in device_category):  # Cleaning devices
+    elif any(
+        cat in ["robot", "vacuum", "flrc"] for cat in device_category
+    ):  # Cleaning devices
         platforms.append("vacuum")
 
     # Add capability-based platforms for enhanced functionality
-    if "Scheduling" in device_capabilities or "AdvanceOscillationDay1" in device_capabilities:
+    if (
+        "Scheduling" in device_capabilities
+        or "AdvanceOscillationDay1" in device_capabilities
+    ):
         if "number" not in platforms:
             platforms.append("number")
         if "select" not in platforms:

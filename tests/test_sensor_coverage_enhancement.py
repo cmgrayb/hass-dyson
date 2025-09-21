@@ -29,7 +29,9 @@ class TestDysonFilterLifeSensorErrorHandling:
         """Create a filter life sensor instance."""
         return DysonFilterLifeSensor(mock_coordinator, "hepa")
 
-    def test_filter_life_invalid_value_type_error(self, filter_life_sensor, mock_coordinator):
+    def test_filter_life_invalid_value_type_error(
+        self, filter_life_sensor, mock_coordinator
+    ):
         """Test filter life sensor with invalid value causing TypeError."""
         # Setup coordinator data with invalid filter life value (non-convertible object)
         mock_coordinator.data = {"hepa_filter_life": object()}  # Non-convertible object
@@ -41,7 +43,9 @@ class TestDysonFilterLifeSensorErrorHandling:
         # Should handle TypeError and set value to None
         assert filter_life_sensor._attr_native_value is None
 
-    def test_filter_life_invalid_value_error(self, filter_life_sensor, mock_coordinator):
+    def test_filter_life_invalid_value_error(
+        self, filter_life_sensor, mock_coordinator
+    ):
         """Test filter life sensor with invalid value causing ValueError."""
         # Setup coordinator data with invalid filter life value (non-numeric string)
         mock_coordinator.data = {"hepa_filter_life": "invalid_number"}
@@ -53,7 +57,9 @@ class TestDysonFilterLifeSensorErrorHandling:
         # Should handle ValueError and set value to None
         assert filter_life_sensor._attr_native_value is None
 
-    def test_filter_life_none_value_fallback(self, filter_life_sensor, mock_coordinator):
+    def test_filter_life_none_value_fallback(
+        self, filter_life_sensor, mock_coordinator
+    ):
         """Test filter life sensor fallback when filter_life is None."""
         # Setup coordinator data with None filter life value
         mock_coordinator.data = {"hepa_filter_life": None}
@@ -65,7 +71,9 @@ class TestDysonFilterLifeSensorErrorHandling:
         # Should set value to None when filter_life is None
         assert filter_life_sensor._attr_native_value is None
 
-    def test_filter_life_missing_key_fallback(self, filter_life_sensor, mock_coordinator):
+    def test_filter_life_missing_key_fallback(
+        self, filter_life_sensor, mock_coordinator
+    ):
         """Test filter life sensor fallback when filter_life key is missing."""
         # Setup coordinator data without filter life key
         mock_coordinator.data = {"other_data": "value"}
@@ -166,7 +174,9 @@ class TestDysonAirQualitySensorErrorHandling:
         # Should handle conversion error and set value to None
         assert voc_sensor._attr_native_value is None
 
-    def test_formaldehyde_invalid_conversion_error(self, formaldehyde_sensor, mock_coordinator):
+    def test_formaldehyde_invalid_conversion_error(
+        self, formaldehyde_sensor, mock_coordinator
+    ):
         """Test formaldehyde sensor with invalid data conversion."""
         # Setup device with no formaldehyde property to trigger data lookup
         mock_coordinator.device.formaldehyde = None
@@ -201,7 +211,9 @@ class TestDysonEnvironmentalSensorErrorHandling:
         """Create humidity sensor instance."""
         return DysonHumiditySensor(mock_coordinator)
 
-    def test_temperature_invalid_conversion_error(self, temperature_sensor, mock_coordinator):
+    def test_temperature_invalid_conversion_error(
+        self, temperature_sensor, mock_coordinator
+    ):
         """Test temperature sensor with invalid data conversion."""
         # Setup device with no temperature property to trigger data lookup
         mock_coordinator.device.temperature = None
@@ -268,7 +280,9 @@ class TestDysonSensorCoordinatorDataHandling:
         # Should handle None data gracefully
         assert filter_life_sensor._attr_native_value is None
 
-    def test_sensor_corrupted_coordinator_data(self, filter_life_sensor, mock_coordinator):
+    def test_sensor_corrupted_coordinator_data(
+        self, filter_life_sensor, mock_coordinator
+    ):
         """Test sensor with corrupted coordinator data."""
         # Setup coordinator with corrupted data (string instead of dict)
         mock_coordinator.data = "corrupted_data"

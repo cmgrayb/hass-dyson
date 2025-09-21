@@ -50,10 +50,14 @@ class TestEntityFiltering:
 
         # Simulate sensor creation logic
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
-        should_create_pm_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_pm_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
 
         assert should_create_pm_sensors, "Devices with ExtendedAQ should get PM sensors"
 
@@ -71,19 +75,27 @@ class TestEntityFiltering:
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
-        should_create_pm_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_pm_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
 
-        assert not should_create_pm_sensors, "Devices without ExtendedAQ should not get PM sensors"
+        assert (
+            not should_create_pm_sensors
+        ), "Devices without ExtendedAQ should not get PM sensors"
 
     def test_ec_category_creates_wifi_sensors(self, mock_coordinator):
         """Test that EC category devices get WiFi sensors."""
         mock_coordinator.device_capabilities = ["EnvironmentalData"]
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
-        should_create_wifi_sensors = any(cat in ["ec", "robot"] for cat in mock_coordinator.device_category)
+        should_create_wifi_sensors = any(
+            cat in ["ec", "robot"] for cat in mock_coordinator.device_category
+        )
 
         assert should_create_wifi_sensors, "EC devices should get WiFi sensors"
 
@@ -99,7 +111,9 @@ class TestEntityFiltering:
         mock_coordinator.device_capabilities = ["EnvironmentalData"]
         mock_coordinator.device_category = [DEVICE_CATEGORY_ROBOT]
 
-        should_create_wifi_sensors = any(cat in ["ec", "robot"] for cat in mock_coordinator.device_category)
+        should_create_wifi_sensors = any(
+            cat in ["ec", "robot"] for cat in mock_coordinator.device_category
+        )
 
         assert should_create_wifi_sensors, "Robot devices should get WiFi sensors"
 
@@ -108,9 +122,13 @@ class TestEntityFiltering:
         mock_coordinator.device_capabilities = ["EnvironmentalData"]
         mock_coordinator.device_category = [DEVICE_CATEGORY_VACUUM]
 
-        should_create_wifi_sensors = any(cat in ["ec", "robot"] for cat in mock_coordinator.device_category)
+        should_create_wifi_sensors = any(
+            cat in ["ec", "robot"] for cat in mock_coordinator.device_category
+        )
 
-        assert not should_create_wifi_sensors, "Vacuum devices should not get WiFi sensors"
+        assert (
+            not should_create_wifi_sensors
+        ), "Vacuum devices should not get WiFi sensors"
 
     def test_extended_aq_creates_hepa_filter_sensors(self, mock_coordinator):
         """Test that devices with ExtendedAQ capability get HEPA filter sensors."""
@@ -118,12 +136,18 @@ class TestEntityFiltering:
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
-        should_create_hepa_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_hepa_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
 
-        assert should_create_hepa_sensors, "Devices with ExtendedAQ should get HEPA filter sensors"
+        assert (
+            should_create_hepa_sensors
+        ), "Devices with ExtendedAQ should get HEPA filter sensors"
 
         # Verify sensor creation
         hepa_life_sensor = DysonHEPAFilterLifeSensor(mock_coordinator)
@@ -138,12 +162,15 @@ class TestEntityFiltering:
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
         should_create_temp_sensor = "heating" in capabilities_str
 
-        assert should_create_temp_sensor, "Devices with Heating should get temperature sensor"
+        assert (
+            should_create_temp_sensor
+        ), "Devices with Heating should get temperature sensor"
 
         # Verify sensor creation
         temp_sensor = DysonTemperatureSensor(mock_coordinator)
@@ -155,26 +182,34 @@ class TestEntityFiltering:
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
         should_create_temp_sensor = "heating" in capabilities_str
 
-        assert not should_create_temp_sensor, "Devices without Heating should not get temperature sensor"
+        assert (
+            not should_create_temp_sensor
+        ), "Devices without Heating should not get temperature sensor"
 
-    def test_formaldehyde_capability_would_create_carbon_sensors(self, mock_coordinator):
+    def test_formaldehyde_capability_would_create_carbon_sensors(
+        self, mock_coordinator
+    ):
         """Test that devices with Formaldehyde capability would get carbon filter sensors."""
         # Note: This is currently commented out in the code, but we test the logic
         mock_coordinator.device_capabilities = [CAPABILITY_FORMALDEHYDE]
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
         should_create_carbon_sensors = "formaldehyde" in capabilities_str
 
-        assert should_create_carbon_sensors, "Devices with Formaldehyde should get carbon filter sensors"
+        assert (
+            should_create_carbon_sensors
+        ), "Devices with Formaldehyde should get carbon filter sensors"
 
         # Verify sensor creation (even though currently disabled)
         carbon_life_sensor = DysonCarbonFilterLifeSensor(mock_coordinator)
@@ -190,12 +225,15 @@ class TestEntityFiltering:
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
         should_create_humidity_sensor = "humidifier" in capabilities_str
 
-        assert should_create_humidity_sensor, "Devices with Humidifier should get humidity sensor"
+        assert (
+            should_create_humidity_sensor
+        ), "Devices with Humidifier should get humidity sensor"
 
         # Verify sensor creation (even though currently disabled)
         humidity_sensor = DysonHumiditySensor(mock_coordinator)
@@ -203,23 +241,36 @@ class TestEntityFiltering:
 
     def test_multiple_capabilities_create_multiple_sensors(self, mock_coordinator):
         """Test that devices with multiple capabilities get all relevant sensors."""
-        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ, CAPABILITY_HEATING, "Scheduling"]
+        mock_coordinator.device_capabilities = [
+            CAPABILITY_EXTENDED_AQ,
+            CAPABILITY_HEATING,
+            "Scheduling",
+        ]
         mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
         # Should create PM sensors
-        should_create_pm_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_pm_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
         assert should_create_pm_sensors
 
         # Should create WiFi sensors
-        should_create_wifi_sensors = any(cat in ["ec", "robot"] for cat in mock_coordinator.device_category)
+        should_create_wifi_sensors = any(
+            cat in ["ec", "robot"] for cat in mock_coordinator.device_category
+        )
         assert should_create_wifi_sensors
 
         # Should create HEPA sensors
-        should_create_hepa_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_hepa_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
         assert should_create_hepa_sensors
 
         # Should create temperature sensor
@@ -232,19 +283,28 @@ class TestEntityFiltering:
         mock_coordinator.device_category = [DEVICE_CATEGORY_VACUUM]  # No WiFi
 
         capabilities_str = [
-            cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in mock_coordinator.device_capabilities
+            cap.lower() if isinstance(cap, str) else str(cap).lower()
+            for cap in mock_coordinator.device_capabilities
         ]
 
         # Should not create PM sensors
-        should_create_pm_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_pm_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
         assert not should_create_pm_sensors
 
         # Should not create WiFi sensors (vacuum category)
-        should_create_wifi_sensors = any(cat in ["ec", "robot"] for cat in mock_coordinator.device_category)
+        should_create_wifi_sensors = any(
+            cat in ["ec", "robot"] for cat in mock_coordinator.device_category
+        )
         assert not should_create_wifi_sensors
 
         # Should not create HEPA sensors
-        should_create_hepa_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+        should_create_hepa_sensors = (
+            "extendedAQ".lower() in capabilities_str
+            or "extended_aq" in capabilities_str
+        )
         assert not should_create_hepa_sensors
 
         # Should not create temperature sensor
@@ -263,9 +323,14 @@ class TestEntityFiltering:
                 for cap in mock_coordinator.device_capabilities
             ]
 
-            should_create_pm_sensors = "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str
+            should_create_pm_sensors = (
+                "extendedAQ".lower() in capabilities_str
+                or "extended_aq" in capabilities_str
+            )
 
-            assert should_create_pm_sensors, f"Case variation {capability} should be recognized"
+            assert (
+                should_create_pm_sensors
+            ), f"Case variation {capability} should be recognized"
 
 
 class TestBinarySensorFiltering:
@@ -304,8 +369,12 @@ class TestBinarySensorFiltering:
         assert _is_fault_code_relevant("wifi", [DEVICE_CATEGORY_EC], [])  # WiFi
 
         # These should not be relevant for EC devices
-        assert not _is_fault_code_relevant("brsh", [DEVICE_CATEGORY_EC], [])  # Brush (robot)
-        assert not _is_fault_code_relevant("bin", [DEVICE_CATEGORY_EC], [])  # Dustbin (robot)
+        assert not _is_fault_code_relevant(
+            "brsh", [DEVICE_CATEGORY_EC], []
+        )  # Brush (robot)
+        assert not _is_fault_code_relevant(
+            "bin", [DEVICE_CATEGORY_EC], []
+        )  # Dustbin (robot)
 
     def test_fault_sensor_filtering_by_capability(self, mock_coordinator):
         """Test that fault sensors are filtered by device capabilities."""
@@ -313,13 +382,21 @@ class TestBinarySensorFiltering:
 
         # Test ExtendedAQ capability fault codes
         capabilities = [CAPABILITY_EXTENDED_AQ]
-        assert _is_fault_code_relevant("aqs", [DEVICE_CATEGORY_EC], capabilities)  # Air quality sensor
-        assert _is_fault_code_relevant("fltr", [DEVICE_CATEGORY_EC], capabilities)  # Filter
-        assert _is_fault_code_relevant("hflr", [DEVICE_CATEGORY_EC], capabilities)  # HEPA filter
+        assert _is_fault_code_relevant(
+            "aqs", [DEVICE_CATEGORY_EC], capabilities
+        )  # Air quality sensor
+        assert _is_fault_code_relevant(
+            "fltr", [DEVICE_CATEGORY_EC], capabilities
+        )  # Filter
+        assert _is_fault_code_relevant(
+            "hflr", [DEVICE_CATEGORY_EC], capabilities
+        )  # HEPA filter
 
         # Test Heating capability fault codes
         capabilities = [CAPABILITY_HEATING]
-        assert _is_fault_code_relevant("temp", [DEVICE_CATEGORY_EC], capabilities)  # Temperature sensor
+        assert _is_fault_code_relevant(
+            "temp", [DEVICE_CATEGORY_EC], capabilities
+        )  # Temperature sensor
 
         # Test without capabilities
         capabilities = []
@@ -354,4 +431,6 @@ class TestBinarySensorFiltering:
         from custom_components.hass_dyson.binary_sensor import _is_fault_code_relevant
 
         assert not _is_fault_code_relevant("unknown", [DEVICE_CATEGORY_EC], [])
-        assert not _is_fault_code_relevant("fake_code", [DEVICE_CATEGORY_ROBOT], [CAPABILITY_EXTENDED_AQ])
+        assert not _is_fault_code_relevant(
+            "fake_code", [DEVICE_CATEGORY_ROBOT], [CAPABILITY_EXTENDED_AQ]
+        )

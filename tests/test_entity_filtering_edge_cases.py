@@ -9,7 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.hass_dyson.const import CAPABILITY_EXTENDED_AQ, CAPABILITY_HEATING, DEVICE_CATEGORY_EC
+from custom_components.hass_dyson.const import (
+    CAPABILITY_EXTENDED_AQ,
+    CAPABILITY_HEATING,
+    DEVICE_CATEGORY_EC,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 
 
@@ -61,7 +65,11 @@ class TestEntityFilteringEdgeCases:
 
     def test_capabilities_with_none_elements(self, mock_coordinator):
         """Test capabilities list containing None elements."""
-        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ, None, CAPABILITY_HEATING]
+        mock_coordinator.device_capabilities = [
+            CAPABILITY_EXTENDED_AQ,
+            None,
+            CAPABILITY_HEATING,
+        ]
         mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
         # Should handle None elements in list
@@ -70,7 +78,11 @@ class TestEntityFilteringEdgeCases:
 
     def test_capabilities_with_empty_strings(self, mock_coordinator):
         """Test capabilities list containing empty strings."""
-        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ, "", CAPABILITY_HEATING]
+        mock_coordinator.device_capabilities = [
+            CAPABILITY_EXTENDED_AQ,
+            "",
+            CAPABILITY_HEATING,
+        ]
         mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
         # Should handle empty strings
@@ -79,7 +91,11 @@ class TestEntityFilteringEdgeCases:
 
     def test_capabilities_case_sensitivity(self, mock_coordinator):
         """Test that capability matching is case sensitive."""
-        mock_coordinator.device_capabilities = ["extendedaq", "EXTENDEDAQ", "ExtendedAQ"]
+        mock_coordinator.device_capabilities = [
+            "extendedaq",
+            "EXTENDEDAQ",
+            "ExtendedAQ",
+        ]
         mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
         # Only the correctly cased capability should match
@@ -89,7 +105,11 @@ class TestEntityFilteringEdgeCases:
 
     def test_unknown_capabilities(self, mock_coordinator):
         """Test handling of unknown/future capabilities."""
-        mock_coordinator.device_capabilities = ["UnknownCapability", "FutureFeature", CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_capabilities = [
+            "UnknownCapability",
+            "FutureFeature",
+            CAPABILITY_EXTENDED_AQ,
+        ]
         mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
         # Should handle unknown capabilities gracefully
@@ -282,7 +302,9 @@ class TestNetworkAndConnectionErrors:
 
     def test_device_connection_timeout(self, mock_coordinator):
         """Test handling of device connection timeouts."""
-        mock_coordinator.device.get_state.side_effect = TimeoutError("Connection timeout")
+        mock_coordinator.device.get_state.side_effect = TimeoutError(
+            "Connection timeout"
+        )
         mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
         mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
@@ -292,7 +314,9 @@ class TestNetworkAndConnectionErrors:
 
     def test_device_connection_refused(self, mock_coordinator):
         """Test handling of connection refused errors."""
-        mock_coordinator.device.connect.side_effect = ConnectionRefusedError("Connection refused")
+        mock_coordinator.device.connect.side_effect = ConnectionRefusedError(
+            "Connection refused"
+        )
         mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
         mock_coordinator.device_category = DEVICE_CATEGORY_EC
 

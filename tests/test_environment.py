@@ -32,30 +32,61 @@ def test_project_structure():
     assert (vscode_dir / "tasks.json").exists()
 
 
-def test_black_works():
-    """Test that black is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "black", "--version"], capture_output=True, text=True)
+def test_ruff_works():
+    """Test that ruff is installed and working."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "--version"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
     assert result.returncode == 0
-    assert "black" in result.stdout.lower()
+    assert "ruff" in result.stdout.lower()
 
 
-def test_flake8_works():
-    """Test that flake8 is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "flake8", "--version"], capture_output=True, text=True)
+def test_ruff_format_works():
+    """Test that ruff format command is working."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--check", "--help"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
     assert result.returncode == 0
-    # flake8 version output just shows version numbers, not the name
-    assert "mccabe" in result.stdout.lower()  # mccabe is part of flake8
+    assert "format" in result.stdout.lower()
+
+
+def test_ruff_check_works():
+    """Test that ruff check command is working."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--help"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+    assert result.returncode == 0
+    assert "check" in result.stdout.lower()
 
 
 def test_mypy_works():
     """Test that mypy is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "mypy", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "mypy", "--version"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
     assert result.returncode == 0
     assert "mypy" in result.stdout.lower()
 
 
 def test_pytest_works():
     """Test that pytest is installed and working."""
-    result = subprocess.run([sys.executable, "-m", "pytest", "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--version"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
     assert result.returncode == 0
     assert "pytest" in result.stdout.lower()

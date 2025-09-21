@@ -10,7 +10,7 @@ set_sleep_timer:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     minutes:
       name: Minutes
       description: Timer duration in minutes (15-540)
@@ -32,7 +32,7 @@ cancel_sleep_timer:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
 
 schedule_operation:
   name: Schedule Operation
@@ -44,7 +44,7 @@ schedule_operation:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     operation:
       name: Operation
       description: The operation to schedule
@@ -80,7 +80,7 @@ set_oscillation_angles:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     lower_angle:
       name: Lower Angle
       description: Lower oscillation angle in degrees (0-350)
@@ -102,9 +102,9 @@ set_oscillation_angles:
           step: 5
           unit_of_measurement: "°"
 
-fetch_account_data:
-  name: Fetch Account Data
-  description: Refresh device information from Dyson cloud account
+refresh_account_data:
+  name: Refresh Account Data
+  description: Refresh device information from Dyson cloud account (updates entity states in background)
   fields:
     device_id:
       name: Device
@@ -112,7 +112,7 @@ fetch_account_data:
       required: false
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
 
 reset_filter:
   name: Reset Filter Life
@@ -124,7 +124,7 @@ reset_filter:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     filter_type:
       name: Filter Type
       description: Type of filter to reset
@@ -160,3 +160,22 @@ set_angle:
           max: 350
           step: 5
           unit_of_measurement: "°"
+
+get_cloud_devices:
+  name: Get Cloud Devices
+  description: Retrieve device information from Dyson cloud accounts for manual setup and troubleshooting.
+  fields:
+    account_email:
+      name: Account Email
+      description: Specific cloud account email (optional - uses first account if not specified).
+      example: "user@example.com"
+      required: false
+      selector:
+        text:
+    sanitize:
+      name: Sanitize Data
+      description: Remove sensitive information for safe public posting.
+      default: false
+      required: false
+      selector:
+        boolean:

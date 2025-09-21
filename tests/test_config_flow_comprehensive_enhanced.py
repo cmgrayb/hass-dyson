@@ -7,7 +7,6 @@ options flow, and edge cases that are not covered by the existing tests.
 Following patterns from .github/design/testing-patterns.md for Home Assistant testing.
 """
 
-import asyncio
 import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,28 +38,38 @@ class TestDysonConfigFlowComprehensiveAuth:
         """Test authentication with network error."""
         # Mock async_add_executor_job to return a mock client that raises ConnectionError
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=ConnectionError("Network unreachable"))
+        mock_client.provision = AsyncMock(
+            side_effect=ConnectionError("Network unreachable")
+        )
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api("test@example.com", "password123")
+        token, errors = await mock_flow._authenticate_with_dyson_api(
+            "test@example.com", "password123"
+        )
 
         assert token is None
         assert "base" in errors
-        assert errors["base"] == "auth_failed"  # All exceptions map to auth_failed in the catch-all
+        assert (
+            errors["base"] == "auth_failed"
+        )  # All exceptions map to auth_failed in the catch-all
 
     @pytest.mark.asyncio
     async def test_authenticate_with_dyson_api_timeout_error(self, mock_flow):
         """Test authentication with timeout error."""
         # Mock async_add_executor_job to return a mock client that raises TimeoutError
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_client.provision = AsyncMock(side_effect=TimeoutError())
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api("test@example.com", "password123")
+        token, errors = await mock_flow._authenticate_with_dyson_api(
+            "test@example.com", "password123"
+        )
 
         assert token is None
         assert "base" in errors
-        assert errors["base"] == "auth_failed"  # All exceptions map to auth_failed in the catch-all
+        assert (
+            errors["base"] == "auth_failed"
+        )  # All exceptions map to auth_failed in the catch-all
 
     @pytest.mark.asyncio
     async def test_authenticate_with_dyson_api_api_error(self, mock_flow):
@@ -70,10 +79,14 @@ class TestDysonConfigFlowComprehensiveAuth:
 
         # Mock async_add_executor_job to return a mock client that raises DysonAuthError
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=DysonAuthError("Invalid credentials"))
+        mock_client.provision = AsyncMock(
+            side_effect=DysonAuthError("Invalid credentials")
+        )
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api("test@example.com", "password123")
+        token, errors = await mock_flow._authenticate_with_dyson_api(
+            "test@example.com", "password123"
+        )
 
         assert token is None
         assert "base" in errors
@@ -87,7 +100,9 @@ class TestDysonConfigFlowComprehensiveAuth:
         mock_client.provision = AsyncMock(side_effect=Exception("Generic error"))
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api("test@example.com", "password123")
+        token, errors = await mock_flow._authenticate_with_dyson_api(
+            "test@example.com", "password123"
+        )
 
         assert token is None
         assert "base" in errors
@@ -102,10 +117,14 @@ class TestDysonConfigFlowComprehensiveMDNS:
         """Test MDNS discovery when zeroconf instance is None."""
         mock_hass = MagicMock(spec=HomeAssistant)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance") as mock_zeroconf:
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance"
+        ) as mock_zeroconf:
             mock_zeroconf.return_value = None
 
-            result = await _discover_device_via_mdns(mock_hass, "VS6-EU-HJA1234A", timeout=5)
+            result = await _discover_device_via_mdns(
+                mock_hass, "VS6-EU-HJA1234A", timeout=5
+            )
 
             assert result is None
 
@@ -114,10 +133,14 @@ class TestDysonConfigFlowComprehensiveMDNS:
         """Test MDNS discovery when zeroconf instance raises exception."""
         mock_hass = MagicMock(spec=HomeAssistant)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance") as mock_zeroconf:
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance"
+        ) as mock_zeroconf:
             mock_zeroconf.side_effect = Exception("Zeroconf unavailable")
 
-            result = await _discover_device_via_mdns(mock_hass, "VS6-EU-HJA1234A", timeout=5)
+            result = await _discover_device_via_mdns(
+                mock_hass, "VS6-EU-HJA1234A", timeout=5
+            )
 
             assert result is None
 
@@ -126,7 +149,9 @@ class TestDysonConfigFlowComprehensiveMDNS:
         """Test MDNS discovery when service info exists but has no addresses."""
         mock_hass = MagicMock(spec=HomeAssistant)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance") as mock_zeroconf:
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance"
+        ) as mock_zeroconf:
             mock_zc_instance = MagicMock()
             mock_zeroconf.return_value = mock_zc_instance
 
@@ -137,9 +162,13 @@ class TestDysonConfigFlowComprehensiveMDNS:
 
             # Mock socket.gethostbyname to fail as well
             with patch("socket.gethostbyname") as mock_gethostbyname:
-                mock_gethostbyname.side_effect = socket.gaierror("Name resolution failed")
+                mock_gethostbyname.side_effect = socket.gaierror(
+                    "Name resolution failed"
+                )
 
-                result = await _discover_device_via_mdns(mock_hass, "VS6-EU-HJA1234A", timeout=5)
+                result = await _discover_device_via_mdns(
+                    mock_hass, "VS6-EU-HJA1234A", timeout=5
+                )
 
                 assert result is None
 
@@ -148,7 +177,9 @@ class TestDysonConfigFlowComprehensiveMDNS:
         """Test MDNS discovery when executor task times out."""
         mock_hass = MagicMock(spec=HomeAssistant)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance") as mock_zeroconf:
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance"
+        ) as mock_zeroconf:
             mock_zc_instance = MagicMock()
             mock_zeroconf.return_value = mock_zc_instance
 
@@ -161,7 +192,9 @@ class TestDysonConfigFlowComprehensiveMDNS:
 
             mock_zc_instance.get_service_info.side_effect = slow_service_lookup
 
-            result = await _discover_device_via_mdns(mock_hass, "VS6-EU-HJA1234A", timeout=1)
+            result = await _discover_device_via_mdns(
+                mock_hass, "VS6-EU-HJA1234A", timeout=1
+            )
 
             assert result is None
 
@@ -170,7 +203,9 @@ class TestDysonConfigFlowComprehensiveMDNS:
         """Test MDNS discovery fallback to .local hostname resolution."""
         mock_hass = MagicMock(spec=HomeAssistant)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance") as mock_zeroconf:
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance"
+        ) as mock_zeroconf:
             mock_zc_instance = MagicMock()
             mock_zeroconf.return_value = mock_zc_instance
 
@@ -181,7 +216,9 @@ class TestDysonConfigFlowComprehensiveMDNS:
             with patch("socket.gethostbyname") as mock_gethostbyname:
                 mock_gethostbyname.return_value = "192.168.1.100"
 
-                result = await _discover_device_via_mdns(mock_hass, "VS6-EU-HJA1234A", timeout=5)
+                result = await _discover_device_via_mdns(
+                    mock_hass, "VS6-EU-HJA1234A", timeout=5
+                )
 
                 assert result == "192.168.1.100"
                 mock_gethostbyname.assert_called_with("VS6-EU-HJA1234A.local")
@@ -191,14 +228,20 @@ class TestDysonConfigFlowComprehensiveMDNS:
         """Test MDNS discovery internal exception handling in _find_device."""
         mock_hass = MagicMock(spec=HomeAssistant)
 
-        with patch("homeassistant.components.zeroconf.async_get_instance") as mock_zeroconf:
+        with patch(
+            "homeassistant.components.zeroconf.async_get_instance"
+        ) as mock_zeroconf:
             mock_zc_instance = MagicMock()
             mock_zeroconf.return_value = mock_zc_instance
 
             # Mock get_service_info to raise an exception
-            mock_zc_instance.get_service_info.side_effect = Exception("Service lookup failed")
+            mock_zc_instance.get_service_info.side_effect = Exception(
+                "Service lookup failed"
+            )
 
-            result = await _discover_device_via_mdns(mock_hass, "VS6-EU-HJA1234A", timeout=5)
+            result = await _discover_device_via_mdns(
+                mock_hass, "VS6-EU-HJA1234A", timeout=5
+            )
 
             assert result is None
 
@@ -251,7 +294,9 @@ class TestDysonConfigFlowComprehensiveManualDevice:
         assert errors["mqtt_prefix"] == "required"
 
     @pytest.mark.asyncio
-    async def test_process_manual_device_input_hostname_resolution_failure(self, mock_flow):
+    async def test_process_manual_device_input_hostname_resolution_failure(
+        self, mock_flow
+    ):
         """Test processing manual device input with hostname resolution failure."""
         user_input = {
             "serial_number": "VS6-EU-HJA1234A",
@@ -271,14 +316,18 @@ class TestDysonConfigFlowComprehensiveManualDevice:
     async def test_resolve_device_hostname_ip_address_direct(self, mock_flow):
         """Test hostname resolution with direct IP address."""
         # IP addresses should be returned as-is
-        result = await mock_flow._resolve_device_hostname("VS6-EU-HJA1234A", "192.168.1.100")
+        result = await mock_flow._resolve_device_hostname(
+            "VS6-EU-HJA1234A", "192.168.1.100"
+        )
 
         assert result == "192.168.1.100"
 
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_mdns_discovery_success(self, mock_flow):
         """Test hostname resolution with successful MDNS discovery."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns") as mock_discover:
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_discover:
             mock_discover.return_value = "192.168.1.150"
 
             result = await mock_flow._resolve_device_hostname("VS6-EU-HJA1234A", "")
@@ -289,7 +338,9 @@ class TestDysonConfigFlowComprehensiveManualDevice:
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_mdns_fallback_to_local(self, mock_flow):
         """Test hostname resolution falls back to .local when MDNS fails."""
-        with patch("custom_components.hass_dyson.config_flow._discover_device_via_mdns") as mock_discover:
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_discover:
             mock_discover.return_value = None  # MDNS discovery fails
 
             result = await mock_flow._resolve_device_hostname("VS6-EU-HJA1234A", "")
@@ -299,7 +350,9 @@ class TestDysonConfigFlowComprehensiveManualDevice:
     @pytest.mark.asyncio
     async def test_resolve_device_hostname_with_provided_hostname(self, mock_flow):
         """Test hostname resolution when hostname is provided."""
-        result = await mock_flow._resolve_device_hostname("VS6-EU-HJA1234A", "my-device.local")
+        result = await mock_flow._resolve_device_hostname(
+            "VS6-EU-HJA1234A", "my-device.local"
+        )
 
         assert result == "my-device.local"
 
@@ -327,7 +380,9 @@ class TestDysonConfigFlowComprehensiveVerify:
         mock_flow._password = "password123"
 
         # Mock complete_login to fail for empty verification code
-        mock_flow._cloud_client.complete_login = AsyncMock(side_effect=Exception("Empty verification code"))
+        mock_flow._cloud_client.complete_login = AsyncMock(
+            side_effect=Exception("Empty verification code")
+        )
 
         result = await mock_flow.async_step_verify(user_input)
 
@@ -348,7 +403,9 @@ class TestDysonConfigFlowComprehensiveVerify:
         mock_flow._password = "password123"
 
         # Mock the challenge verification to fail
-        mock_flow._cloud_client.complete_login = AsyncMock(side_effect=Exception("Invalid verification code"))
+        mock_flow._cloud_client.complete_login = AsyncMock(
+            side_effect=Exception("Invalid verification code")
+        )
 
         result = await mock_flow.async_step_verify(user_input)
 
@@ -369,7 +426,9 @@ class TestDysonConfigFlowComprehensiveVerify:
         mock_flow._password = "password123"
 
         # Mock network error during complete_login
-        mock_flow._cloud_client.complete_login = AsyncMock(side_effect=ConnectionError("Network unreachable"))
+        mock_flow._cloud_client.complete_login = AsyncMock(
+            side_effect=ConnectionError("Network unreachable")
+        )
 
         result = await mock_flow.async_step_verify(user_input)
 
@@ -433,7 +492,10 @@ class TestDysonConfigFlowComprehensiveConnection:
 
         # Mock the next step
         with patch.object(mock_flow, "async_step_cloud_preferences") as mock_next_step:
-            mock_next_step.return_value = {"type": FlowResultType.FORM, "step_id": "cloud_preferences"}
+            mock_next_step.return_value = {
+                "type": FlowResultType.FORM,
+                "step_id": "cloud_preferences",
+            }
 
             result = await mock_flow.async_step_connection(user_input)
 
@@ -494,12 +556,17 @@ class TestDysonConfigFlowComprehensiveDiscovery:
     @pytest.mark.asyncio
     async def test_async_step_discovery_already_configured_device(self, mock_flow):
         """Test discovery step with already configured device."""
-        discovery_info = {"serial_number": "VS6-EU-HJA1234A", "hostname": "192.168.1.100"}
+        discovery_info = {
+            "serial_number": "VS6-EU-HJA1234A",
+            "hostname": "192.168.1.100",
+        }
 
         # Mock device already configured by making _abort_if_unique_id_configured raise AbortFlow
         from homeassistant.data_entry_flow import AbortFlow
 
-        mock_flow._abort_if_unique_id_configured = MagicMock(side_effect=AbortFlow("already_configured"))
+        mock_flow._abort_if_unique_id_configured = MagicMock(
+            side_effect=AbortFlow("already_configured")
+        )
 
         # The AbortFlow exception should be raised
         with pytest.raises(AbortFlow) as exc_info:
@@ -548,7 +615,9 @@ class TestDysonOptionsFlowComprehensive:
         assert result["step_id"] == "manage_devices"
 
     @pytest.mark.asyncio
-    async def test_async_step_delete_device_invalid_device_serial(self, mock_options_flow):
+    async def test_async_step_delete_device_invalid_device_serial(
+        self, mock_options_flow
+    ):
         """Test delete device step with invalid device serial."""
         user_input = {"device_serial": "nonexistent-device-serial"}
 
@@ -568,7 +637,9 @@ class TestDysonOptionsFlowComprehensive:
         user_input = {"device_serial": device_serial, "confirm": True}
 
         # Mock config entry data with a device
-        mock_options_flow.config_entry.data = {"devices": [{"serial_number": device_serial, "name": "Test Device"}]}
+        mock_options_flow.config_entry.data = {
+            "devices": [{"serial_number": device_serial, "name": "Test Device"}]
+        }
 
         # Mock successful device entry removal
         mock_device_entry = MagicMock()
@@ -578,7 +649,9 @@ class TestDysonOptionsFlowComprehensive:
             "serial_number": device_serial,
         }
 
-        mock_options_flow.hass.config_entries.async_entries.return_value = [mock_device_entry]
+        mock_options_flow.hass.config_entries.async_entries.return_value = [
+            mock_device_entry
+        ]
         mock_options_flow.hass.config_entries.async_remove = AsyncMock()
         mock_options_flow.hass.config_entries.async_update_entry = MagicMock()
 
@@ -689,12 +762,17 @@ class TestDysonConfigFlowDeviceAutoCreate:
     @pytest.mark.asyncio
     async def test_async_step_device_auto_create_duplicate_device(self, mock_flow):
         """Test device auto-creation when device already exists."""
-        user_input = {"serial_number": "VS6-EU-HJA1234A", "device_name": "Test Dyson Device"}
+        user_input = {
+            "serial_number": "VS6-EU-HJA1234A",
+            "device_name": "Test Dyson Device",
+        }
 
         # Mock device already configured by making _abort_if_unique_id_configured raise AbortFlow
         from homeassistant.data_entry_flow import AbortFlow
 
-        mock_flow._abort_if_unique_id_configured = MagicMock(side_effect=AbortFlow("already_configured"))
+        mock_flow._abort_if_unique_id_configured = MagicMock(
+            side_effect=AbortFlow("already_configured")
+        )
 
         # The AbortFlow exception should be raised
         with pytest.raises(AbortFlow) as exc_info:
@@ -703,7 +781,9 @@ class TestDysonConfigFlowDeviceAutoCreate:
         assert str(exc_info.value) == "Flow aborted: already_configured"
 
     @pytest.mark.asyncio
-    async def test_async_step_device_auto_create_missing_connection_type(self, mock_flow):
+    async def test_async_step_device_auto_create_missing_connection_type(
+        self, mock_flow
+    ):
         """Test device auto-creation with missing serial number."""
         user_input = {
             "device_name": "Test Dyson Device"
@@ -720,7 +800,10 @@ class TestDysonConfigFlowDeviceAutoCreate:
     @pytest.mark.asyncio
     async def test_async_step_device_auto_create_success(self, mock_flow):
         """Test successful device auto-creation."""
-        user_input = {"serial_number": "VS6-EU-HJA1234A", "device_name": "Test Dyson Device"}
+        user_input = {
+            "serial_number": "VS6-EU-HJA1234A",
+            "device_name": "Test Dyson Device",
+        }
 
         result = await mock_flow.async_step_device_auto_create(user_input)
 

@@ -23,7 +23,9 @@ def _patch_shutdown_executor(event_loop):
     def safe_shutdown():
         return None
 
-    return mock_patch.object(event_loop, "shutdown_default_executor", return_value=safe_shutdown())
+    return mock_patch.object(
+        event_loop, "shutdown_default_executor", return_value=safe_shutdown()
+    )
 
 
 def _cleanup_tasks(event_loop, tasks_before, expected_lingering_tasks):
@@ -41,7 +43,7 @@ def _cleanup_tasks(event_loop, tasks_before, expected_lingering_tasks):
     if tasks:
         try:
             event_loop.run_until_complete(asyncio.wait(tasks, timeout=0.1))
-        except (RuntimeError, OSError, asyncio.TimeoutError):
+        except (TimeoutError, RuntimeError, OSError):
             pass  # Ignore cleanup errors
 
 
@@ -63,7 +65,9 @@ def _cleanup_threads(threads_before):
 def _create_patched_verify_cleanup():
     """Create the patched verify_cleanup function."""
 
-    def patched_verify_cleanup_func(expected_lingering_tasks, expected_lingering_timers):
+    def patched_verify_cleanup_func(
+        expected_lingering_tasks, expected_lingering_timers
+    ):
         """Patched verify_cleanup that handles closed event loops gracefully."""
         import gc
         import threading
@@ -90,7 +94,9 @@ def _create_patched_verify_cleanup():
                 # Try the original cleanup logic with patches
                 try:
                     if not event_loop.is_closed():
-                        event_loop.run_until_complete(event_loop.shutdown_default_executor())
+                        event_loop.run_until_complete(
+                            event_loop.shutdown_default_executor()
+                        )
                 except (RuntimeError, OSError) as e:
                     if "Event loop is closed" not in str(e):
                         # Re-raise if it's not the specific error we're handling
@@ -142,10 +148,16 @@ def configure_test_environment():
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="asyncio")
     warnings.filterwarnings("ignore", message="Event loop is closed")
     warnings.filterwarnings("ignore", message="coroutine.*was never awaited")
-    warnings.filterwarnings("ignore", message=".*shutdown_default_executor.*was never awaited")
-    warnings.filterwarnings("ignore", message=".*BaseEventLoop.shutdown_default_executor.*")
+    warnings.filterwarnings(
+        "ignore", message=".*shutdown_default_executor.*was never awaited"
+    )
+    warnings.filterwarnings(
+        "ignore", message=".*BaseEventLoop.shutdown_default_executor.*"
+    )
     warnings.filterwarnings("ignore", message=".*unawaited coroutine.*")
-    warnings.filterwarnings("ignore", message=".*was never awaited.*", category=RuntimeWarning)
+    warnings.filterwarnings(
+        "ignore", message=".*was never awaited.*", category=RuntimeWarning
+    )
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="datetime")
 
     # Additional warnings for coverage and pytest internals
@@ -154,7 +166,11 @@ def configure_test_environment():
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="unittest.mock")
 
     # Home Assistant plugin specific warnings
-    warnings.filterwarnings("ignore", category=RuntimeWarning, module="pytest_homeassistant_custom_component")
+    warnings.filterwarnings(
+        "ignore",
+        category=RuntimeWarning,
+        module="pytest_homeassistant_custom_component",
+    )
     warnings.filterwarnings("ignore", message=".*verify_cleanup.*")
 
 

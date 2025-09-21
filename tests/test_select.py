@@ -59,7 +59,9 @@ class TestSelectPlatformSetup:
     """Test select platform setup."""
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_oscillation_capability(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_oscillation_capability(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with oscillation capability."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
@@ -75,7 +77,9 @@ class TestSelectPlatformSetup:
         assert isinstance(entities[0], DysonOscillationModeSelect)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_heating_capability(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_heating_capability(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with heating capability."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["Heating"]
@@ -91,7 +95,9 @@ class TestSelectPlatformSetup:
         assert isinstance(entities[0], DysonHeatingModeSelect)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_with_both_capabilities(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_with_both_capabilities(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with both capabilities."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["AdvanceOscillationDay1", "Heating"]
@@ -108,7 +114,9 @@ class TestSelectPlatformSetup:
         assert isinstance(entities[1], DysonHeatingModeSelect)
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_no_capabilities(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_no_capabilities(
+        self, mock_hass, mock_config_entry
+    ):
         """Test setting up entry with no relevant capabilities."""
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = []
@@ -148,20 +156,28 @@ class TestDysonFanControlModeSelect:
 
     def test_handle_coordinator_update_auto_mode(self, mock_coordinator):
         """Test coordinator update with auto mode on."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "auto": "ON",
-            "nmod": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "auto": "ON",
+                "nmod": "OFF",
+            }.get(key, default)
+        )
 
         entity = DysonFanControlModeSelect(mock_coordinator)
 
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = entity.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            auto_mode = entity.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = entity.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
-            connection_type = entity.coordinator.config_entry.data.get("connection_type", "unknown")
+            connection_type = entity.coordinator.config_entry.data.get(
+                "connection_type", "unknown"
+            )
             if connection_type == "local_only":
                 if auto_mode == "ON":
                     entity._attr_current_option = "Auto"
@@ -179,20 +195,28 @@ class TestDysonFanControlModeSelect:
 
     def test_handle_coordinator_update_manual_mode(self, mock_coordinator):
         """Test coordinator update with manual mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "auto": "OFF",
-            "nmod": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "auto": "OFF",
+                "nmod": "OFF",
+            }.get(key, default)
+        )
 
         entity = DysonFanControlModeSelect(mock_coordinator)
 
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = entity.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            auto_mode = entity.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = entity.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
-            connection_type = entity.coordinator.config_entry.data.get("connection_type", "unknown")
+            connection_type = entity.coordinator.config_entry.data.get(
+                "connection_type", "unknown"
+            )
             if connection_type == "local_only":
                 if auto_mode == "ON":
                     entity._attr_current_option = "Auto"
@@ -211,20 +235,28 @@ class TestDysonFanControlModeSelect:
     def test_handle_coordinator_update_sleep_mode_cloud(self, mock_coordinator):
         """Test coordinator update with sleep mode on cloud device."""
         mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "auto": "OFF",
-            "nmod": "ON",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "auto": "OFF",
+                "nmod": "ON",
+            }.get(key, default)
+        )
 
         entity = DysonFanControlModeSelect(mock_coordinator)
 
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = entity.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            auto_mode = entity.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = entity.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
-            connection_type = entity.coordinator.config_entry.data.get("connection_type", "unknown")
+            connection_type = entity.coordinator.config_entry.data.get(
+                "connection_type", "unknown"
+            )
             if connection_type == "local_only":
                 if auto_mode == "ON":
                     entity._attr_current_option = "Auto"
@@ -243,20 +275,28 @@ class TestDysonFanControlModeSelect:
     def test_handle_coordinator_update_local_device_no_sleep(self, mock_coordinator):
         """Test coordinator update with local device ignores sleep mode."""
         mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "auto": "OFF",
-            "nmod": "ON",  # Sleep mode on but local device
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "auto": "OFF",
+                "nmod": "ON",  # Sleep mode on but local device
+            }.get(key, default)
+        )
 
         entity = DysonFanControlModeSelect(mock_coordinator)
 
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = entity.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            auto_mode = entity.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = entity.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
-            connection_type = entity.coordinator.config_entry.data.get("connection_type", "unknown")
+            connection_type = entity.coordinator.config_entry.data.get(
+                "connection_type", "unknown"
+            )
             if connection_type == "local_only":
                 if auto_mode == "ON":
                     entity._attr_current_option = "Auto"
@@ -270,7 +310,9 @@ class TestDysonFanControlModeSelect:
                 else:
                     entity._attr_current_option = "Manual"
 
-        assert entity._attr_current_option == "Manual"  # Local device ignores sleep mode
+        assert (
+            entity._attr_current_option == "Manual"
+        )  # Local device ignores sleep mode
 
     def test_handle_coordinator_update_no_device(self, mock_coordinator):
         """Test coordinator update with no device."""
@@ -284,10 +326,16 @@ class TestDysonFanControlModeSelect:
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = entity.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            auto_mode = entity.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = entity.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
-            connection_type = entity.coordinator.config_entry.data.get("connection_type", "unknown")
+            connection_type = entity.coordinator.config_entry.data.get(
+                "connection_type", "unknown"
+            )
             if connection_type == "local_only":
                 if auto_mode == "ON":
                     entity._attr_current_option = "Auto"
@@ -350,7 +398,9 @@ class TestDysonFanControlModeSelect:
     @pytest.mark.asyncio
     async def test_async_select_option_exception(self, mock_coordinator):
         """Test selecting option with device error."""
-        mock_coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         entity = DysonFanControlModeSelect(mock_coordinator)
 
@@ -375,10 +425,12 @@ class TestDysonOscillationModeSelect:
 
     def test_calculate_current_center_from_angles(self, mock_coordinator):
         """Test calculating center from lower and upper angles."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "osal": "0135",  # 135°
-            "osau": "0225",  # 225°
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "osal": "0135",  # 135°
+                "osau": "0225",  # 225°
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         center = entity._calculate_current_center()
@@ -387,11 +439,13 @@ class TestDysonOscillationModeSelect:
 
     def test_calculate_current_center_fallback_to_ancp(self, mock_coordinator):
         """Test calculating center falls back to ancp when angles fail."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "osal": "invalid",
-            "osau": "invalid",
-            "ancp": "0200",  # 200°
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "osal": "invalid",
+                "osau": "invalid",
+                "ancp": "0200",  # 200°
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         center = entity._calculate_current_center()
@@ -409,8 +463,8 @@ class TestDysonOscillationModeSelect:
 
     def test_detect_mode_off(self, mock_coordinator):
         """Test detecting off mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {"oson": "OFF"}.get(
-            key, default
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {"oson": "OFF"}.get(key, default)
         )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
@@ -420,11 +474,13 @@ class TestDysonOscillationModeSelect:
 
     def test_detect_mode_350_degrees(self, mock_coordinator):
         """Test detecting 350° mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "oson": "ON",
-            "osal": "0005",  # 5°
-            "osau": "0355",  # 355°
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0005",  # 5°
+                "osau": "0355",  # 355°
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
@@ -433,11 +489,13 @@ class TestDysonOscillationModeSelect:
 
     def test_detect_mode_180_degrees(self, mock_coordinator):
         """Test detecting 180° mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "oson": "ON",
-            "osal": "0090",  # 90°
-            "osau": "0270",  # 270°
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0090",  # 90°
+                "osau": "0270",  # 270°
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
@@ -446,11 +504,13 @@ class TestDysonOscillationModeSelect:
 
     def test_detect_mode_90_degrees(self, mock_coordinator):
         """Test detecting 90° mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "oson": "ON",
-            "osal": "0130",  # 130°
-            "osau": "0220",  # 220°
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0130",  # 130°
+                "osau": "0220",  # 220°
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
@@ -459,11 +519,13 @@ class TestDysonOscillationModeSelect:
 
     def test_detect_mode_45_degrees(self, mock_coordinator):
         """Test detecting 45° mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "oson": "ON",
-            "osal": "0155",  # 155°
-            "osau": "0200",  # 200°
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0155",  # 155°
+                "osau": "0200",  # 200°
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
@@ -472,11 +534,13 @@ class TestDysonOscillationModeSelect:
 
     def test_detect_mode_custom(self, mock_coordinator):
         """Test detecting custom mode."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {
-            "oson": "ON",
-            "osal": "0100",  # 100°
-            "osau": "0250",  # 250° (150° span - not a preset)
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0100",  # 100°
+                "osau": "0250",  # 250° (150° span - not a preset)
+            }.get(key, default)
+        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
@@ -537,8 +601,8 @@ class TestDysonHeatingModeSelect:
 
     def test_handle_coordinator_update_heating_off(self, mock_coordinator):
         """Test coordinator update with heating off."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {"hmod": "OFF"}.get(
-            key, default
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {"hmod": "OFF"}.get(key, default)
         )
 
         entity = DysonHeatingModeSelect(mock_coordinator)
@@ -546,7 +610,9 @@ class TestDysonHeatingModeSelect:
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            hmod = entity.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+            hmod = entity.coordinator.device._get_current_value(
+                product_state, "hmod", "OFF"
+            )
 
             if hmod == "OFF":
                 entity._attr_current_option = "Off"
@@ -559,8 +625,8 @@ class TestDysonHeatingModeSelect:
 
     def test_handle_coordinator_update_heating_on(self, mock_coordinator):
         """Test coordinator update with heating on."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {"hmod": "HEAT"}.get(
-            key, default
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {"hmod": "HEAT"}.get(key, default)
         )
 
         entity = DysonHeatingModeSelect(mock_coordinator)
@@ -568,7 +634,9 @@ class TestDysonHeatingModeSelect:
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            hmod = entity.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+            hmod = entity.coordinator.device._get_current_value(
+                product_state, "hmod", "OFF"
+            )
 
             if hmod == "OFF":
                 entity._attr_current_option = "Off"
@@ -581,8 +649,8 @@ class TestDysonHeatingModeSelect:
 
     def test_handle_coordinator_update_auto_heat(self, mock_coordinator):
         """Test coordinator update with auto heat."""
-        mock_coordinator.device._get_current_value.side_effect = lambda data, key, default: {"hmod": "AUTO"}.get(
-            key, default
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda data, key, default: {"hmod": "AUTO"}.get(key, default)
         )
 
         entity = DysonHeatingModeSelect(mock_coordinator)
@@ -590,7 +658,9 @@ class TestDysonHeatingModeSelect:
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            hmod = entity.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+            hmod = entity.coordinator.device._get_current_value(
+                product_state, "hmod", "OFF"
+            )
 
             if hmod == "OFF":
                 entity._attr_current_option = "Off"
@@ -613,7 +683,9 @@ class TestDysonHeatingModeSelect:
         # Manually implement the logic to test without calling super()
         if entity.coordinator.device:
             product_state = entity.coordinator.data.get("product-state", {})
-            hmod = entity.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+            hmod = entity.coordinator.device._get_current_value(
+                product_state, "hmod", "OFF"
+            )
 
             if hmod == "OFF":
                 entity._attr_current_option = "Off"
@@ -669,7 +741,9 @@ class TestDysonHeatingModeSelect:
     @pytest.mark.asyncio
     async def test_async_select_option_exception(self, mock_coordinator):
         """Test selecting option with device error."""
-        mock_coordinator.device.set_heating_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         entity = DysonHeatingModeSelect(mock_coordinator)
 
@@ -752,21 +826,29 @@ class TestDysonFanControlModeSelectCoverage:
         }
         return coordinator
 
-    def test_handle_coordinator_update_logic_local_device_auto_mode(self, mock_coordinator):
+    def test_handle_coordinator_update_logic_local_device_auto_mode(
+        self, mock_coordinator
+    ):
         """Test coordinator update logic for local device with auto mode on."""
         mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "auto": "ON",
-            "nmod": "OFF",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "auto": "ON",
+                "nmod": "OFF",
+            }.get(key, default)
+        )
 
         select = DysonFanControlModeSelect(mock_coordinator)
 
         # Test the update logic directly without calling super()
         if mock_coordinator.device:
-            connection_type = mock_coordinator.config_entry.data.get("connection_type", "local_only")
+            connection_type = mock_coordinator.config_entry.data.get(
+                "connection_type", "local_only"
+            )
             if connection_type == "local_only":
-                auto_mode = mock_coordinator.device._get_current_value("product-state", "auto", "OFF")
+                auto_mode = mock_coordinator.device._get_current_value(
+                    "product-state", "auto", "OFF"
+                )
                 if auto_mode == "ON":
                     select._attr_current_option = "Auto"
                 else:
@@ -774,22 +856,32 @@ class TestDysonFanControlModeSelectCoverage:
 
         assert select._attr_current_option == "Auto"
 
-    def test_handle_coordinator_update_logic_cloud_device_sleep_mode(self, mock_coordinator):
+    def test_handle_coordinator_update_logic_cloud_device_sleep_mode(
+        self, mock_coordinator
+    ):
         """Test coordinator update logic for cloud device with sleep mode."""
         mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "auto": "OFF",
-            "nmod": "ON",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "auto": "OFF",
+                "nmod": "ON",
+            }.get(key, default)
+        )
 
         select = DysonFanControlModeSelect(mock_coordinator)
 
         # Test the update logic directly
         if mock_coordinator.device:
-            connection_type = mock_coordinator.config_entry.data.get("connection_type", "local_only")
+            connection_type = mock_coordinator.config_entry.data.get(
+                "connection_type", "local_only"
+            )
             if connection_type != "local_only":
-                auto_mode = mock_coordinator.device._get_current_value("product-state", "auto", "OFF")
-                night_mode = mock_coordinator.device._get_current_value("product-state", "nmod", "OFF")
+                auto_mode = mock_coordinator.device._get_current_value(
+                    "product-state", "auto", "OFF"
+                )
+                night_mode = mock_coordinator.device._get_current_value(
+                    "product-state", "nmod", "OFF"
+                )
                 if night_mode == "ON":
                     select._attr_current_option = "Sleep"
                 elif auto_mode == "ON":
@@ -824,7 +916,9 @@ class TestDysonFanControlModeSelectCoverage:
     @pytest.mark.asyncio
     async def test_async_select_option_device_exception(self, mock_coordinator):
         """Test exception handling during option selection."""
-        mock_coordinator.device.set_auto_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         select = DysonFanControlModeSelect(mock_coordinator)
 
@@ -855,11 +949,13 @@ class TestDysonOscillationModeSelectCoverage:
 
     def test_calculate_current_center_with_invalid_values(self, mock_coordinator):
         """Test center calculation with invalid angle values."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "osal": "invalid",
-            "osau": "also_invalid",
-            "ancp": "0175",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "osal": "invalid",
+                "osau": "also_invalid",
+                "ancp": "0175",
+            }.get(key, default)
+        )
 
         select = DysonOscillationModeSelect(mock_coordinator)
         center = select._calculate_current_center()
@@ -868,11 +964,13 @@ class TestDysonOscillationModeSelectCoverage:
 
     def test_calculate_current_center_all_invalid_fallback(self, mock_coordinator):
         """Test center calculation with all invalid values."""
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "osal": "invalid",
-            "osau": "also_invalid",
-            "ancp": "invalid_too",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "osal": "invalid",
+                "osau": "also_invalid",
+                "ancp": "invalid_too",
+            }.get(key, default)
+        )
 
         select = DysonOscillationModeSelect(mock_coordinator)
         center = select._calculate_current_center()
@@ -888,7 +986,9 @@ class TestDysonOscillationModeSelectCoverage:
         should_restore = select._should_restore_center_on_state_change("90°")
         assert should_restore is True
 
-    def test_should_restore_center_on_state_change_false_conditions(self, mock_coordinator):
+    def test_should_restore_center_on_state_change_false_conditions(
+        self, mock_coordinator
+    ):
         """Test center restoration logic when conditions are not met."""
         select = DysonOscillationModeSelect(mock_coordinator)
 
@@ -916,7 +1016,9 @@ class TestDysonOscillationModeSelectCoverage:
         assert lower == 0
         assert upper == 350
 
-    def test_calculate_angles_for_preset_with_boundary_constraints(self, mock_coordinator):
+    def test_calculate_angles_for_preset_with_boundary_constraints(
+        self, mock_coordinator
+    ):
         """Test angle calculation with boundary constraints."""
         select = DysonOscillationModeSelect(mock_coordinator)
 
@@ -986,15 +1088,19 @@ class TestDysonOscillationModeSelectCoverage:
         mock_coordinator.device.set_oscillation.assert_called_once_with(True)
 
     @pytest.mark.asyncio
-    async def test_async_select_option_350_degree_mode_with_center_saving(self, mock_coordinator):
+    async def test_async_select_option_350_degree_mode_with_center_saving(
+        self, mock_coordinator
+    ):
         """Test selecting 350° mode with center point saving."""
         mock_coordinator.device.set_oscillation = AsyncMock()
         mock_coordinator.device.set_oscillation_angles = AsyncMock()
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "osal": "0050",
-            "osau": "0140",
-            "ancp": "0095",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "osal": "0050",
+                "osau": "0140",
+                "ancp": "0095",
+            }.get(key, default)
+        )
 
         select = DysonOscillationModeSelect(mock_coordinator)
         select._attr_current_option = "90°"  # Coming from 90° mode
@@ -1007,15 +1113,19 @@ class TestDysonOscillationModeSelectCoverage:
             mock_logger.info.assert_called()
 
     @pytest.mark.asyncio
-    async def test_async_select_option_preset_with_center_restoration(self, mock_coordinator):
+    async def test_async_select_option_preset_with_center_restoration(
+        self, mock_coordinator
+    ):
         """Test selecting preset mode with center restoration."""
         mock_coordinator.device.set_oscillation = AsyncMock()
         mock_coordinator.device.set_oscillation_angles = AsyncMock()
-        mock_coordinator.device._get_current_value.side_effect = lambda state, key, default: {
-            "osal": "0000",
-            "osau": "0350",
-            "ancp": "0175",
-        }.get(key, default)
+        mock_coordinator.device._get_current_value.side_effect = (
+            lambda state, key, default: {
+                "osal": "0000",
+                "osau": "0350",
+                "ancp": "0175",
+            }.get(key, default)
+        )
 
         select = DysonOscillationModeSelect(mock_coordinator)
         select._attr_current_option = "350°"  # Coming from 350° mode
@@ -1060,7 +1170,9 @@ class TestDysonHeatingModeSelectCoverage:
         select = DysonHeatingModeSelect(mock_coordinator)
         mock_coordinator.device._get_current_value.return_value = "OFF"
 
-        hmod = mock_coordinator.device._get_current_value("product-state", "hmod", "OFF")
+        hmod = mock_coordinator.device._get_current_value(
+            "product-state", "hmod", "OFF"
+        )
         if hmod == "OFF":
             select._attr_current_option = "Off"
         elif hmod == "HEAT":
@@ -1077,7 +1189,9 @@ class TestDysonHeatingModeSelectCoverage:
         select = DysonHeatingModeSelect(mock_coordinator)
         mock_coordinator.device._get_current_value.return_value = "HEAT"
 
-        hmod = mock_coordinator.device._get_current_value("product-state", "hmod", "OFF")
+        hmod = mock_coordinator.device._get_current_value(
+            "product-state", "hmod", "OFF"
+        )
         if hmod == "OFF":
             select._attr_current_option = "Off"
         elif hmod == "HEAT":
@@ -1094,7 +1208,9 @@ class TestDysonHeatingModeSelectCoverage:
         select = DysonHeatingModeSelect(mock_coordinator)
         mock_coordinator.device._get_current_value.return_value = "AUTO"
 
-        hmod = mock_coordinator.device._get_current_value("product-state", "hmod", "OFF")
+        hmod = mock_coordinator.device._get_current_value(
+            "product-state", "hmod", "OFF"
+        )
         if hmod == "OFF":
             select._attr_current_option = "Off"
         elif hmod == "HEAT":
@@ -1111,7 +1227,9 @@ class TestDysonHeatingModeSelectCoverage:
         select = DysonHeatingModeSelect(mock_coordinator)
         mock_coordinator.device._get_current_value.return_value = "UNKNOWN"
 
-        hmod = mock_coordinator.device._get_current_value("product-state", "hmod", "OFF")
+        hmod = mock_coordinator.device._get_current_value(
+            "product-state", "hmod", "OFF"
+        )
         if hmod == "OFF":
             select._attr_current_option = "Off"
         elif hmod == "HEAT":
@@ -1178,7 +1296,9 @@ class TestDysonHeatingModeSelectCoverage:
     @pytest.mark.asyncio
     async def test_async_select_option_device_exception(self, mock_coordinator):
         """Test exception handling during heating mode selection."""
-        mock_coordinator.device.set_heating_mode = AsyncMock(side_effect=Exception("Device error"))
+        mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("Device error")
+        )
 
         select = DysonHeatingModeSelect(mock_coordinator)
 

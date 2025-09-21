@@ -66,7 +66,9 @@ class TestDeviceUtilsCoverageEnhancement:
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
             result = normalize_capabilities(None)
             assert result == []
-            mock_logger.debug.assert_called_with("No capabilities provided, returning empty list")
+            mock_logger.debug.assert_called_with(
+                "No capabilities provided, returning empty list"
+            )
 
     def test_normalize_capabilities_list_with_none_items(self):
         """Test normalize_capabilities with list containing None items."""
@@ -74,7 +76,9 @@ class TestDeviceUtilsCoverageEnhancement:
             caps = ["heating", None, "cooling"]
             result = normalize_capabilities(caps)
             assert result == ["heating", "cooling"]
-            mock_logger.warning.assert_any_call("Found None capability in list, skipping")
+            mock_logger.warning.assert_any_call(
+                "Found None capability in list, skipping"
+            )
 
     def test_normalize_capabilities_list_with_empty_string(self):
         """Test normalize_capabilities with list containing empty strings."""
@@ -82,7 +86,9 @@ class TestDeviceUtilsCoverageEnhancement:
             caps = ["heating", "", "cooling"]
             result = normalize_capabilities(caps)
             assert result == ["heating", "cooling"]
-            mock_logger.warning.assert_any_call("Found empty string capability in list, skipping")
+            mock_logger.warning.assert_any_call(
+                "Found empty string capability in list, skipping"
+            )
 
     def test_normalize_capabilities_list_with_zero_numeric(self):
         """Test normalize_capabilities with list containing zero numeric values."""
@@ -90,7 +96,9 @@ class TestDeviceUtilsCoverageEnhancement:
             caps = ["heating", 0, 0.0, "cooling"]
             result = normalize_capabilities(caps)
             assert result == ["heating", "cooling"]
-            mock_logger.warning.assert_any_call("Found zero numeric capability in list, skipping")
+            mock_logger.warning.assert_any_call(
+                "Found zero numeric capability in list, skipping"
+            )
 
     # COMMENTED OUT: Complex mocking issue causing recursion errors
     # def test_normalize_capabilities_list_with_enum_objects(self):
@@ -141,7 +149,9 @@ class TestDeviceUtilsCoverageEnhancement:
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
             result = normalize_capabilities("   ")  # Whitespace only
             assert result == []
-            mock_logger.warning.assert_called_with("Single capability is empty string, returning empty list")
+            mock_logger.warning.assert_called_with(
+                "Single capability is empty string, returning empty list"
+            )
 
     # COMMENTED OUT: Complex mocking issue causing recursion errors
     # def test_normalize_capabilities_enum_object_non_standard(self):
@@ -189,7 +199,9 @@ class TestDeviceUtilsCoverageEnhancement:
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
             result = has_capability_safe(None, "heating")
             assert result is False
-            mock_logger.debug.assert_called_with("No capabilities provided for capability check: %s", "heating")
+            mock_logger.debug.assert_called_with(
+                "No capabilities provided for capability check: %s", "heating"
+            )
 
     def test_has_capability_safe_not_list(self):
         """Test has_capability_safe with non-list capabilities."""
@@ -203,7 +215,9 @@ class TestDeviceUtilsCoverageEnhancement:
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
             result = has_capability_safe(["heating"], "   ")  # Whitespace only
             assert result is False
-            mock_logger.warning.assert_called_with("Empty capability name provided for search")
+            mock_logger.warning.assert_called_with(
+                "Empty capability name provided for search"
+            )
 
     def test_has_capability_safe_normalization_exception(self):
         """Test has_capability_safe handles normalization exceptions."""
@@ -231,14 +245,20 @@ class TestDeviceUtilsCoverageEnhancement:
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
             result = has_any_capability_safe(["heating"], [])
             assert result is False
-            mock_logger.debug.assert_called_with("No capability names provided for any-capability check")
+            mock_logger.debug.assert_called_with(
+                "No capability names provided for any-capability check"
+            )
 
     def test_has_any_capability_safe_found_capability(self):
         """Test has_any_capability_safe when capability is found."""
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
-            result = has_any_capability_safe(["heating", "cooling"], ["heating", "unknown"])
+            result = has_any_capability_safe(
+                ["heating", "cooling"], ["heating", "unknown"]
+            )
             assert result is True
-            mock_logger.debug.assert_called_with("Found capability '%s' in any-capability check", "heating")
+            mock_logger.debug.assert_called_with(
+                "Found capability '%s' in any-capability check", "heating"
+            )
 
     def test_has_any_capability_safe_no_capabilities_found(self):
         """Test has_any_capability_safe when no capabilities are found."""
@@ -247,7 +267,8 @@ class TestDeviceUtilsCoverageEnhancement:
             result = has_any_capability_safe(["heating", "cooling"], capability_names)
             assert result is False
             mock_logger.debug.assert_called_with(
-                "No capabilities found in any-capability check for: %s", capability_names
+                "No capabilities found in any-capability check for: %s",
+                capability_names,
             )
 
     def test_get_sensor_data_safe_none_data(self):
@@ -256,7 +277,9 @@ class TestDeviceUtilsCoverageEnhancement:
             result = get_sensor_data_safe(None, "temperature", "SERIAL123")
             assert result is None
             mock_logger.debug.assert_called_with(
-                "No data available for sensor key '%s' on device %s", "temperature", "SERIAL123"
+                "No data available for sensor key '%s' on device %s",
+                "temperature",
+                "SERIAL123",
             )
 
     def test_get_sensor_data_safe_not_dict(self):
@@ -272,7 +295,9 @@ class TestDeviceUtilsCoverageEnhancement:
             result = get_sensor_data_safe({"humidity": 50}, "temperature", "SERIAL123")
             assert result is None
             mock_logger.debug.assert_called_with(
-                "Sensor key '%s' not found in data for device %s", "temperature", "SERIAL123"
+                "Sensor key '%s' not found in data for device %s",
+                "temperature",
+                "SERIAL123",
             )
 
     # COMMENTED OUT: KeyError on dict.get() doesn't trigger the exception handler as expected
@@ -293,20 +318,26 @@ class TestDeviceUtilsCoverageEnhancement:
             result = convert_sensor_value_safe(None, int, "SERIAL123", "temperature")
             assert result is None
             mock_logger.debug.assert_called_with(
-                "Cannot convert None value for %s sensor on device %s", "temperature", "SERIAL123"
+                "Cannot convert None value for %s sensor on device %s",
+                "temperature",
+                "SERIAL123",
             )
 
     def test_convert_sensor_value_safe_unsupported_type(self):
         """Test convert_sensor_value_safe with unsupported target type."""
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
-            result = convert_sensor_value_safe(25, list, "SERIAL123", "temperature")  # Unsupported type
+            result = convert_sensor_value_safe(
+                25, list, "SERIAL123", "temperature"
+            )  # Unsupported type
             assert result is None
             mock_logger.warning.assert_called_once()
 
     def test_convert_sensor_value_safe_conversion_error(self):
         """Test convert_sensor_value_safe handles conversion errors."""
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
-            result = convert_sensor_value_safe("invalid", int, "SERIAL123", "temperature")
+            result = convert_sensor_value_safe(
+                "invalid", int, "SERIAL123", "temperature"
+            )
             assert result is None
             mock_logger.warning.assert_called_once()
 
@@ -314,15 +345,23 @@ class TestDeviceUtilsCoverageEnhancement:
         """Test convert_sensor_value_safe handles unexpected errors."""
         with patch("custom_components.hass_dyson.device_utils._LOGGER") as mock_logger:
             # Force an unexpected error by mocking int() to raise
-            with patch("builtins.int", side_effect=RuntimeError("Unexpected conversion error")):
-                result = convert_sensor_value_safe("25", int, "SERIAL123", "temperature")
+            with patch(
+                "builtins.int", side_effect=RuntimeError("Unexpected conversion error")
+            ):
+                result = convert_sensor_value_safe(
+                    "25", int, "SERIAL123", "temperature"
+                )
                 assert result is None
                 mock_logger.error.assert_called_once()
 
     def test_add_optional_fields_function(self):
         """Test the _add_optional_fields helper function directly."""
         config_data = {"existing": "value"}
-        optional_fields = {"field1": "value1", "field2": None, "field3": "value3"}  # Should be skipped
+        optional_fields = {
+            "field1": "value1",
+            "field2": None,
+            "field3": "value3",
+        }  # Should be skipped
 
         _add_optional_fields(config_data, optional_fields)
 
@@ -332,7 +371,9 @@ class TestDeviceUtilsCoverageEnhancement:
 
     def test_create_manual_device_config_minimal(self):
         """Test create_manual_device_config with minimal parameters."""
-        result = create_manual_device_config("SERIAL123", "credential123", "topic/prefix")
+        result = create_manual_device_config(
+            "SERIAL123", "credential123", "topic/prefix"
+        )
 
         assert result["serial_number"] == "SERIAL123"
         assert result["credential"] == "credential123"
@@ -374,7 +415,11 @@ class TestDeviceUtilsCoverageEnhancement:
 
     def test_create_cloud_device_config_full(self):
         """Test create_cloud_device_config with all parameters."""
-        device_info = {"name": "Cloud Device", "product_type": "FAN", "category": "heating"}
+        device_info = {
+            "name": "Cloud Device",
+            "product_type": "FAN",
+            "category": "heating",
+        }
 
         result = create_cloud_device_config(
             serial_number="SERIAL123",
@@ -392,7 +437,10 @@ class TestDeviceUtilsCoverageEnhancement:
     def test_create_device_config_data_with_kwargs(self):
         """Test create_device_config_data includes additional kwargs."""
         result = create_device_config_data(
-            serial_number="SERIAL123", discovery_method="manual", extra_field1="value1", extra_field2="value2"
+            serial_number="SERIAL123",
+            discovery_method="manual",
+            extra_field1="value1",
+            extra_field2="value2",
         )
 
         assert result["extra_field1"] == "value1"

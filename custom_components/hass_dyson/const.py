@@ -6,10 +6,9 @@ from typing import Final
 DOMAIN: Final = "hass_dyson"
 
 # Default values
-DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds
-DEFAULT_DEVICE_POLLING_INTERVAL: Final = (
-    300  # 5 minutes for connectivity checks only (devices send natural STATE-CHANGE messages)
-)
+DEFAULT_CLOUD_POLLING_INTERVAL: Final = 60  # 1 minute in seconds
+# 1 minute for connectivity checks only (devices send natural STATE-CHANGE messages)
+DEFAULT_DEVICE_POLLING_INTERVAL: Final = 60
 DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
 DEFAULT_POLL_FOR_DEVICES: Final = True  # Default to enabled for backward compatibility
 DEFAULT_AUTO_ADD_DEVICES: Final = True  # Default to enabled for backward compatibility
@@ -185,7 +184,8 @@ SERVICE_SET_SLEEP_TIMER: Final = "set_sleep_timer"
 SERVICE_CANCEL_SLEEP_TIMER: Final = "cancel_sleep_timer"
 SERVICE_SCHEDULE_OPERATION: Final = "schedule_operation"
 SERVICE_SET_OSCILLATION_ANGLES: Final = "set_oscillation_angles"
-SERVICE_FETCH_ACCOUNT_DATA: Final = "fetch_account_data"
+SERVICE_REFRESH_ACCOUNT_DATA: Final = "refresh_account_data"
+SERVICE_GET_CLOUD_DEVICES: Final = "get_cloud_devices"
 
 # Event types
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"

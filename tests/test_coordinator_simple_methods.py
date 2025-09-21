@@ -5,7 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hass_dyson.const import CONF_SERIAL_NUMBER, MQTT_CMD_REQUEST_CURRENT_STATE
+from custom_components.hass_dyson.const import (
+    CONF_SERIAL_NUMBER,
+    MQTT_CMD_REQUEST_CURRENT_STATE,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 
 
@@ -38,12 +41,18 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
     async def test_extract_capabilities_basic(self, mock_hass, mock_config_entry):
         """Test basic capabilities extraction."""
         # Use proper patching pattern from our testing guide
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
 
         # Mock a device info object with proper capabilities structure
         mock_device_info = MagicMock()
-        mock_device_info.capabilities = ["environmental_data", "oscillation", "air_quality"]
+        mock_device_info.capabilities = [
+            "environmental_data",
+            "oscillation",
+            "air_quality",
+        ]
 
         # Test the actual capability extraction method
         result = coordinator._extract_capabilities(mock_device_info)
@@ -55,9 +64,13 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
             assert cap in result
 
     @pytest.mark.asyncio
-    async def test_extract_capabilities_no_environmental_data(self, mock_hass, mock_config_entry):
+    async def test_extract_capabilities_no_environmental_data(
+        self, mock_hass, mock_config_entry
+    ):
         """Test capabilities extraction when no environmental data."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
 
         mock_device_info = MagicMock()
@@ -73,9 +86,13 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
         assert "air_quality" not in result
 
     @pytest.mark.asyncio
-    async def test_extract_capabilities_missing_attributes(self, mock_hass, mock_config_entry):
+    async def test_extract_capabilities_missing_attributes(
+        self, mock_hass, mock_config_entry
+    ):
         """Test capabilities extraction with missing attributes."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -92,10 +109,15 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_get_effective_connection_type_with_parent(self, mock_hass, mock_config_entry):
+    async def test_get_effective_connection_type_with_parent(
+        self, mock_hass, mock_config_entry
+    ):
         """Test effective connection type with parent account entry."""
         # Setup config entry with parent_entry_id
-        mock_config_entry.data = {CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A", "parent_entry_id": "parent-account-123"}
+        mock_config_entry.data = {
+            CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
+            "parent_entry_id": "parent-account-123",
+        }
 
         # Mock the parent account entry
         mock_account_entry = MagicMock()
@@ -106,7 +128,9 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
         mock_hass.config_entries = MagicMock()
         mock_hass.config_entries.async_entries.return_value = [mock_account_entry]
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -126,7 +150,9 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
             "connection_type": "local_only",
         }
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -138,9 +164,13 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
         assert result == "local_only"
 
     @pytest.mark.asyncio
-    async def test_get_effective_connection_type_default(self, mock_hass, mock_config_entry):
+    async def test_get_effective_connection_type_default(
+        self, mock_hass, mock_config_entry
+    ):
         """Test effective connection type with default fallback."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -158,7 +188,9 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
     @pytest.mark.asyncio
     async def test_get_mqtt_password_variations(self, mock_hass, mock_config_entry):
         """Test MQTT password extraction from various fields."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -193,9 +225,13 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
         assert result == "device_password"
 
     @pytest.mark.asyncio
-    async def test_get_mqtt_password_with_decryption(self, mock_hass, mock_config_entry):
+    async def test_get_mqtt_password_with_decryption(
+        self, mock_hass, mock_config_entry
+    ):
         """Test MQTT password with decryption."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -221,7 +257,9 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
     @pytest.mark.asyncio
     async def test_schedule_fallback_update_success(self, mock_hass, mock_config_entry):
         """Test successful fallback update scheduling."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -235,12 +273,18 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
         coordinator._schedule_fallback_update()
 
         # Should schedule the listener update through call_soon_threadsafe
-        mock_hass.loop.call_soon_threadsafe.assert_called_once_with(coordinator.async_update_listeners)
+        mock_hass.loop.call_soon_threadsafe.assert_called_once_with(
+            coordinator._notify_ha_via_loop
+        )
 
     @pytest.mark.asyncio
-    async def test_schedule_fallback_update_exception(self, mock_hass, mock_config_entry):
+    async def test_schedule_fallback_update_exception(
+        self, mock_hass, mock_config_entry
+    ):
         """Test fallback update with exception."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -249,22 +293,30 @@ class TestDysonDataUpdateCoordinatorMethodsSimple:
 
             # Mock the loop.call_soon_threadsafe method to raise exception
             mock_hass.loop = MagicMock()
-            mock_hass.loop.call_soon_threadsafe = MagicMock(side_effect=Exception("Test exception"))
+            mock_hass.loop.call_soon_threadsafe = MagicMock(
+                side_effect=Exception("Test exception")
+            )
 
         # Should handle exception gracefully
         coordinator._schedule_fallback_update()
 
         # Should still attempt the call
-        mock_hass.loop.call_soon_threadsafe.assert_called_once_with(coordinator.async_update_listeners)
+        mock_hass.loop.call_soon_threadsafe.assert_called_once_with(
+            coordinator._notify_ha_via_loop
+        )
 
 
 class TestDysonDataUpdateCoordinatorDeviceSetupSimple:
     """Test device setup methods with minimal mocking."""
 
     @pytest.mark.asyncio
-    async def test_on_message_update_with_state_topic(self, mock_hass, mock_config_entry):
+    async def test_on_message_update_with_state_topic(
+        self, mock_hass, mock_config_entry
+    ):
         """Test message update callback with state topic."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -273,15 +325,21 @@ class TestDysonDataUpdateCoordinatorDeviceSetupSimple:
         # Mock the state change handler
         with patch.object(coordinator, "_handle_state_change_message") as mock_handler:
             # Pass the correct message format that triggers state change handling
-            coordinator._on_message_update("DYSON/STATE-CHANGE", {"msg": "STATE-CHANGE"})
+            coordinator._on_message_update(
+                "DYSON/STATE-CHANGE", {"msg": "STATE-CHANGE"}
+            )
 
             # Should call the state change handler
             mock_handler.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_on_message_update_non_state_topic(self, mock_hass, mock_config_entry):
+    async def test_on_message_update_non_state_topic(
+        self, mock_hass, mock_config_entry
+    ):
         """Test message update callback with non-state topic."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -295,9 +353,13 @@ class TestDysonDataUpdateCoordinatorDeviceSetupSimple:
             mock_handler.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_schedule_coordinator_data_update_calls_hass(self, mock_hass, mock_config_entry):
+    async def test_schedule_coordinator_data_update_calls_hass(
+        self, mock_hass, mock_config_entry
+    ):
         """Test that scheduling coordinator data update calls hass methods."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -309,9 +371,13 @@ class TestDysonDataUpdateCoordinatorDeviceSetupSimple:
         mock_hass.loop.call_soon_threadsafe.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_coordinator_update_task_calls_hass(self, mock_hass, mock_config_entry):
+    async def test_create_coordinator_update_task_calls_hass(
+        self, mock_hass, mock_config_entry
+    ):
         """Test that creating coordinator update task calls hass methods."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -327,9 +393,13 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
     """Test the complex _async_update_data method."""
 
     @pytest.mark.asyncio
-    async def test_async_update_data_device_connected_success(self, mock_hass, mock_config_entry):
+    async def test_async_update_data_device_connected_success(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async update with connected device returning state."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -349,9 +419,13 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_update_data_device_disconnected_reconnect_success(self, mock_hass, mock_config_entry):
+    async def test_async_update_data_device_disconnected_reconnect_success(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async update with disconnected device that reconnects successfully."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -373,9 +447,13 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_update_data_device_disconnected_reconnect_failure(self, mock_hass, mock_config_entry):
+    async def test_async_update_data_device_disconnected_reconnect_failure(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async update with disconnected device that fails to reconnect."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -395,7 +473,9 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
     @pytest.mark.asyncio
     async def test_async_update_data_no_device(self, mock_hass, mock_config_entry):
         """Test async update with no device initialized."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass
@@ -407,9 +487,13 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
             await coordinator._async_update_data()
 
     @pytest.mark.asyncio
-    async def test_async_update_data_send_command_exception_continues(self, mock_hass, mock_config_entry):
+    async def test_async_update_data_send_command_exception_continues(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async update continues even if send command fails."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             # Set required attributes manually after patching parent __init__
             coordinator.hass = mock_hass

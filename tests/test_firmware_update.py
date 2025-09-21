@@ -8,7 +8,10 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.hass_dyson.const import DISCOVERY_CLOUD, DISCOVERY_MANUAL, DOMAIN
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
-from custom_components.hass_dyson.update import DysonFirmwareUpdateEntity, async_setup_entry
+from custom_components.hass_dyson.update import (
+    DysonFirmwareUpdateEntity,
+    async_setup_entry,
+)
 
 
 class TestDysonFirmwareUpdateEntity:
@@ -18,11 +21,16 @@ class TestDysonFirmwareUpdateEntity:
     def mock_config_entry(self) -> Mock:
         """Create a mock config entry."""
         config_entry = Mock()
-        config_entry.data = {"discovery_method": DISCOVERY_CLOUD, "serial_number": "TEST-SERIAL-123"}
+        config_entry.data = {
+            "discovery_method": DISCOVERY_CLOUD,
+            "serial_number": "TEST-SERIAL-123",
+        }
         return config_entry
 
     @pytest.fixture
-    def update_entity(self, mock_coordinator, mock_config_entry) -> DysonFirmwareUpdateEntity:
+    def update_entity(
+        self, mock_coordinator, mock_config_entry
+    ) -> DysonFirmwareUpdateEntity:
         """Create a firmware update entity."""
         return DysonFirmwareUpdateEntity(mock_coordinator)
 
@@ -30,7 +38,9 @@ class TestDysonFirmwareUpdateEntity:
         """Test entity properties."""
         # Test basic properties
         assert update_entity._attr_translation_key == "firmware_update"
-        assert update_entity.unique_id == "TEST-SERIAL-123_firmware_update"  # Updated to match centralized fixture
+        assert (
+            update_entity.unique_id == "TEST-SERIAL-123_firmware_update"
+        )  # Updated to match centralized fixture
         assert update_entity.device_class == "firmware"
 
         # Test version properties
@@ -41,14 +51,18 @@ class TestDysonFirmwareUpdateEntity:
         # Test supported features
         assert update_entity.supported_features == UpdateEntityFeature.INSTALL
 
-    def test_entity_properties_no_update_available(self, update_entity, mock_coordinator):
+    def test_entity_properties_no_update_available(
+        self, update_entity, mock_coordinator
+    ):
         """Test entity properties when no update is available."""
         mock_coordinator.firmware_latest_version = "1.0.0"  # Same as installed
 
         assert update_entity.installed_version == "1.0.0"
         assert update_entity.latest_version == "1.0.0"
 
-    def test_entity_properties_update_in_progress(self, update_entity, mock_coordinator):
+    def test_entity_properties_update_in_progress(
+        self, update_entity, mock_coordinator
+    ):
         """Test entity properties when update is in progress."""
         mock_coordinator.firmware_update_in_progress = True
 
@@ -75,7 +89,9 @@ class TestDysonFirmwareUpdateEntity:
     @pytest.mark.asyncio
     async def test_async_install_exception(self, update_entity, mock_coordinator):
         """Test firmware update installation with exception."""
-        mock_coordinator.async_install_firmware_update = AsyncMock(side_effect=Exception("API Error"))
+        mock_coordinator.async_install_firmware_update = AsyncMock(
+            side_effect=Exception("API Error")
+        )
 
         # The method doesn't raise - it catches exceptions and logs them
         result = await update_entity.async_install(version="1.0.1", backup=False)
@@ -233,7 +249,9 @@ class TestCoordinatorFirmwareMethods:
             mock_client.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_check_firmware_update_none_available(self, coordinator, mock_hass):
+    async def test_async_check_firmware_update_none_available(
+        self, coordinator, mock_hass
+    ):
         """Test checking for firmware updates when no update is available."""
         mock_client = AsyncMock()
 
@@ -271,7 +289,9 @@ class TestCoordinatorFirmwareMethods:
             result = await coordinator.async_check_firmware_update()
 
             assert result is False
-            assert coordinator._firmware_latest_version == "1.0.0"  # Falls back to current
+            assert (
+                coordinator._firmware_latest_version == "1.0.0"
+            )  # Falls back to current
 
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_success(self, coordinator):
@@ -289,7 +309,10 @@ class TestCoordinatorFirmwareMethods:
         command_data = call_args[0][1]
         assert command_data["msg"] == "SOFTWARE-UPGRADE"
         assert command_data["version"] == version
-        assert command_data["url"] == f"http://ota-firmware.cp.dyson.com/438/M__SC04.WF02/{version}/manifest.bin"
+        assert (
+            command_data["url"]
+            == f"http://ota-firmware.cp.dyson.com/438/M__SC04.WF02/{version}/manifest.bin"
+        )
 
         # Verify time format (should be ISO format with Z suffix)
         assert "time" in command_data
@@ -297,7 +320,9 @@ class TestCoordinatorFirmwareMethods:
 
         time_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$"
         assert re.match(time_pattern, command_data["time"])  # Verify progress tracking
-        assert coordinator._firmware_update_in_progress is True  # Remains True until device reports completion
+        assert (
+            coordinator._firmware_update_in_progress is True
+        )  # Remains True until device reports completion
 
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_no_device(self, coordinator):
@@ -311,7 +336,9 @@ class TestCoordinatorFirmwareMethods:
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_command_failure(self, coordinator):
         """Test firmware update installation when MQTT command fails."""
-        coordinator.device.send_command = AsyncMock(side_effect=Exception("MQTT send failed"))
+        coordinator.device.send_command = AsyncMock(
+            side_effect=Exception("MQTT send failed")
+        )
 
         result = await coordinator.async_install_firmware_update("1.0.1")
 

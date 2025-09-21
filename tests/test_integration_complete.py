@@ -44,14 +44,23 @@ def mock_config_entry():
 @pytest.fixture
 def mock_coordinator(mock_hass, mock_config_entry):
     """Mock coordinator with test data."""
-    with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+    with patch(
+        "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+    ):
         coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
         coordinator.hass = mock_hass
         coordinator.config_entry = mock_config_entry
         # Set serial number via config entry data (it's a property)
-        coordinator.config_entry.data = {**coordinator.config_entry.data, CONF_SERIAL_NUMBER: "MOCK-SERIAL-TEST123"}
+        coordinator.config_entry.data = {
+            **coordinator.config_entry.data,
+            CONF_SERIAL_NUMBER: "MOCK-SERIAL-TEST123",
+        }
         # Set private attributes since properties are read-only
-        coordinator._device_capabilities = ["EnvironmentalData", "ExtendedAQ", "AdvanceOscillationDay1"]
+        coordinator._device_capabilities = [
+            "EnvironmentalData",
+            "ExtendedAQ",
+            "AdvanceOscillationDay1",
+        ]
         coordinator._device_category = "ec"
         coordinator.last_update_success = True
         coordinator.data = {
@@ -130,11 +139,15 @@ def test_temperature_sensor_creation(mock_coordinator):
     # Test that the sensor can process coordinator data correctly
     # without triggering Home Assistant state updates
     if mock_coordinator.data:
-        temperature = mock_coordinator.data.get("temperature", 2950)  # 22.0°C in Kelvin * 10
+        temperature = mock_coordinator.data.get(
+            "temperature", 2950
+        )  # 22.0°C in Kelvin * 10
         expected_celsius = round((float(temperature) / 10) - 273.15, 1)
         # Manually set the value to test the calculation logic
         sensor._attr_native_value = expected_celsius
-        assert sensor.native_value == 21.9  # (2950 / 10) - 273.15 = 21.85 -> rounds to 21.9  # (2950 / 10) - 273.15
+        assert (
+            sensor.native_value == 21.9
+        )  # (2950 / 10) - 273.15 = 21.85 -> rounds to 21.9  # (2950 / 10) - 273.15
 
 
 def test_humidity_sensor_creation(mock_coordinator):
