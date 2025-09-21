@@ -328,13 +328,13 @@ ping 192.168.1.100
 
 ### **3. Entity Verification**
 **Expected entities varies by device category and capabilities**:
-- 1 Fan (primary control)
+- 1 Fan (primary control with preset modes)
 - 2-4 Sensors (PM2.5, PM10, RSSI, Filter)  
 - 2-3 Binary Sensors (connectivity, filter, faults)
-- 1-2 Buttons (identify, reset filter)
-- 3-5 Number controls (speed, timer, angle)
-- 2-4 Select controls (modes)
-- 3-6 Switch controls (features)
+- 1 Button (identify device)
+- 3-5 Number controls (sleep timer, oscillation angles)
+- 2-4 Select controls (fan mode, oscillation patterns, heating mode)
+- 2-4 Switch controls (night mode, heating, continuous monitoring)
 - 0-1 Climate (heating models only)
 
 ### **4. Functionality Test**

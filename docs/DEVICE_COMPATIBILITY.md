@@ -21,8 +21,8 @@ The following capabilities can add additional entities to Environment Cleaner de
 | Capability | Required For | Entities Added |
 |------------|--------------|----------------|
 | **ExtendedAQ** | Air quality monitoring | • PM2.5 sensor<br>• PM10 sensor<br>• HEPA filter life sensor<br>• HEPA filter type sensor |
-| **Scheduling** | Sleep timer functionality | • Number platform (sleep timer 15-540 minutes)<br>• Button platform (reset filter) |
-| **AdvanceOscillationDay1** | Advanced oscillation control | • Number platform (oscillation angle range)<br>• Select platform (oscillation patterns)<br>• Switch platform (breeze mode) |
+| **Scheduling** | Sleep timer functionality | • Number platform (sleep timer 15-540 minutes) |
+| **AdvanceOscillationDay1** | Advanced oscillation control | • Number platform (oscillation angle range)<br>• Select platform (oscillation patterns) |
 | **Heating** (name subject to change) | Heat mode devices | • Temperature sensor<br>• Climate platform<br>• Heating switch |
 | **Humidifier** (name subject to change) | Humidity control devices | • Humidity sensor<br>• Humidifier platform<br>• Water tank level sensor |
 | **Formaldehyde** (name subject to change) | Chemical air quality monitoring | • Formaldehyde sensor (HCHO)<br>• Carbon filter life sensor<br>• Carbon filter type sensor | 
@@ -210,14 +210,13 @@ Configuration example for Dyson Pure Hot+Cool HP07 with ExtendedAQ, and Heating.
 
 ### Available Platforms
 
-1. fan: Speed control, auto mode, night mode
+1. fan: Speed control, preset modes (auto, manual, sleep)
 2. climate: Heating control, temperature management
 3. sensor: PM2.5, PM10, temperature, HEPA filters, WiFi, connection status
-4. binary_sensor: Online status, night mode status, auto mode status, heating status
-5. button: Reset filter functionality
-6. number: Sleep timer control
-7. select: Fan speed selection
-8. switch: Oscillation control, heating control
+4. binary_sensor: Online status, night mode status, heating status
+5. number: Sleep timer control, oscillation angle controls
+6. select: Fan control mode, oscillation patterns, heating mode
+7. switch: Night mode, heating control, continuous monitoring
 
 ## Dyson V15 Robot Vacuum Configuration
 
@@ -246,10 +245,8 @@ Configuration example for basic fan models without special capabilities.
 
 1. fan: Speed control functionality only
 2. binary_sensor: Online status monitoring
-3. button: Basic control functions
-4. number: Sleep timer control
-5. select: Fan speed selection
-6. switch: Oscillation control
+3. number: Sleep timer control
+4. select: Fan control mode
 
 ## Troubleshooting Entity Availability
 
