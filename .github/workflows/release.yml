@@ -8,6 +8,8 @@ jobs:
   release:
     name: Create Release Asset
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,11 +30,7 @@ jobs:
           mv hass_dyson.zip $GITHUB_WORKSPACE/
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./hass_dyson.zip
-          asset_name: hass_dyson.zip
-          asset_content_type: application/zip
+          files: ./hass_dyson.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
