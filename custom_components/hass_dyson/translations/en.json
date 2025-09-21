@@ -320,10 +320,7 @@
         },
         "sanitize": {
           "name": "Sanitize Data",
-          "description": "Remove sensitive information for safe public posting.",
-          "selector": {
-            "boolean": {}
-          }
+          "description": "Remove sensitive information for safe public posting."
         }
       }
     }
