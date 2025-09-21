@@ -10,7 +10,7 @@ set_sleep_timer:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     minutes:
       name: Minutes
       description: Timer duration in minutes (15-540)
@@ -32,7 +32,7 @@ cancel_sleep_timer:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
 
 schedule_operation:
   name: Schedule Operation
@@ -44,7 +44,7 @@ schedule_operation:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     operation:
       name: Operation
       description: The operation to schedule
@@ -80,7 +80,7 @@ set_oscillation_angles:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     lower_angle:
       name: Lower Angle
       description: Lower oscillation angle in degrees (0-350)
@@ -112,7 +112,7 @@ refresh_account_data:
       required: false
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
 
 reset_filter:
   name: Reset Filter Life
@@ -124,7 +124,7 @@ reset_filter:
       required: true
       selector:
         device:
-          integration: hass-dyson
+          integration: hass_dyson
     filter_type:
       name: Filter Type
       description: Type of filter to reset
