@@ -1,7 +1,7 @@
 """Utility functions for device configuration and setup."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from homeassistant.const import CONF_USERNAME
 
@@ -19,7 +19,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def normalize_device_category(category: Any) -> List[str]:
+def normalize_device_category(category: Any) -> list[str]:
     """Normalize device category to a consistent list format.
 
     Args:
@@ -50,7 +50,7 @@ def normalize_device_category(category: Any) -> List[str]:
     return ["ec"]
 
 
-def normalize_capabilities(capabilities: Any) -> List[str]:  # noqa: C901
+def normalize_capabilities(capabilities: Any) -> list[str]:  # noqa: C901
     """Normalize device capabilities to a consistent list format.
 
     Args:
@@ -73,12 +73,12 @@ def normalize_capabilities(capabilities: Any) -> List[str]:  # noqa: C901
             elif cap == "":
                 _LOGGER.warning("Found empty string capability in list, skipping")
                 continue
-            elif isinstance(cap, (int, float)) and cap == 0:
+            elif isinstance(cap, int | float) and cap == 0:
                 _LOGGER.warning("Found zero numeric capability in list, skipping")
                 continue
             else:
                 try:
-                    if hasattr(cap, "value") and not isinstance(cap, (int, float, str)):
+                    if hasattr(cap, "value") and not isinstance(cap, int | float | str):
                         normalized_cap = str(cap.value)
                     else:
                         normalized_cap = str(cap)
@@ -86,11 +86,20 @@ def normalize_capabilities(capabilities: Any) -> List[str]:  # noqa: C901
                     # Validate that the normalized capability is meaningful
                     if normalized_cap.strip():
                         result.append(normalized_cap)
-                        _LOGGER.debug("Normalized capability: %s -> %s", cap, normalized_cap)
+                        _LOGGER.debug(
+                            "Normalized capability: %s -> %s", cap, normalized_cap
+                        )
                     else:
-                        _LOGGER.warning("Capability normalized to empty string, skipping: %s", cap)
+                        _LOGGER.warning(
+                            "Capability normalized to empty string, skipping: %s", cap
+                        )
                 except Exception as e:
-                    _LOGGER.error("Failed to normalize capability %s (type: %s): %s", cap, type(cap), e)
+                    _LOGGER.error(
+                        "Failed to normalize capability %s (type: %s): %s",
+                        cap,
+                        type(cap),
+                        e,
+                    )
                     continue
 
         _LOGGER.debug("Normalized capabilities list: %s -> %s", capabilities, result)
@@ -107,23 +116,34 @@ def normalize_capabilities(capabilities: Any) -> List[str]:  # noqa: C901
 
     # Handle other types that might be convertible
     try:
-        if hasattr(capabilities, "value") and not isinstance(capabilities, (int, float, str)):
+        if hasattr(capabilities, "value") and not isinstance(
+            capabilities, int | float | str
+        ):
             normalized = str(capabilities.value)
         else:
             normalized = str(capabilities)
 
         if normalized.strip():
-            _LOGGER.debug("Normalized non-standard capability: %s -> %s", capabilities, normalized)
+            _LOGGER.debug(
+                "Normalized non-standard capability: %s -> %s", capabilities, normalized
+            )
             return [normalized]
         else:
-            _LOGGER.warning("Non-standard capability normalized to empty string: %s", capabilities)
+            _LOGGER.warning(
+                "Non-standard capability normalized to empty string: %s", capabilities
+            )
             return []
     except Exception as e:
-        _LOGGER.error("Failed to normalize capabilities %s (type: %s): %s", capabilities, type(capabilities), e)
+        _LOGGER.error(
+            "Failed to normalize capabilities %s (type: %s): %s",
+            capabilities,
+            type(capabilities),
+            e,
+        )
         return []
 
 
-def has_capability_safe(capabilities: Optional[List[str]], capability_name: str) -> bool:
+def has_capability_safe(capabilities: list[str] | None, capability_name: str) -> bool:
     """Safely check if device has a specific capability with case-insensitive matching.
 
     Args:
@@ -134,11 +154,16 @@ def has_capability_safe(capabilities: Optional[List[str]], capability_name: str)
         True if capability is found, False otherwise
     """
     if not capabilities:
-        _LOGGER.debug("No capabilities provided for capability check: %s", capability_name)
+        _LOGGER.debug(
+            "No capabilities provided for capability check: %s", capability_name
+        )
         return False
 
     if not isinstance(capabilities, list):
-        _LOGGER.warning("Capabilities is not a list, cannot check for capability: %s", capability_name)
+        _LOGGER.warning(
+            "Capabilities is not a list, cannot check for capability: %s",
+            capability_name,
+        )
         return False
 
     try:
@@ -155,12 +180,19 @@ def has_capability_safe(capabilities: Optional[List[str]], capability_name: str)
                 if cap is not None:
                     normalized_caps.append(str(cap).lower().strip())
             except Exception as e:
-                _LOGGER.warning("Failed to normalize capability for comparison %s: %s", cap, e)
+                _LOGGER.warning(
+                    "Failed to normalize capability for comparison %s: %s", cap, e
+                )
                 continue
 
         # Check for matches
         has_capability = search_term in normalized_caps
-        _LOGGER.debug("Capability check: '%s' in %s = %s", search_term, normalized_caps, has_capability)
+        _LOGGER.debug(
+            "Capability check: '%s' in %s = %s",
+            search_term,
+            normalized_caps,
+            has_capability,
+        )
         return has_capability
 
     except Exception as e:
@@ -168,7 +200,9 @@ def has_capability_safe(capabilities: Optional[List[str]], capability_name: str)
         return False
 
 
-def has_any_capability_safe(capabilities: Optional[List[str]], capability_names: List[str]) -> bool:
+def has_any_capability_safe(
+    capabilities: list[str] | None, capability_names: list[str]
+) -> bool:
     """Safely check if device has any of the specified capabilities.
 
     Args:
@@ -184,14 +218,20 @@ def has_any_capability_safe(capabilities: Optional[List[str]], capability_names:
 
     for capability_name in capability_names:
         if has_capability_safe(capabilities, capability_name):
-            _LOGGER.debug("Found capability '%s' in any-capability check", capability_name)
+            _LOGGER.debug(
+                "Found capability '%s' in any-capability check", capability_name
+            )
             return True
 
-    _LOGGER.debug("No capabilities found in any-capability check for: %s", capability_names)
+    _LOGGER.debug(
+        "No capabilities found in any-capability check for: %s", capability_names
+    )
     return False
 
 
-def get_sensor_data_safe(data: Optional[Dict[str, Any]], key: str, device_serial: str = "unknown") -> Any:
+def get_sensor_data_safe(
+    data: dict[str, Any] | None, key: str, device_serial: str = "unknown"
+) -> Any:
     """Safely extract sensor data with proper error handling and logging.
 
     Args:
@@ -203,32 +243,52 @@ def get_sensor_data_safe(data: Optional[Dict[str, Any]], key: str, device_serial
         The value if found and valid, None otherwise
     """
     if data is None:
-        _LOGGER.debug("No data available for sensor key '%s' on device %s", key, device_serial)
+        _LOGGER.debug(
+            "No data available for sensor key '%s' on device %s", key, device_serial
+        )
         return None
 
     if not isinstance(data, dict):
         _LOGGER.warning(
-            "Data is not a dictionary for sensor key '%s' on device %s (type: %s)", key, device_serial, type(data)
+            "Data is not a dictionary for sensor key '%s' on device %s (type: %s)",
+            key,
+            device_serial,
+            type(data),
         )
         return None
 
     try:
         value = data.get(key)
         if value is None:
-            _LOGGER.debug("Sensor key '%s' not found in data for device %s", key, device_serial)
+            _LOGGER.debug(
+                "Sensor key '%s' not found in data for device %s", key, device_serial
+            )
             return None
 
         # Log successful data access
-        _LOGGER.debug("Successfully extracted sensor data for key '%s' on device %s: %s", key, device_serial, value)
+        _LOGGER.debug(
+            "Successfully extracted sensor data for key '%s' on device %s: %s",
+            key,
+            device_serial,
+            value,
+        )
         return value
 
     except Exception as e:
-        _LOGGER.error("Error accessing sensor data for key '%s' on device %s: %s", key, device_serial, e)
+        _LOGGER.error(
+            "Error accessing sensor data for key '%s' on device %s: %s",
+            key,
+            device_serial,
+            e,
+        )
         return None
 
 
 def convert_sensor_value_safe(
-    value: Any, target_type: type, device_serial: str = "unknown", sensor_name: str = "unknown"
+    value: Any,
+    target_type: type,
+    device_serial: str = "unknown",
+    sensor_name: str = "unknown",
 ) -> Any:
     """Safely convert sensor value to target type with proper error handling.
 
@@ -242,20 +302,27 @@ def convert_sensor_value_safe(
         Converted value or None if conversion fails
     """
     if value is None:
-        _LOGGER.debug("Cannot convert None value for %s sensor on device %s", sensor_name, device_serial)
+        _LOGGER.debug(
+            "Cannot convert None value for %s sensor on device %s",
+            sensor_name,
+            device_serial,
+        )
         return None
 
     try:
         converted_value: Any = None
-        if target_type == int:
+        if target_type is int:
             converted_value = int(value)
-        elif target_type == float:
+        elif target_type is float:
             converted_value = float(value)
-        elif target_type == str:
+        elif target_type is str:
             converted_value = str(value)
         else:
             _LOGGER.warning(
-                "Unsupported target type %s for %s sensor on device %s", target_type, sensor_name, device_serial
+                "Unsupported target type %s for %s sensor on device %s",
+                target_type,
+                sensor_name,
+                device_serial,
             )
             return None
 
@@ -280,27 +347,32 @@ def convert_sensor_value_safe(
         )
         return None
     except Exception as e:
-        _LOGGER.error("Unexpected error converting %s sensor value for device %s: %s", sensor_name, device_serial, e)
+        _LOGGER.error(
+            "Unexpected error converting %s sensor value for device %s: %s",
+            sensor_name,
+            device_serial,
+            e,
+        )
         return None
 
 
 def create_device_config_data(
     serial_number: str,
     discovery_method: str,
-    device_name: Optional[str] = None,
-    hostname: Optional[str] = None,
-    credential: Optional[str] = None,
-    mqtt_prefix: Optional[str] = None,
-    device_category: Optional[Any] = None,
-    capabilities: Optional[Any] = None,
-    connection_type: Optional[str] = None,
-    username: Optional[str] = None,
-    auth_token: Optional[str] = None,
-    product_type: Optional[str] = None,
-    category: Optional[str] = None,
-    parent_entry_id: Optional[str] = None,
+    device_name: str | None = None,
+    hostname: str | None = None,
+    credential: str | None = None,
+    mqtt_prefix: str | None = None,
+    device_category: Any | None = None,
+    capabilities: Any | None = None,
+    connection_type: str | None = None,
+    username: str | None = None,
+    auth_token: str | None = None,
+    product_type: str | None = None,
+    category: str | None = None,
+    parent_entry_id: str | None = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create standardized device configuration data.
 
     This consolidates the config data creation logic used by both
@@ -327,7 +399,7 @@ def create_device_config_data(
         Dictionary of config entry data
     """
     # Start with required fields
-    config_data: Dict[str, Any] = {
+    config_data: dict[str, Any] = {
         CONF_SERIAL_NUMBER: serial_number,
         CONF_DISCOVERY_METHOD: discovery_method,
     }
@@ -359,7 +431,9 @@ def create_device_config_data(
     return config_data
 
 
-def _add_optional_fields(config_data: Dict[str, Any], optional_fields: Dict[str, Any]) -> None:
+def _add_optional_fields(
+    config_data: dict[str, Any], optional_fields: dict[str, Any]
+) -> None:
     """Add optional fields to config data if they are not None."""
     for key, value in optional_fields.items():
         if value is not None:
@@ -370,11 +444,11 @@ def create_manual_device_config(
     serial_number: str,
     credential: str,
     mqtt_prefix: str,
-    device_name: Optional[str] = None,
-    hostname: Optional[str] = None,
-    device_category: Optional[Any] = None,
-    capabilities: Optional[Any] = None,
-) -> Dict[str, Any]:
+    device_name: str | None = None,
+    hostname: str | None = None,
+    device_category: Any | None = None,
+    capabilities: Any | None = None,
+) -> dict[str, Any]:
     """Create config data for manually configured device.
 
     Args:
@@ -405,10 +479,10 @@ def create_manual_device_config(
 def create_cloud_device_config(
     serial_number: str,
     username: str,
-    device_info: Dict[str, Any],
-    auth_token: Optional[str] = None,
-    parent_entry_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    device_info: dict[str, Any],
+    auth_token: str | None = None,
+    parent_entry_id: str | None = None,
+) -> dict[str, Any]:
     """Create config data for cloud-discovered device.
 
     Args:

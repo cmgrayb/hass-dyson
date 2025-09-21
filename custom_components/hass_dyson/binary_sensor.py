@@ -3,22 +3,32 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CAPABILITY_FAULT_CODES, DEVICE_CATEGORY_FAULT_CODES, DOMAIN, FAULT_TRANSLATIONS
+from .const import (
+    CAPABILITY_FAULT_CODES,
+    DEVICE_CATEGORY_FAULT_CODES,
+    DOMAIN,
+    FAULT_TRANSLATIONS,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _is_fault_code_relevant(fault_code: str, device_categories: Any, device_capabilities: List[Any]) -> bool:
+def _is_fault_code_relevant(
+    fault_code: str, device_categories: Any, device_capabilities: list[Any]
+) -> bool:
     """Check if a fault code is relevant for a device based on category and capabilities."""
     try:
         category_strings = _normalize_categories(device_categories)
@@ -44,7 +54,7 @@ def _is_fault_code_relevant(fault_code: str, device_categories: Any, device_capa
         return True
 
 
-def _normalize_categories(device_categories: Any) -> List[str]:
+def _normalize_categories(device_categories: Any) -> list[str]:
     """Normalize device categories to a list of strings."""
     if isinstance(device_categories, list):
         category_strings = []
@@ -62,7 +72,7 @@ def _normalize_categories(device_categories: Any) -> List[str]:
             return [str(device_categories)]
 
 
-def _normalize_capabilities(device_capabilities: List[Any]) -> List[str]:
+def _normalize_capabilities(device_capabilities: list[Any]) -> list[str]:
     """Normalize device capabilities to a list of strings."""
     capability_strings = []
     for cap in device_capabilities:
@@ -73,17 +83,21 @@ def _normalize_capabilities(device_capabilities: List[Any]) -> List[str]:
     return capability_strings
 
 
-def _is_fault_code_for_category(fault_code: str, category_strings: List[str]) -> bool:
+def _is_fault_code_for_category(fault_code: str, category_strings: list[str]) -> bool:
     """Check if fault code matches any device category."""
     for category_str in category_strings:
         category_fault_codes = DEVICE_CATEGORY_FAULT_CODES.get(category_str, [])
         if fault_code in category_fault_codes:
-            _LOGGER.debug("Fault code '%s' matches device category '%s'", fault_code, category_str)
+            _LOGGER.debug(
+                "Fault code '%s' matches device category '%s'", fault_code, category_str
+            )
             return True
     return False
 
 
-def _is_fault_code_for_capability(fault_code: str, capability_strings: List[str]) -> bool:
+def _is_fault_code_for_capability(
+    fault_code: str, capability_strings: list[str]
+) -> bool:
     """Check if fault code requires specific capabilities."""
     for capability, fault_codes in CAPABILITY_FAULT_CODES.items():
         if fault_code in fault_codes:
@@ -174,23 +188,45 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                 if self.coordinator.data and isinstance(self.coordinator.data, dict):
                     device_data = self.coordinator.data.get("product-state", {})
                     if not isinstance(device_data, dict):
-                        _LOGGER.warning("Product-state data is not a dictionary for device %s", device_serial)
+                        _LOGGER.warning(
+                            "Product-state data is not a dictionary for device %s",
+                            device_serial,
+                        )
                         device_data = {}
                 else:
-                    _LOGGER.debug("No coordinator data available for filter check on device %s", device_serial)
+                    _LOGGER.debug(
+                        "No coordinator data available for filter check on device %s",
+                        device_serial,
+                    )
 
                 # Safely check HEPA filter
-                hepa_filter_type = device_data.get("hflt", "NONE") if device_data else "NONE"
+                hepa_filter_type = (
+                    device_data.get("hflt", "NONE") if device_data else "NONE"
+                )
                 if hepa_filter_type != "NONE":  # HEPA filter is installed
                     try:
-                        hepa_life = getattr(self.coordinator.device, "hepa_filter_life", None)
-                        if hepa_life is not None and isinstance(hepa_life, (int, float)):
+                        hepa_life = getattr(
+                            self.coordinator.device, "hepa_filter_life", None
+                        )
+                        if hepa_life is not None and isinstance(hepa_life, int | float):
                             filters_to_check.append(hepa_life)
-                            _LOGGER.debug("HEPA filter life for device %s: %s%%", device_serial, hepa_life)
+                            _LOGGER.debug(
+                                "HEPA filter life for device %s: %s%%",
+                                device_serial,
+                                hepa_life,
+                            )
                         else:
-                            _LOGGER.warning("Invalid HEPA filter life data for device %s: %s", device_serial, hepa_life)
+                            _LOGGER.warning(
+                                "Invalid HEPA filter life data for device %s: %s",
+                                device_serial,
+                                hepa_life,
+                            )
                     except Exception as e:
-                        _LOGGER.error("Error getting HEPA filter life for device %s: %s", device_serial, e)
+                        _LOGGER.error(
+                            "Error getting HEPA filter life for device %s: %s",
+                            device_serial,
+                            e,
+                        )
 
                 # Only check carbon filter if device has formaldehyde capability and is installed
                 # TODO: Update this when we identify the exact formaldehyde capability name
@@ -213,7 +249,9 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                 # Filter needs replacement if any of the installed filters is below 10%
                 if filters_to_check:
                     self._attr_is_on = any(
-                        filter_life <= 10 for filter_life in filters_to_check if isinstance(filter_life, (int, float))
+                        filter_life <= 10
+                        for filter_life in filters_to_check
+                        if isinstance(filter_life, int | float)
                     )
                     _LOGGER.debug(
                         "Filter replacement check for device %s: filters=%s, needs_replacement=%s",
@@ -226,10 +264,17 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                     _LOGGER.debug("No filters to check for device %s", device_serial)
             else:
                 self._attr_is_on = False
-                _LOGGER.debug("Device not available for filter replacement check on %s", device_serial)
+                _LOGGER.debug(
+                    "Device not available for filter replacement check on %s",
+                    device_serial,
+                )
 
         except Exception as e:
-            _LOGGER.error("Error during filter replacement sensor update for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error during filter replacement sensor update for device %s: %s",
+                device_serial,
+                e,
+            )
             self._attr_is_on = False
 
         super()._handle_coordinator_update()
@@ -240,13 +285,20 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
 
     coordinator: DysonDataUpdateCoordinator
 
-    def __init__(self, coordinator: DysonDataUpdateCoordinator, fault_code: str, fault_info: Dict[str, str]) -> None:
+    def __init__(
+        self,
+        coordinator: DysonDataUpdateCoordinator,
+        fault_code: str,
+        fault_info: dict[str, str],
+    ) -> None:
         """Initialize the fault sensor."""
         super().__init__(coordinator)
         self._fault_code = fault_code
         self._fault_info = fault_info
         self._attr_unique_id = f"{coordinator.serial_number}_fault_{fault_code}"
-        self._attr_name = f"{coordinator.device_name} Fault {self._get_fault_friendly_name()}"
+        self._attr_name = (
+            f"{coordinator.device_name} Fault {self._get_fault_friendly_name()}"
+        )
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -308,7 +360,9 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
         device_category_str = self.coordinator.device_category
         device_capabilities = self.coordinator.device_capabilities
 
-        if not _is_fault_code_relevant(self._fault_code, device_category_str, device_capabilities):
+        if not _is_fault_code_relevant(
+            self._fault_code, device_category_str, device_capabilities
+        ):
             # This fault sensor is not relevant to the current device type
             self._attr_available = False
             self._attr_is_on = False
@@ -325,17 +379,27 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
         # Get current faults from device
         try:
             # We'll use the same method the coordinator uses
-            if hasattr(self.coordinator.device, "_faults_data") and self.coordinator.device._faults_data:
+            if (
+                hasattr(self.coordinator.device, "_faults_data")
+                and self.coordinator.device._faults_data
+            ):
                 raw_faults = self.coordinator.device._faults_data
                 # Check if this fault code has any non-OK values in any section
                 fault_found, fault_value = self._search_fault_in_data(raw_faults)
 
                 if fault_found:
                     # Only consider it a fault if it's not OK/NONE/PASS/GOOD
-                    if fault_value and fault_value.upper() not in ["OK", "NONE", "PASS", "GOOD"]:
+                    if fault_value and fault_value.upper() not in [
+                        "OK",
+                        "NONE",
+                        "PASS",
+                        "GOOD",
+                    ]:
                         self._attr_is_on = True
                         # Get human-readable description
-                        description = self._fault_info.get(fault_value, f"Unknown fault: {fault_value}")
+                        description = self._fault_info.get(
+                            fault_value, f"Unknown fault: {fault_value}"
+                        )
                         self._attr_extra_state_attributes = {
                             "fault_code": self._fault_code,
                             "fault_value": fault_value,
@@ -366,10 +430,15 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
 
         super()._handle_coordinator_update()
 
-    def _search_fault_in_data(self, fault_data: Dict[str, Any]) -> Tuple[bool, str]:
+    def _search_fault_in_data(self, fault_data: dict[str, Any]) -> tuple[bool, str]:
         """Search for fault code in nested fault data structure."""
         # Search in all fault sections
-        sections_to_search = ["product-errors", "product-warnings", "module-errors", "module-warnings"]
+        sections_to_search = [
+            "product-errors",
+            "product-warnings",
+            "module-errors",
+            "module-warnings",
+        ]
 
         for section_name in sections_to_search:
             section = fault_data.get(section_name, {})

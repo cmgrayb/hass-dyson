@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
@@ -36,18 +36,19 @@ from .device import DysonDevice
 _LOGGER = logging.getLogger(__name__)
 
 
-class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to manage data updates for a Dyson device."""
 
     def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
         """Initialize the coordinator."""
         self.config_entry = config_entry
-        self.device: Optional[DysonDevice] = None
-        self._device_capabilities: List[str] = []
+        self.device: DysonDevice | None = None
+        self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
         self._device_type: str = ""  # Will be extracted from device info
         self._firmware_version: str = "Unknown"
         self._firmware_auto_update_enabled: bool = False
+        self._services_registered: bool = False
         self._firmware_latest_version: str | None = None
         self._firmware_update_in_progress: bool = False
         # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
@@ -61,7 +62,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
 
     @property
-    def device_capabilities(self) -> List[str]:
+    def device_capabilities(self) -> list[str]:
         """Return device capabilities."""
         return self._device_capabilities
 
@@ -101,9 +102,36 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     #     """Return whether a firmware update is available."""
     #     return self._firmware_update_available
 
+    async def ensure_device_services_registered(self) -> None:
+        """Ensure device services are registered when capabilities become available."""
+        if not self._services_registered and (
+            self._device_capabilities
+            or (self.device and getattr(self.device, "capabilities", []))
+        ):
+            from .services import async_register_device_services_for_coordinator
+
+            try:
+                await async_register_device_services_for_coordinator(self.hass, self)
+                self._services_registered = True
+                _LOGGER.debug(
+                    "Re-registered device services for %s with capabilities: %s",
+                    self.serial_number,
+                    self._device_capabilities
+                    or getattr(self.device, "capabilities", []),
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to re-register device services for %s: %s",
+                    self.serial_number,
+                    err,
+                )
+
     def _on_environmental_update(self) -> None:
         """Handle environmental data update from device."""
-        _LOGGER.debug("Received environmental update notification for %s - updating sensors", self.serial_number)
+        _LOGGER.debug(
+            "Received environmental update notification for %s - updating sensors",
+            self.serial_number,
+        )
 
         # Log current environmental data state for debugging
         if self.device and hasattr(self.device, "_environmental_data"):
@@ -115,16 +143,42 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 env_data.get("pm10"),
             )
 
-        # Schedule the async update on the event loop to ensure thread safety
-        self.hass.add_job(self.async_update_listeners)
+        # Schedule the async update using proper coordinator method to notify entities
+        self.hass.add_job(self._notify_ha_of_state_change)
 
-    def _on_message_update(self, topic: str, data: Dict[str, Any]) -> None:
+    async def _notify_ha_of_state_change(self) -> None:
+        """Notify Home Assistant framework of state changes via MQTT."""
+        try:
+            if self.device:
+                fresh_state = await self.device.get_state()
+                _LOGGER.debug(
+                    "Updated coordinator data via MQTT callback, notifying HA framework"
+                )
+                self.async_set_updated_data(fresh_state)
+            else:
+                _LOGGER.debug("No device available for coordinator data update")
+        except Exception as e:
+            _LOGGER.warning("Error updating coordinator data: %s", e)
+
+    def _on_message_update(self, topic: str, data: dict[str, Any]) -> None:
         """Handle message updates from device for real-time state changes."""
-        _LOGGER.debug("Received message update for %s on topic %s", self.serial_number, topic)
+        _LOGGER.debug(
+            "Received message update for %s on topic %s", self.serial_number, topic
+        )
 
-        # Update entity states for STATE-CHANGE messages
-        if data.get("msg") == "STATE-CHANGE":
-            _LOGGER.debug("Processing STATE-CHANGE message for real-time entity updates")
+        # Update entity states for STATE-CHANGE and CURRENT-STATE messages
+        message_type = data.get("msg", "")
+        if message_type == "STATE-CHANGE":
+            _LOGGER.debug(
+                "Processing STATE-CHANGE message for real-time entity updates"
+            )
+            self._handle_state_change_message()
+        elif message_type == "CURRENT-STATE":
+            _LOGGER.debug(
+                "Processing CURRENT-STATE message for real-time entity updates"
+            )
+            # CURRENT-STATE messages should also trigger coordinator updates
+            # This handles responses from REQUEST-CURRENT-STATE (like timer polling)
             self._handle_state_change_message()
 
     def _handle_state_change_message(self) -> None:
@@ -149,25 +203,36 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     async def _update_coordinator_data(self) -> None:
         """Update coordinator data in the event loop."""
         try:
+            if not self.device:
+                _LOGGER.warning("No device available for coordinator data update")
+                return
+
             fresh_state = await self.device.get_state()
             self.data = fresh_state
-            _LOGGER.debug("Updated coordinator data for STATE-CHANGE, triggering listeners")
+            _LOGGER.debug(
+                "Updated coordinator data for message update, triggering listeners via async_set_updated_data"
+            )
+            # Use async_set_updated_data to properly notify Home Assistant framework
+            self.async_set_updated_data(fresh_state)
         except Exception as e:
             _LOGGER.warning("Error getting fresh state for STATE-CHANGE: %s", e)
-        finally:
-            # Always trigger listeners, even if data update failed
+            # Still notify even if data update failed
             self.async_update_listeners()
 
     def _schedule_listener_update(self) -> None:
         """Schedule async listener update when no device is available."""
-        self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+        self.hass.loop.call_soon_threadsafe(self._notify_ha_via_loop)
 
     def _schedule_fallback_update(self) -> None:
         """Schedule fallback listener update in case of errors."""
         try:
-            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
+            self.hass.loop.call_soon_threadsafe(self._notify_ha_via_loop)
         except Exception as fallback_e:
             _LOGGER.warning("Failed to schedule fallback update: %s", fallback_e)
+
+    def _notify_ha_via_loop(self) -> None:
+        """Notify HA from loop thread."""
+        self.hass.add_job(self._notify_ha_of_state_change)
 
     @property
     def serial_number(self) -> str:
@@ -203,7 +268,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Check if device has its own connection type override
         device_connection_type = self.config_entry.data.get("connection_type")
         if device_connection_type:
-            _LOGGER.debug("Using device-specific connection type: %s", device_connection_type)
+            _LOGGER.debug(
+                "Using device-specific connection type: %s", device_connection_type
+            )
             return device_connection_type
 
         # Fall back to account-level connection type
@@ -218,8 +285,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 ]
 
                 if account_entries:
-                    account_connection_type = account_entries[0].data.get("connection_type", "local_cloud_fallback")
-                    _LOGGER.debug("Using account-level connection type: %s", account_connection_type)
+                    account_connection_type = account_entries[0].data.get(
+                        "connection_type", "local_cloud_fallback"
+                    )
+                    _LOGGER.debug(
+                        "Using account-level connection type: %s",
+                        account_connection_type,
+                    )
                     return account_connection_type
             except Exception as err:
                 _LOGGER.warning("Failed to get account connection type: %s", err)
@@ -246,13 +318,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _async_setup_device(self) -> None:
         """Set up the Dyson device connection."""
-        discovery_method = self.config_entry.data.get(CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD)
+        discovery_method = self.config_entry.data.get(
+            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+        )
 
         if discovery_method == DISCOVERY_CLOUD:
             await self._async_setup_cloud_device()
         elif discovery_method == DISCOVERY_STICKER:
             # TODO: Update sticker method to use paho-mqtt directly
-            raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
+            raise UpdateFailed(
+                "Sticker discovery method temporarily disabled - use cloud discovery instead"
+            )
             # await self._async_setup_sticker_device()
         elif discovery_method == DISCOVERY_MANUAL:
             await self._async_setup_manual_device()
@@ -267,14 +343,26 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             cloud_client = await self._authenticate_cloud_client()
             device_info = await self._find_cloud_device(cloud_client)
             self._extract_device_info(device_info)
-            mqtt_credentials = await self._extract_mqtt_credentials(cloud_client, device_info)
-            cloud_credentials = await self._extract_cloud_credentials(cloud_client, device_info)
-            await self._create_cloud_device(device_info, mqtt_credentials, cloud_credentials)
+            mqtt_credentials = await self._extract_mqtt_credentials(
+                cloud_client, device_info
+            )
+            cloud_credentials = await self._extract_cloud_credentials(
+                cloud_client, device_info
+            )
+            await self._create_cloud_device(
+                device_info, mqtt_credentials, cloud_credentials
+            )
 
-            _LOGGER.info("Successfully set up cloud device %s (%s)", self.serial_number, self._device_category)
+            _LOGGER.info(
+                "Successfully set up cloud device %s (%s)",
+                self.serial_number,
+                self._device_category,
+            )
 
         except Exception as err:
-            _LOGGER.error("Failed to set up cloud device %s: %s", self.serial_number, err)
+            _LOGGER.error(
+                "Failed to set up cloud device %s: %s", self.serial_number, err
+            )
             raise UpdateFailed(f"Cloud device setup failed: {err}") from err
 
     async def _authenticate_cloud_client(self):
@@ -302,7 +390,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         elif username and password:
             # Legacy authentication method - follow same pattern as config_flow
             def create_client():
-                return AsyncDysonClient(email=username, password=password, country="US", culture="en-US")
+                return AsyncDysonClient(
+                    email=username, password=password, country="US", culture="en-US"
+                )
 
             cloud_client = await self.hass.async_add_executor_job(create_client)
 
@@ -322,13 +412,19 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
                 # Step 3: Authenticate using proper flow
                 challenge = await cloud_client.begin_login()
-                await cloud_client.complete_login(str(challenge.challenge_id), "", username, password)
+                await cloud_client.complete_login(
+                    str(challenge.challenge_id), "", username, password
+                )
                 return cloud_client
             except Exception as e:
                 await cloud_client.close()
-                raise UpdateFailed(f"Cloud authentication failed for {self.serial_number}: {e}") from e
+                raise UpdateFailed(
+                    f"Cloud authentication failed for {self.serial_number}: {e}"
+                ) from e
         else:
-            raise UpdateFailed("Missing cloud credentials (auth_token or username/password)")
+            raise UpdateFailed(
+                "Missing cloud credentials (auth_token or username/password)"
+            )
 
     async def _find_cloud_device(self, cloud_client):
         """Find our device in the cloud device list."""
@@ -343,7 +439,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def _extract_device_info(self, device_info) -> None:
         """Extract device category and capabilities from device info."""
         _LOGGER.debug("Device info object: %s", device_info)
-        _LOGGER.debug("Device info dir: %s", [attr for attr in dir(device_info) if not attr.startswith("_")])
+        _LOGGER.debug(
+            "Device info dir: %s",
+            [attr for attr in dir(device_info) if not attr.startswith("_")],
+        )
 
         self._debug_connected_configuration(device_info)
         self._extract_device_type(device_info)
@@ -360,7 +459,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             if hasattr(connected_config, "__dict__"):
                 _LOGGER.debug("Connected config attributes: %s", vars(connected_config))
             _LOGGER.debug(
-                "Connected config dir: %s", [attr for attr in dir(connected_config) if not attr.startswith("_")]
+                "Connected config dir: %s",
+                [attr for attr in dir(connected_config) if not attr.startswith("_")],
             )
             self._debug_mqtt_object(connected_config)
 
@@ -369,7 +469,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         mqtt_obj = getattr(connected_config, "mqtt", None)
         if mqtt_obj:
             _LOGGER.debug("MQTT object: %s", mqtt_obj)
-            _LOGGER.debug("MQTT object dir: %s", [attr for attr in dir(mqtt_obj) if not attr.startswith("_")])
+            _LOGGER.debug(
+                "MQTT object dir: %s",
+                [attr for attr in dir(mqtt_obj) if not attr.startswith("_")],
+            )
             if hasattr(mqtt_obj, "__dict__"):
                 _LOGGER.debug("MQTT object attributes: %s", vars(mqtt_obj))
 
@@ -393,11 +496,18 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     )
 
             # Check for decoded password attributes
-            for attr_name in ["password", "decoded_password", "local_password", "device_password"]:
+            for attr_name in [
+                "password",
+                "decoded_password",
+                "local_password",
+                "device_password",
+            ]:
                 if hasattr(mqtt_obj, attr_name):
                     attr_value = getattr(mqtt_obj, attr_name, "")
                     _LOGGER.debug(
-                        "Found MQTT %s: length=%s, value=***", attr_name, len(attr_value) if attr_value else 0
+                        "Found MQTT %s: length=%s, value=***",
+                        attr_name,
+                        len(attr_value) if attr_value else 0,
                     )
 
     def _extract_device_type(self, device_info) -> None:
@@ -408,7 +518,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             device_type = getattr(device_info, "type", None)
 
         if device_type is None:
-            raise ValueError(f"Device type not available for device {self.serial_number}")
+            raise ValueError(
+                f"Device type not available for device {self.serial_number}"
+            )
 
         self._device_type = str(device_type)
         _LOGGER.debug("Extracted device type: %s", self._device_type)
@@ -422,12 +534,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if config_device_category:
             # Use device_category from config entry if available (ensures consistency)
             self._device_category = normalize_device_category(config_device_category)
-            _LOGGER.debug("Using device category from config entry: %s", self._device_category)
+            _LOGGER.debug(
+                "Using device category from config entry: %s", self._device_category
+            )
         else:
             # Extract category from API response
             raw_category = getattr(device_info, "category", "unknown")
             self._device_category = normalize_device_category(raw_category)
-            _LOGGER.debug("Extracted device category from API: %s", self._device_category)
+            _LOGGER.debug(
+                "Extracted device category from API: %s", self._device_category
+            )
 
     def _extract_device_capabilities(self, device_info) -> None:
         """Extract device capabilities from config entry or API response."""
@@ -441,7 +557,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 # Use capabilities from config entry if non-empty
                 self._device_capabilities = normalize_capabilities(config_capabilities)
                 _LOGGER.debug(
-                    "Using capabilities from config entry for %s: %s", self.serial_number, self._device_capabilities
+                    "Using capabilities from config entry for %s: %s",
+                    self.serial_number,
+                    self._device_capabilities,
                 )
 
                 # Validate that we got meaningful capabilities
@@ -457,7 +575,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     api_capabilities = self._extract_capabilities(device_info)
                     self._device_capabilities = normalize_capabilities(api_capabilities)
                     _LOGGER.debug(
-                        "Extracted capabilities from API for %s: %s", self.serial_number, self._device_capabilities
+                        "Extracted capabilities from API for %s: %s",
+                        self.serial_number,
+                        self._device_capabilities,
                     )
 
                     # Validate that we got meaningful capabilities from API
@@ -468,16 +588,28 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                             api_capabilities,
                         )
                 except Exception as api_error:
-                    _LOGGER.error("Failed to extract capabilities from API for %s: %s", self.serial_number, api_error)
+                    _LOGGER.error(
+                        "Failed to extract capabilities from API for %s: %s",
+                        self.serial_number,
+                        api_error,
+                    )
                     self._device_capabilities = []
 
         except Exception as e:
-            _LOGGER.error("Critical error during capability extraction for %s: %s", self.serial_number, e)
+            _LOGGER.error(
+                "Critical error during capability extraction for %s: %s",
+                self.serial_number,
+                e,
+            )
             # Fallback to empty capabilities to prevent integration failure
             self._device_capabilities = []
 
         # Log final capability state for debugging
-        _LOGGER.info("Final capabilities for device %s: %s", self.serial_number, self._device_capabilities)
+        _LOGGER.info(
+            "Final capabilities for device %s: %s",
+            self.serial_number,
+            self._device_capabilities,
+        )
 
     def _extract_firmware_version(self, device_info) -> None:
         """Extract firmware version and update information from device info."""
@@ -496,7 +628,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 if hasattr(firmware_obj, "__dict__"):
                     _LOGGER.debug("Firmware object attributes: %s", vars(firmware_obj))
                 _LOGGER.debug(
-                    "Firmware object dir: %s", [attr for attr in dir(firmware_obj) if not attr.startswith("_")]
+                    "Firmware object dir: %s",
+                    [attr for attr in dir(firmware_obj) if not attr.startswith("_")],
                 )
 
                 # Extract firmware version
@@ -509,7 +642,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 auto_update = getattr(firmware_obj, "auto_update_enabled", None)
                 if auto_update is not None:
                     self._firmware_auto_update_enabled = bool(auto_update)
-                    _LOGGER.debug("Found firmware auto-update enabled: %s", self._firmware_auto_update_enabled)
+                    _LOGGER.debug(
+                        "Found firmware auto-update enabled: %s",
+                        self._firmware_auto_update_enabled,
+                    )
 
                 # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
                 # Extract update availability - try multiple possible field names
@@ -548,7 +684,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             mqtt_password = self._get_mqtt_password(cloud_client, mqtt_obj)
 
         if not mqtt_password:
-            _LOGGER.error("MQTT password cannot be empty for device %s", self.serial_number)
+            _LOGGER.error(
+                "MQTT password cannot be empty for device %s", self.serial_number
+            )
             raise UpdateFailed("MQTT password cannot be empty")
 
         self._log_mqtt_credentials(mqtt_username, mqtt_password)
@@ -575,7 +713,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         for username_attr in ["username", "local_username", "broker_username"]:
             alt_username = getattr(mqtt_obj, username_attr, "")
             if alt_username:
-                _LOGGER.debug("Found alternative username: mqtt.%s = %s", username_attr, alt_username)
+                _LOGGER.debug(
+                    "Found alternative username: mqtt.%s = %s",
+                    username_attr,
+                    alt_username,
+                )
                 return alt_username
 
         return self.serial_number
@@ -600,7 +742,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         ]:
             mqtt_password = getattr(mqtt_obj, attr, "")
             if mqtt_password:
-                _LOGGER.debug("Found MQTT password using attribute: mqtt.%s (length: %s)", attr, len(mqtt_password))
+                _LOGGER.debug(
+                    "Found MQTT password using attribute: mqtt.%s (length: %s)",
+                    attr,
+                    len(mqtt_password),
+                )
                 return mqtt_password
         return ""
 
@@ -612,14 +758,18 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         try:
             # Use libdyson-rest's decrypt method to get local MQTT password
-            mqtt_password = cloud_client.decrypt_local_credentials(encrypted_credentials, self.serial_number)
+            mqtt_password = cloud_client.decrypt_local_credentials(
+                encrypted_credentials, self.serial_number
+            )
             _LOGGER.debug(
                 "Decrypted local MQTT password from local_broker_credentials (length: %s)",
                 len(mqtt_password),
             )
             return mqtt_password
         except Exception as e:
-            _LOGGER.error("Failed to decrypt local credentials for %s: %s", self.serial_number, e)
+            _LOGGER.error(
+                "Failed to decrypt local credentials for %s: %s", self.serial_number, e
+            )
             # Fall back to using encrypted credentials directly (likely won't work)
             _LOGGER.debug(
                 "Using encrypted local_broker_credentials as fallback (length: %s)",
@@ -645,7 +795,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         try:
             # Check for IoT credentials using separate API call
-            _LOGGER.debug("Requesting IoT credentials for device %s", self.serial_number)
+            _LOGGER.debug(
+                "Requesting IoT credentials for device %s", self.serial_number
+            )
             iot_data = await cloud_client.get_iot_credentials(self.serial_number)
 
             if iot_data:
@@ -659,8 +811,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     cloud_client_id = str(getattr(credentials_obj, "client_id", ""))
                     cloud_token_key = str(getattr(credentials_obj, "token_key", ""))
                     cloud_token_value = str(getattr(credentials_obj, "token_value", ""))
-                    cloud_token_signature = str(getattr(credentials_obj, "token_signature", ""))
-                    cloud_custom_authorizer = str(getattr(credentials_obj, "custom_authorizer_name", ""))
+                    cloud_token_signature = str(
+                        getattr(credentials_obj, "token_signature", "")
+                    )
+                    cloud_custom_authorizer = str(
+                        getattr(credentials_obj, "custom_authorizer_name", "")
+                    )
 
                     cloud_credentials = {
                         "client_id": cloud_client_id,
@@ -684,7 +840,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             "cloud_credentials": cloud_credentials,
         }
 
-    async def _create_cloud_device(self, device_info, mqtt_credentials, cloud_credentials) -> None:
+    async def _create_cloud_device(
+        self, device_info, mqtt_credentials, cloud_credentials
+    ) -> None:
         """Create and connect to cloud device."""
         device_host = self._get_device_host(device_info)
         mqtt_prefix = self._get_mqtt_prefix(device_info)
@@ -695,7 +853,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         cloud_host = cloud_credentials.get("cloud_host")
         creds = cloud_credentials.get("cloud_credentials", {})
 
-        if cloud_host and creds.get("client_id") and creds.get("token_value") and creds.get("token_signature"):
+        if (
+            cloud_host
+            and creds.get("client_id")
+            and creds.get("token_value")
+            and creds.get("token_signature")
+        ):
             import json
 
             cloud_credential_data = json.dumps(creds)
@@ -763,7 +926,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             # Validate that we have required information for manual setup
             if not hostname:
-                raise UpdateFailed(f"Manual device setup requires hostname/IP address for device {serial_number}")
+                raise UpdateFailed(
+                    f"Manual device setup requires hostname/IP address for device {serial_number}"
+                )
 
             # Get connection type from config entry
             connection_type = self._get_effective_connection_type()
@@ -787,7 +952,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Let DysonDevice handle the connection
             connected = await self.device.connect()
             if not connected:
-                raise UpdateFailed(f"Failed to connect to manual device {self.serial_number}")
+                raise UpdateFailed(
+                    f"Failed to connect to manual device {self.serial_number}"
+                )
 
             # Register for environmental update notifications
             self.device.add_environmental_callback(self._on_environmental_update)
@@ -798,15 +965,19 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             _LOGGER.info("Successfully set up manual device %s", self.serial_number)
 
         except Exception as err:
-            _LOGGER.error("Failed to set up manual device %s: %s", self.serial_number, err)
+            _LOGGER.error(
+                "Failed to set up manual device %s: %s", self.serial_number, err
+            )
             raise UpdateFailed(f"Manual device setup failed: {err}") from err
 
     async def _async_setup_sticker_device(self) -> None:
         """Set up device using sticker/WiFi method."""
         # TODO: Update this method to use paho-mqtt directly
-        raise UpdateFailed("Sticker discovery method temporarily disabled - use cloud discovery instead")
+        raise UpdateFailed(
+            "Sticker discovery method temporarily disabled - use cloud discovery instead"
+        )
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Update data from the device - mainly for connectivity checks."""
         if not self.device:
             raise UpdateFailed("Device not initialized")
@@ -816,19 +987,31 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         try:
             # Check if device is still connected, attempt reconnection if needed
             if not self.device.is_connected:
-                _LOGGER.warning("Device %s not connected, attempting reconnection", self.serial_number)
+                _LOGGER.warning(
+                    "Device %s not connected, attempting reconnection",
+                    self.serial_number,
+                )
                 success = await self.device.connect()
                 if not success:
-                    raise UpdateFailed(f"Failed to reconnect to device {self.serial_number}")
-                _LOGGER.info("Successfully reconnected to device %s", self.serial_number)
+                    raise UpdateFailed(
+                        f"Failed to reconnect to device {self.serial_number}"
+                    )
+                _LOGGER.info(
+                    "Successfully reconnected to device %s", self.serial_number
+                )
 
                 # Only request current state after reconnection to get initial state
                 try:
                     await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
-                    _LOGGER.debug("Requested current state after reconnection for %s", self.serial_number)
+                    _LOGGER.debug(
+                        "Requested current state after reconnection for %s",
+                        self.serial_number,
+                    )
                 except Exception as cmd_err:
                     _LOGGER.warning(
-                        "Failed to request current state after reconnection for %s: %s", self.serial_number, cmd_err
+                        "Failed to request current state after reconnection for %s: %s",
+                        self.serial_number,
+                        cmd_err,
                     )
 
             # Get current device state (from last received MQTT message)
@@ -839,13 +1022,18 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 list(device_state.keys()) if device_state else "None",
             )
 
+            # Ensure services are registered now that device capabilities are available
+            await self.ensure_device_services_registered()
+
             return device_state
 
         except UpdateFailed:
             # Re-raise UpdateFailed exceptions
             raise
         except Exception as err:
-            _LOGGER.error("Error checking connectivity for device %s: %s", self.serial_number, err)
+            _LOGGER.error(
+                "Error checking connectivity for device %s: %s", self.serial_number, err
+            )
             raise UpdateFailed(f"Error communicating with device: {err}") from err
 
     async def _async_handle_faults(self) -> None:
@@ -858,7 +1046,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Only log and fire events for actual faults (not OK statuses)
         for fault in faults:
             # The device.get_faults() method now filters out OK statuses
-            _LOGGER.info("Device fault detected for %s: %s", self.serial_number, fault.get("description", fault))
+            _LOGGER.info(
+                "Device fault detected for %s: %s",
+                self.serial_number,
+                fault.get("description", fault),
+            )
 
             # Fire event for device fault
             self.hass.bus.async_fire(
@@ -870,7 +1062,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 },
             )
 
-    async def async_send_command(self, command: str, data: Optional[Dict[str, Any]] = None) -> bool:
+    async def async_send_command(
+        self, command: str, data: dict[str, Any] | None = None
+    ) -> bool:
         """Send a command to the device."""
         if not self.device:
             _LOGGER.error("Cannot send command - device not initialized")
@@ -886,7 +1080,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return True
 
         except Exception as err:
-            _LOGGER.error("Failed to send command to device %s: %s", self.serial_number, err)
+            _LOGGER.error(
+                "Failed to send command to device %s: %s", self.serial_number, err
+            )
             return False
 
     async def async_set_firmware_auto_update(self, enabled: bool) -> bool:
@@ -897,10 +1093,14 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         libdyson-rest API endpoint for this feature is not documented.
         """
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
-            _LOGGER.warning("Firmware auto-update setting only available for cloud-discovered devices")
+            _LOGGER.warning(
+                "Firmware auto-update setting only available for cloud-discovered devices"
+            )
             return False
 
-        _LOGGER.info("Setting firmware auto-update for %s to %s", self.serial_number, enabled)
+        _LOGGER.info(
+            "Setting firmware auto-update for %s to %s", self.serial_number, enabled
+        )
 
         # Update local state immediately for UI responsiveness
         old_value = self._firmware_auto_update_enabled
@@ -922,10 +1122,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest 0.7.0b1."""
-        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
+        from libdyson_rest.exceptions import (
+            DysonAPIError,
+            DysonAuthError,
+            DysonConnectionError,
+        )
 
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
-            _LOGGER.debug("Firmware update check only available for cloud-discovered devices")
+            _LOGGER.debug(
+                "Firmware update check only available for cloud-discovered devices"
+            )
             return False
 
         try:
@@ -934,18 +1140,26 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
             try:
                 # Use new libdyson-rest 0.7.0b1 async method
-                pending_release = await cloud_client.get_pending_release(self.serial_number)
+                pending_release = await cloud_client.get_pending_release(
+                    self.serial_number
+                )
 
                 if pending_release:
                     self._firmware_latest_version = pending_release.version
-                    _LOGGER.info("Firmware update available for %s: %s", self.serial_number, pending_release.version)
+                    _LOGGER.info(
+                        "Firmware update available for %s: %s",
+                        self.serial_number,
+                        pending_release.version,
+                    )
 
                     # Notify listeners of the update
                     self.async_update_listeners()
                     return True
                 else:
                     self._firmware_latest_version = self._firmware_version
-                    _LOGGER.debug("No firmware update available for %s", self.serial_number)
+                    _LOGGER.debug(
+                        "No firmware update available for %s", self.serial_number
+                    )
                     return False
             finally:
                 # Ensure client is properly closed
@@ -953,12 +1167,20 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         except (DysonAPIError, DysonAuthError, DysonConnectionError) as e:
             # Handle specific Dyson API errors
-            _LOGGER.debug("Dyson API error checking firmware update for %s: %s", self.serial_number, e)
+            _LOGGER.debug(
+                "Dyson API error checking firmware update for %s: %s",
+                self.serial_number,
+                e,
+            )
             self._firmware_latest_version = self._firmware_version
             return False
         except Exception as e:
             # Handle other unexpected errors
-            _LOGGER.debug("Unexpected error checking firmware update for %s: %s", self.serial_number, e)
+            _LOGGER.debug(
+                "Unexpected error checking firmware update for %s: %s",
+                self.serial_number,
+                e,
+            )
             self._firmware_latest_version = self._firmware_version
             return False
 
@@ -975,7 +1197,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Construct firmware URL following the pattern from MQTT trace
             firmware_url = f"http://ota-firmware.cp.dyson.com/{device_type}/M__SC04.WF02/{version}/manifest.bin"
 
-            _LOGGER.info("Using device type %s for firmware URL: %s", device_type, firmware_url)
+            _LOGGER.info(
+                "Using device type %s for firmware URL: %s", device_type, firmware_url
+            )
 
             # Prepare MQTT command with current timestamp
             from datetime import datetime
@@ -987,7 +1211,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "url": firmware_url,
             }
 
-            _LOGGER.info("Initiating firmware update for %s to version %s", self.serial_number, version)
+            _LOGGER.info(
+                "Initiating firmware update for %s to version %s",
+                self.serial_number,
+                version,
+            )
 
             # Mark update as in progress
             self._firmware_update_in_progress = True
@@ -997,13 +1225,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # send_command returns None on success and raises on failure
             await self.device.send_command("SOFTWARE-UPGRADE", command_data)
 
-            _LOGGER.info("Firmware update command sent successfully for %s", self.serial_number)
+            _LOGGER.info(
+                "Firmware update command sent successfully for %s", self.serial_number
+            )
             # Note: Update progress tracking would require monitoring device state
             # but MQTT doesn't provide progress updates based on the trace
             return True
 
         except Exception as e:
-            _LOGGER.error("Error installing firmware update for %s: %s", self.serial_number, e)
+            _LOGGER.error(
+                "Error installing firmware update for %s: %s", self.serial_number, e
+            )
             self._firmware_update_in_progress = False
             self.async_update_listeners()
             return False
@@ -1020,7 +1252,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             await self.device.disconnect()
             self.device = None
 
-    def _extract_capabilities(self, device_info: Any) -> List[str]:
+    def _extract_capabilities(self, device_info: Any) -> list[str]:
         """Extract device capabilities from cloud device info."""
         capabilities: list[str] = []
 
@@ -1039,7 +1271,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # If the API doesn't provide capabilities, they should be configured by the user
 
         _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
-        _LOGGER.debug("Capability types: %s", [type(cap).__name__ for cap in capabilities])
+        _LOGGER.debug(
+            "Capability types: %s", [type(cap).__name__ for cap in capabilities]
+        )
 
         # Remove duplicates and return
         final_capabilities = list(set(capabilities))
@@ -1055,7 +1289,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def _get_mqtt_prefix(self, device_info: Any) -> str:
         """Get MQTT prefix from device info."""
         # The MQTT prefix is typically the product type + model suffix
-        product_type = getattr(device_info, "product_type", getattr(device_info, "type", "438"))
+        product_type = getattr(
+            device_info, "product_type", getattr(device_info, "type", "438")
+        )
 
         # Map known product types to MQTT prefixes
         prefix_map = {
@@ -1069,7 +1305,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return prefix_map.get(product_type, f"{product_type}M")
 
 
-class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to manage cloud account and device discovery."""
 
     def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
@@ -1080,7 +1316,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self._last_known_devices = set()
 
         # Get polling settings with backward-compatible defaults
-        poll_for_devices = config_entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
+        poll_for_devices = config_entry.data.get(
+            CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
+        )
 
         # Only set up polling if enabled
         update_interval = None
@@ -1105,11 +1343,13 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         for device_info in config_entry.data.get("devices", []):
             self._last_known_devices.add(device_info["serial_number"])
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Update data by checking for new devices in the cloud account."""
         _LOGGER.info("Cloud coordinator update triggered for account: %s", self._email)
 
-        if not self.config_entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES):
+        if not self.config_entry.data.get(
+            CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
+        ):
             # Polling is disabled, return empty data
             _LOGGER.debug("Device polling disabled for account %s", self._email)
             return {"devices": []}
@@ -1122,10 +1362,18 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             updated_devices = self._build_device_list(devices)
             await self._process_device_changes(devices, updated_devices)
 
-            return {"devices": [device_info for device_info in updated_devices if device_info]}
+            return {
+                "devices": [
+                    device_info for device_info in updated_devices if device_info
+                ]
+            }
 
         except Exception as err:
-            _LOGGER.error("Error checking for new devices in cloud account %s: %s", self._email, err)
+            _LOGGER.error(
+                "Error checking for new devices in cloud account %s: %s",
+                self._email,
+                err,
+            )
             raise UpdateFailed(f"Failed to check for new devices: {err}") from err
 
     async def _fetch_cloud_devices(self):
@@ -1186,12 +1434,16 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
 
         # Get auto_add setting
-        auto_add_devices = self.config_entry.data.get(CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES)
+        auto_add_devices = self.config_entry.data.get(
+            CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES
+        )
 
         # Update the account config entry with new devices
         updated_data = dict(self.config_entry.data)
         updated_data["devices"] = updated_devices
-        self.hass.config_entries.async_update_entry(self.config_entry, data=updated_data)
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, data=updated_data
+        )
 
         # Create individual device entries for new devices if auto-add is enabled
         if auto_add_devices:
@@ -1203,7 +1455,10 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             for device in devices:
                 if device.serial_number in new_devices:
                     await self._create_discovery_flow(device)
-            _LOGGER.info("Auto-add disabled, %d new devices will be available for manual setup", len(new_devices))
+            _LOGGER.info(
+                "Auto-add disabled, %d new devices will be available for manual setup",
+                len(new_devices),
+            )
 
         # Update our known devices set
         self._last_known_devices = {device.serial_number for device in devices}
@@ -1219,11 +1474,16 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         existing_entries = [
             entry
             for entry in self.hass.config_entries.async_entries(DOMAIN)
-            if (entry.data.get(CONF_SERIAL_NUMBER) == device_serial and entry.entry_id != self.config_entry.entry_id)
+            if (
+                entry.data.get(CONF_SERIAL_NUMBER) == device_serial
+                and entry.entry_id != self.config_entry.entry_id
+            )
         ]
 
         if existing_entries:
-            _LOGGER.debug("Device %s already has a config entry, skipping", device_serial)
+            _LOGGER.debug(
+                "Device %s already has a config entry, skipping", device_serial
+            )
             return
 
         device_info = {
@@ -1241,7 +1501,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             parent_entry_id=self.config_entry.entry_id,
         )
 
-        _LOGGER.info("Auto-creating config entry for newly discovered device: %s", device_name)
+        _LOGGER.info(
+            "Auto-creating config entry for newly discovered device: %s", device_name
+        )
 
         # Create the device entry
         result = await self.hass.config_entries.flow.async_init(
@@ -1260,11 +1522,17 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         existing_entries = [
             entry
             for entry in self.hass.config_entries.async_entries(DOMAIN)
-            if (entry.data.get(CONF_SERIAL_NUMBER) == device_serial and entry.entry_id != self.config_entry.entry_id)
+            if (
+                entry.data.get(CONF_SERIAL_NUMBER) == device_serial
+                and entry.entry_id != self.config_entry.entry_id
+            )
         ]
 
         if existing_entries:
-            _LOGGER.debug("Device %s already has a config entry, skipping discovery", device_serial)
+            _LOGGER.debug(
+                "Device %s already has a config entry, skipping discovery",
+                device_serial,
+            )
             return
 
         # Check if discovery already exists for this device
@@ -1282,7 +1550,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             _LOGGER.debug("Discovery flow already exists for device %s", device_serial)
             return
 
-        _LOGGER.info("Creating discovery for device: %s (%s)", device_name, device_serial)
+        _LOGGER.info(
+            "Creating discovery for device: %s (%s)", device_name, device_serial
+        )
 
         # Create a native Home Assistant discovery
         try:
@@ -1303,6 +1573,8 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     },
                 )
             )
-            _LOGGER.info("Discovery flow created successfully for %s: %s", device_name, result)
+            _LOGGER.info(
+                "Discovery flow created successfully for %s: %s", device_name, result
+            )
         except Exception as e:
             _LOGGER.error("Failed to create discovery flow for %s: %s", device_name, e)

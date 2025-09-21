@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.update import UpdateDeviceClass, UpdateEntity, UpdateEntityFeature
+from homeassistant.components.update import (
+    UpdateDeviceClass,
+    UpdateEntity,
+    UpdateEntityFeature,
+)
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -32,9 +36,15 @@ async def async_setup_entry(
     if config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
         entities = [DysonFirmwareUpdateEntity(coordinator)]
         async_add_entities(entities)
-        _LOGGER.debug("Added firmware update entity for cloud device %s", coordinator.serial_number)
+        _LOGGER.debug(
+            "Added firmware update entity for cloud device %s",
+            coordinator.serial_number,
+        )
     else:
-        _LOGGER.debug("Skipped firmware update entity for non-cloud device %s", coordinator.serial_number)
+        _LOGGER.debug(
+            "Skipped firmware update entity for non-cloud device %s",
+            coordinator.serial_number,
+        )
 
 
 class DysonFirmwareUpdateEntity(DysonEntity, UpdateEntity):
@@ -55,7 +65,11 @@ class DysonFirmwareUpdateEntity(DysonEntity, UpdateEntity):
     @property
     def installed_version(self) -> str | None:
         """Return the currently installed firmware version."""
-        return self.coordinator.firmware_version if self.coordinator.firmware_version != "Unknown" else None
+        return (
+            self.coordinator.firmware_version
+            if self.coordinator.firmware_version != "Unknown"
+            else None
+        )
 
     @property
     def latest_version(self) -> str | None:
@@ -86,7 +100,9 @@ class DysonFirmwareUpdateEntity(DysonEntity, UpdateEntity):
             return f"Firmware update from {current} to {latest}"
         return None
 
-    async def async_install(self, version: str | None = None, backup: bool = False, **kwargs: Any) -> None:
+    async def async_install(
+        self, version: str | None = None, backup: bool = False, **kwargs: Any
+    ) -> None:
         """Install firmware update."""
         if not self.coordinator.device:
             _LOGGER.error("No device available for firmware update")
@@ -100,17 +116,31 @@ class DysonFirmwareUpdateEntity(DysonEntity, UpdateEntity):
                 return
 
             _LOGGER.info(
-                "Starting firmware update for %s to version %s", self.coordinator.serial_number, target_version
+                "Starting firmware update for %s to version %s",
+                self.coordinator.serial_number,
+                target_version,
             )  # Trigger the firmware update via coordinator
-            success = await self.coordinator.async_install_firmware_update(target_version)
+            success = await self.coordinator.async_install_firmware_update(
+                target_version
+            )
 
             if success:
-                _LOGGER.info("Firmware update initiated successfully for %s", self.coordinator.serial_number)
+                _LOGGER.info(
+                    "Firmware update initiated successfully for %s",
+                    self.coordinator.serial_number,
+                )
             else:
-                _LOGGER.error("Failed to initiate firmware update for %s", self.coordinator.serial_number)
+                _LOGGER.error(
+                    "Failed to initiate firmware update for %s",
+                    self.coordinator.serial_number,
+                )
 
         except Exception as err:
-            _LOGGER.error("Error installing firmware update for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Error installing firmware update for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

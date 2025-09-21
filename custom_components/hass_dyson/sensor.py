@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
+from homeassistant.const import (
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -44,7 +53,9 @@ async def async_setup_entry(  # noqa: C901
         from .device_utils import has_any_capability_safe, has_capability_safe
 
         # Add PM2.5 and PM10 sensors only for devices with ExtendedAQ capability
-        if has_any_capability_safe(capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]):
+        if has_any_capability_safe(
+            capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
+        ):
             _LOGGER.debug("Adding PM2.5 and PM10 sensors for device %s", device_serial)
             entities.extend(
                 [
@@ -53,7 +64,10 @@ async def async_setup_entry(  # noqa: C901
                 ]
             )
         else:
-            _LOGGER.debug("Skipping PM2.5/PM10 sensors for device %s - no ExtendedAQ capability", device_serial)
+            _LOGGER.debug(
+                "Skipping PM2.5/PM10 sensors for device %s - no ExtendedAQ capability",
+                device_serial,
+            )
 
         # Add VOC and NO2 sensors only for devices with VOC capability
         if has_any_capability_safe(capabilities, ["VOC", "voc"]):
@@ -65,14 +79,20 @@ async def async_setup_entry(  # noqa: C901
                 ]
             )
         else:
-            _LOGGER.debug("Skipping VOC/NO2 sensors for device %s - no VOC capability", device_serial)
+            _LOGGER.debug(
+                "Skipping VOC/NO2 sensors for device %s - no VOC capability",
+                device_serial,
+            )
 
         # Add formaldehyde sensor only for devices with Formaldehyde capability
         if has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"]):
             _LOGGER.debug("Adding formaldehyde sensor for device %s", device_serial)
             entities.append(DysonFormaldehydeSensor(coordinator))
         else:
-            _LOGGER.debug("Skipping formaldehyde sensor for device %s - no formaldehyde capability", device_serial)
+            _LOGGER.debug(
+                "Skipping formaldehyde sensor for device %s - no formaldehyde capability",
+                device_serial,
+            )
 
         # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
         if any(cat in ["ec", "robot"] for cat in device_category):
@@ -91,7 +111,9 @@ async def async_setup_entry(  # noqa: C901
             )
 
         # Add HEPA filter sensors only for devices with ExtendedAQ capability
-        if has_any_capability_safe(capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]):
+        if has_any_capability_safe(
+            capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
+        ):
             _LOGGER.debug("Adding HEPA filter sensors for device %s", device_serial)
             entities.extend(
                 [
@@ -100,12 +122,17 @@ async def async_setup_entry(  # noqa: C901
                 ]
             )
         else:
-            _LOGGER.debug("Skipping HEPA filter sensors for device %s - no ExtendedAQ capability", device_serial)
+            _LOGGER.debug(
+                "Skipping HEPA filter sensors for device %s - no ExtendedAQ capability",
+                device_serial,
+            )
 
         # Add carbon filter sensors only for devices with Formaldehyde capability
         # TODO: Update this when we identify the exact formaldehyde capability name
         # For now, don't add carbon filter sensors to any devices until we have a formaldehyde device to test
-        if has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde", "CarbonFilter"]):
+        if has_any_capability_safe(
+            capabilities, ["Formaldehyde", "formaldehyde", "CarbonFilter"]
+        ):
             _LOGGER.debug("Adding carbon filter sensors for device %s", device_serial)
             entities.extend(
                 [
@@ -115,7 +142,8 @@ async def async_setup_entry(  # noqa: C901
             )
         else:
             _LOGGER.debug(
-                "Skipping carbon filter sensors for device %s - no formaldehyde capability detected", device_serial
+                "Skipping carbon filter sensors for device %s - no formaldehyde capability detected",
+                device_serial,
             )
 
         # Add temperature sensor only for devices with Heating capability
@@ -123,29 +151,49 @@ async def async_setup_entry(  # noqa: C901
             _LOGGER.debug("Adding temperature sensor for device %s", device_serial)
             entities.append(DysonTemperatureSensor(coordinator))
         else:
-            _LOGGER.debug("Skipping temperature sensor for device %s - no heating capability", device_serial)
+            _LOGGER.debug(
+                "Skipping temperature sensor for device %s - no heating capability",
+                device_serial,
+            )
 
         # Add humidity sensor only for devices with Humidifier capability
         # TODO: Update this when we identify the exact humidifier capability name
         # For now, don't add humidity sensor to any devices until we have a humidifier to test
-        if has_any_capability_safe(capabilities, ["Humidifier", "humidifier", "Humidity"]):
+        if has_any_capability_safe(
+            capabilities, ["Humidifier", "humidifier", "Humidity"]
+        ):
             _LOGGER.debug("Adding humidity sensor for device %s", device_serial)
             entities.append(DysonHumiditySensor(coordinator))
         else:
-            _LOGGER.debug("Skipping humidity sensor for device %s - no humidifier capability detected", device_serial)
+            _LOGGER.debug(
+                "Skipping humidity sensor for device %s - no humidifier capability detected",
+                device_serial,
+            )
 
         # Add battery sensor only for devices with robot category
         # TODO: Implement when we have a robot device to test battery data format
         if any(cat in ["robot"] for cat in device_category):
-            _LOGGER.debug("Robot device detected for %s, but battery sensor not yet implemented", device_serial)
+            _LOGGER.debug(
+                "Robot device detected for %s, but battery sensor not yet implemented",
+                device_serial,
+            )
             # entities.append(DysonBatterySensor(coordinator))
 
-        _LOGGER.info("Successfully set up %d sensor entities for device %s", len(entities), device_serial)
+        _LOGGER.info(
+            "Successfully set up %d sensor entities for device %s",
+            len(entities),
+            device_serial,
+        )
 
     except Exception as e:
-        _LOGGER.error("Error during sensor setup for device %s: %s", coordinator.serial_number, e)
+        _LOGGER.error(
+            "Error during sensor setup for device %s: %s", coordinator.serial_number, e
+        )
         # Don't fail completely - add basic sensors at minimum
-        _LOGGER.warning("Falling back to basic sensor setup for device %s", coordinator.serial_number)
+        _LOGGER.warning(
+            "Falling back to basic sensor setup for device %s",
+            coordinator.serial_number,
+        )
         entities = []  # Reset entities list to prevent partial setup
 
     async_add_entities(entities, True)
@@ -157,7 +205,9 @@ class DysonFilterLifeSensor(DysonEntity, SensorEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
-    def __init__(self, coordinator: DysonDataUpdateCoordinator, filter_type: str) -> None:
+    def __init__(
+        self, coordinator: DysonDataUpdateCoordinator, filter_type: str
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
 
@@ -194,7 +244,9 @@ class DysonAirQualitySensor(DysonEntity, SensorEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
-    def __init__(self, coordinator: DysonDataUpdateCoordinator, sensor_type: str) -> None:
+    def __init__(
+        self, coordinator: DysonDataUpdateCoordinator, sensor_type: str
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
 
@@ -205,8 +257,14 @@ class DysonAirQualitySensor(DysonEntity, SensorEntity):
         self._attr_icon = "mdi:air-filter"
 
         if sensor_type in ["pm25", "pm10"]:
-            self._attr_device_class = SensorDeviceClass.PM25 if sensor_type == "pm25" else SensorDeviceClass.PM10
-            self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+            self._attr_device_class = (
+                SensorDeviceClass.PM25
+                if sensor_type == "pm25"
+                else SensorDeviceClass.PM10
+            )
+            self._attr_native_unit_of_measurement = (
+                CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+            )
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -286,7 +344,10 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
 
         if not self.coordinator.data:
             self._attr_native_value = None
-            _LOGGER.debug("Humidity sensor update: no coordinator data available for device %s", device_serial)
+            _LOGGER.debug(
+                "Humidity sensor update: no coordinator data available for device %s",
+                device_serial,
+            )
             return
 
         # Safely extract humidity data
@@ -294,13 +355,23 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
 
         if humidity is not None:
             # Safely convert to integer with proper error handling
-            converted_humidity = convert_sensor_value_safe(humidity, int, device_serial, "humidity")
+            converted_humidity = convert_sensor_value_safe(
+                humidity, int, device_serial, "humidity"
+            )
             self._attr_native_value = converted_humidity
 
             if converted_humidity is not None:
-                _LOGGER.debug("Humidity sensor updated for device %s: %s%%", device_serial, converted_humidity)
+                _LOGGER.debug(
+                    "Humidity sensor updated for device %s: %s%%",
+                    device_serial,
+                    converted_humidity,
+                )
             else:
-                _LOGGER.warning("Failed to convert humidity value for device %s: %s", device_serial, humidity)
+                _LOGGER.warning(
+                    "Failed to convert humidity value for device %s: %s",
+                    device_serial,
+                    humidity,
+                )
         else:
             self._attr_native_value = None
             _LOGGER.debug("No humidity data available for device %s", device_serial)
@@ -325,7 +396,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
-            "Initialized PM2.5 sensor for %s with initial value: %s", coordinator.serial_number, self._attr_native_value
+            "Initialized PM2.5 sensor for %s with initial value: %s",
+            coordinator.serial_number,
+            self._attr_native_value,
         )
 
         # Immediately sync with current environmental data if available
@@ -333,7 +406,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
 
     def _sync_with_current_data(self) -> None:
         """Sync sensor with current environmental data if available."""
-        if self.coordinator.device and hasattr(self.coordinator.device, "_environmental_data"):
+        if self.coordinator.device and hasattr(
+            self.coordinator.device, "_environmental_data"
+        ):
             env_data = self.coordinator.device._environmental_data
             if env_data.get("pm25") is not None:
                 old_value = self._attr_native_value
@@ -352,7 +427,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
 
         if not self.coordinator.device:
             self._attr_native_value = None
-            _LOGGER.debug("PM2.5 sensor update: device not available for %s", device_serial)
+            _LOGGER.debug(
+                "PM2.5 sensor update: device not available for %s", device_serial
+            )
             return
 
         try:
@@ -362,18 +439,29 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
 
             # Validate the new value is reasonable for PM2.5
             if new_value is not None:
-                if isinstance(new_value, (int, float)) and 0 <= new_value <= 999:
+                if isinstance(new_value, int | float) and 0 <= new_value <= 999:
                     self._attr_native_value = new_value
-                    _LOGGER.debug("PM2.5 sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                    _LOGGER.debug(
+                        "PM2.5 sensor updated for %s: %s -> %s",
+                        device_serial,
+                        old_value,
+                        new_value,
+                    )
                 else:
-                    _LOGGER.warning("Invalid PM2.5 value for device %s: %s (expected 0-999)", device_serial, new_value)
+                    _LOGGER.warning(
+                        "Invalid PM2.5 value for device %s: %s (expected 0-999)",
+                        device_serial,
+                        new_value,
+                    )
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
                 _LOGGER.debug("No PM2.5 data available for device %s", device_serial)
 
         except Exception as e:
-            _LOGGER.error("Error updating PM2.5 sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating PM2.5 sensor for device %s: %s", device_serial, e
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -396,7 +484,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
-            "Initialized PM10 sensor for %s with initial value: %s", coordinator.serial_number, self._attr_native_value
+            "Initialized PM10 sensor for %s with initial value: %s",
+            coordinator.serial_number,
+            self._attr_native_value,
         )
 
         # Immediately sync with current environmental data if available
@@ -404,7 +494,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
 
     def _sync_with_current_data(self) -> None:
         """Sync sensor with current environmental data if available."""
-        if self.coordinator.device and hasattr(self.coordinator.device, "_environmental_data"):
+        if self.coordinator.device and hasattr(
+            self.coordinator.device, "_environmental_data"
+        ):
             env_data = self.coordinator.device._environmental_data
             if env_data.get("pm10") is not None:
                 old_value = self._attr_native_value
@@ -423,7 +515,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
 
         if not self.coordinator.device:
             self._attr_native_value = None
-            _LOGGER.debug("PM10 sensor update: device not available for %s", device_serial)
+            _LOGGER.debug(
+                "PM10 sensor update: device not available for %s", device_serial
+            )
             return
 
         try:
@@ -433,18 +527,29 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
 
             # Validate the new value is reasonable for PM10
             if new_value is not None:
-                if isinstance(new_value, (int, float)) and 0 <= new_value <= 999:
+                if isinstance(new_value, int | float) and 0 <= new_value <= 999:
                     self._attr_native_value = new_value
-                    _LOGGER.debug("PM10 sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                    _LOGGER.debug(
+                        "PM10 sensor updated for %s: %s -> %s",
+                        device_serial,
+                        old_value,
+                        new_value,
+                    )
                 else:
-                    _LOGGER.warning("Invalid PM10 value for device %s: %s (expected 0-999)", device_serial, new_value)
+                    _LOGGER.warning(
+                        "Invalid PM10 value for device %s: %s (expected 0-999)",
+                        device_serial,
+                        new_value,
+                    )
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
                 _LOGGER.debug("No PM10 data available for device %s", device_serial)
 
         except Exception as e:
-            _LOGGER.error("Error updating PM10 sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating PM10 sensor for device %s: %s", device_serial, e
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -477,18 +582,29 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
 
             # Validate the new value is reasonable for VOC
             if new_value is not None:
-                if isinstance(new_value, (int, float)) and 0 <= new_value <= 500:
+                if isinstance(new_value, int | float) and 0 <= new_value <= 500:
                     self._attr_native_value = new_value
-                    _LOGGER.debug("VOC sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                    _LOGGER.debug(
+                        "VOC sensor updated for %s: %s -> %s",
+                        device_serial,
+                        old_value,
+                        new_value,
+                    )
                 else:
-                    _LOGGER.warning("Invalid VOC value for device %s: %s (expected 0-500)", device_serial, new_value)
+                    _LOGGER.warning(
+                        "Invalid VOC value for device %s: %s (expected 0-500)",
+                        device_serial,
+                        new_value,
+                    )
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
                 _LOGGER.debug("No VOC data available for device %s", device_serial)
 
         except Exception as e:
-            _LOGGER.error("Error updating VOC sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating VOC sensor for device %s: %s", device_serial, e
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -521,18 +637,29 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
 
             # Validate the new value is reasonable for NO2
             if new_value is not None:
-                if isinstance(new_value, (int, float)) and 0 <= new_value <= 200:
+                if isinstance(new_value, int | float) and 0 <= new_value <= 200:
                     self._attr_native_value = new_value
-                    _LOGGER.debug("NO2 sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                    _LOGGER.debug(
+                        "NO2 sensor updated for %s: %s -> %s",
+                        device_serial,
+                        old_value,
+                        new_value,
+                    )
                 else:
-                    _LOGGER.warning("Invalid NO2 value for device %s: %s (expected 0-200)", device_serial, new_value)
+                    _LOGGER.warning(
+                        "Invalid NO2 value for device %s: %s (expected 0-200)",
+                        device_serial,
+                        new_value,
+                    )
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
                 _LOGGER.debug("No NO2 data available for device %s", device_serial)
 
         except Exception as e:
-            _LOGGER.error("Error updating NO2 sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating NO2 sensor for device %s: %s", device_serial, e
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -565,20 +692,31 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
 
             # Validate the new value is reasonable for formaldehyde
             if new_value is not None:
-                if isinstance(new_value, (int, float)) and 0 <= new_value <= 100:
+                if isinstance(new_value, int | float) and 0 <= new_value <= 100:
                     self._attr_native_value = new_value
-                    _LOGGER.debug("Formaldehyde sensor updated for %s: %s -> %s", device_serial, old_value, new_value)
+                    _LOGGER.debug(
+                        "Formaldehyde sensor updated for %s: %s -> %s",
+                        device_serial,
+                        old_value,
+                        new_value,
+                    )
                 else:
                     _LOGGER.warning(
-                        "Invalid formaldehyde value for device %s: %s (expected 0-100)", device_serial, new_value
+                        "Invalid formaldehyde value for device %s: %s (expected 0-100)",
+                        device_serial,
+                        new_value,
                     )
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
-                _LOGGER.debug("No formaldehyde data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No formaldehyde data available for device %s", device_serial
+                )
 
         except Exception as e:
-            _LOGGER.error("Error updating formaldehyde sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating formaldehyde sensor for device %s: %s", device_serial, e
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -634,18 +772,30 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
 
         if not self.coordinator.device:
             self._attr_native_value = None
-            _LOGGER.debug("HEPA filter life sensor update: device not available for %s", device_serial)
+            _LOGGER.debug(
+                "HEPA filter life sensor update: device not available for %s",
+                device_serial,
+            )
             return
 
         try:
             # Use our device HEPA filter life property with enhanced error handling
-            filter_life_value = getattr(self.coordinator.device, "hepa_filter_life", None)
+            filter_life_value = getattr(
+                self.coordinator.device, "hepa_filter_life", None
+            )
 
             # Validate the filter life value is reasonable
             if filter_life_value is not None:
-                if isinstance(filter_life_value, (int, float)) and 0 <= filter_life_value <= 100:
+                if (
+                    isinstance(filter_life_value, int | float)
+                    and 0 <= filter_life_value <= 100
+                ):
                     self._attr_native_value = filter_life_value
-                    _LOGGER.debug("HEPA filter life updated for %s: %s%%", device_serial, filter_life_value)
+                    _LOGGER.debug(
+                        "HEPA filter life updated for %s: %s%%",
+                        device_serial,
+                        filter_life_value,
+                    )
                 else:
                     _LOGGER.warning(
                         "Invalid HEPA filter life value for device %s: %s (expected 0-100)",
@@ -655,10 +805,16 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
-                _LOGGER.debug("No HEPA filter life data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No HEPA filter life data available for device %s", device_serial
+                )
 
         except Exception as e:
-            _LOGGER.error("Error updating HEPA filter life sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating HEPA filter life sensor for device %s: %s",
+                device_serial,
+                e,
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -686,18 +842,30 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
 
         if not self.coordinator.device:
             self._attr_native_value = None
-            _LOGGER.debug("Carbon filter life sensor update: device not available for %s", device_serial)
+            _LOGGER.debug(
+                "Carbon filter life sensor update: device not available for %s",
+                device_serial,
+            )
             return
 
         try:
             # Use our device carbon filter life property with enhanced error handling
-            filter_life_value = getattr(self.coordinator.device, "carbon_filter_life", None)
+            filter_life_value = getattr(
+                self.coordinator.device, "carbon_filter_life", None
+            )
 
             # Validate the filter life value is reasonable
             if filter_life_value is not None:
-                if isinstance(filter_life_value, (int, float)) and 0 <= filter_life_value <= 100:
+                if (
+                    isinstance(filter_life_value, int | float)
+                    and 0 <= filter_life_value <= 100
+                ):
                     self._attr_native_value = filter_life_value
-                    _LOGGER.debug("Carbon filter life updated for %s: %s%%", device_serial, filter_life_value)
+                    _LOGGER.debug(
+                        "Carbon filter life updated for %s: %s%%",
+                        device_serial,
+                        filter_life_value,
+                    )
                 else:
                     _LOGGER.warning(
                         "Invalid carbon filter life value for device %s: %s (expected 0-100)",
@@ -707,10 +875,16 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
                     self._attr_native_value = None
             else:
                 self._attr_native_value = None
-                _LOGGER.debug("No carbon filter life data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No carbon filter life data available for device %s", device_serial
+                )
 
         except Exception as e:
-            _LOGGER.error("Error updating carbon filter life sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating carbon filter life sensor for device %s: %s",
+                device_serial,
+                e,
+            )
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
@@ -771,7 +945,9 @@ class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
             self._attr_native_value = filter_type
 
         _LOGGER.debug(
-            "HEPA Filter Type Sensor Update for %s: %s", self.coordinator.serial_number, self._attr_native_value
+            "HEPA Filter Type Sensor Update for %s: %s",
+            self.coordinator.serial_number,
+            self._attr_native_value,
         )
         super()._handle_coordinator_update()
 
@@ -798,39 +974,65 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
 
         if not self.coordinator.device:
             self._attr_native_value = None
-            _LOGGER.debug("Carbon filter type sensor update: device not available for %s", device_serial)
+            _LOGGER.debug(
+                "Carbon filter type sensor update: device not available for %s",
+                device_serial,
+            )
             return
 
         try:
             # Get carbon filter type from device data with safe access
-            device_data = get_sensor_data_safe(self.coordinator.data, "product-state", device_serial)
+            device_data = get_sensor_data_safe(
+                self.coordinator.data, "product-state", device_serial
+            )
             if device_data and isinstance(device_data, dict):
                 filter_type = get_sensor_data_safe(device_data, "cflt", device_serial)
             else:
                 filter_type = None
-                _LOGGER.debug("No product-state data available for carbon filter type on device %s", device_serial)
+                _LOGGER.debug(
+                    "No product-state data available for carbon filter type on device %s",
+                    device_serial,
+                )
 
             # Handle filter type conversion with validation
             if filter_type is not None:
                 # Convert "NONE" to "Not Installed", otherwise return the actual type
                 if str(filter_type).upper() == "NONE":
                     self._attr_native_value = "Not Installed"
-                    _LOGGER.debug("Carbon filter not installed on device %s", device_serial)
+                    _LOGGER.debug(
+                        "Carbon filter not installed on device %s", device_serial
+                    )
                 else:
                     # Validate filter type is a reasonable string
                     filter_type_str = str(filter_type).strip()
-                    if filter_type_str and len(filter_type_str) <= 50:  # Reasonable max length
+                    if (
+                        filter_type_str and len(filter_type_str) <= 50
+                    ):  # Reasonable max length
                         self._attr_native_value = filter_type_str
-                        _LOGGER.debug("Carbon filter type updated for %s: %s", device_serial, filter_type_str)
+                        _LOGGER.debug(
+                            "Carbon filter type updated for %s: %s",
+                            device_serial,
+                            filter_type_str,
+                        )
                     else:
-                        _LOGGER.warning("Invalid carbon filter type for device %s: %s", device_serial, filter_type)
+                        _LOGGER.warning(
+                            "Invalid carbon filter type for device %s: %s",
+                            device_serial,
+                            filter_type,
+                        )
                         self._attr_native_value = "Unknown"
             else:
                 self._attr_native_value = "Unknown"
-                _LOGGER.debug("No carbon filter type data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No carbon filter type data available for device %s", device_serial
+                )
 
         except Exception as e:
-            _LOGGER.error("Error updating carbon filter type sensor for device %s: %s", device_serial, e)
+            _LOGGER.error(
+                "Error updating carbon filter type sensor for device %s: %s",
+                device_serial,
+                e,
+            )
             self._attr_native_value = "Unknown"
 
         super()._handle_coordinator_update()

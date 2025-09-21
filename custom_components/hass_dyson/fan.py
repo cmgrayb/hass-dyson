@@ -5,14 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
-import voluptuous as vol
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -20,19 +18,6 @@ from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
-
-# Service constants
-ATTR_ANGLE_LOW = "angle_low"
-ATTR_ANGLE_HIGH = "angle_high"
-
-SERVICE_SET_ANGLE = "set_angle"
-
-SET_ANGLE_SCHEMA = cv.make_entity_service_schema(
-    {
-        vol.Required(ATTR_ANGLE_LOW): cv.positive_int,
-        vol.Required(ATTR_ANGLE_HIGH): cv.positive_int,
-    }
-)
 
 
 async def async_setup_entry(
@@ -50,14 +35,6 @@ async def async_setup_entry(
         entities.append(DysonFan(coordinator))
 
     async_add_entities(entities, True)
-
-    # Register services for oscillation angle control
-    platform = entity_platform.async_get_current_platform()
-    platform.async_register_entity_service(
-        SERVICE_SET_ANGLE,
-        SET_ANGLE_SCHEMA,
-        "async_set_angle",
-    )
 
 
 class DysonFan(DysonEntity, FanEntity):
@@ -135,7 +112,9 @@ class DysonFan(DysonEntity, FanEntity):
         # Update preset mode based on auto mode state
         if self.coordinator.device and self.coordinator.data:
             product_state = self.coordinator.data.get("product-state", {})
-            auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
+            auto_mode = self.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
             self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
         else:
             self._attr_preset_mode = None
@@ -152,7 +131,9 @@ class DysonFan(DysonEntity, FanEntity):
 
         # Force Home Assistant to update with the new state
         _LOGGER.debug(
-            "Fan %s writing state to Home Assistant - is_on: %s", self.coordinator.serial_number, self._attr_is_on
+            "Fan %s writing state to Home Assistant - is_on: %s",
+            self.coordinator.serial_number,
+            self._attr_is_on,
         )
         self.async_write_ha_state()
 
@@ -177,19 +158,23 @@ class DysonFan(DysonEntity, FanEntity):
         self._command_pending = True
         self._command_end_time = time.time() + duration_seconds
         _LOGGER.debug(
-            "Fan %s started command pending period for %.1f seconds", self.coordinator.serial_number, duration_seconds
+            "Fan %s started command pending period for %.1f seconds",
+            self.coordinator.serial_number,
+            duration_seconds,
         )
 
     def _stop_command_pending(self) -> None:
         """Stop ignoring coordinator updates immediately."""
         self._command_pending = False
         self._command_end_time = None
-        _LOGGER.debug("Fan %s stopped command pending period", self.coordinator.serial_number)
+        _LOGGER.debug(
+            "Fan %s stopped command pending period", self.coordinator.serial_number
+        )
 
     async def async_turn_on(
         self,
-        percentage: Optional[int] = None,
-        preset_mode: Optional[str] = None,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Turn on the fan."""
@@ -253,12 +238,20 @@ class DysonFan(DysonEntity, FanEntity):
             return
 
         # Map Home Assistant direction to Dyson direction values
-        direction_value = "ON" if direction == "reverse" else "OFF"  # Adjust based on actual Dyson values
+        direction_value = (
+            "ON" if direction == "reverse" else "OFF"
+        )  # Adjust based on actual Dyson values
 
         try:
             # Use device method directly instead of coordinator
-            await self.coordinator.device.send_command("STATE-SET", {"fdir": direction_value})
-            _LOGGER.debug("Set fan direction to %s for %s", direction, self.coordinator.serial_number)
+            await self.coordinator.device.send_command(
+                "STATE-SET", {"fdir": direction_value}
+            )
+            _LOGGER.debug(
+                "Set fan direction to %s for %s",
+                direction,
+                self.coordinator.serial_number,
+            )
 
             # Force coordinator refresh to update state immediately
             await asyncio.sleep(0.5)  # Give device time to process
@@ -267,7 +260,11 @@ class DysonFan(DysonEntity, FanEntity):
             # Force Home Assistant to update with confirmed device state
             self.async_write_ha_state()
         except Exception as err:
-            _LOGGER.error("Failed to set fan direction for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set fan direction for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set the fan preset mode."""
@@ -283,7 +280,11 @@ class DysonFan(DysonEntity, FanEntity):
                 _LOGGER.warning("Unknown preset mode: %s", preset_mode)
                 return
 
-            _LOGGER.debug("Set fan preset mode to %s for %s", preset_mode, self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Set fan preset mode to %s for %s",
+                preset_mode,
+                self.coordinator.serial_number,
+            )
 
             # Update state immediately to provide responsive UI
             self._attr_preset_mode = preset_mode
@@ -296,7 +297,11 @@ class DysonFan(DysonEntity, FanEntity):
             # Force Home Assistant to update with confirmed device state
             self.async_write_ha_state()
         except Exception as err:
-            _LOGGER.error("Failed to set fan preset mode for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set fan preset mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:  # type: ignore[return]
@@ -318,11 +323,21 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["is_on"] = is_on  # type: ignore[assignment]
 
             # Device state properties
-            fan_power = self.coordinator.device._get_current_value(product_state, "fpwr", "OFF")
-            fan_state = self.coordinator.device._get_current_value(product_state, "fnst", "OFF")
-            fan_speed_setting = self.coordinator.device._get_current_value(product_state, "fnsp", "0001")
-            auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = self.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            fan_power = self.coordinator.device._get_current_value(
+                product_state, "fpwr", "OFF"
+            )
+            fan_state = self.coordinator.device._get_current_value(
+                product_state, "fnst", "OFF"
+            )
+            fan_speed_setting = self.coordinator.device._get_current_value(
+                product_state, "fnsp", "0001"
+            )
+            auto_mode = self.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = self.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
             attributes["fan_power"] = fan_power == "ON"
             attributes["fan_state"] = fan_state  # type: ignore[assignment]
@@ -331,25 +346,33 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["night_mode"] = night_mode == "ON"
 
             # Oscillation information
-            oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
+            oson = self.coordinator.device._get_current_value(
+                product_state, "oson", "OFF"
+            )
             attributes["oscillation_enabled"] = oson == "ON"
 
-            lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
-            upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
+            lower_data = self.coordinator.device._get_current_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device._get_current_value(
+                product_state, "osau", "0350"
+            )
 
             try:
                 lower_angle = int(lower_data.lstrip("0") or "0")
                 upper_angle = int(upper_data.lstrip("0") or "350")
 
-                attributes[ATTR_ANGLE_LOW] = lower_angle
-                attributes[ATTR_ANGLE_HIGH] = upper_angle
+                attributes["angle_low"] = lower_angle
+                attributes["angle_high"] = upper_angle
                 attributes["oscillation_span"] = upper_angle - lower_angle
             except (ValueError, TypeError):
                 pass
 
             # Sleep timer if available
             try:
-                sltm = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
+                sltm = self.coordinator.device._get_current_value(
+                    product_state, "sltm", "OFF"
+                )
                 if sltm != "OFF":
                     attributes["sleep_timer"] = int(sltm)
                 else:
@@ -373,4 +396,8 @@ class DysonFan(DysonEntity, FanEntity):
             )
             await self.coordinator.device.set_oscillation_angles(angle_low, angle_high)
         except Exception as err:
-            _LOGGER.error("Failed to set oscillation angles for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set oscillation angles for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )

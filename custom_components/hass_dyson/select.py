@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -55,7 +55,9 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
         self._attr_icon = "mdi:fan-auto"
 
         # For manual devices, only show Auto and Manual (no Sleep)
-        connection_type = coordinator.config_entry.data.get("connection_type", "unknown")
+        connection_type = coordinator.config_entry.data.get(
+            "connection_type", "unknown"
+        )
         if connection_type == "local_only":
             self._attr_options = ["Auto", "Manual"]
         else:
@@ -67,11 +69,17 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
             product_state = self.coordinator.data.get("product-state", {})
 
             # Get air quality mode from device state (auto mode)
-            auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
-            night_mode = self.coordinator.device._get_current_value(product_state, "nmod", "OFF")
+            auto_mode = self.coordinator.device._get_current_value(
+                product_state, "auto", "OFF"
+            )
+            night_mode = self.coordinator.device._get_current_value(
+                product_state, "nmod", "OFF"
+            )
 
             # For manual devices, Sleep mode is handled by Night Mode switch
-            connection_type = self.coordinator.config_entry.data.get("connection_type", "unknown")
+            connection_type = self.coordinator.config_entry.data.get(
+                "connection_type", "unknown"
+            )
             if connection_type == "local_only":
                 if auto_mode == "ON":
                     self._attr_current_option = "Auto"
@@ -105,9 +113,17 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
                 await self.coordinator.device.set_auto_mode(False)
 
             # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug("Set air quality mode to %s for %s", option, self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Set air quality mode to %s for %s",
+                option,
+                self.coordinator.serial_number,
+            )
         except Exception as err:
-            _LOGGER.error("Failed to set air quality mode for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set air quality mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
 
 class DysonOscillationModeSelect(DysonEntity, SelectEntity):
@@ -123,8 +139,10 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "45°", "90°", "180°", "350°", "Custom"]
         # Hybrid approach: event-driven + state-based center preservation
-        self._saved_center_angle: Optional[int] = None
-        self._last_known_mode: Optional[str] = None  # Track transitions for event-driven logic
+        self._saved_center_angle: int | None = None
+        self._last_known_mode: str | None = (
+            None  # Track transitions for event-driven logic
+        )
         # Store preferred center points for each preset mode
         self._preferred_centers = {
             "45°": 175,  # Default centers
@@ -143,15 +161,21 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         try:
             # Try to get lower/upper angles first
-            lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
-            upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
+            lower_data = self.coordinator.device._get_current_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device._get_current_value(
+                product_state, "osau", "0350"
+            )
             lower_angle = int(lower_data.lstrip("0") or "0")
             upper_angle = int(upper_data.lstrip("0") or "350")
             return (lower_angle + upper_angle) // 2
         except (ValueError, TypeError):
             # Fallback to ancp if available
             try:
-                angle_data = self.coordinator.device._get_current_value(product_state, "ancp", "0175")
+                angle_data = self.coordinator.device._get_current_value(
+                    product_state, "ancp", "0175"
+                )
                 return int(angle_data.lstrip("0") or "175")
             except (ValueError, TypeError):
                 return 175  # Ultimate fallback
@@ -168,8 +192,12 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             return "Off"
 
         try:
-            lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
-            upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
+            lower_data = self.coordinator.device._get_current_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device._get_current_value(
+                product_state, "osau", "0350"
+            )
             lower_angle = int(lower_data.lstrip("0") or "0")
             upper_angle = int(upper_data.lstrip("0") or "350")
             angle_span = upper_angle - lower_angle
@@ -195,7 +223,8 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             new_mode == "350°"
             and self._last_known_mode != "350°"
             and self._last_known_mode is not None
-            and self._saved_center_angle is None  # Only save if we haven't already saved
+            and self._saved_center_angle
+            is None  # Only save if we haven't already saved
         )
 
     def _should_restore_center_on_state_change(self, new_mode: str) -> bool:
@@ -207,7 +236,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             and self._saved_center_angle is not None
         )
 
-    def _calculate_angles_for_preset(self, preset_angle: int, current_center: int = 175) -> tuple[int, int]:
+    def _calculate_angles_for_preset(
+        self, preset_angle: int, current_center: int = 175
+    ) -> tuple[int, int]:
         """Calculate lower and upper angles for a preset mode, with center point as authoritative."""
         if preset_angle == 350:
             # Full range oscillation
@@ -217,9 +248,13 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         lower, upper = self._calculate_initial_angles(preset_angle, current_center)
 
         # Apply boundary constraints
-        return self._apply_boundary_constraints(lower, upper, preset_angle, current_center)
+        return self._apply_boundary_constraints(
+            lower, upper, preset_angle, current_center
+        )
 
-    def _calculate_initial_angles(self, preset_angle: int, current_center: int) -> tuple[int, int]:
+    def _calculate_initial_angles(
+        self, preset_angle: int, current_center: int
+    ) -> tuple[int, int]:
         """Calculate initial lower and upper angles from center point."""
         # Center point is authoritative - calculate angles to preserve it exactly
         half_span = preset_angle / 2.0  # Use float division for precision
@@ -251,7 +286,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             lower, upper = self._handle_upper_boundary_violation(preset_angle)
 
         # Final verification and centering within constraints
-        return self._optimize_centering_within_bounds(lower, upper, preset_angle, current_center)
+        return self._optimize_centering_within_bounds(
+            lower, upper, preset_angle, current_center
+        )
 
     def _handle_lower_boundary_violation(self, preset_angle: int) -> tuple[int, int]:
         """Handle case where lower bound is violated."""
@@ -282,11 +319,15 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             available_span = upper - lower
             if available_span >= preset_angle:
                 # We have room to center better
-                lower, upper = self._recenter_within_available_space(lower, upper, current_center)
+                lower, upper = self._recenter_within_available_space(
+                    lower, upper, current_center
+                )
 
         return int(lower), int(upper)
 
-    def _recenter_within_available_space(self, lower: int, upper: int, current_center: int) -> tuple[int, int]:
+    def _recenter_within_available_space(
+        self, lower: int, upper: int, current_center: int
+    ) -> tuple[int, int]:
         """Recenter the angle range within available space."""
         actual_center = (lower + upper) / 2.0
         if actual_center != current_center:
@@ -380,7 +421,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 lower_angle, upper_angle = 0, 350
             else:
                 # Determine center to use for angle calculation
-                center_to_use = self._calculate_current_center()  # Default: current center
+                center_to_use = (
+                    self._calculate_current_center()
+                )  # Default: current center
 
                 # EVENT-DRIVEN: Restore center when leaving 350° mode via entity
                 if current_mode == "350°" and self._saved_center_angle is not None:
@@ -400,7 +443,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                     )
 
                 # Calculate coordinated angles
-                lower_angle, upper_angle = self._calculate_angles_for_preset(preset_angle, center_to_use)
+                lower_angle, upper_angle = self._calculate_angles_for_preset(
+                    preset_angle, center_to_use
+                )
                 calculated_center = (lower_angle + upper_angle) / 2.0
                 _LOGGER.info(
                     "Calculated angles for %s°: lower=%s, upper=%s, resulting_center=%.1f (target_center=%s, diff=%.1f)",
@@ -413,7 +458,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 )
 
             # Apply the calculated angles
-            await self.coordinator.device.set_oscillation_angles(lower_angle, upper_angle)
+            await self.coordinator.device.set_oscillation_angles(
+                lower_angle, upper_angle
+            )
 
             _LOGGER.debug(
                 "Set oscillation mode to %s (lower: %s, upper: %s) for %s",
@@ -424,7 +471,11 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             )
 
         except Exception as err:
-            _LOGGER.error("Failed to set oscillation mode for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set oscillation mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -445,9 +496,15 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         # Current angle configuration
         try:
-            lower_data = self.coordinator.device._get_current_value(product_state, "osal", "0000")
-            upper_data = self.coordinator.device._get_current_value(product_state, "osau", "0350")
-            center_data = self.coordinator.device._get_current_value(product_state, "ancp", "0175")
+            lower_data = self.coordinator.device._get_current_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device._get_current_value(
+                product_state, "osau", "0350"
+            )
+            center_data = self.coordinator.device._get_current_value(
+                product_state, "ancp", "0175"
+            )
 
             lower_angle: int = int(lower_data.lstrip("0") or "0")
             upper_angle: int = int(upper_data.lstrip("0") or "350")
@@ -482,7 +539,9 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
         if self.coordinator.device:
             # Get heating mode from device state (hmod)
             product_state = self.coordinator.data.get("product-state", {})
-            hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+            hmod = self.coordinator.device._get_current_value(
+                product_state, "hmod", "OFF"
+            )
             if hmod == "OFF":
                 self._attr_current_option = "Off"
             elif hmod == "HEAT":
@@ -507,9 +566,15 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
                 mode_value = "AUTO"
 
             await self.coordinator.device.set_heating_mode(mode_value)
-            _LOGGER.debug("Set heating mode to %s for %s", option, self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Set heating mode to %s for %s", option, self.coordinator.serial_number
+            )
         except Exception as err:
-            _LOGGER.error("Failed to set heating mode for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set heating mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -531,7 +596,9 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
 
         # Include target temperature if available
         try:
-            hmax = self.coordinator.device._get_current_value(product_state, "hmax", "2980")
+            hmax = self.coordinator.device._get_current_value(
+                product_state, "hmax", "2980"
+            )
             temp_kelvin: float = int(hmax) / 10  # Device reports in 0.1K increments
             target_celsius: float = temp_kelvin - 273.15
             attributes["target_temperature"] = round(target_celsius, 1)  # type: ignore[assignment]

@@ -6,10 +6,9 @@ from typing import Final
 DOMAIN: Final = "hass_dyson"
 
 # Default values
-DEFAULT_CLOUD_POLLING_INTERVAL: Final = 300  # 5 minutes in seconds
-DEFAULT_DEVICE_POLLING_INTERVAL: Final = (
-    300  # 5 minutes for connectivity checks only (devices send natural STATE-CHANGE messages)
-)
+DEFAULT_CLOUD_POLLING_INTERVAL: Final = 60  # 1 minute in seconds
+# 1 minute for connectivity checks only (devices send natural STATE-CHANGE messages)
+DEFAULT_DEVICE_POLLING_INTERVAL: Final = 60
 DEFAULT_TIMEOUT: Final = 10  # 10 seconds for network operations
 DEFAULT_POLL_FOR_DEVICES: Final = True  # Default to enabled for backward compatibility
 DEFAULT_AUTO_ADD_DEVICES: Final = True  # Default to enabled for backward compatibility

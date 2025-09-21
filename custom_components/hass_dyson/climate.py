@@ -67,10 +67,27 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         self._attr_target_temperature_step = 1
 
         # HVAC modes
-        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.FAN_ONLY, HVACMode.AUTO]
+        self._attr_hvac_modes = [
+            HVACMode.OFF,
+            HVACMode.HEAT,
+            HVACMode.FAN_ONLY,
+            HVACMode.AUTO,
+        ]
 
         # Fan modes
-        self._attr_fan_modes = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Auto"]
+        self._attr_fan_modes = [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "Auto",
+        ]
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -91,7 +108,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             return
 
         # Current temperature
-        current_temp = self.coordinator.device._get_current_value(device_data, "tmp", "0000")
+        current_temp = self.coordinator.device._get_current_value(
+            device_data, "tmp", "0000"
+        )
         try:
             temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
             self._attr_current_temperature = temp_kelvin - 273.15  # Convert to Celsius
@@ -99,7 +118,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             self._attr_current_temperature = None
 
         # Target temperature
-        target_temp = self.coordinator.device._get_current_value(device_data, "hmax", "0000")
+        target_temp = self.coordinator.device._get_current_value(
+            device_data, "hmax", "0000"
+        )
         try:
             temp_kelvin = int(target_temp) / 10
             self._attr_target_temperature = temp_kelvin - 273.15
@@ -111,9 +132,15 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if not self.coordinator.device:
             return
 
-        fan_power = self.coordinator.device._get_current_value(device_data, "fnst", "OFF")
-        heating_mode = self.coordinator.device._get_current_value(device_data, "hmod", "OFF")
-        auto_mode = self.coordinator.device._get_current_value(device_data, "auto", "OFF")
+        fan_power = self.coordinator.device._get_current_value(
+            device_data, "fnst", "OFF"
+        )
+        heating_mode = self.coordinator.device._get_current_value(
+            device_data, "hmod", "OFF"
+        )
+        auto_mode = self.coordinator.device._get_current_value(
+            device_data, "auto", "OFF"
+        )
 
         if fan_power == "OFF":
             self._attr_hvac_mode = HVACMode.OFF
@@ -129,8 +156,12 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if not self.coordinator.device:
             return
 
-        fan_speed = self.coordinator.device._get_current_value(device_data, "fnsp", "0001")
-        auto_mode = self.coordinator.device._get_current_value(device_data, "auto", "OFF")
+        fan_speed = self.coordinator.device._get_current_value(
+            device_data, "fnsp", "0001"
+        )
+        auto_mode = self.coordinator.device._get_current_value(
+            device_data, "auto", "OFF"
+        )
 
         try:
             speed_num = int(fan_speed.lstrip("0") or "1")
@@ -158,11 +189,19 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                     "set_climate_mode", {"fnst": "FAN", "hmod": "OFF", "auto": "OFF"}
                 )
             elif hvac_mode == HVACMode.AUTO:
-                await self.coordinator.async_send_command("set_climate_mode", {"fnst": "FAN", "auto": "ON"})
+                await self.coordinator.async_send_command(
+                    "set_climate_mode", {"fnst": "FAN", "auto": "ON"}
+                )
 
-            _LOGGER.debug("Set HVAC mode to %s for %s", hvac_mode, self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Set HVAC mode to %s for %s", hvac_mode, self.coordinator.serial_number
+            )
         except Exception as err:
-            _LOGGER.error("Failed to set HVAC mode for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set HVAC mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -178,10 +217,20 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             temp_kelvin = int((temperature + 273.15) * 10)
             temp_str = f"{temp_kelvin:04d}"
 
-            await self.coordinator.async_send_command("set_target_temperature", {"hmax": temp_str})
-            _LOGGER.debug("Set target temperature to %s°C for %s", temperature, self.coordinator.serial_number)
+            await self.coordinator.async_send_command(
+                "set_target_temperature", {"hmax": temp_str}
+            )
+            _LOGGER.debug(
+                "Set target temperature to %s°C for %s",
+                temperature,
+                self.coordinator.serial_number,
+            )
         except Exception as err:
-            _LOGGER.error("Failed to set target temperature for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set target temperature for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
@@ -190,16 +239,24 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         try:
             if fan_mode == "Auto":
-                await self.coordinator.async_send_command("set_fan_mode", {"auto": "ON"})
+                await self.coordinator.async_send_command(
+                    "set_fan_mode", {"auto": "ON"}
+                )
             else:
                 # Convert fan mode to 4-digit string
                 speed = int(fan_mode)
                 speed_str = f"{speed:04d}"
-                await self.coordinator.async_send_command("set_fan_mode", {"auto": "OFF", "fnsp": speed_str})
+                await self.coordinator.async_send_command(
+                    "set_fan_mode", {"auto": "OFF", "fnsp": speed_str}
+                )
 
-            _LOGGER.debug("Set fan mode to %s for %s", fan_mode, self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Set fan mode to %s for %s", fan_mode, self.coordinator.serial_number
+            )
         except Exception as err:
-            _LOGGER.error("Failed to set fan mode for %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to set fan mode for %s: %s", self.coordinator.serial_number, err
+            )
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
@@ -228,10 +285,18 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         attributes["fan_mode"] = fan_mode  # type: ignore[assignment]
 
         # Device state properties that can be controlled
-        heating_mode = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
-        auto_mode = self.coordinator.device._get_current_value(product_state, "auto", "OFF")
-        fan_speed = self.coordinator.device._get_current_value(product_state, "fnsp", "0001")
-        fan_power = self.coordinator.device._get_current_value(product_state, "fnst", "OFF")
+        heating_mode = self.coordinator.device._get_current_value(
+            product_state, "hmod", "OFF"
+        )
+        auto_mode = self.coordinator.device._get_current_value(
+            product_state, "auto", "OFF"
+        )
+        fan_speed = self.coordinator.device._get_current_value(
+            product_state, "fnsp", "0001"
+        )
+        fan_power = self.coordinator.device._get_current_value(
+            product_state, "fnst", "OFF"
+        )
 
         attributes["heating_mode"] = heating_mode  # type: ignore[assignment]
         attributes["auto_mode"] = auto_mode == "ON"

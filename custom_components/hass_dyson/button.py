@@ -56,17 +56,28 @@ class DysonReconnectButton(DysonEntity, ButtonEntity):
             return
 
         try:
-            _LOGGER.info("Manual reconnect triggered for %s", self.coordinator.serial_number)
+            _LOGGER.info(
+                "Manual reconnect triggered for %s", self.coordinator.serial_number
+            )
 
             # Use the device's force_reconnect method for clean reconnection logic
             success = await self.coordinator.device.force_reconnect()
 
             if success:
-                _LOGGER.info("Manual reconnection successful for %s", self.coordinator.serial_number)
+                _LOGGER.info(
+                    "Manual reconnection successful for %s",
+                    self.coordinator.serial_number,
+                )
                 # Trigger a coordinator update to refresh all entities
                 await self.coordinator.async_request_refresh()
             else:
-                _LOGGER.warning("Manual reconnection failed for %s", self.coordinator.serial_number)
+                _LOGGER.warning(
+                    "Manual reconnection failed for %s", self.coordinator.serial_number
+                )
 
         except Exception as err:
-            _LOGGER.error("Failed to manually reconnect %s: %s", self.coordinator.serial_number, err)
+            _LOGGER.error(
+                "Failed to manually reconnect %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
