@@ -68,7 +68,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 2. Search for "**Dyson**"
 3. Choose setup method:
    - **Cloud Discovery** - Enter Dyson account credentials
-   - **Manual Setup** - Enter device details from sticker or information gained through tooling such as libdyson-rest or opendyson
+   - **Manual Setup** - Enter device details from sticker or information gained through the Get Cloud Devices Action, or external tooling such as libdyson-rest or opendyson
 
 ## 📱 Supported Entities
 
