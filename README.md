@@ -1,7 +1,7 @@
 # Dyson Integration for Home Assistant
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/logo.png" alt="Dyson Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/image_assets/logo.png" alt="Dyson Logo" width="400"/>
 </p>
 
 [![GitHub Release][releases-shield]][releases]
@@ -463,3 +463,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **⚠️ Disclaimer**: This is an unofficial integration not affiliated with Dyson Ltd. Use at your own risk.
+
