@@ -17,7 +17,9 @@ from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
     CONF_AUTO_ADD_DEVICES,
+    CONF_COUNTRY,
     CONF_CREDENTIAL,
+    CONF_CULTURE,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
@@ -57,6 +59,42 @@ def _get_setup_method_options() -> dict[str, str]:
 def _get_connection_type_options() -> dict[str, str]:
     """Get connection type options for the config flow."""
     return CONNECTION_TYPE_NAMES.copy()
+
+
+def _get_default_country_culture(hass) -> tuple[str, str]:
+    """Get default country and culture from Home Assistant configuration.
+
+    Returns:
+        tuple: (country, culture) where:
+            - country: 2-letter uppercase ISO 3166-1 alpha-2 code
+            - culture: IETF language tag format (e.g., 'en-US')
+    """
+    # Handle test mocks that might not have config attribute
+    try:
+        hass_config = getattr(hass, "config", None)
+        if hass_config is None:
+            # Fallback for tests or cases where config is not available
+            return "US", "en-US"
+
+        # Get country from HA config, default to US if not set
+        ha_country = getattr(hass_config, "country", None) or "US"
+        country = ha_country.upper() if ha_country else "US"
+
+        # Get language from HA config, default to en if not set
+        ha_language = getattr(hass_config, "language", None) or "en"
+
+        # Format culture as language-COUNTRY (e.g., 'en-US', 'en-NZ')
+        # If language already includes country (e.g., 'en-US'), use as-is
+        if "-" in ha_language and len(ha_language) == 5:
+            culture = ha_language
+        else:
+            # Combine language with country
+            culture = f"{ha_language}-{country}"
+
+        return country, culture
+    except (AttributeError, TypeError):
+        # Fallback for any unexpected issues (e.g., during testing)
+        return "US", "en-US"
 
 
 def _get_connection_type_options_detailed() -> dict[str, str]:
@@ -222,7 +260,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise
 
     async def _authenticate_with_dyson_api(
-        self, email: str, password: str
+        self, email: str, password: str, country: str = "US", culture: str = "en-US"
     ) -> tuple[str | None, dict[str, str]]:
         """Authenticate with Dyson API and return challenge ID and any errors."""
         # Import here to avoid scoping issues
@@ -237,14 +275,17 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         try:
             _LOGGER.info(
-                "Attempting to authenticate with Dyson API using email: %s", email
+                "Attempting to authenticate with Dyson API using email: %s, country: %s, culture: %s",
+                email,
+                country,
+                culture,
             )
 
             # Initialize libdyson-rest client with full credentials (matching working script pattern)
             # Include password, country, and culture parameters as required by the API
             self._cloud_client = await self.hass.async_add_executor_job(
                 lambda: AsyncDysonClient(
-                    email=email, password=password, country="US", culture="en-US"
+                    email=email, password=password, country=country, culture=culture
                 )
             )  # type: ignore[func-returns-value]
 
@@ -304,10 +345,15 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Create the cloud account authentication form."""
         _LOGGER.info("Showing Dyson account authentication form")
         try:
+            # Get default country and culture from Home Assistant config
+            default_country, default_culture = _get_default_country_culture(self.hass)
+
             data_schema = vol.Schema(
                 {
                     vol.Required("email"): str,
                     vol.Required("password"): str,
+                    vol.Optional(CONF_COUNTRY, default=default_country): str,
+                    vol.Optional(CONF_CULTURE, default=default_culture): str,
                 }
             )
             _LOGGER.info("Authentication form schema created successfully")
@@ -317,7 +363,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=data_schema,
                 errors=errors,
                 description_placeholders={
-                    "docs_url": "https://www.dyson.com/support/account"
+                    "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/SETUP.md",
+                    "default_country": default_country,
+                    "default_culture": default_culture,
                 },
             )
         except Exception as e:
@@ -340,11 +388,23 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._email = user_input.get("email", "")
                 self._password = user_input.get("password", "")
 
+                # Get country and culture from user input with fallback to HA defaults
+                country = user_input.get(CONF_COUNTRY)
+                culture = user_input.get(CONF_CULTURE)
+
+                # If not provided, get defaults from HA config
+                if not country or not culture:
+                    default_country, default_culture = _get_default_country_culture(
+                        self.hass
+                    )
+                    country = country or default_country
+                    culture = culture or default_culture
+
                 # Ensure we have valid strings before calling authentication
                 if self._email and self._password:
                     # Attempt authentication with Dyson API
                     challenge_id, errors = await self._authenticate_with_dyson_api(
-                        self._email, self._password
+                        self._email, self._password, country, culture
                     )
 
                     if challenge_id is not None:

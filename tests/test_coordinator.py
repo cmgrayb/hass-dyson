@@ -699,13 +699,20 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
         ):
             coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
 
-            # Mock hass with async_add_executor_job
+            # Mock hass with async_add_executor_job and config attributes
             mock_hass = AsyncMock()
 
             async def mock_executor_job(func):
                 return func()
 
             mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+            # Set up config attributes for country/culture detection
+            mock_config = MagicMock()
+            mock_config.country = "US"
+            mock_config.language = "en"
+            mock_hass.config = mock_config
+
             coordinator.hass = mock_hass
 
             mock_config_entry = MagicMock()

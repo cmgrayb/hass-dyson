@@ -349,6 +349,23 @@ def mock_hass():
     """Create a mock Home Assistant instance for testing."""
     hass = MagicMock()
     hass.data = {}
+
+    # Add config attributes for country/culture detection
+    mock_config = MagicMock()
+    mock_config.country = "US"
+    mock_config.language = "en"
+    hass.config = mock_config
+
+    # Add attributes needed for config flow tests
+    hass.config_entries = MagicMock()
+    hass.config_entries.async_entries.return_value = []
+
+    # Add missing attributes for frame helper
+    import threading
+
+    hass.loop_thread_id = threading.get_ident()  # Use current thread ID
+    hass.loop = MagicMock()  # Mock event loop
+
     return hass
 
 
