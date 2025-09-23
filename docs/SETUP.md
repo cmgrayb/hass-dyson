@@ -415,8 +415,8 @@ ping 192.168.1.100
 1. Enable debug logging:
    ```yaml
    logger:
-     logs:
-       custom_components.hass-dyson: debug
+       custom_components.dyson: debug
+       libdyson_rest: debug
    ```
 
 2. Restart Home Assistant
@@ -441,3 +441,4 @@ ping 192.168.1.100
 ---
 
 **Next**: Once setup is complete, see main README.md for usage examples and advanced configuration options.
+
