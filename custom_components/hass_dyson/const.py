@@ -27,6 +27,8 @@ CONF_MQTT_PREFIX: Final = "mqtt_prefix"
 # Cloud account configuration keys
 CONF_POLL_FOR_DEVICES: Final = "poll_for_devices"
 CONF_AUTO_ADD_DEVICES: Final = "auto_add_devices"
+CONF_COUNTRY: Final = "country"
+CONF_CULTURE: Final = "culture"
 
 # Connection types
 CONNECTION_TYPE_LOCAL_ONLY: Final = "local_only"

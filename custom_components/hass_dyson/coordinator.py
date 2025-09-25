@@ -36,6 +36,42 @@ from .device import DysonDevice
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
+    """Get default country and culture from Home Assistant configuration for coordinator.
+
+    Returns:
+        tuple: (country, culture) where:
+            - country: 2-letter uppercase ISO 3166-1 alpha-2 code
+            - culture: IETF language tag format (e.g., 'en-US')
+    """
+    # Handle test mocks that might not have config attribute
+    try:
+        hass_config = getattr(hass, "config", None)
+        if hass_config is None:
+            # Fallback for tests or cases where config is not available
+            return "US", "en-US"
+
+        # Get country from HA config, default to US if not set
+        ha_country = getattr(hass_config, "country", None) or "US"
+        country = ha_country.upper() if ha_country else "US"
+
+        # Get language from HA config, default to en if not set
+        ha_language = getattr(hass_config, "language", None) or "en"
+
+        # Format culture as language-COUNTRY (e.g., 'en-US', 'en-NZ')
+        # If language already includes country (e.g., 'en-US'), use as-is
+        if "-" in ha_language and len(ha_language) == 5:
+            culture = ha_language
+        else:
+            # Combine language with country
+            culture = f"{ha_language}-{country}"
+
+        return country, culture
+    except (AttributeError, TypeError):
+        # Fallback for any unexpected issues (e.g., during testing)
+        return "US", "en-US"
+
+
 class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to manage data updates for a Dyson device."""
 
@@ -389,9 +425,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return await self.hass.async_add_executor_job(create_client_with_token)
         elif username and password:
             # Legacy authentication method - follow same pattern as config_flow
+            # Get country and culture from HA config
+            country, culture = _get_default_country_culture_for_coordinator(self.hass)
+
             def create_client():
                 return AsyncDysonClient(
-                    email=username, password=password, country="US", culture="en-US"
+                    email=username, password=password, country=country, culture=culture
                 )
 
             cloud_client = await self.hass.async_add_executor_job(create_client)

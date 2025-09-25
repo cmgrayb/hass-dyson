@@ -12,8 +12,8 @@
   "loggers": ["custom_components.hass_dyson"],
   "quality_scale": "gold",
   "requirements": [
-    "libdyson-rest==0.7.1"
+    "libdyson-rest==0.8.0b3"
   ],
-  "version": "0.17.0"
+  "version": "0.18.0"
 }
 

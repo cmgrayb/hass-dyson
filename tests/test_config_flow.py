@@ -1,13 +1,11 @@
 """Test Dyson config flow."""
 
 import socket
-import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.hass_dyson.config_flow import DysonConfigFlow, DysonOptionsFlow
@@ -23,18 +21,6 @@ from custom_components.hass_dyson.const import (
     DISCOVERY_CLOUD,
     DISCOVERY_MANUAL,
 )
-
-
-@pytest.fixture
-def mock_hass():
-    """Return a mocked Home Assistant object."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.config_entries = MagicMock()
-    hass.config_entries.async_entries.return_value = []
-    # Add missing attributes for frame helper
-    hass.loop_thread_id = threading.get_ident()  # Use current thread ID
-    hass.loop = MagicMock()  # Mock event loop
-    return hass
 
 
 @pytest.fixture
@@ -842,5 +828,7 @@ class TestDysonConfigFlowValidationEdgeCases:
         result = config_flow._show_manual_device_form({})
 
         assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "manual_device"
+        assert "data_schema" in result
         assert result["step_id"] == "manual_device"
         assert "data_schema" in result
