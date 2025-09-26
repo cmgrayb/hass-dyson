@@ -21,8 +21,6 @@
   "rebaseWhen": "conflicted",
   "rangeStrategy": "bump",
   "separateMinorPatch": false,
-  "prConcurrentLimit": 10,
-  "prHourlyLimit": 15,
   "prCreation": "immediate",
   "ignorePaths": [],
   "lockFileMaintenance": {
