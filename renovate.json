@@ -3,22 +3,16 @@
   "description": "Renovate configuration for hass-dyson Home Assistant integration",
   "extends": [
     "config:recommended",
-    ":dependencyDashboard",
     ":semanticCommits",
-    ":automergeDigests",
     ":automergeBranch"
   ],
   "timezone": "UTC",
-  "schedule": ["before 6am on Monday"],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "labels": ["dependencies"],
   "assignees": ["cmgrayb"],
   "reviewers": ["cmgrayb"],
-  "dependencyDashboard": true,
-  "dependencyDashboardTitle": "🤖 Dependency Dashboard",
-  "dependencyDashboardHeader": "This issue contains a list of Renovate updates and their statuses.",
-  "dependencyDashboardFooter": "- [ ] Check this box to trigger a request for Renovate to run again on this repository",
+  "dependencyDashboard": false,
   "commitMessagePrefix": "deps:",
   "commitMessageAction": "update",
   "commitMessageTopic": "{{depName}}",
@@ -27,6 +21,10 @@
   "automerge": false,
   "platformAutomerge": false,
   "rebaseWhen": "conflicted",
+  "rangeStrategy": "pin",
+  "separateMinorPatch": false,
+  "prCreation": "immediate",
+  "ignorePaths": [],
   "lockFileMaintenance": {
     "enabled": false
   },
@@ -38,10 +36,9 @@
   "packageRules": [
     {
       "description": "Production dependencies - conservative updates",
-      "matchFiles": ["requirements.txt", "custom_components/hass_dyson/manifest.json"],
+      "matchFileNames": ["requirements.txt", "custom_components/hass_dyson/manifest.json"],
       "matchDepTypes": ["dependencies"],
       "minimumReleaseAge": "7 days",
-      "stabilityDays": 3,
       "prPriority": 5,
       "labels": ["dependencies", "production"],
       "groupName": "production dependencies",
@@ -51,10 +48,9 @@
     },
     {
       "description": "Development dependencies - faster updates",
-      "matchFiles": ["requirements-dev.txt"],
+      "matchFileNames": ["requirements-dev.txt"],
       "matchDepTypes": ["devDependencies"],
       "minimumReleaseAge": "3 days",
-      "stabilityDays": 1,
       "prPriority": 3,
       "labels": ["dependencies", "development"],
       "groupName": "development dependencies",
@@ -76,7 +72,6 @@
         "safety"
       ],
       "minimumReleaseAge": "3 days",
-      "stabilityDays": 1,
       "prPriority": 4,
       "labels": ["dependencies", "code-quality"],
       "groupName": "code quality tools",
@@ -86,10 +81,9 @@
     },
     {
       "description": "Docker base images and system dependencies",
-      "matchFiles": [".devcontainer/Dockerfile"],
+      "matchFileNames": [".devcontainer/Dockerfile"],
       "matchDepTypes": ["dockerfile"],
       "minimumReleaseAge": "7 days",
-      "stabilityDays": 3,
       "prPriority": 2,
       "labels": ["dependencies", "docker"],
       "groupName": "Docker dependencies",
@@ -104,7 +98,6 @@
         "pytest-homeassistant-custom-component"
       ],
       "minimumReleaseAge": "14 days",
-      "stabilityDays": 7,
       "prPriority": 6,
       "labels": ["dependencies", "homeassistant"],
       "groupName": "Home Assistant dependencies",
@@ -121,7 +114,6 @@
         "paho-mqtt"
       ],
       "minimumReleaseAge": "1 day",
-      "stabilityDays": 0,
       "prPriority": 10,
       "labels": ["dependencies", "security"],
       "groupName": "security updates",
@@ -135,7 +127,6 @@
         "libdyson-rest"
       ],
       "minimumReleaseAge": "14 days",
-      "stabilityDays": 7,
       "prPriority": 8,
       "labels": ["dependencies", "dyson"],
       "groupName": "Dyson libraries",
@@ -158,15 +149,17 @@
       "^\\.devcontainer/Dockerfile$"
     ]
   },
-  "regex": {
-    "enabled": true,
-    "fileMatch": [
-      "^custom_components/.*/manifest\\.json$"
-    ],
-    "matchStrings": [
-      "\"requirements\"\\s*:\\s*\\[\\s*\"(?<depName>[^\"]+)==(?<currentValue>[^\"]+)\""
-    ],
-    "datasourceTemplate": "pypi",
-    "versioningTemplate": "pep440"
-  }
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "^custom_components/.*/manifest\\.json$"
+      ],
+      "matchStrings": [
+        "\"requirements\"\\s*:\\s*\\[\\s*\"(?<depName>[^\"]+)==(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440"
+    }
+  ]
 }
