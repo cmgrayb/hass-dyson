@@ -7,8 +7,6 @@
     ":automergeBranch"
   ],
   "timezone": "UTC",
-  "prConcurrentLimit": 5,
-  "prHourlyLimit": 2,
   "labels": ["dependencies"],
   "assignees": ["cmgrayb"],
   "reviewers": ["cmgrayb"],
@@ -21,8 +19,10 @@
   "automerge": false,
   "platformAutomerge": false,
   "rebaseWhen": "conflicted",
-  "rangeStrategy": "pin",
+  "rangeStrategy": "bump",
   "separateMinorPatch": false,
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 15,
   "prCreation": "immediate",
   "ignorePaths": [],
   "lockFileMaintenance": {
