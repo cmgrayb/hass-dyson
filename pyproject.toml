@@ -29,7 +29,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "homeassistant>=2025.8.0",
+    "homeassistant>=2025.9.4",
     "aiohttp>=3.8.0",
     "cryptography>=3.4.0",
     "requests>=2.28.0",
@@ -46,7 +46,7 @@ dev = [
     "pytest==8.4.1",
     "pytest-cov==6.2.1",
     "pytest-asyncio==1.1.0",
-    "pytest-homeassistant-custom-component==0.13.272",
+    "pytest-homeassistant-custom-component==0.13.282",
     "mypy==1.17.1",
     "pre-commit==4.3.0",
     "types-requests==2.32.4.20250809",
