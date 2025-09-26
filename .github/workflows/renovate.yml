@@ -1,0 +1,44 @@
+name: Renovate Dependencies
+
+on:
+    workflow_dispatch:
+        inputs:
+            logLevel:
+                description: "Set the log level"
+                required: false
+                default: "info"
+                type: choice
+                options:
+                    - info
+                    - debug
+                    - trace
+    schedule:
+        # Run Renovate weekly on Mondays at 6 AM UTC
+        - cron: "0 6 * * 1"
+
+jobs:
+    renovate:
+        runs-on: ubuntu-latest
+        if: github.repository == 'cmgrayb/hass-dyson'
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Self-hosted Renovate
+              uses: renovatebot/github-action@v40.3.2
+              with:
+                  configurationFile: renovate.json
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  renovate-version: 38.110.2
+              env:
+                  LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+                  RENOVATE_REPOSITORIES: ${{ github.repository }}
+                  RENOVATE_GIT_AUTHOR: "Renovate Bot <bot@renovateapp.com>"
+                  RENOVATE_PLATFORM: "github"
+                  RENOVATE_AUTODISCOVER: "false"
+                  RENOVATE_BASE_BRANCHES: '["main"]'
+                  RENOVATE_USERNAME: "renovate[bot]"
+                  RENOVATE_GIT_IGNORE_APPROVERS: '["renovate[bot]"]'

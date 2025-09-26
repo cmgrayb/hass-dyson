@@ -1,0 +1,172 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate configuration for hass-dyson Home Assistant integration",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":automergeDigests",
+    ":automergeBranch"
+  ],
+  "timezone": "UTC",
+  "schedule": ["before 6am on Monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "assignees": ["cmgrayb"],
+  "reviewers": ["cmgrayb"],
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "🤖 Dependency Dashboard",
+  "dependencyDashboardHeader": "This issue contains a list of Renovate updates and their statuses.",
+  "dependencyDashboardFooter": "- [ ] Check this box to trigger a request for Renovate to run again on this repository",
+  "commitMessagePrefix": "deps:",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "commitMessageExtra": "to {{newVersion}}",
+  "branchPrefix": "renovate/",
+  "automerge": false,
+  "platformAutomerge": false,
+  "rebaseWhen": "conflicted",
+  "lockFileMaintenance": {
+    "enabled": false
+  },
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": "1 day"
+  },
+  "packageRules": [
+    {
+      "description": "Production dependencies - conservative updates",
+      "matchFiles": ["requirements.txt", "custom_components/hass_dyson/manifest.json"],
+      "matchDepTypes": ["dependencies"],
+      "minimumReleaseAge": "7 days",
+      "stabilityDays": 3,
+      "prPriority": 5,
+      "labels": ["dependencies", "production"],
+      "groupName": "production dependencies",
+      "groupSlug": "production-deps",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "prod"
+    },
+    {
+      "description": "Development dependencies - faster updates",
+      "matchFiles": ["requirements-dev.txt"],
+      "matchDepTypes": ["devDependencies"],
+      "minimumReleaseAge": "3 days",
+      "stabilityDays": 1,
+      "prPriority": 3,
+      "labels": ["dependencies", "development"],
+      "groupName": "development dependencies",
+      "groupSlug": "dev-deps",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "dev"
+    },
+    {
+      "description": "Code quality and testing tools",
+      "matchPackageNames": [
+        "ruff",
+        "bandit",
+        "pytest",
+        "pytest-cov",
+        "pytest-asyncio",
+        "pytest-homeassistant-custom-component",
+        "pytest-mock",
+        "mypy",
+        "safety"
+      ],
+      "minimumReleaseAge": "3 days",
+      "stabilityDays": 1,
+      "prPriority": 4,
+      "labels": ["dependencies", "code-quality"],
+      "groupName": "code quality tools",
+      "groupSlug": "code-quality",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "tools"
+    },
+    {
+      "description": "Docker base images and system dependencies",
+      "matchFiles": [".devcontainer/Dockerfile"],
+      "matchDepTypes": ["dockerfile"],
+      "minimumReleaseAge": "7 days",
+      "stabilityDays": 3,
+      "prPriority": 2,
+      "labels": ["dependencies", "docker"],
+      "groupName": "Docker dependencies",
+      "groupSlug": "docker-deps",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "docker"
+    },
+    {
+      "description": "Home Assistant core and related packages",
+      "matchPackageNames": [
+        "homeassistant",
+        "pytest-homeassistant-custom-component"
+      ],
+      "minimumReleaseAge": "14 days",
+      "stabilityDays": 7,
+      "prPriority": 6,
+      "labels": ["dependencies", "homeassistant"],
+      "groupName": "Home Assistant dependencies",
+      "groupSlug": "ha-deps",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "ha"
+    },
+    {
+      "description": "Security vulnerability fixes - immediate updates",
+      "matchPackageNames": [
+        "cryptography",
+        "requests",
+        "aiohttp",
+        "paho-mqtt"
+      ],
+      "minimumReleaseAge": "1 day",
+      "stabilityDays": 0,
+      "prPriority": 10,
+      "labels": ["dependencies", "security"],
+      "groupName": "security updates",
+      "groupSlug": "security-deps",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "security"
+    },
+    {
+      "description": "Dyson-specific libraries - careful updates",
+      "matchPackageNames": [
+        "libdyson-rest"
+      ],
+      "minimumReleaseAge": "14 days",
+      "stabilityDays": 7,
+      "prPriority": 8,
+      "labels": ["dependencies", "dyson"],
+      "groupName": "Dyson libraries",
+      "groupSlug": "dyson-libs",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "dyson",
+      "reviewersFromCodeOwners": true
+    }
+  ],
+  "pip_requirements": {
+    "enabled": true,
+    "fileMatch": [
+      "^requirements\\.txt$",
+      "^requirements-dev\\.txt$"
+    ]
+  },
+  "dockerfile": {
+    "enabled": true,
+    "fileMatch": [
+      "^\\.devcontainer/Dockerfile$"
+    ]
+  },
+  "regex": {
+    "enabled": true,
+    "fileMatch": [
+      "^custom_components/.*/manifest\\.json$"
+    ],
+    "matchStrings": [
+      "\"requirements\"\\s*:\\s*\\[\\s*\"(?<depName>[^\"]+)==(?<currentValue>[^\"]+)\""
+    ],
+    "datasourceTemplate": "pypi",
+    "versioningTemplate": "pep440"
+  }
+}
