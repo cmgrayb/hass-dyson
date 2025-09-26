@@ -22,6 +22,8 @@
   "rangeStrategy": "bump",
   "separateMinorPatch": false,
   "prCreation": "immediate",
+  "platformCommit": "enabled",
+  "gitIgnoredAuthors": ["Renovate Bot <bot@renovateapp.com>"],
   "ignorePaths": [],
   "lockFileMaintenance": {
     "enabled": false
@@ -36,7 +38,6 @@
       "description": "Production dependencies - conservative updates",
       "matchFileNames": ["requirements.txt", "custom_components/hass_dyson/manifest.json"],
       "matchDepTypes": ["dependencies"],
-      "minimumReleaseAge": "7 days",
       "prPriority": 5,
       "labels": ["dependencies", "production"],
       "groupName": "production dependencies",
@@ -48,7 +49,6 @@
       "description": "Development dependencies - faster updates",
       "matchFileNames": ["requirements-dev.txt"],
       "matchDepTypes": ["devDependencies"],
-      "minimumReleaseAge": "3 days",
       "prPriority": 3,
       "labels": ["dependencies", "development"],
       "groupName": "development dependencies",
@@ -69,7 +69,6 @@
         "mypy",
         "safety"
       ],
-      "minimumReleaseAge": "3 days",
       "prPriority": 4,
       "labels": ["dependencies", "code-quality"],
       "groupName": "code quality tools",
@@ -81,7 +80,6 @@
       "description": "Docker base images and system dependencies",
       "matchFileNames": [".devcontainer/Dockerfile"],
       "matchDepTypes": ["dockerfile"],
-      "minimumReleaseAge": "7 days",
       "prPriority": 2,
       "labels": ["dependencies", "docker"],
       "groupName": "Docker dependencies",
@@ -95,7 +93,6 @@
         "homeassistant",
         "pytest-homeassistant-custom-component"
       ],
-      "minimumReleaseAge": "14 days",
       "prPriority": 6,
       "labels": ["dependencies", "homeassistant"],
       "groupName": "Home Assistant dependencies",
@@ -111,7 +108,6 @@
         "aiohttp",
         "paho-mqtt"
       ],
-      "minimumReleaseAge": "1 day",
       "prPriority": 10,
       "labels": ["dependencies", "security"],
       "groupName": "security updates",
@@ -124,7 +120,6 @@
       "matchPackageNames": [
         "libdyson-rest"
       ],
-      "minimumReleaseAge": "14 days",
       "prPriority": 8,
       "labels": ["dependencies", "dyson"],
       "groupName": "Dyson libraries",
