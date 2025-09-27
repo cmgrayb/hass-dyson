@@ -84,9 +84,9 @@ class TestEntityFiltering:
             or "extended_aq" in capabilities_str
         )
 
-        assert (
-            not should_create_pm_sensors
-        ), "Devices without ExtendedAQ should not get PM sensors"
+        assert not should_create_pm_sensors, (
+            "Devices without ExtendedAQ should not get PM sensors"
+        )
 
     def test_ec_category_creates_wifi_sensors(self, mock_coordinator):
         """Test that EC category devices get WiFi sensors."""
@@ -126,9 +126,9 @@ class TestEntityFiltering:
             cat in ["ec", "robot"] for cat in mock_coordinator.device_category
         )
 
-        assert (
-            not should_create_wifi_sensors
-        ), "Vacuum devices should not get WiFi sensors"
+        assert not should_create_wifi_sensors, (
+            "Vacuum devices should not get WiFi sensors"
+        )
 
     def test_extended_aq_creates_hepa_filter_sensors(self, mock_coordinator):
         """Test that devices with ExtendedAQ capability get HEPA filter sensors."""
@@ -145,9 +145,9 @@ class TestEntityFiltering:
             or "extended_aq" in capabilities_str
         )
 
-        assert (
-            should_create_hepa_sensors
-        ), "Devices with ExtendedAQ should get HEPA filter sensors"
+        assert should_create_hepa_sensors, (
+            "Devices with ExtendedAQ should get HEPA filter sensors"
+        )
 
         # Verify sensor creation
         hepa_life_sensor = DysonHEPAFilterLifeSensor(mock_coordinator)
@@ -168,9 +168,9 @@ class TestEntityFiltering:
 
         should_create_temp_sensor = "heating" in capabilities_str
 
-        assert (
-            should_create_temp_sensor
-        ), "Devices with Heating should get temperature sensor"
+        assert should_create_temp_sensor, (
+            "Devices with Heating should get temperature sensor"
+        )
 
         # Verify sensor creation
         temp_sensor = DysonTemperatureSensor(mock_coordinator)
@@ -188,9 +188,9 @@ class TestEntityFiltering:
 
         should_create_temp_sensor = "heating" in capabilities_str
 
-        assert (
-            not should_create_temp_sensor
-        ), "Devices without Heating should not get temperature sensor"
+        assert not should_create_temp_sensor, (
+            "Devices without Heating should not get temperature sensor"
+        )
 
     def test_formaldehyde_capability_would_create_carbon_sensors(
         self, mock_coordinator
@@ -207,9 +207,9 @@ class TestEntityFiltering:
 
         should_create_carbon_sensors = "formaldehyde" in capabilities_str
 
-        assert (
-            should_create_carbon_sensors
-        ), "Devices with Formaldehyde should get carbon filter sensors"
+        assert should_create_carbon_sensors, (
+            "Devices with Formaldehyde should get carbon filter sensors"
+        )
 
         # Verify sensor creation (even though currently disabled)
         carbon_life_sensor = DysonCarbonFilterLifeSensor(mock_coordinator)
@@ -231,9 +231,9 @@ class TestEntityFiltering:
 
         should_create_humidity_sensor = "humidifier" in capabilities_str
 
-        assert (
-            should_create_humidity_sensor
-        ), "Devices with Humidifier should get humidity sensor"
+        assert should_create_humidity_sensor, (
+            "Devices with Humidifier should get humidity sensor"
+        )
 
         # Verify sensor creation (even though currently disabled)
         humidity_sensor = DysonHumiditySensor(mock_coordinator)
@@ -328,9 +328,9 @@ class TestEntityFiltering:
                 or "extended_aq" in capabilities_str
             )
 
-            assert (
-                should_create_pm_sensors
-            ), f"Case variation {capability} should be recognized"
+            assert should_create_pm_sensors, (
+                f"Case variation {capability} should be recognized"
+            )
 
 
 class TestBinarySensorFiltering:

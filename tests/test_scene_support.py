@@ -378,9 +378,9 @@ class TestSceneIntegrationSupport:
 
         # Verify all essential properties are exposed
         missing_properties = essential_properties - covered_properties
-        assert (
-            not missing_properties
-        ), f"Missing essential scene properties: {missing_properties}"
+        assert not missing_properties, (
+            f"Missing essential scene properties: {missing_properties}"
+        )
 
         # Verify specific critical properties exist
         assert "fan_power" in fan_attrs
