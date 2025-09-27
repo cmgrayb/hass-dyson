@@ -1,11 +1,11 @@
 # Production dependencies only
 homeassistant>=2025.8.0
 aiohttp>=3.8.0
-cryptography>=46.0.1
+cryptography>=45.0.3
 requests>=2.28.0
 
 # Dyson communication libraries
-libdyson-rest==0.8.0b3
+libdyson-rest==0.8.0b4
 
 # Cloud MQTT communication
 paho-mqtt[websockets]>=2.1.0
