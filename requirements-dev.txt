@@ -2,9 +2,9 @@
 ruff==0.13.2
 bandit==1.8.6
 pytest==8.4.2
-pytest-cov>=6.3.0, <7.0.0
+pytest-cov>=7.0.0
 pytest-asyncio==1.2.0
-pytest-homeassistant-custom-component==0.13.277
+pytest-homeassistant-custom-component==0.13.282
 mypy==1.18.2
 types-requests==2.32.4.20250913
 types-cryptography==3.3.23.2
@@ -19,3 +19,6 @@ paho-mqtt==2.1.0
 
 # Mock libraries for testing Dyson devices
 pytest-mock==3.15.1
+
+
+
