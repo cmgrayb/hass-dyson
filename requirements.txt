@@ -11,4 +11,4 @@ libdyson-rest==0.8.0b4
 paho-mqtt[websockets]>=2.1.0
 
 # Network discovery support
-zeroconf>=0.47.0
+zeroconf>=0.147.2
