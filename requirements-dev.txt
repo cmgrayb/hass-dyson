@@ -1,9 +1,9 @@
 # Development dependencies - exact versions for reproducibility
 ruff==0.13.2
 bandit==1.8.6
-pytest==8.4.1
-pytest-cov>=6.0.0, <7.0.0
-pytest-asyncio==1.1.0
+pytest==8.4.2
+pytest-cov>=6.3.0, <7.0.0
+pytest-asyncio==1.2.0
 pytest-homeassistant-custom-component==0.13.277
 mypy==1.18.2
 types-requests==2.32.4.20250913
