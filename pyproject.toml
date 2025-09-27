@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.3.1", "wheel"]
+requires = ["setuptools>=80.9.0", "wheel"]
 build-backend = "setuptools.build_meta"
 # Cache-bust for GitHub Actions: AsyncDysonClient import fix 2025-09-13
 
