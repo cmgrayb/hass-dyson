@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=80.9.0", "wheel"]
 build-backend = "setuptools.build_meta"
 # Cache-bust for GitHub Actions: AsyncDysonClient import fix 2025-09-13
 
@@ -33,7 +33,7 @@ dependencies = [
     "aiohttp>=3.8.0",
     "cryptography>=45.0.7",
     "requests>=2.28.0",
-    "libdyson-rest==0.8.0-beta.4",
+    "libdyson-rest==0.8.0b4",
     "paho-mqtt>=2.1.0",
 ]
 
@@ -46,7 +46,7 @@ dev = [
     "pytest-homeassistant-custom-component==0.13.272",
     "mypy==1.17.1",
     "pre-commit==4.3.0",
-    "types-requests==2.32.4.20250809",
+    "types-requests==2.32.4.20250913",
     "types-cryptography==3.3.23.2",
     "bandit==1.8.0",
     "safety==3.2.8",
