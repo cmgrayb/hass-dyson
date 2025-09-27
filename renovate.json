@@ -24,6 +24,7 @@
   "prCreation": "immediate",
   "platformCommit": "enabled",
   "gitIgnoredAuthors": ["Renovate Bot <bot@renovateapp.com>"],
+  "branchConcurrentLimit": 0,
   "ignorePaths": [],
   "lockFileMaintenance": {
     "enabled": false
@@ -103,7 +104,6 @@
     {
       "description": "Security vulnerability fixes - immediate updates",
       "matchPackageNames": [
-        "cryptography",
         "requests",
         "aiohttp",
         "paho-mqtt"
@@ -114,6 +114,19 @@
       "groupSlug": "security-deps",
       "semanticCommitType": "deps",
       "semanticCommitScope": "security"
+    },
+    {
+      "description": "Cryptography - version range follows Home Assistant compatibility. Update allowedVersions when HA updates their cryptography pin. Check: https://github.com/home-assistant/core/blob/dev/requirements.txt",
+      "matchPackageNames": ["cryptography"],
+      "allowedVersions": ">=45.0.3 <46.0.0",
+      "prPriority": 10,
+      "labels": ["dependencies", "security", "homeassistant-constrained"],
+      "groupName": "cryptography updates",
+      "groupSlug": "cryptography-deps",
+      "semanticCommitType": "deps",
+      "semanticCommitScope": "security",
+      "commitMessageTopic": "cryptography (HA compatible)",
+      "commitMessageExtra": "to {{newVersion}} (HA compatible range: >=45.0.3 <46.0.0)"
     },
     {
       "description": "Dyson-specific libraries - careful updates",
