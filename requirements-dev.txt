@@ -12,7 +12,7 @@ safety==3.2.8
 
 # Additional testing utilities
 responses==0.25.8
-aioresponses==0.7.7
+aioresponses==0.7.8
 
 # MQTT testing
 paho-mqtt==2.1.0
