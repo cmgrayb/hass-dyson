@@ -45,7 +45,7 @@ dev = [
     "isort==6.0.1",
     "pytest==8.4.1",
     "pytest-cov>=6.0.0, <7.0.0",
-    "pytest-asyncio==1.1.0",
+    "pytest-asyncio==1.2.0",
     "pytest-homeassistant-custom-component==0.13.282",
     "mypy==1.18.2",
     "types-requests==2.32.4.20250913",
@@ -261,4 +261,5 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B601"]
+
 
