@@ -9,7 +9,6 @@
   "timezone": "UTC",
   "labels": ["dependencies"],
   "assignees": ["cmgrayb"],
-  "reviewers": ["cmgrayb"],
   "dependencyDashboard": false,
   "commitMessagePrefix": "deps:",
   "commitMessageAction": "update",
