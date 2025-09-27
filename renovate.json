@@ -24,6 +24,7 @@
   "prCreation": "immediate",
   "platformCommit": "enabled",
   "gitIgnoredAuthors": ["Renovate Bot <bot@renovateapp.com>"],
+  "branchConcurrentLimit": 0,
   "ignorePaths": [],
   "lockFileMaintenance": {
     "enabled": false
