@@ -1,5 +1,5 @@
 # Production dependencies only
-homeassistant>=2025.8.0
+homeassistant>=2025.9.4
 aiohttp>=3.12.15
 cryptography>=45.0.3
 requests>=2.32.5
