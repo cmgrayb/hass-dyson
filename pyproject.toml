@@ -33,7 +33,7 @@ dependencies = [
     "aiohttp>=3.12.15",
     "cryptography==45.0.3",
     "requests>=2.32.4",
-    "libdyson-rest==0.8.0b4",
+    "libdyson-rest==0.8.0b5",
     "paho-mqtt>=2.1.0",
 ]
 
