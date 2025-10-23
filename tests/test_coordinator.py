@@ -269,6 +269,76 @@ class TestDysonDataUpdateCoordinatorCallbacks:
                 coordinator._on_message_update("test/topic", {"msg": "OTHER"})
                 mock_handle.assert_not_called()
 
+    def test_on_message_update_environmental_data(self):
+        """Test message update callback for ENVIRONMENTAL-CURRENT-SENSOR-DATA."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            mock_config_entry = MagicMock()
+            mock_config_entry.data = {CONF_SERIAL_NUMBER: "TEST123456"}
+            coordinator.config_entry = mock_config_entry
+
+            with patch.object(
+                coordinator, "_handle_environmental_message"
+            ) as mock_handle:
+                environmental_data = {
+                    "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
+                    "data": {"pm25": "10", "pm10": "15"}
+                }
+                coordinator._on_message_update("test/topic", environmental_data)
+                mock_handle.assert_called_once_with(environmental_data)
+
+    def test_handle_environmental_message(self):
+        """Test handling of environmental message data."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            mock_config_entry = MagicMock()
+            mock_config_entry.data = {CONF_SERIAL_NUMBER: "TEST123456"}
+            coordinator.config_entry = mock_config_entry
+            coordinator.data = {}
+
+            # Mock hass and its loop
+            mock_hass = MagicMock()
+            mock_loop = MagicMock()
+            mock_hass.loop = mock_loop
+            coordinator.hass = mock_hass
+            coordinator.async_set_updated_data = MagicMock()
+
+            environmental_data = {
+                "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
+                "data": {"pm25": "10", "pm10": "15", "va10": "5"}
+            }
+
+            coordinator._handle_environmental_message(environmental_data)
+
+            # Verify environmental data was stored in coordinator
+            assert "environmental-data" in coordinator.data
+            assert coordinator.data["environmental-data"]["pm25"] == "10"
+            assert coordinator.data["environmental-data"]["pm10"] == "15"
+            assert coordinator.data["environmental-data"]["va10"] == "5"
+
+            # Verify async_set_updated_data was called via call_soon_threadsafe
+            mock_loop.call_soon_threadsafe.assert_called_once()
+
+    def test_on_message_update_current_faults(self):
+        """Test message update callback for CURRENT-FAULTS."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            mock_config_entry = MagicMock()
+            mock_config_entry.data = {CONF_SERIAL_NUMBER: "TEST123456"}
+            coordinator.config_entry = mock_config_entry
+
+            with patch.object(
+                coordinator, "_handle_state_change_message"
+            ) as mock_handle:
+                coordinator._on_message_update("test/topic", {"msg": "CURRENT-FAULTS"})
+                mock_handle.assert_called_once()
+
     def test_handle_state_change_message_with_device(self):
         """Test STATE-CHANGE message handling with device available."""
         with patch(

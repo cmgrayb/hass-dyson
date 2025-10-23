@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    PERCENTAGE,
-    EntityCategory,
-    UnitOfTemperature,
-)
+from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -425,37 +416,44 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         device_serial = self.coordinator.serial_number
 
-        if not self.coordinator.device:
-            self._attr_native_value = None
-            _LOGGER.debug(
-                "PM2.5 sensor update: device not available for %s", device_serial
-            )
-            return
-
         try:
-            # Use our device PM2.5 property with enhanced error handling
+            # Read from coordinator data following Home Assistant best practices
             old_value = self._attr_native_value
-            new_value = getattr(self.coordinator.device, "pm25", None)
+            new_value = None
 
-            # Validate the new value is reasonable for PM2.5
-            if new_value is not None:
-                if isinstance(new_value, int | float) and 0 <= new_value <= 999:
-                    self._attr_native_value = new_value
-                    _LOGGER.debug(
-                        "PM2.5 sensor updated for %s: %s -> %s",
-                        device_serial,
-                        old_value,
-                        new_value,
-                    )
-                else:
+            # Get environmental data from coordinator
+            env_data = self.coordinator.data.get("environmental-data", {}) if self.coordinator.data else {}
+            pm25_raw = env_data.get("pm25")
+
+            if pm25_raw is not None:
+                try:
+                    # Convert and validate the PM2.5 value
+                    new_value = int(pm25_raw)
+                    if not (0 <= new_value <= 999):
+                        _LOGGER.warning(
+                            "Invalid PM2.5 value for device %s: %s (expected 0-999)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
                     _LOGGER.warning(
-                        "Invalid PM2.5 value for device %s: %s (expected 0-999)",
+                        "Invalid PM2.5 value format for device %s: %s",
                         device_serial,
-                        new_value,
+                        pm25_raw,
                     )
-                    self._attr_native_value = None
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "PM2.5 sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
             else:
-                self._attr_native_value = None
                 _LOGGER.debug("No PM2.5 data available for device %s", device_serial)
 
         except Exception as e:
@@ -513,37 +511,44 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         device_serial = self.coordinator.serial_number
 
-        if not self.coordinator.device:
-            self._attr_native_value = None
-            _LOGGER.debug(
-                "PM10 sensor update: device not available for %s", device_serial
-            )
-            return
-
         try:
-            # Use our device PM10 property with enhanced error handling
+            # Read from coordinator data following Home Assistant best practices
             old_value = self._attr_native_value
-            new_value = getattr(self.coordinator.device, "pm10", None)
+            new_value = None
 
-            # Validate the new value is reasonable for PM10
-            if new_value is not None:
-                if isinstance(new_value, int | float) and 0 <= new_value <= 999:
-                    self._attr_native_value = new_value
-                    _LOGGER.debug(
-                        "PM10 sensor updated for %s: %s -> %s",
-                        device_serial,
-                        old_value,
-                        new_value,
-                    )
-                else:
+            # Get environmental data from coordinator
+            env_data = self.coordinator.data.get("environmental-data", {}) if self.coordinator.data else {}
+            pm10_raw = env_data.get("pm10")
+
+            if pm10_raw is not None:
+                try:
+                    # Convert and validate the PM10 value
+                    new_value = int(pm10_raw)
+                    if not (0 <= new_value <= 999):
+                        _LOGGER.warning(
+                            "Invalid PM10 value for device %s: %s (expected 0-999)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
                     _LOGGER.warning(
-                        "Invalid PM10 value for device %s: %s (expected 0-999)",
+                        "Invalid PM10 value format for device %s: %s",
                         device_serial,
-                        new_value,
+                        pm10_raw,
                     )
-                    self._attr_native_value = None
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "PM10 sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
             else:
-                self._attr_native_value = None
                 _LOGGER.debug("No PM10 data available for device %s", device_serial)
 
         except Exception as e:

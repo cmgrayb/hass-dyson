@@ -3,11 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -47,6 +43,10 @@ def mock_coordinator():
             "pm10": "0015",
             "hmax": "0030",
             "tact": "2950",
+        },
+        "environmental-data": {
+            "pm25": "10",
+            "pm10": "15",
         }
     }
     return coordinator
@@ -135,10 +135,14 @@ class TestDysonPM25Sensor:
         )
 
     def test_native_value_with_valid_data(self, mock_coordinator):
-        """Test sensor updates when device has PM2.5 data."""
+        """Test sensor updates when coordinator has PM2.5 data."""
         # Arrange
         sensor = DysonPM25Sensor(mock_coordinator)
-        mock_coordinator.device.pm25 = 10
+        mock_coordinator.data = {
+            "environmental-data": {
+                "pm25": "10"
+            }
+        }
 
         # Act - trigger update
         with patch.object(sensor, "async_write_ha_state"):
@@ -152,6 +156,8 @@ class TestDysonPM25Sensor:
         # Arrange
         sensor = DysonPM25Sensor(mock_coordinator)
         mock_coordinator.device = None
+        # Clear environmental data to simulate no device
+        mock_coordinator.data = {"environmental-data": {}}
 
         # Act - trigger update
         with patch.object(sensor, "async_write_ha_state"):
@@ -180,7 +186,8 @@ class TestDysonPM10Sensor:
         """Test sensor updates when device has PM10 data."""
         # Arrange
         sensor = DysonPM10Sensor(mock_coordinator)
-        mock_coordinator.device.pm10 = 15
+        # Set environmental data in coordinator following the new data structure
+        mock_coordinator.data["environmental-data"] = {"pm10": "15"}
 
         # Act - trigger update
         with patch.object(sensor, "async_write_ha_state"):
@@ -445,7 +452,8 @@ class TestSensorIntegration:
         """Test that sensor values remain consistent across coordinator updates."""
         # Arrange
         sensor = DysonPM25Sensor(mock_coordinator)
-        mock_coordinator.device.pm25 = 20
+        # Set environmental data in coordinator following the new data structure
+        mock_coordinator.data["environmental-data"] = {"pm25": "20"}
 
         # Act - trigger update and get values multiple times
         with patch.object(sensor, "async_write_ha_state"):
