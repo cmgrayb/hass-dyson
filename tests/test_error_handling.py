@@ -379,7 +379,9 @@ class TestBinarySensorErrorHandling:
         """Test filter replacement sensor handles malformed data gracefully."""
         from unittest.mock import patch
 
-        from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonFilterReplacementSensor,
+        )
 
         # Test with non-dict coordinator data
         mock_coordinator.data = "not_a_dict"
@@ -398,7 +400,9 @@ class TestBinarySensorErrorHandling:
         """Test filter replacement sensor handles invalid filter life values."""
         from unittest.mock import patch
 
-        from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonFilterReplacementSensor,
+        )
 
         # Test with non-numeric filter life
         mock_coordinator.device.hepa_filter_life = "not_a_number"
@@ -416,7 +420,9 @@ class TestBinarySensorErrorHandling:
         """Test filter replacement sensor handles missing device gracefully."""
         from unittest.mock import patch
 
-        from custom_components.hass_dyson.binary_sensor import DysonFilterReplacementSensor
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonFilterReplacementSensor,
+        )
 
         mock_coordinator.device = None
 

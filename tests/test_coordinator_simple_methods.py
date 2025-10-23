@@ -5,7 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hass_dyson.const import CONF_SERIAL_NUMBER, MQTT_CMD_REQUEST_CURRENT_STATE
+from custom_components.hass_dyson.const import (
+    CONF_SERIAL_NUMBER,
+    MQTT_CMD_REQUEST_CURRENT_STATE,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 
 
