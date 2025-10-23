@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import paho.mqtt.client as mqtt
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 
 from .const import (
@@ -513,6 +514,27 @@ class DysonDevice:
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
 
+        # If Home Assistant is still starting up, wait for it to complete
+        if not self.hass.is_running:
+            _LOGGER.debug("Home Assistant is starting, delaying heartbeat for device %s", self.serial_number)
+
+            def start_heartbeat_after_startup(event: Any) -> None:  # noqa: ARG001
+                """Start heartbeat after HA startup completes."""
+                _LOGGER.debug("Home Assistant startup complete, starting heartbeat for device %s", self.serial_number)
+                # Use call_soon_threadsafe to schedule task from potentially different thread
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.hass.async_create_task(self._start_heartbeat_now())
+                )
+
+            # Register one-time listener for startup completion
+            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, start_heartbeat_after_startup)
+            return
+
+        # Home Assistant is already running, start heartbeat immediately
+        await self._start_heartbeat_now()
+
+    async def _start_heartbeat_now(self) -> None:
+        """Actually start the heartbeat loop."""
         _LOGGER.debug("Starting heartbeat for device %s", self.serial_number)
         self._last_heartbeat = time.time()  # Initialize heartbeat time
         self._heartbeat_task = self.hass.async_create_task(self._heartbeat_loop())
