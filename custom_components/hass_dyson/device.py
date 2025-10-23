@@ -516,18 +516,26 @@ class DysonDevice:
 
         # If Home Assistant is still starting up, wait for it to complete
         if not self.hass.is_running:
-            _LOGGER.debug("Home Assistant is starting, delaying heartbeat for device %s", self.serial_number)
+            _LOGGER.debug(
+                "Home Assistant is starting, delaying heartbeat for device %s",
+                self.serial_number,
+            )
 
             def start_heartbeat_after_startup(event: Any) -> None:  # noqa: ARG001
                 """Start heartbeat after HA startup completes."""
-                _LOGGER.debug("Home Assistant startup complete, starting heartbeat for device %s", self.serial_number)
+                _LOGGER.debug(
+                    "Home Assistant startup complete, starting heartbeat for device %s",
+                    self.serial_number,
+                )
                 # Use call_soon_threadsafe to schedule task from potentially different thread
                 self.hass.loop.call_soon_threadsafe(
                     lambda: self.hass.async_create_task(self._start_heartbeat_now())
                 )
 
             # Register one-time listener for startup completion
-            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, start_heartbeat_after_startup)
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, start_heartbeat_after_startup
+            )
             return
 
         # Home Assistant is already running, start heartbeat immediately
@@ -568,7 +576,9 @@ class DysonDevice:
                     self._last_heartbeat = current_time
 
             except asyncio.CancelledError:
-                _LOGGER.debug("Heartbeat loop cancelled for device %s", self.serial_number)
+                _LOGGER.debug(
+                    "Heartbeat loop cancelled for device %s", self.serial_number
+                )
                 break
             except Exception as err:
                 _LOGGER.error(
@@ -990,7 +1000,9 @@ class DysonDevice:
 
         except Exception as err:
             _LOGGER.error(
-                "Failed to request environmental data from %s: %s", self.serial_number, err
+                "Failed to request environmental data from %s: %s",
+                self.serial_number,
+                err,
             )
 
     def _get_timestamp(self) -> str:

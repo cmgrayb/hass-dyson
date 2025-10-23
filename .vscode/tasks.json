@@ -52,7 +52,7 @@
         {
             "label": "Ruff Check",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff check .",
+            "command": ".venv/bin/python -m ruff format --check --diff . && .venv/bin/python -m ruff check .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -63,19 +63,29 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": {
-                "owner": "python",
-                "fileLocation": "absolute",
-                "pattern": {
-                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(E|W|F)(\\d+)\\s+(.*)$",
-                    "file": 1,
-                    "line": 2,
-                    "column": 3,
-                    "severity": 4,
-                    "code": 5,
-                    "message": 6
+            "problemMatcher": [
+                {
+                    "owner": "ruff-format",
+                    "fileLocation": "absolute",
+                    "pattern": {
+                        "regexp": "^would reformat (.*)$",
+                        "file": 1
+                    }
+                },
+                {
+                    "owner": "ruff-lint",
+                    "fileLocation": "absolute",
+                    "pattern": {
+                        "regexp": "^(.*):(\\d+):(\\d+):\\s+(E|W|F)(\\d+)\\s+(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "code": 5,
+                        "message": 6
+                    }
                 }
-            }
+            ]
         },
         {
             "label": "Ruff Fix",
@@ -216,10 +226,7 @@
             "label": "Check All",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "Format Code",
-                "Sort Imports", 
                 "Ruff Check",
-                "Lint Code",
                 "Type Check",
                 "Run Tests"
             ],

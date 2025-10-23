@@ -284,7 +284,7 @@ class TestDysonDataUpdateCoordinatorCallbacks:
             ) as mock_handle:
                 environmental_data = {
                     "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
-                    "data": {"pm25": "10", "pm10": "15"}
+                    "data": {"pm25": "10", "pm10": "15"},
                 }
                 coordinator._on_message_update("test/topic", environmental_data)
                 mock_handle.assert_called_once_with(environmental_data)
@@ -309,7 +309,7 @@ class TestDysonDataUpdateCoordinatorCallbacks:
 
             environmental_data = {
                 "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
-                "data": {"pm25": "10", "pm10": "15", "va10": "5"}
+                "data": {"pm25": "10", "pm10": "15", "va10": "5"},
             }
 
             coordinator._handle_environmental_message(environmental_data)

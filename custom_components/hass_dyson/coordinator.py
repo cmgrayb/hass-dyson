@@ -1102,8 +1102,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device_state = await self.device.get_state()
 
             # Add environmental data to the state following Home Assistant best practices
-            if hasattr(self.device, "_environmental_data") and self.device._environmental_data:
-                device_state["environmental-data"] = dict(self.device._environmental_data)
+            if (
+                hasattr(self.device, "_environmental_data")
+                and self.device._environmental_data
+            ):
+                device_state["environmental-data"] = dict(
+                    self.device._environmental_data
+                )
                 _LOGGER.debug(
                     "Added environmental data to coordinator state for %s: %s",
                     self.serial_number,

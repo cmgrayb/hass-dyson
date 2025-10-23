@@ -51,7 +51,7 @@ def mock_coordinator():
         "environmental-data": {
             "pm25": "10",
             "pm10": "15",
-        }
+        },
     }
     return coordinator
 
@@ -142,11 +142,7 @@ class TestDysonPM25Sensor:
         """Test sensor updates when coordinator has PM2.5 data."""
         # Arrange
         sensor = DysonPM25Sensor(mock_coordinator)
-        mock_coordinator.data = {
-            "environmental-data": {
-                "pm25": "10"
-            }
-        }
+        mock_coordinator.data = {"environmental-data": {"pm25": "10"}}
 
         # Act - trigger update
         with patch.object(sensor, "async_write_ha_state"):

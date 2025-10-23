@@ -772,13 +772,11 @@ class TestDysonDataUpdateCoordinatorMessageHandling:
         # ENVIRONMENTAL-CURRENT-SENSOR-DATA messages should now trigger updates
         # Provide proper environmental data structure
         coordinator._on_message_update(
-            "test/topic", {
+            "test/topic",
+            {
                 "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
-                "data": {
-                    "pm25": "15",
-                    "pm10": "20"
-                }
-            }
+                "data": {"pm25": "15", "pm10": "20"},
+            },
         )
 
         # Should call async_set_updated_data through hass.loop.call_soon_threadsafe

@@ -431,7 +431,11 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
             new_value = None
 
             # Get environmental data from coordinator
-            env_data = self.coordinator.data.get("environmental-data", {}) if self.coordinator.data else {}
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
             pm25_raw = env_data.get("pm25")
 
             if pm25_raw is not None:
@@ -526,7 +530,11 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
             new_value = None
 
             # Get environmental data from coordinator
-            env_data = self.coordinator.data.get("environmental-data", {}) if self.coordinator.data else {}
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
             pm10_raw = env_data.get("pm10")
 
             if pm10_raw is not None:
