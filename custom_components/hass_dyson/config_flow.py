@@ -693,7 +693,15 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 "Failed to retrieve devices from Dyson API: %s",
                                 device_error,
                             )
-                            if "Missing required field: productType" in str(
+                            if "Expected str for name, got NoneType" in str(
+                                device_error
+                            ):
+                                _LOGGER.error(
+                                    "Device data validation failed: Some devices in your Dyson account have missing or invalid name fields. "
+                                    "This may indicate corrupted device data in your Dyson cloud account or an API response format issue."
+                                )
+                                errors["base"] = "device_data_invalid"
+                            elif "Missing required field: productType" in str(
                                 device_error
                             ):
                                 _LOGGER.error(

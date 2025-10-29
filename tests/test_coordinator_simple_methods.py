@@ -415,7 +415,7 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         result = await coordinator._async_update_data()
 
         # Should return the device state
-        assert result == {"fan": {"speed": 5}}
+        assert result == {"fan": {"speed": 5}, "environmental-data": {}}
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
@@ -441,7 +441,7 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         result = await coordinator._async_update_data()
 
         # Should reconnect, send current state command, and return state
-        assert result == {"fan": {"speed": 3}}
+        assert result == {"fan": {"speed": 3}, "environmental-data": {}}
         mock_device.connect.assert_called_once()
         mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
         mock_device.get_state.assert_called_once()
@@ -509,7 +509,7 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         # Should continue and return state even if send_command fails
         result = await coordinator._async_update_data()
 
-        assert result == {"fan": {"speed": 1}}
+        assert result == {"fan": {"speed": 1}, "environmental-data": {}}
         mock_device.connect.assert_called_once()
         mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
         mock_device.get_state.assert_called_once()

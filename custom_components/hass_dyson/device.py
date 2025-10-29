@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 import paho.mqtt.client as mqtt
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 
 from .const import (
@@ -19,6 +20,7 @@ from .const import (
     CONNECTION_STATUS_LOCAL,
     DOMAIN,
     FAULT_TRANSLATIONS,
+    MQTT_CMD_REQUEST_ENVIRONMENT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,6 +67,11 @@ class DysonDevice:
         self._preferred_retry_interval = (
             300.0  # Retry preferred connection every 5 minutes
         )
+
+        # Heartbeat mechanism to keep device active and get regular updates
+        self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
+        self._heartbeat_task: asyncio.Task | None = None
+        self._last_heartbeat = 0.0
         self._state_data: dict[str, Any] = {}
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
@@ -485,6 +492,9 @@ class DysonDevice:
 
     async def disconnect(self) -> None:
         """Disconnect from the device."""
+        # Stop heartbeat before disconnecting
+        await self._stop_heartbeat()
+
         if self._mqtt_client and self._connected:
             try:
                 _LOGGER.debug("Disconnecting from device %s", self.serial_number)
@@ -498,6 +508,84 @@ class DysonDevice:
                 _LOGGER.error(
                     "Failed to disconnect from device %s: %s", self.serial_number, err
                 )
+
+    async def _start_heartbeat(self) -> None:
+        """Start the heartbeat task to keep device active."""
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+
+        # If Home Assistant is still starting up, wait for it to complete
+        if not self.hass.is_running:
+            _LOGGER.debug(
+                "Home Assistant is starting, delaying heartbeat for device %s",
+                self.serial_number,
+            )
+
+            def start_heartbeat_after_startup(event: Any) -> None:  # noqa: ARG001
+                """Start heartbeat after HA startup completes."""
+                _LOGGER.debug(
+                    "Home Assistant startup complete, starting heartbeat for device %s",
+                    self.serial_number,
+                )
+                # Use call_soon_threadsafe to schedule task from potentially different thread
+                self.hass.loop.call_soon_threadsafe(
+                    lambda: self.hass.async_create_task(self._start_heartbeat_now())
+                )
+
+            # Register one-time listener for startup completion
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, start_heartbeat_after_startup
+            )
+            return
+
+        # Home Assistant is already running, start heartbeat immediately
+        await self._start_heartbeat_now()
+
+    async def _start_heartbeat_now(self) -> None:
+        """Actually start the heartbeat loop."""
+        _LOGGER.debug("Starting heartbeat for device %s", self.serial_number)
+        self._last_heartbeat = time.time()  # Initialize heartbeat time
+        self._heartbeat_task = self.hass.async_create_task(self._heartbeat_loop())
+
+    async def _stop_heartbeat(self) -> None:
+        """Stop the heartbeat task."""
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            _LOGGER.debug("Stopping heartbeat for device %s", self.serial_number)
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
+
+    async def _heartbeat_loop(self) -> None:
+        """Heartbeat loop that sends REQUEST-CURRENT-STATE every 30 seconds."""
+        _LOGGER.debug("Heartbeat loop started for device %s", self.serial_number)
+
+        while self._connected:
+            try:
+                await asyncio.sleep(self._heartbeat_interval)
+
+                if not self._connected:
+                    break
+
+                current_time = time.time()
+                if current_time - self._last_heartbeat >= self._heartbeat_interval:
+                    _LOGGER.debug("Sending heartbeat to device %s", self.serial_number)
+                    await self._request_current_state()
+                    self._last_heartbeat = current_time
+
+            except asyncio.CancelledError:
+                _LOGGER.debug(
+                    "Heartbeat loop cancelled for device %s", self.serial_number
+                )
+                break
+            except Exception as err:
+                _LOGGER.error(
+                    "Error in heartbeat loop for %s: %s", self.serial_number, err
+                )
+                # Continue the loop despite errors
+                await asyncio.sleep(5)  # Brief pause before retry
 
     async def force_reconnect(self) -> bool:
         """Force a reconnection attempt with preferred connection priority."""
@@ -536,8 +624,14 @@ class DysonDevice:
                 _LOGGER.debug("Subscribed to topic: %s", topic)
 
             # Request initial device state (schedule safely from callback)
+            # Note: REQUEST-CURRENT-STATE automatically includes environmental data
             self.hass.loop.call_soon_threadsafe(
                 lambda: self.hass.async_create_task(self._request_current_state())
+            )
+
+            # Start heartbeat to keep device active and get regular updates
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.hass.async_create_task(self._start_heartbeat())
             )
         else:
             _LOGGER.error(
@@ -555,6 +649,11 @@ class DysonDevice:
         )
         self._connected = False
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
+
+        # Stop heartbeat when disconnected
+        self.hass.loop.call_soon_threadsafe(
+            lambda: self.hass.async_create_task(self._stop_heartbeat())
+        )
 
         # If this is an unexpected disconnection (not initiated by us), prepare for intelligent reconnection
         if rc != mqtt.MQTT_ERR_SUCCESS:
@@ -878,6 +977,34 @@ class DysonDevice:
                 "Failed to request faults from %s: %s", self.serial_number, err
             )
 
+    async def _request_environmental_data(self) -> None:
+        """Request current environmental data from device."""
+        if not self._connected or not self._mqtt_client:
+            return
+
+        try:
+            command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+            timestamp = self._get_timestamp()
+            command = json.dumps(
+                {
+                    "msg": MQTT_CMD_REQUEST_ENVIRONMENT,
+                    "time": timestamp,
+                    "mode-reason": "RAPP",
+                }
+            )
+
+            await self.hass.async_add_executor_job(
+                self._mqtt_client.publish, command_topic, command
+            )
+            _LOGGER.debug("Requested environmental data from %s", self.serial_number)
+
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to request environmental data from %s: %s",
+                self.serial_number,
+                err,
+            )
+
     def _get_timestamp(self) -> str:
         """Get timestamp in the format expected by Dyson devices."""
         return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
@@ -928,6 +1055,9 @@ class DysonDevice:
                 return
             elif command == "REQUEST-CURRENT-FAULTS":
                 await self._request_current_faults()
+                return
+            elif command == MQTT_CMD_REQUEST_ENVIRONMENT:
+                await self._request_environmental_data()
                 return
 
             # For other commands, use the generic command format
