@@ -1,6 +1,6 @@
 """Comprehensive config flow coverage enhancement tests.
 
-This module focuses on improving config_flow.py coverage from 69% to 80%+ by testing
+This module focuses on improving config_flow.py coverage from 69% to 75%+ by testing
 error handling scenarios, validation edge cases, and missing code paths.
 """
 
