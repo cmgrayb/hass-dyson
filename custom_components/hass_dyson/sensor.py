@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    PERCENTAGE,
-    EntityCategory,
-    UnitOfTemperature,
-)
+from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -24,6 +15,293 @@ from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class DysonP25RSensor(DysonEntity, SensorEntity):
+    """P25R level sensor for Dyson devices with ExtendedAQ capability."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the P25R sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_p25r"
+        self._attr_translation_key = "p25r"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_icon = "mdi:air-filter"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            p25r_raw = env_data.get("p25r")
+
+            if p25r_raw is not None:
+                try:
+                    # Convert and validate the P25R value
+                    new_value = int(p25r_raw)
+                    if not (0 <= new_value <= 999):
+                        _LOGGER.warning(
+                            "Invalid P25R value for device %s: %s (expected 0-999)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid P25R value format for device %s: %s",
+                        device_serial,
+                        p25r_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "P25R sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug("No P25R data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error updating P25R sensor for device %s: %s", device_serial, e
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonP10RSensor(DysonEntity, SensorEntity):
+    """P10R level sensor for Dyson devices with ExtendedAQ capability."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the P10R sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_p10r"
+        self._attr_translation_key = "p10r"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_icon = "mdi:air-filter"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            p10r_raw = env_data.get("p10r")
+
+            if p10r_raw is not None:
+                try:
+                    # Convert and validate the P10R value
+                    new_value = int(p10r_raw)
+                    if not (0 <= new_value <= 999):
+                        _LOGGER.warning(
+                            "Invalid P10R value for device %s: %s (expected 0-999)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid P10R value format for device %s: %s",
+                        device_serial,
+                        p10r_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "P10R sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug("No P10R data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error updating P10R sensor for device %s: %s", device_serial, e
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonCO2Sensor(DysonEntity, SensorEntity):
+    """CO2 sensor for Dyson devices with ExtendedAQ capability."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the CO2 sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_co2"
+        self._attr_translation_key = "co2"
+        self._attr_device_class = SensorDeviceClass.CO2
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "ppm"
+        self._attr_icon = "mdi:molecule-co2"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            co2_raw = env_data.get("co2")
+
+            if co2_raw is not None:
+                try:
+                    # Convert and validate the CO2 value
+                    new_value = int(co2_raw)
+                    if not (0 <= new_value <= 5000):
+                        _LOGGER.warning(
+                            "Invalid CO2 value for device %s: %s (expected 0-5000)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid CO2 value format for device %s: %s",
+                        device_serial,
+                        co2_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "CO2 sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug("No CO2 data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error updating CO2 sensor for device %s: %s", device_serial, e
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonHCHOSensor(DysonEntity, SensorEntity):
+    """HCHO (Formaldehyde) sensor for Dyson devices with ExtendedAQ capability."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the HCHO sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_hcho"
+        self._attr_translation_key = "hcho"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_icon = "mdi:chemical-weapon"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            hcho_raw = env_data.get("hcho")
+
+            if hcho_raw is not None:
+                try:
+                    # Convert and validate the HCHO value
+                    new_value = int(hcho_raw)
+                    if not (0 <= new_value <= 1000):
+                        _LOGGER.warning(
+                            "Invalid HCHO value for device %s: %s (expected 0-1000)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid HCHO value format for device %s: %s",
+                        device_serial,
+                        hcho_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "HCHO sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug("No HCHO data available for device %s", device_serial)
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error updating HCHO sensor for device %s: %s", device_serial, e
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
 
 
 async def async_setup_entry(  # noqa: C901
@@ -52,45 +330,83 @@ async def async_setup_entry(  # noqa: C901
         # Import safe capability checking functions
         from .device_utils import has_any_capability_safe, has_capability_safe
 
-        # Add PM2.5 and PM10 sensors only for devices with ExtendedAQ capability
+        # Add PM2.5, PM10, P25R, P10R, and gas sensors for devices with ExtendedAQ capability
+        # ExtendedAQ now supports PM2.5, PM10, CO2, NO2, and HCHO (Formaldehyde) metrics per discovery.md
         if has_any_capability_safe(
             capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
         ):
-            _LOGGER.debug("Adding PM2.5 and PM10 sensors for device %s", device_serial)
+            _LOGGER.debug("Adding ExtendedAQ sensors for device %s", device_serial)
+
+            # Always add PM2.5, PM10, P25R, P10R sensors for ExtendedAQ devices
             entities.extend(
                 [
                     DysonPM25Sensor(coordinator),
                     DysonPM10Sensor(coordinator),
+                    DysonP25RSensor(coordinator),
+                    DysonP10RSensor(coordinator),
                 ]
             )
+
+            # Dynamically add gas sensors based on environmental data presence
+            env_data = (
+                coordinator.data.get("environmental-data", {})
+                if coordinator.data
+                else {}
+            )
+
+            # Add CO2 sensor if CO2 data is present
+            if "co2" in env_data:
+                _LOGGER.debug(
+                    "Adding CO2 sensor for device %s - CO2 data detected", device_serial
+                )
+                entities.append(DysonCO2Sensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping CO2 sensor for device %s - no CO2 data in environmental response",
+                    device_serial,
+                )
+
+            # Add NO2 sensor if NO2 data is present
+            if "no2" in env_data:
+                _LOGGER.debug(
+                    "Adding NO2 sensor for device %s - NO2 data detected", device_serial
+                )
+                entities.append(DysonNO2Sensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping NO2 sensor for device %s - no NO2 data in environmental response",
+                    device_serial,
+                )
+
+            # Add HCHO sensor if HCHO data is present
+            if "hcho" in env_data:
+                _LOGGER.debug(
+                    "Adding HCHO sensor for device %s - HCHO data detected",
+                    device_serial,
+                )
+                entities.append(DysonHCHOSensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping HCHO sensor for device %s - no HCHO data in environmental response",
+                    device_serial,
+                )
         else:
             _LOGGER.debug(
-                "Skipping PM2.5/PM10 sensors for device %s - no ExtendedAQ capability",
+                "Skipping ExtendedAQ sensors for device %s - no ExtendedAQ capability",
                 device_serial,
             )
 
-        # Add VOC and NO2 sensors only for devices with VOC capability
-        if has_any_capability_safe(capabilities, ["VOC", "voc"]):
-            _LOGGER.debug("Adding VOC and NO2 sensors for device %s", device_serial)
-            entities.extend(
-                [
-                    DysonVOCSensor(coordinator),
-                    DysonNO2Sensor(coordinator),
-                ]
-            )
+        # Legacy VOC sensor support (keep for backward compatibility)
+        if has_any_capability_safe(
+            capabilities, ["VOC", "voc"]
+        ) and not has_any_capability_safe(
+            capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
+        ):
+            _LOGGER.debug("Adding legacy VOC sensors for device %s", device_serial)
+            entities.append(DysonVOCSensor(coordinator))
         else:
             _LOGGER.debug(
-                "Skipping VOC/NO2 sensors for device %s - no VOC capability",
-                device_serial,
-            )
-
-        # Add formaldehyde sensor only for devices with Formaldehyde capability
-        if has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"]):
-            _LOGGER.debug("Adding formaldehyde sensor for device %s", device_serial)
-            entities.append(DysonFormaldehydeSensor(coordinator))
-        else:
-            _LOGGER.debug(
-                "Skipping formaldehyde sensor for device %s - no formaldehyde capability",
+                "Skipping legacy VOC sensors for device %s - ExtendedAQ provides gas monitoring",
                 device_serial,
             )
 
@@ -127,13 +443,20 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-        # Add carbon filter sensors only for devices with Formaldehyde capability
-        # TODO: Update this when we identify the exact formaldehyde capability name
-        # For now, don't add carbon filter sensors to any devices until we have a formaldehyde device to test
-        if has_any_capability_safe(
-            capabilities, ["Formaldehyde", "formaldehyde", "CarbonFilter"]
-        ):
-            _LOGGER.debug("Adding carbon filter sensors for device %s", device_serial)
+        # Add carbon filter sensors based on device state data presence
+        # Check if carbon filter data is present in device state (cflt field)
+        device_data = (
+            coordinator.data.get("product-state", {}) if coordinator.data else {}
+        )
+        carbon_filter_type = device_data.get("cflt")
+
+        # Add carbon filter sensors if filter data exists and is not "NONE"
+        if carbon_filter_type is not None and str(carbon_filter_type).upper() != "NONE":
+            _LOGGER.debug(
+                "Adding carbon filter sensors for device %s - filter type: %s",
+                device_serial,
+                carbon_filter_type,
+            )
             entities.extend(
                 [
                     DysonCarbonFilterLifeSensor(coordinator),
@@ -142,31 +465,38 @@ async def async_setup_entry(  # noqa: C901
             )
         else:
             _LOGGER.debug(
-                "Skipping carbon filter sensors for device %s - no formaldehyde capability detected",
+                "Skipping carbon filter sensors for device %s - no carbon filter detected (cflt: %s)",
                 device_serial,
+                carbon_filter_type,
             )
 
-        # Add temperature sensor only for devices with Heating capability
-        if has_capability_safe(capabilities, "heating"):
+        # Add temperature sensor for devices with Heating capability OR EnvironmentalData capability
+        # Per discovery.md: EnvironmentalData should indicate temperature and humidity sensor support
+        if has_capability_safe(capabilities, "heating") or has_any_capability_safe(
+            capabilities,
+            ["EnvironmentalData", "environmental_data", "environmentalData"],
+        ):
             _LOGGER.debug("Adding temperature sensor for device %s", device_serial)
             entities.append(DysonTemperatureSensor(coordinator))
         else:
             _LOGGER.debug(
-                "Skipping temperature sensor for device %s - no heating capability",
+                "Skipping temperature sensor for device %s - no heating or environmental capability",
                 device_serial,
             )
 
-        # Add humidity sensor only for devices with Humidifier capability
-        # TODO: Update this when we identify the exact humidifier capability name
-        # For now, don't add humidity sensor to any devices until we have a humidifier to test
+        # Add humidity sensor for devices with Humidifier capability OR EnvironmentalData capability
+        # Per discovery.md: EnvironmentalData should indicate humidity sensor support
         if has_any_capability_safe(
             capabilities, ["Humidifier", "humidifier", "Humidity"]
+        ) or has_any_capability_safe(
+            capabilities,
+            ["EnvironmentalData", "environmental_data", "environmentalData"],
         ):
             _LOGGER.debug("Adding humidity sensor for device %s", device_serial)
             entities.append(DysonHumiditySensor(coordinator))
         else:
             _LOGGER.debug(
-                "Skipping humidity sensor for device %s - no humidifier capability detected",
+                "Skipping humidity sensor for device %s - no humidifier or environmental capability detected",
                 device_serial,
             )
 
@@ -306,10 +636,12 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
             self._attr_native_value = None
             return
 
-        temperature = self.coordinator.data.get("tmp")
+        # Temperature from environmental data using 'tact' key (temperature actual)
+        environmental_data = self.coordinator.data.get("environmental-data", {})
+        temperature = environmental_data.get("tact")
         if temperature is not None:
             try:
-                # Dyson typically reports temperature in Kelvin * 10
+                # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
                 # Convert to Celsius: (K * 10) / 10 - 273.15
                 temp_celsius = (float(temperature) / 10) - 273.15
                 self._attr_native_value = round(temp_celsius, 1)

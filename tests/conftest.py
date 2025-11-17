@@ -377,8 +377,28 @@ def mock_coordinator():
     coordinator.device_name = "Test Dyson"
     coordinator.device = MagicMock()
     coordinator.device.is_connected = True
-    coordinator.device_capabilities = ["Heating", "EnvironmentalData"]
-    coordinator.data = {"product-state": {}}
+    coordinator.device_capabilities = ["Heating", "EnvironmentalData", "ExtendedAQ"]
+    coordinator.device_category = ["ec"]  # Add device category for WiFi sensor tests
+
+    # Complete coordinator.data structure for dynamic sensor detection
+    coordinator.data = {
+        "product-state": {
+            "pm25": "0010",
+            "pm10": "0015",
+            "hmax": "0030",
+            "cflt": "CARF",  # Carbon filter type for carbon filter sensors
+        },
+        "environmental-data": {
+            "pm25": "10",
+            "pm10": "15",
+            "co2": "800",   # CO2 data for CO2 sensor
+            "no2": "25",    # NO2 data for NO2 sensor
+            "hcho": "5",    # HCHO data for formaldehyde sensor
+            "tact": "2950",  # Temperature actual in Kelvin * 10 (295.0K = 21.85°C)
+            "hact": "0045",  # Humidity actual as percentage (45%)
+        },
+    }
+
     coordinator.async_send_command = AsyncMock()
     coordinator.config_entry = MagicMock()
     coordinator.config_entry.data = {"connection_type": "cloud"}

@@ -573,6 +573,8 @@ class DysonDevice:
                 if current_time - self._last_heartbeat >= self._heartbeat_interval:
                     _LOGGER.debug("Sending heartbeat to device %s", self.serial_number)
                     await self._request_current_state()
+                    # Check for faults on each heartbeat per discovery.md requirements
+                    await self._request_current_faults()
                     self._last_heartbeat = current_time
 
             except asyncio.CancelledError:
@@ -779,7 +781,7 @@ class DysonDevice:
             pm10_in_message,
         )
 
-        # Log PM2.5 and PM10 updates specifically
+        # Log PM2.5, PM10, and level updates specifically
         if "pm25" in env_data:
             _LOGGER.debug(
                 "PM2.5 updated for %s: %s", self.serial_number, env_data["pm25"]
@@ -792,6 +794,18 @@ class DysonDevice:
             _LOGGER.debug("P25R value for %s: %s", self.serial_number, env_data["p25r"])
         if "p10r" in env_data:
             _LOGGER.debug("P10R value for %s: %s", self.serial_number, env_data["p10r"])
+
+        # Log gaseous sensor updates (ExtendedAQ capability)
+        if "co2" in env_data:
+            _LOGGER.debug("CO2 updated for %s: %s", self.serial_number, env_data["co2"])
+        if "no2" in env_data:
+            _LOGGER.debug("NO2 updated for %s: %s", self.serial_number, env_data["no2"])
+        if "hcho" in env_data:
+            _LOGGER.debug(
+                "HCHO (Formaldehyde) updated for %s: %s",
+                self.serial_number,
+                env_data["hcho"],
+            )
 
         # Store previous environmental data for comparison
         previous_pm25 = self._environmental_data.get("pm25")
@@ -863,9 +877,40 @@ class DysonDevice:
             self._message_callbacks.remove(callback)
 
     def _handle_faults_data(self, data: dict[str, Any]) -> None:
-        """Handle faults data message."""
+        """Handle faults data message and create Home Assistant events for device faults."""
+        fault_data = data.get("data", {})
+
+        # Check if there are any faults reported
+        if fault_data:
+            _LOGGER.warning(
+                "Device faults detected for %s: %s", self.serial_number, fault_data
+            )
+
+            # Create Home Assistant event for device fault detection
+            # Per discovery.md: event should have description "Device Fault Detected"
+            self.hass.bus.async_fire(
+                "dyson_device_fault_detected",
+                {
+                    "device_serial": self.serial_number,
+                    "description": "Device Fault Detected",
+                    "fault_data": fault_data,
+                    "timestamp": self._get_timestamp(),
+                },
+            )
+
+            # Log each individual fault for debugging
+            for fault_key, fault_value in fault_data.items():
+                _LOGGER.warning(
+                    "Fault detected on %s - %s: %s",
+                    self.serial_number,
+                    fault_key,
+                    fault_value,
+                )
+        else:
+            _LOGGER.debug("No faults reported for %s", self.serial_number)
+
         self._faults_data.update(data)
-        _LOGGER.debug("Updated faults for %s", self.serial_number)
+        _LOGGER.debug("Updated faults data for %s", self.serial_number)
 
     def _handle_state_change(self, data: dict[str, Any]) -> None:
         """Handle state change message."""

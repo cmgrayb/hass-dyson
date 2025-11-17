@@ -30,8 +30,8 @@ To avoid future product releases requiring a product update, we will be using th
 
 "AdvanceOscillationDay1": Supports oscillation up to 350 degrees without wrap-around with high angle and low angle properties and on/off capabilities.
 "Scheduling": Supports setting a timer to automatically power the device off when the timer expires.
-"EnvironmentalData": Supports tracking some form of environmental data.  Exactly which metrics are specific to this capability is unclear.  It is possible that this capability may be only be used as a meta-capability of all environment monitoring devices.  This should only be used as a last resort until purpose is determined.
-"ExtendedAQ": Supports tracking PM2.5 and PM10 metrics.  Will need entities for PM2.5, PM10, and a configuration option to enable or disable Continuous Monitoring.
+"EnvironmentalData": Should indicate that the device supports temperature and humidity sensors.  The sensors should only populate if the temperature and humidity sensor keys are returned by the device.
+"ExtendedAQ": Supports tracking PM2.5, PM10, CO2, NO2, and HCHO (Formaldehyde) metrics.  Will need entities for PM2.5, PM10, and a configuration option to enable or disable Continuous Monitoring.  Gas sensors should only be populated if their keys are seen in ENVIRONMENTAL-CURRENT-SENSOR-DATA responses
 "ChangeWifi": Supports changing WiFi connection via bluetooth low energy or lec.  Support for this will need to be via bluetooth proxy.
 
 All MQTT messages sent on `command` should include the following properties: `mode-reason`, with a constant value of "RAPP" indicating "remote app", `time` indicating the time the command is sent.
@@ -47,10 +47,12 @@ Status of all entities may be retrieved by sending an MQTT message on `command` 
 
 ## Humidifier Capabilities
 
+Humidifiers do not have their own capability declared by the Dyson API.  As a result, humidifiers should be determined by the product type, where a PH model (Purifier/Humidifer) should add our virtual capability to add humidifier controls and entities.
 Hints for making Humidifier entities, but not the capability name, including their state key and possible values may be found by looking at functioning code in <https://github.com/cmgrayb/ha-dyson>.  Please update this section with data similar to the section in Expected and Known Capabilities once discovered and delete this message about hints.
 
 ## Heater Capabilities
 
+Heaters do not have their own capability declared by the Dyson API.  As a result, heaters should be determined by the product type, where a HP model (Heater/Purifier) should add our virtual capability to add heater controls and entities.
 Hints for making Heater entities, but not the capability name, including their state key and possible values may be found by looking at functioning code in <https://github.com/cmgrayb/ha-dyson>.  Please update this section with data similar to the section in Expected and Known Capabilities once discovered and delete this message about hints.
 
 ## Formaldehyde Capabilities

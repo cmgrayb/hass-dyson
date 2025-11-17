@@ -8,7 +8,11 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.service import SupportsResponse
 
-from custom_components.hass_dyson.const import DOMAIN, SERVICE_GET_CLOUD_DEVICES, SERVICE_REFRESH_ACCOUNT_DATA
+from custom_components.hass_dyson.const import (
+    DOMAIN,
+    SERVICE_GET_CLOUD_DEVICES,
+    SERVICE_REFRESH_ACCOUNT_DATA,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 from custom_components.hass_dyson.services import (
     SERVICE_CANCEL_SLEEP_TIMER_SCHEMA,
@@ -1550,7 +1554,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_success(self):
         """Test successful MQTT credentials decryption."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1581,7 +1587,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_connected_config(self):
         """Test MQTT credentials decryption with no connected configuration."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1597,7 +1605,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_mqtt_config(self):
         """Test MQTT credentials decryption with no MQTT configuration."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1617,7 +1627,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_credentials(self):
         """Test MQTT credentials decryption with no encrypted credentials."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1640,7 +1652,9 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_exception_handling(self):
         """Test MQTT credentials decryption with exception."""
-        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
+        from custom_components.hass_dyson.services import (
+            _decrypt_device_mqtt_credentials,
+        )
 
         # Arrange
         mock_cloud_client = MagicMock()

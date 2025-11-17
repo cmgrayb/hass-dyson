@@ -3,11 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -215,7 +211,9 @@ class TestDysonTemperatureSensor:
         """Test sensor updates when device has temperature data."""
         # Arrange
         sensor = DysonTemperatureSensor(mock_coordinator)
-        mock_coordinator.data = {"tmp": "2950"}  # 295.0 K = ~21.85°C
+        mock_coordinator.data = {
+            "environmental-data": {"tact": "2950"}  # 295.0 K = ~21.85°C
+        }
 
         # Act - trigger update
         with patch.object(sensor, "async_write_ha_state"):
@@ -472,15 +470,21 @@ class TestSensorPlatformSetupAdvanced:
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_voc_devices(self, mock_coordinator):
-        """Test setting up sensors for devices with VOC capability."""
+        """Test setting up sensors for devices with legacy VOC capability only."""
         # Arrange
         hass = MagicMock()
         config_entry = MagicMock()
         config_entry.entry_id = "test-entry-id"
         async_add_entities = MagicMock()
 
+        # Set up device with VOC capability only (no ExtendedAQ)
         mock_coordinator.device_capabilities = ["VOC"]
         mock_coordinator.device_category = ["EC"]
+        # Override coordinator.data to not include ExtendedAQ data since this is legacy VOC only
+        mock_coordinator.data = {
+            "product-state": {"pm25": "0010", "pm10": "0015"},
+            "environmental-data": {"pm25": "10", "pm10": "15"},  # No gas sensor data
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
@@ -490,19 +494,33 @@ class TestSensorPlatformSetupAdvanced:
         assert result is True
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) >= 2  # Should have VOC and NO2 sensors
+        assert len(entities) == 1  # Should only have legacy VOC sensor (no ExtendedAQ gas sensors)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_formaldehyde_devices(self, mock_coordinator):
-        """Test setting up sensors for devices with Formaldehyde capability."""
+        """Test setting up sensors for devices with ExtendedAQ+Formaldehyde capability and carbon filter."""
         # Arrange
         hass = MagicMock()
         config_entry = MagicMock()
         config_entry.entry_id = "test-entry-id"
         async_add_entities = AsyncMock()
 
-        mock_coordinator.device_capabilities = ["Formaldehyde"]
+        # Set up device with both ExtendedAQ and Formaldehyde for comprehensive sensors
+        mock_coordinator.device_capabilities = ["ExtendedAQ", "Formaldehyde"]
         mock_coordinator.device_category = ["EC"]
+        # Ensure coordinator.data includes HCHO data and carbon filter data for sensor creation
+        mock_coordinator.data = {
+            "product-state": {
+                "pm25": "0010",
+                "pm10": "0015",
+                "cflt": "CARF",  # Carbon filter present for filter sensors
+            },
+            "environmental-data": {
+                "pm25": "10",
+                "pm10": "15",
+                "hcho": "5",  # HCHO data present for formaldehyde sensor
+            },
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
@@ -512,9 +530,8 @@ class TestSensorPlatformSetupAdvanced:
         assert result is True
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert (
-            len(entities) >= 3
-        )  # Should have formaldehyde sensor and carbon filter sensors
+        # Should have PM sensors (4) + HCHO sensor (1) + carbon filter sensors (2) = 7 entities
+        assert len(entities) >= 6  # Dynamic sensor detection creates sensors based on data presence
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_robot_category(self, mock_coordinator):

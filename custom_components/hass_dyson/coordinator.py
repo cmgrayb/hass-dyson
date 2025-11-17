@@ -579,6 +579,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         len(value) if value else 0,
                     )
 
+            # Check for MQTT root topic level (the actual MQTT prefix field)
+            mqtt_root_topic = getattr(mqtt_obj, "mqtt_root_topic_level", None)
+            if mqtt_root_topic:
+                _LOGGER.debug("Found MQTT root topic level: %s", mqtt_root_topic)
+
             # Check for decoded password attributes
             for attr_name in [
                 "password",
@@ -1366,8 +1371,29 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if firmware and hasattr(firmware, "capabilities"):
                     capabilities = firmware.capabilities or []
 
-        # Capabilities should come from the API response, not from static product type mapping
-        # If the API doesn't provide capabilities, they should be configured by the user
+        # Add virtual capabilities based on product type as per discovery.md
+        # HP models should have heater capability, PH models should have humidifier capability
+        product_type = getattr(
+            device_info, "product_type", getattr(device_info, "type", "")
+        )
+
+        if product_type:
+            # HP model (Heater/Purifier) should have virtual Heating capability
+            if product_type.startswith("HP"):
+                if "Heating" not in capabilities:
+                    capabilities.append("Heating")
+                    _LOGGER.debug(
+                        "Added virtual Heating capability for HP model %s", product_type
+                    )
+
+            # PH model (Purifier/Humidifier) should have virtual Humidifier capability
+            elif product_type.startswith("PH"):
+                if "Humidifier" not in capabilities:
+                    capabilities.append("Humidifier")
+                    _LOGGER.debug(
+                        "Added virtual Humidifier capability for PH model %s",
+                        product_type,
+                    )
 
         _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
         _LOGGER.debug(
@@ -1386,22 +1412,93 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return getattr(device_info, "hostname", f"{self.serial_number}.local")
 
     def _get_mqtt_prefix(self, device_info: Any) -> str:
-        """Get MQTT prefix from device info."""
-        # The MQTT prefix is typically the product type + model suffix
+        """Get MQTT prefix from device info using API-first approach.
+
+        This method prioritizes API-provided MQTT prefix information over hardcoded
+        mappings to ensure accurate discovery and prevent masking of connection issues.
+        Only falls back to product type construction when API data is unavailable.
+        """
+        # First, try to get MQTT prefix directly from the API
+        mqtt_prefix = self._extract_mqtt_prefix_from_api(device_info)
+        if mqtt_prefix:
+            _LOGGER.debug("Using MQTT prefix from API: %s", mqtt_prefix)
+            return mqtt_prefix
+
+        # If no API prefix available, construct from device info
+        constructed_prefix = self._construct_mqtt_prefix_fallback_from_device_info(
+            device_info
+        )
+
+        # Extract product info for logging
+        product_type = getattr(
+            device_info, "product_type", getattr(device_info, "type", "unknown")
+        )
+        variant = getattr(device_info, "variant", None)
+
+        _LOGGER.warning(
+            "No MQTT prefix found in API for device %s, constructed from product_type=%s variant=%s: %s",
+            self.serial_number,
+            product_type,
+            variant,
+            constructed_prefix,
+        )
+        return constructed_prefix
+
+    def _extract_mqtt_prefix_from_api(self, device_info: Any) -> str | None:
+        """Extract MQTT prefix from API device info."""
+        # Try to get MQTT prefix from connected configuration
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if not connected_config:
+            return None
+
+        mqtt_obj = getattr(connected_config, "mqtt", None)
+        if not mqtt_obj:
+            return None
+        # Check for the actual MQTT prefix field from the API
+        mqtt_root_topic = getattr(mqtt_obj, "mqtt_root_topic_level", None)
+        if mqtt_root_topic:
+            _LOGGER.debug(
+                "Found MQTT prefix from API mqtt_root_topic_level: %s", mqtt_root_topic
+            )
+            return str(mqtt_root_topic)
+
+        return None
+
+    def _construct_mqtt_prefix_fallback_from_device_info(self, device_info: Any) -> str:
+        """Construct MQTT prefix from device info using Dyson's naming conventions.
+
+        Extracts product_type and variant from device_info and applies the fallback rules:
+        - If product_type ends in a letter OR variant is empty/None: use product_type
+        - If product_type does not end in a letter AND variant exists: use product_type + variant
+        """
+        # Extract product type and variant from device info
         product_type = getattr(
             device_info, "product_type", getattr(device_info, "type", "438")
         )
+        variant = getattr(device_info, "variant", None)
 
-        # Map known product types to MQTT prefixes
-        prefix_map = {
-            "438": "438M",  # Pure Cool
-            "475": "475",  # Hot+Cool
-            "455": "455",  # Pure Hot+Cool
-            "469": "469",  # Pure Cool Desk
-            "527": "527",  # V10/V11
-        }
+        return self._construct_mqtt_prefix_fallback(product_type, variant)
 
-        return prefix_map.get(product_type, f"{product_type}M")
+    def _construct_mqtt_prefix_fallback(
+        self, product_type: str, variant: str | None
+    ) -> str:
+        """Construct MQTT prefix from product type and variant using Dyson's naming conventions.
+
+        Rules:
+        - If product_type ends in a letter OR variant is empty/None: use product_type
+        - If product_type does not end in a letter AND variant exists: use product_type + variant
+        """
+        product_type = str(product_type)
+        # Check if product type ends in a letter
+        ends_in_letter = product_type and product_type[-1].isalpha()
+        # Check if variant is meaningful
+        has_variant = variant and str(variant).strip()
+        if ends_in_letter or not has_variant:
+            # Use product type as-is
+            return product_type
+        else:
+            # Combine product type with variant
+            return product_type + str(variant)
 
 
 class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
