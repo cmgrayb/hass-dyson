@@ -8,11 +8,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.service import SupportsResponse
 
-from custom_components.hass_dyson.const import (
-    DOMAIN,
-    SERVICE_GET_CLOUD_DEVICES,
-    SERVICE_REFRESH_ACCOUNT_DATA,
-)
+from custom_components.hass_dyson.const import DOMAIN, SERVICE_GET_CLOUD_DEVICES, SERVICE_REFRESH_ACCOUNT_DATA
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
 from custom_components.hass_dyson.services import (
     SERVICE_CANCEL_SLEEP_TIMER_SCHEMA,
@@ -1479,15 +1475,82 @@ class TestCloudDevicesService:
         assert "mqtt_password" not in device  # Should not be in sanitized output
         assert "firmware_version" not in device
 
+    def test_extract_enhanced_device_info_product_type_variants(self):
+        """Test product type extraction with various device type and variant combinations."""
+        from custom_components.hass_dyson.services import _extract_enhanced_device_info
+
+        # Test Case 1: Numeric device type with variant (should combine)
+        mock_device = MagicMock()
+        mock_device.type = "438"
+        mock_device.variant = "M"
+        mock_device.name = "Test Device"
+        mock_device.category = "ec"
+        mock_device.model = None
+        mock_device.connection_category = None
+        mock_device.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device)
+        assert result["product_type"] == "438M"
+
+        # Test Case 2: Device type already ends with letter (should NOT append variant)
+        mock_device_alpha = MagicMock()
+        mock_device_alpha.type = "438K"  # Already has letter suffix
+        mock_device_alpha.variant = "K"  # Same letter variant
+        mock_device_alpha.name = "Test Device"
+        mock_device_alpha.category = "ec"
+        mock_device_alpha.model = None
+        mock_device_alpha.connection_category = None
+        mock_device_alpha.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_alpha)
+        assert result["product_type"] == "438K"  # Should NOT be "438KK"
+
+        # Test Case 3: Device type ends with different letter than variant
+        mock_device_diff = MagicMock()
+        mock_device_diff.type = "438E"  # Ends with E
+        mock_device_diff.variant = "K"  # Different variant
+        mock_device_diff.name = "Test Device"
+        mock_device_diff.category = "ec"
+        mock_device_diff.model = None
+        mock_device_diff.connection_category = None
+        mock_device_diff.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_diff)
+        assert result["product_type"] == "438E"  # Should NOT append variant
+
+        # Test Case 4: No variant provided
+        mock_device_no_variant = MagicMock()
+        mock_device_no_variant.type = "438"
+        mock_device_no_variant.variant = None
+        mock_device_no_variant.name = "Test Device"
+        mock_device_no_variant.category = "ec"
+        mock_device_no_variant.model = None
+        mock_device_no_variant.connection_category = None
+        mock_device_no_variant.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_no_variant)
+        assert result["product_type"] == "438"
+
+        # Test Case 5: Empty device type string with letter check
+        mock_device_empty = MagicMock()
+        mock_device_empty.type = ""
+        mock_device_empty.variant = "M"
+        mock_device_empty.name = "Test Device"
+        mock_device_empty.category = "ec"
+        mock_device_empty.model = None
+        mock_device_empty.connection_category = None
+        mock_device_empty.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_empty)
+        assert result["product_type"] == "Unknown"  # Falls back to default
+
 
 class TestDecryptDeviceMqttCredentials:
     """Test _decrypt_device_mqtt_credentials helper function."""
 
     def test_decrypt_device_mqtt_credentials_success(self):
         """Test successful MQTT credentials decryption."""
-        from custom_components.hass_dyson.services import (
-            _decrypt_device_mqtt_credentials,
-        )
+        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1518,9 +1581,7 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_connected_config(self):
         """Test MQTT credentials decryption with no connected configuration."""
-        from custom_components.hass_dyson.services import (
-            _decrypt_device_mqtt_credentials,
-        )
+        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1536,9 +1597,7 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_mqtt_config(self):
         """Test MQTT credentials decryption with no MQTT configuration."""
-        from custom_components.hass_dyson.services import (
-            _decrypt_device_mqtt_credentials,
-        )
+        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1558,9 +1617,7 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_no_credentials(self):
         """Test MQTT credentials decryption with no encrypted credentials."""
-        from custom_components.hass_dyson.services import (
-            _decrypt_device_mqtt_credentials,
-        )
+        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
 
         # Arrange
         mock_cloud_client = MagicMock()
@@ -1583,9 +1640,7 @@ class TestDecryptDeviceMqttCredentials:
 
     def test_decrypt_device_mqtt_credentials_exception_handling(self):
         """Test MQTT credentials decryption with exception."""
-        from custom_components.hass_dyson.services import (
-            _decrypt_device_mqtt_credentials,
-        )
+        from custom_components.hass_dyson.services import _decrypt_device_mqtt_credentials
 
         # Arrange
         mock_cloud_client = MagicMock()

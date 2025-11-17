@@ -806,7 +806,12 @@ def _extract_enhanced_device_info(device) -> dict[str, Any]:
     device_type = getattr(device, "type", None)
     device_variant = getattr(device, "variant", None)
     if device_type and device_variant:
-        device_info["product_type"] = f"{device_type}{device_variant}"
+        # Check if device_type already ends with a letter (variant already included)
+        # If so, don't append the variant to avoid duplicates like "438KK" or "438EE"
+        if device_type and len(device_type) > 0 and device_type[-1].isalpha():
+            device_info["product_type"] = device_type
+        else:
+            device_info["product_type"] = f"{device_type}{device_variant}"
     elif device_type:
         device_info["product_type"] = device_type
 
