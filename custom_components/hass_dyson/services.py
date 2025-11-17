@@ -543,7 +543,7 @@ async def _get_cloud_device_data_from_coordinator(
         if not hasattr(coordinator, "_auth_token") or not coordinator._auth_token:
             raise HomeAssistantError("Cloud account coordinator has no auth token")
 
-        # Use the cloud account coordinator to fetch all devices
+        # Use the cloud account coordinator to fetch all devices with decrypted credentials
         try:
             devices = await coordinator._fetch_cloud_devices()
             if not devices:
@@ -558,16 +558,31 @@ async def _get_cloud_device_data_from_coordinator(
                     },
                 }
 
-            # Build device data from the fetched devices
+            # Enhance devices with decrypted MQTT credentials using the coordinator's auth token
+            from libdyson_rest import AsyncDysonClient
+
+            async with AsyncDysonClient(auth_token=coordinator._auth_token) as client:
+                enhanced_devices = await _enhance_devices_with_mqtt_credentials(
+                    client, devices
+                )
+
+            # Build device data from the enhanced devices
             device_list = []
-            for device in devices:
+            for device_info in enhanced_devices:
+                device = device_info["device"]
+                device_data = device_info["enhanced_data"]
+
                 if sanitize:
-                    device_info = _create_sanitized_device_info_from_cloud_device(
-                        device
+                    device_info_result = (
+                        _create_sanitized_device_info_from_cloud_device(device)
                     )
                 else:
-                    device_info = _create_detailed_device_info_from_cloud_device(device)
-                device_list.append(device_info)
+                    # Pass the decrypted password to the detailed function
+                    decrypted_password = device_data.get("decrypted_mqtt_password", "")
+                    device_info_result = _create_detailed_device_info_from_cloud_device(
+                        device, decrypted_password
+                    )
+                device_list.append(device_info_result)
 
             return {
                 "devices": device_list,
@@ -599,6 +614,26 @@ async def _get_cloud_device_data_from_coordinator(
         return await _get_device_data_from_coordinator_only(coordinator, sanitize)
 
 
+async def _enhance_devices_with_mqtt_credentials(
+    client, devices
+) -> list[dict[str, Any]]:
+    """Enhance device list with decrypted MQTT credentials using cloud client."""
+    enhanced_devices = []
+    for device in devices:
+        # Create enhanced device data with decrypted credentials
+        enhanced_device_data = _extract_enhanced_device_info(device)
+
+        # Decrypt MQTT credentials if available
+        mqtt_credentials = _decrypt_device_mqtt_credentials(client, device)
+        if mqtt_credentials:
+            enhanced_device_data["decrypted_mqtt_password"] = mqtt_credentials
+
+        enhanced_devices.append(
+            {"device": device, "enhanced_data": enhanced_device_data}
+        )
+    return enhanced_devices
+
+
 async def _fetch_live_cloud_devices(config_entry):
     """Fetch live device data from Dyson cloud API using config entry credentials."""
     from libdyson_rest import AsyncDysonClient
@@ -622,19 +657,7 @@ async def _fetch_live_cloud_devices(config_entry):
             return []
 
         # Enhance devices with decrypted MQTT credentials
-        enhanced_devices = []
-        for device in devices:
-            # Create enhanced device data with decrypted credentials
-            enhanced_device_data = _extract_enhanced_device_info(device)
-
-            # Decrypt MQTT credentials if available
-            mqtt_credentials = _decrypt_device_mqtt_credentials(client, device)
-            if mqtt_credentials:
-                enhanced_device_data["decrypted_mqtt_password"] = mqtt_credentials
-
-            enhanced_devices.append(
-                {"device": device, "enhanced_data": enhanced_device_data}
-            )
+        enhanced_devices = await _enhance_devices_with_mqtt_credentials(client, devices)
 
         _LOGGER.info(
             "Successfully fetched %d devices from cloud API for account %s",
@@ -968,6 +991,11 @@ def _create_detailed_device_info_from_coordinator(
             "command_topic": f"{base_topic}/command",
         }
 
+        # Determine the MQTT password - use actual credential if available, otherwise placeholder
+        mqtt_password = "Requires device setup"
+        if hasattr(device, "credential") and device.credential:
+            mqtt_password = device.credential
+
         # Local MQTT configuration
         device_info["setup_info"]["local_mqtt_config"] = {
             "host": f"{coordinator.serial_number}.local",
@@ -975,18 +1003,8 @@ def _create_detailed_device_info_from_coordinator(
             "tls_port": 8883,
             "username": coordinator.serial_number,
             "root_topic": device.mqtt_prefix,
-            "password": "Available through device setup",  # We don't expose the actual password
+            "password": mqtt_password,
         }
-
-        # Add credential if available (this is the local MQTT password)
-        if (
-            hasattr(device, "credential")
-            and device.credential
-            and device_info["setup_info"]["local_mqtt_config"]
-        ):
-            local_mqtt_config = device_info["setup_info"]["local_mqtt_config"]
-            if isinstance(local_mqtt_config, dict):
-                local_mqtt_config["password"] = device.credential
 
     return device_info
 
@@ -1013,11 +1031,17 @@ def _create_sanitized_device_info_from_cloud_device(device) -> dict[str, Any]:
     }
 
 
-def _create_detailed_device_info_from_cloud_device(device) -> dict[str, Any]:
+def _create_detailed_device_info_from_cloud_device(
+    device, decrypted_password: str = ""
+) -> dict[str, Any]:
     """Create detailed device information from cloud device object.
 
     Uses existing _extract_enhanced_device_info infrastructure to process cloud device
     and returns comprehensive information for manual setup.
+
+    Args:
+        device: The cloud device object
+        decrypted_password: The decrypted MQTT password if available
     """
     # Leverage existing cloud device processing
     enhanced_info = _extract_enhanced_device_info(device)
@@ -1025,13 +1049,10 @@ def _create_detailed_device_info_from_cloud_device(device) -> dict[str, Any]:
     # Get serial number from device object
     serial_number = getattr(device, "serial_number", "Unknown")
 
-    # Try to get decrypted MQTT password if available
-    mqtt_password = ""
-    try:
-        # This would require cloud client context, so we'll mark it as requiring setup
-        mqtt_password = "Available through device setup"
-    except Exception:
-        mqtt_password = "Requires setup"
+    # Use the provided decrypted password or fallback
+    mqtt_password = (
+        decrypted_password if decrypted_password else "Requires device setup"
+    )
 
     return {
         # Ordered to match manual device setup pattern

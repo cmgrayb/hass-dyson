@@ -339,6 +339,11 @@ async def async_setup_entry(  # noqa: C901
         # Import safe capability checking functions
         from .device_utils import has_any_capability_safe, has_capability_safe
 
+        # Get environmental data for all sensor checks
+        env_data = (
+            coordinator.data.get("environmental-data", {}) if coordinator.data else {}
+        )
+
         # Add PM2.5, PM10, P25R, P10R, and gas sensors for devices with ExtendedAQ capability
         # ExtendedAQ now supports PM2.5, PM10, CO2, NO2, and HCHO (Formaldehyde) metrics per discovery.md
         if has_any_capability_safe(
@@ -354,13 +359,6 @@ async def async_setup_entry(  # noqa: C901
                     DysonP25RSensor(coordinator),
                     DysonP10RSensor(coordinator),
                 ]
-            )
-
-            # Dynamically add gas sensors based on environmental data presence
-            env_data = (
-                coordinator.data.get("environmental-data", {})
-                if coordinator.data
-                else {}
             )
 
             # Add CO2 sensor if CO2 data is present
@@ -479,30 +477,52 @@ async def async_setup_entry(  # noqa: C901
                 carbon_filter_type,
             )
 
-        # Add temperature sensor for devices with Heating capability OR EnvironmentalData capability
-        # Per discovery.md: EnvironmentalData should indicate temperature and humidity sensor support
-        if has_capability_safe(capabilities, "heating") or has_any_capability_safe(
+        # Add temperature sensor based on capability AND data presence
+        # Check both capability and actual data availability in environmental response
+        has_temp_capability = has_capability_safe(
+            capabilities, "heating"
+        ) or has_any_capability_safe(
             capabilities,
             ["EnvironmentalData", "environmental_data", "environmentalData"],
-        ):
-            _LOGGER.debug("Adding temperature sensor for device %s", device_serial)
+        )
+
+        if has_temp_capability and "tact" in env_data:
+            _LOGGER.debug(
+                "Adding temperature sensor for device %s - capability and temperature data detected",
+                device_serial,
+            )
             entities.append(DysonTemperatureSensor(coordinator))
+        elif has_temp_capability:
+            _LOGGER.debug(
+                "Skipping temperature sensor for device %s - capability present but no temperature data in environmental response",
+                device_serial,
+            )
         else:
             _LOGGER.debug(
                 "Skipping temperature sensor for device %s - no heating or environmental capability",
                 device_serial,
             )
 
-        # Add humidity sensor for devices with Humidifier capability OR EnvironmentalData capability
-        # Per discovery.md: EnvironmentalData should indicate humidity sensor support
-        if has_any_capability_safe(
+        # Add humidity sensor based on capability AND data presence
+        # Check both capability and actual data availability in environmental response
+        has_humidity_capability = has_any_capability_safe(
             capabilities, ["Humidifier", "humidifier", "Humidity"]
         ) or has_any_capability_safe(
             capabilities,
             ["EnvironmentalData", "environmental_data", "environmentalData"],
-        ):
-            _LOGGER.debug("Adding humidity sensor for device %s", device_serial)
+        )
+
+        if has_humidity_capability and "hact" in env_data:
+            _LOGGER.debug(
+                "Adding humidity sensor for device %s - capability and humidity data detected",
+                device_serial,
+            )
             entities.append(DysonHumiditySensor(coordinator))
+        elif has_humidity_capability:
+            _LOGGER.debug(
+                "Skipping humidity sensor for device %s - capability present but no humidity data in environmental response",
+                device_serial,
+            )
         else:
             _LOGGER.debug(
                 "Skipping humidity sensor for device %s - no humidifier or environmental capability detected",

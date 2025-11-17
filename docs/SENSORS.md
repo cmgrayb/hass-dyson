@@ -249,9 +249,11 @@ Raw Dyson data is in Kelvin × 10 format. The integration performs conversion: `
 
 #### Discovery Logic
 
-Temperature sensors are created when devices have either:
-- Heating capability (for heater fans and heating-capable devices)
-- EnvironmentalData capability (indicating environmental sensor support)
+Temperature sensors are created when devices have BOTH:
+1. **Capability requirement**: Heating capability OR EnvironmentalData capability
+2. **Data presence**: Temperature data (`tact` key) present in environmental MQTT response
+
+This ensures sensors are only created for devices that both declare the capability and actually provide temperature data.
 
 ### Humidity Sensor
 
@@ -276,9 +278,11 @@ Monitor humidity levels for comfort, health management, and integration with hum
 
 #### Discovery Logic
 
-Humidity sensors are created when devices have either:
-- Humidifier capability (for humidifier devices, determined by PH product type)
-- EnvironmentalData capability (indicating environmental sensor support)
+Humidity sensors are created when devices have BOTH:
+1. **Capability requirement**: Humidifier capability OR EnvironmentalData capability  
+2. **Data presence**: Humidity data (`hact` key) present in environmental MQTT response
+
+This ensures sensors are only created for devices that both declare the capability and actually provide humidity data.
 
 #### Data Format
 

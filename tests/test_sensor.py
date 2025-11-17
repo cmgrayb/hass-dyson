@@ -97,6 +97,12 @@ class TestSensorPlatformSetup:
         async_add_entities = MagicMock()
 
         mock_coordinator.device_capabilities = ["Heating"]
+        # Add environmental data with temperature data for sensor creation
+        mock_coordinator.data = {
+            "environmental-data": {
+                "tact": "2731",  # Temperature data in Kelvin*10 format
+            }
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
@@ -107,6 +113,56 @@ class TestSensorPlatformSetup:
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
         assert len(entities) >= 1  # Should have temperature sensor
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_heating_without_env_data(self, mock_coordinator):
+        """Test that heating capability alone doesn't create temperature sensor without environmental data."""
+        # Arrange
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+        async_add_entities = MagicMock()
+
+        mock_coordinator.device_capabilities = ["Heating"]
+        mock_coordinator.device_category = ["EC"]
+        # No environmental data provided - should not create sensor
+        mock_coordinator.data = {}
+        hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) == 0  # Should have no sensors - no environmental data
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_humidifier_without_env_data(
+        self, mock_coordinator
+    ):
+        """Test that humidifier capability alone doesn't create humidity sensor without environmental data."""
+        # Arrange
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+        async_add_entities = MagicMock()
+
+        mock_coordinator.device_capabilities = ["Humidifier"]
+        mock_coordinator.device_category = ["EC"]
+        # No environmental data provided - should not create sensor
+        mock_coordinator.data = {}
+        hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) == 0  # Should have no sensors - no environmental data
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_no_capabilities(self, mock_coordinator):
@@ -574,6 +630,12 @@ class TestSensorPlatformSetupAdvanced:
 
         mock_coordinator.device_capabilities = ["Humidifier"]
         mock_coordinator.device_category = ["EC"]
+        # Add environmental data with humidity data for sensor creation
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hact": "45",  # Humidity data in percentage format
+            }
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
