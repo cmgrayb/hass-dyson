@@ -163,7 +163,8 @@ class TestDysonDevice:
 
         assert device._connected is True
         mock_client.subscribe.assert_called()
-        mock_hass.loop.call_soon_threadsafe.assert_called_once()
+        # Should call call_soon_threadsafe twice: once for initial state request, once for heartbeat
+        assert mock_hass.loop.call_soon_threadsafe.call_count == 2
 
         # Test failed connection
         device._connected = False
@@ -1543,8 +1544,8 @@ class TestDysonDeviceMQTTCallbacks:
         assert device._connected is True
         # Should subscribe to topics
         assert mock_mqtt_client.subscribe.call_count == 6
-        # Should schedule task for requesting current state (API v2 change)
-        mock_hass.loop.call_soon_threadsafe.assert_called_once()
+        # Should schedule task twice: once for requesting current state, once for heartbeat (API v2 change)
+        assert mock_hass.loop.call_soon_threadsafe.call_count == 2
 
     def test_on_connect_failure(self, mock_hass, mock_mqtt_client):
         """Test failed MQTT connection callback."""

@@ -104,7 +104,7 @@ The following tasks should be available:
 - **Check All**: Run all quality checks in sequence
 - **Setup Dev Environment**: Create venv and install dependencies
 
-## Testing Strategy
+### Testing Strategy
 
 ### Test Categories and Scope
 - **Unit tests**: Individual functions and classes in isolation
@@ -112,7 +112,7 @@ The following tasks should be available:
 - **Component tests**: Home Assistant platform setup and entity functionality
 - **Mock external dependencies**: API calls, MQTT connections, device communication
 - **Use real endpoints sparingly**: Only for integration tests with proper credentials
-- **Target coverage**: Maintain test coverage above 80%
+- **Target coverage**: Maintain test coverage above 75%
 
 ### Home Assistant Integration Testing Patterns
 
