@@ -3,7 +3,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -494,7 +498,9 @@ class TestSensorPlatformSetupAdvanced:
         assert result is True
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) == 1  # Should only have legacy VOC sensor (no ExtendedAQ gas sensors)
+        assert (
+            len(entities) == 1
+        )  # Should only have legacy VOC sensor (no ExtendedAQ gas sensors)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_formaldehyde_devices(self, mock_coordinator):
@@ -531,7 +537,9 @@ class TestSensorPlatformSetupAdvanced:
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
         # Should have PM sensors (4) + HCHO sensor (1) + carbon filter sensors (2) = 7 entities
-        assert len(entities) >= 6  # Dynamic sensor detection creates sensors based on data presence
+        assert (
+            len(entities) >= 6
+        )  # Dynamic sensor detection creates sensors based on data presence
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_robot_category(self, mock_coordinator):

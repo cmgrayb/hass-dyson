@@ -391,9 +391,9 @@ def mock_coordinator():
         "environmental-data": {
             "pm25": "10",
             "pm10": "15",
-            "co2": "800",   # CO2 data for CO2 sensor
-            "no2": "25",    # NO2 data for NO2 sensor
-            "hcho": "5",    # HCHO data for formaldehyde sensor
+            "co2": "800",  # CO2 data for CO2 sensor
+            "no2": "25",  # NO2 data for NO2 sensor
+            "hcho": "5",  # HCHO data for formaldehyde sensor
             "tact": "2950",  # Temperature actual in Kelvin * 10 (295.0K = 21.85°C)
             "hact": "0045",  # Humidity actual as percentage (45%)
         },

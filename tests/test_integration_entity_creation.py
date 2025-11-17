@@ -9,7 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, CONF_SERIAL_NUMBER, DISCOVERY_STICKER
+from custom_components.hass_dyson.const import (
+    CONF_DISCOVERY_METHOD,
+    CONF_SERIAL_NUMBER,
+    DISCOVERY_STICKER,
+)
 
 
 class TestEntityCreationIntegration:
@@ -218,7 +222,11 @@ class TestEntityCreationIntegration:
         )
 
         # Configure coordinator for multiple capabilities
-        mock_coordinator.device_capabilities = ["ExtendedAQ", "Heating", "EnvironmentalData"]
+        mock_coordinator.device_capabilities = [
+            "ExtendedAQ",
+            "Heating",
+            "EnvironmentalData",
+        ]
         mock_coordinator.device_category = ["ec"]
         mock_coordinator.config_entry = config_entry
         mock_coordinator.has_capability = lambda cap: cap in [
@@ -492,7 +500,11 @@ class TestRealDeviceEntityCreationScenarios:
         }
 
         # Configure coordinator for Hot+Cool heater
-        mock_coordinator.device_capabilities = ["EnvironmentalData", "Heating", "FanControl"]
+        mock_coordinator.device_capabilities = [
+            "EnvironmentalData",
+            "Heating",
+            "FanControl",
+        ]
         mock_coordinator.device_category = ["heater"]
         mock_coordinator.config_entry = config_entry
         mock_coordinator.serial_number = "HEATER-REAL-002"
@@ -546,7 +558,11 @@ class TestRealDeviceEntityCreationScenarios:
         }
 
         # Configure coordinator for robot vacuum
-        mock_coordinator.device_capabilities = ["Navigation", "Cleaning", "BatteryStatus"]
+        mock_coordinator.device_capabilities = [
+            "Navigation",
+            "Cleaning",
+            "BatteryStatus",
+        ]
         mock_coordinator.device_category = ["robot"]
         mock_coordinator.config_entry = config_entry
         mock_coordinator.serial_number = "ROBOT-REAL-003"
