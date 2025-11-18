@@ -40,7 +40,6 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -112,7 +111,6 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

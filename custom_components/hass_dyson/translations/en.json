@@ -176,6 +176,12 @@
       },
       "hepa_filter_type": {
         "name": "HEPA Filter Type"
+      },
+      "p25r": {
+        "name": "PM2.5 Raw"
+      },
+      "p10r": {
+        "name": "PM10 Raw"
       }
     },
     "switch": {
