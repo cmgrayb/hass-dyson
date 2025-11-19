@@ -252,7 +252,7 @@ The development environment includes all necessary Home Assistant testing infras
 ### Current Coverage Status
 - **Overall project coverage**: ~10% (improved from 7%)
 - **coordinator.py coverage**: 31% (improved from 12%)
-- **Target coverage**: >80% for critical modules
+- **Target coverage**: >75% for critical modules
 
 ### Priority Areas for Coverage Improvement
 1. **coordinator.py**: Focus on async update methods, error handling

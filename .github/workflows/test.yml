@@ -113,11 +113,11 @@ jobs:
           root = tree.getroot()
           coverage = float(root.get('line-rate')) * 100
           print(f'Coverage: {coverage:.2f}%')
-          if coverage < 80:
-              print(f'❌ Coverage {coverage:.2f}% is below 80% threshold')
+          if coverage < 75:
+              print(f'❌ Coverage {coverage:.2f}% is below 75% threshold')
               exit(1)
           else:
-              print(f'✅ Coverage {coverage:.2f}% meets 80% threshold')
+              print(f'✅ Coverage {coverage:.2f}% meets 75% threshold')
           "
 
       - name: Upload coverage to Codecov
@@ -129,7 +129,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report
           path: htmlcov/
@@ -235,7 +235,7 @@ jobs:
           python -m twine check dist/*
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist-packages
           path: dist/

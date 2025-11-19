@@ -500,7 +500,7 @@ class TestDysonDataUpdateCoordinatorUpdate:
 
         result = await coordinator._async_update_data()
 
-        assert result == {"state": "connected"}
+        assert result == {"state": "connected", "environmental-data": {}}
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
@@ -522,7 +522,7 @@ class TestDysonDataUpdateCoordinatorUpdate:
 
         result = await coordinator._async_update_data()
 
-        assert result == {"state": "reconnected"}
+        assert result == {"state": "reconnected", "environmental-data": {}}
         mock_device.connect.assert_called_once()
         mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
         mock_device.get_state.assert_called_once()
@@ -565,7 +565,7 @@ class TestDysonDataUpdateCoordinatorUpdate:
         result = await coordinator._async_update_data()
 
         # Should still complete successfully even with command exception
-        assert result == {"state": "reconnected"}
+        assert result == {"state": "reconnected", "environmental-data": {}}
 
     @pytest.mark.asyncio
     async def test_update_coordinator_data_success(self, mock_hass, mock_config_entry):

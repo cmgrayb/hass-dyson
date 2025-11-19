@@ -242,7 +242,8 @@ class TestSensorImplementationErrorHandling:
 
         from custom_components.hass_dyson.sensor import DysonPM25Sensor
 
-        mock_coordinator.device.pm25 = 25
+        # Set up coordinator data with environmental data structure
+        mock_coordinator.data = {"environmental-data": {"pm25": 25}}
         sensor = DysonPM25Sensor(mock_coordinator)
         sensor.hass = MagicMock()  # Mock hass to avoid RuntimeError
 
