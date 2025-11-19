@@ -45,9 +45,8 @@ async def async_setup_entry(
     # Add additional switches based on capabilities
     device_capabilities = coordinator.device_capabilities
 
-    # Oscillation switch disabled - use "Oscillation Mode" select entity instead
-    # if "AdvanceOscillationDay1" in device_capabilities:
-    #     entities.append(DysonOscillationSwitch(coordinator))
+    # Note: Oscillation is now handled natively by the fan platform via FanEntityFeature.OSCILLATE
+    # Advanced oscillation modes are available through the oscillation mode select entity
 
     if CAPABILITY_HEATING in device_capabilities:
         entities.append(DysonHeatingSwitch(coordinator))
@@ -177,97 +176,8 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             )
 
 
-class DysonOscillationSwitch(DysonEntity, SwitchEntity):
-    """Switch for oscillation."""
-
-    coordinator: DysonDataUpdateCoordinator
-
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the oscillation switch."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_oscillation"
-        self._attr_translation_key = "oscillation"
-        self._attr_icon = "mdi:rotate-3d-variant"
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self.coordinator.device:
-            # Get oscillation from device state (oson)
-            product_state = self.coordinator.data.get("product-state", {})
-            oson = self.coordinator.device._get_current_value(
-                product_state, "oson", "OFF"
-            )
-            self._attr_is_on = oson == "ON"
-        else:
-            self._attr_is_on = None
-        super()._handle_coordinator_update()
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Turn on oscillation."""
-        if not self.coordinator.device:
-            return
-
-        try:
-            await self.coordinator.device.set_oscillation(True)
-            # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug(
-                "Turned on oscillation for %s", self.coordinator.serial_number
-            )
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to turn on oscillation for %s: %s",
-                self.coordinator.serial_number,
-                err,
-            )
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Turn off oscillation."""
-        if not self.coordinator.device:
-            return
-
-        try:
-            await self.coordinator.device.set_oscillation(False)
-            # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug(
-                "Turned off oscillation for %s", self.coordinator.serial_number
-            )
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to turn off oscillation for %s: %s",
-                self.coordinator.serial_number,
-                err,
-            )
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return oscillation-specific state attributes for scene support."""
-        if not self.coordinator.device:
-            return None
-
-        attributes: dict[str, Any] = {}
-        product_state = self.coordinator.data.get("product-state", {})
-
-        # Oscillation state for scene support
-        oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
-        attributes["oscillation_enabled"] = oson == "ON"
-
-        # Include oscillation angles if available
-        try:
-            lower_data = self.coordinator.device._get_current_value(
-                product_state, "osal", "0000"
-            )
-            upper_data = self.coordinator.device._get_current_value(
-                product_state, "osau", "0350"
-            )
-            lower_angle: int = int(lower_data.lstrip("0") or "0")
-            upper_angle: int = int(upper_data.lstrip("0") or "350")
-
-            attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
-            attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
-        except (ValueError, TypeError):
-            pass
-
-        return attributes
+# DysonOscillationSwitch class removed - oscillation is now handled natively by the fan platform
+# via FanEntityFeature.OSCILLATE and the fan.oscillate service
 
 
 class DysonHeatingSwitch(DysonEntity, SwitchEntity):

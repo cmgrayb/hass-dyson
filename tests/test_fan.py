@@ -649,3 +649,211 @@ class TestFanCoverageEnhancement:
         ]
         for key in expected_keys:
             assert key in attributes
+
+    def test_init_with_oscillation_support(self, mock_coordinator):
+        """Test that __init__ adds oscillation support when device reports oson state."""
+        # Arrange - Add oson to device state to indicate oscillation support
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "OFF",  # Device supports oscillation
+            }
+        }
+
+        # Act
+        fan = DysonFan(mock_coordinator)
+
+        # Assert - Should include OSCILLATE feature
+        expected_features = (
+            FanEntityFeature.SET_SPEED
+            | FanEntityFeature.DIRECTION
+            | FanEntityFeature.PRESET_MODE
+            | FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+            | FanEntityFeature.OSCILLATE
+        )
+        assert fan._attr_supported_features == expected_features
+
+    def test_init_without_oscillation_support(self, mock_coordinator):
+        """Test that __init__ does not add oscillation support when device lacks oson state."""
+        # Arrange - No oson in device state (no oscillation support)
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                # No "oson" key = no oscillation support
+            }
+        }
+
+        # Act
+        fan = DysonFan(mock_coordinator)
+
+        # Assert - Should not include OSCILLATE feature
+        expected_features = (
+            FanEntityFeature.SET_SPEED
+            | FanEntityFeature.DIRECTION
+            | FanEntityFeature.PRESET_MODE
+            | FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+        )
+        assert fan._attr_supported_features == expected_features
+        assert not (fan._attr_supported_features & FanEntityFeature.OSCILLATE)
+
+    def test_handle_coordinator_update_with_oscillation_support(self, mock_coordinator):
+        """Test coordinator update with oscillation support updates oscillation state."""
+        # Arrange - Device with oscillation support
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "ON",  # Oscillation is ON
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+
+        # Mock device method calls
+        def mock_get_current_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device._get_current_value.side_effect = mock_get_current_value
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_oscillating is True
+
+    def test_handle_coordinator_update_without_oscillation_support(
+        self, mock_coordinator
+    ):
+        """Test coordinator update without oscillation support sets oscillation to False."""
+        # Arrange - Device without oscillation support (no oson in state)
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                # No "oson" key = no oscillation support
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_oscillating is False
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_success(self, mock_coordinator):
+        """Test successful oscillation turn on via native fan service."""
+        # Arrange - Device with oscillation support
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",  # Device supports oscillation
+            }
+        }
+        mock_coordinator.device.set_oscillation = AsyncMock()
+        fan = DysonFan(mock_coordinator)
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        # Assert
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
+        assert fan._attr_oscillating is True
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_off_success(self, mock_coordinator):
+        """Test successful oscillation turn off via native fan service."""
+        # Arrange - Device with oscillation support
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "ON",  # Device supports oscillation
+            }
+        }
+        mock_coordinator.device.set_oscillation = AsyncMock()
+        fan = DysonFan(mock_coordinator)
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(False)
+
+        # Assert
+        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
+        assert fan._attr_oscillating is False
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_without_support_logs_warning(self, mock_coordinator):
+        """Test oscillation control without support logs warning."""
+        # Arrange - Device without oscillation support (no oson in state)
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                # No "oson" key = no oscillation support
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+
+        with patch("custom_components.hass_dyson.fan._LOGGER") as mock_logger:
+            # Act
+            await fan.async_oscillate(True)
+
+            # Assert
+            mock_logger.warning.assert_called_once_with(
+                "Device %s does not support oscillation control",
+                mock_coordinator.serial_number,
+            )
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_no_device(self, mock_coordinator):
+        """Test oscillation control with no device returns early."""
+        # Arrange
+        mock_coordinator.device = None
+        mock_coordinator.data = {
+            "product-state": {
+                "oson": "OFF",  # Would support oscillation if device existed
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+
+        # Act & Assert - should not raise exception
+        await fan.async_oscillate(True)
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_exception_handling(self, mock_coordinator):
+        """Test oscillation control exception handling."""
+        # Arrange - Device with oscillation support
+        mock_coordinator.data = {
+            "product-state": {
+                "oson": "OFF",  # Device supports oscillation
+            }
+        }
+        mock_coordinator.device.set_oscillation = AsyncMock(
+            side_effect=Exception("Device error")
+        )
+        fan = DysonFan(mock_coordinator)
+
+        with patch("custom_components.hass_dyson.fan._LOGGER") as mock_logger:
+            # Act
+            await fan.async_oscillate(True)
+
+            # Assert
+            mock_logger.error.assert_called_once_with(
+                "Failed to set oscillation for %s: %s",
+                mock_coordinator.serial_number,
+                mock_logger.error.call_args[0][2],  # The exception object
+            )

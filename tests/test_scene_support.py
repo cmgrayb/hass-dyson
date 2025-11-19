@@ -15,7 +15,6 @@ from custom_components.hass_dyson.select import (
 from custom_components.hass_dyson.switch import (
     DysonContinuousMonitoringSwitch,
     DysonHeatingSwitch,
-    DysonOscillationSwitch,
 )
 
 
@@ -151,24 +150,6 @@ class TestClimateSceneSupport:
 
 class TestSwitchSceneSupport:
     """Test switch entities scene support."""
-
-    def test_oscillation_switch_extra_state_attributes(self, mock_coordinator):
-        """Test oscillation switch exposes properties for scene support."""
-        # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
-            lambda data, key, default: {
-                "oson": "ON",
-                "osal": "0045",
-                "osau": "0315",
-            }.get(key, default)
-        )
-
-        switch = DysonOscillationSwitch(mock_coordinator)
-        attributes = switch.extra_state_attributes
-
-        assert attributes["oscillation_enabled"] is True
-        assert attributes["oscillation_angle_low"] == 45
-        assert attributes["oscillation_angle_high"] == 315
 
     def test_heating_switch_extra_state_attributes(self, mock_coordinator):
         """Test heating switch exposes properties for scene support."""
@@ -319,9 +300,8 @@ class TestSceneIntegrationSupport:
         climate._attr_fan_mode = "5"
         climate_attrs = climate.extra_state_attributes
 
-        # Switch entities cover: oscillation, heating, continuous monitoring
-        osc_switch = DysonOscillationSwitch(mock_coordinator)
-        osc_attrs = osc_switch.extra_state_attributes
+        # Switch entities cover: heating, continuous monitoring
+        # Note: Oscillation is now handled by the fan platform, not switch entities
 
         heat_switch = DysonHeatingSwitch(mock_coordinator)
         heat_attrs = heat_switch.extra_state_attributes
@@ -350,7 +330,6 @@ class TestSceneIntegrationSupport:
         for attrs in [
             fan_attrs,
             climate_attrs,
-            osc_attrs,
             heat_attrs,
             mon_attrs,
             osc_select_attrs,
@@ -385,6 +364,6 @@ class TestSceneIntegrationSupport:
         # Verify specific critical properties exist
         assert "fan_power" in fan_attrs
         assert "heating_enabled" in heat_attrs
-        assert "oscillation_enabled" in osc_attrs
+        assert "oscillation_enabled" in fan_attrs  # Oscillation is now in fan platform
         assert "target_temperature" in climate_attrs
         assert "sleep_timer_minutes" in timer_attrs

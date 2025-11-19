@@ -48,6 +48,7 @@ class DysonFan(DysonEntity, FanEntity):
 
         self._attr_unique_id = f"{coordinator.serial_number}_fan"
         self._attr_name = f"{coordinator.device_name}"
+        # Base features for all fans
         self._attr_supported_features = (
             FanEntityFeature.SET_SPEED
             | FanEntityFeature.DIRECTION
@@ -55,6 +56,11 @@ class DysonFan(DysonEntity, FanEntity):
             | FanEntityFeature.TURN_ON
             | FanEntityFeature.TURN_OFF
         )
+
+        # Add oscillation support if device reports oscillation state (oson)
+        self._oscillation_supported = self._check_oscillation_support()
+        if self._oscillation_supported:
+            self._attr_supported_features |= FanEntityFeature.OSCILLATE
         self._attr_speed_count = 10  # Dyson supports 10 speed levels
         self._attr_percentage_step = 10  # Step size of 10%
 
@@ -116,11 +122,19 @@ class DysonFan(DysonEntity, FanEntity):
                 product_state, "auto", "OFF"
             )
             self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
+
+            # Update oscillation state from device data if supported
+            if self._oscillation_supported:
+                oson = self.coordinator.device._get_current_value(
+                    product_state, "oson", "OFF"
+                )
+                self._attr_oscillating = oson == "ON"
+            else:
+                # Device doesn't support oscillation
+                self._attr_oscillating = False
         else:
             self._attr_preset_mode = None
-
-        # Oscillation not available in our current data, set to False
-        self._attr_oscillating = False
+            self._attr_oscillating = False
 
         _LOGGER.debug(
             "Fan %s final state - is_on: %s, percentage: %s",
@@ -381,6 +395,47 @@ class DysonFan(DysonEntity, FanEntity):
                 attributes["sleep_timer"] = 0
 
         return attributes if attributes else None
+
+    def _check_oscillation_support(self) -> bool:
+        """Check if device supports oscillation by looking for 'oson' in device state."""
+        if not self.coordinator.device or not self.coordinator.data:
+            return False
+
+        product_state = self.coordinator.data.get("product-state", {})
+        # Check if device reports oscillation state (oson key exists)
+        return "oson" in product_state
+
+    async def async_oscillate(self, oscillating: bool) -> None:
+        """Set oscillation on/off via Home Assistant's native fan.oscillate service."""
+        if not self.coordinator.device:
+            return
+
+        # Only allow oscillation control if device supports it
+        if not self._oscillation_supported:
+            _LOGGER.warning(
+                "Device %s does not support oscillation control",
+                self.coordinator.serial_number,
+            )
+            return
+
+        try:
+            await self.coordinator.device.set_oscillation(oscillating)
+
+            # Update state immediately for responsive UI
+            self._attr_oscillating = oscillating
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set oscillation to %s for %s via native fan service",
+                oscillating,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to set oscillation for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
 
     async def async_set_angle(self, angle_low: int, angle_high: int) -> None:
         """Set oscillation angle via service call."""

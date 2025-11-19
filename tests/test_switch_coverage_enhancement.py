@@ -15,7 +15,6 @@ from custom_components.hass_dyson.switch import (
     DysonFirmwareAutoUpdateSwitch,
     DysonHeatingSwitch,
     DysonNightModeSwitch,
-    DysonOscillationSwitch,
     async_setup_entry,
 )
 
@@ -281,143 +280,9 @@ class TestSwitchCoverageEnhancement:
     #     # Assert
     #     assert switch._attr_is_on is None
 
-    @pytest.mark.asyncio
-    async def test_oscillation_switch_turn_on_no_device(self):
-        """Test oscillation switch turn_on with no device."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = None
-        switch = DysonOscillationSwitch(coordinator)
+    # Oscillation switch test removed - oscillation handled by fan platform
 
-        # Act
-        await switch.async_turn_on()
-
-        # Assert - should return early without error
-
-    @pytest.mark.asyncio
-    async def test_oscillation_switch_turn_off_no_device(self):
-        """Test oscillation switch turn_off with no device."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = None
-        switch = DysonOscillationSwitch(coordinator)
-
-        # Act
-        await switch.async_turn_off()
-
-        # Assert - should return early without error
-
-    @pytest.mark.asyncio
-    async def test_oscillation_switch_turn_on_exception_handling(self):
-        """Test oscillation switch turn_on exception handling."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = MagicMock()
-        coordinator.device.set_oscillation = AsyncMock(
-            side_effect=Exception("Device error")
-        )
-        coordinator.serial_number = "TEST-SERIAL-123"
-        switch = DysonOscillationSwitch(coordinator)
-
-        with patch("custom_components.hass_dyson.switch._LOGGER") as mock_logger:
-            # Act
-            await switch.async_turn_on()
-
-            # Assert
-            mock_logger.error.assert_called_with(
-                "Failed to turn on oscillation for %s: %s",
-                "TEST-SERIAL-123",
-                mock_logger.error.call_args[0][2],  # The exception object
-            )
-
-    @pytest.mark.asyncio
-    async def test_oscillation_switch_turn_off_exception_handling(self):
-        """Test oscillation switch turn_off exception handling."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = MagicMock()
-        coordinator.device.set_oscillation = AsyncMock(
-            side_effect=Exception("Device error")
-        )
-        coordinator.serial_number = "TEST-SERIAL-123"
-        switch = DysonOscillationSwitch(coordinator)
-
-        with patch("custom_components.hass_dyson.switch._LOGGER") as mock_logger:
-            # Act
-            await switch.async_turn_off()
-
-            # Assert
-            mock_logger.error.assert_called_with(
-                "Failed to turn off oscillation for %s: %s",
-                "TEST-SERIAL-123",
-                mock_logger.error.call_args[0][2],  # The exception object
-            )
-
-    def test_oscillation_switch_extra_state_attributes_no_device(self):
-        """Test oscillation switch extra state attributes with no device."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = None
-        switch = DysonOscillationSwitch(coordinator)
-
-        # Act
-        attributes = switch.extra_state_attributes
-
-        # Assert
-        assert attributes is None
-
-    def test_oscillation_switch_extra_state_attributes_with_angles(self):
-        """Test oscillation switch extra state attributes with angle data."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = MagicMock()
-        coordinator.data = {
-            "product-state": {"oson": "ON", "osal": "0045", "osau": "0315"}
-        }
-        coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "oson": "ON",
-                "osal": "0045",
-                "osau": "0315",
-            }.get(key, default)
-        )
-
-        switch = DysonOscillationSwitch(coordinator)
-
-        # Act
-        attributes = switch.extra_state_attributes
-
-        # Assert
-        assert attributes is not None
-        assert attributes["oscillation_enabled"] is True
-        assert attributes["oscillation_angle_low"] == 45
-        assert attributes["oscillation_angle_high"] == 315
-
-    def test_oscillation_switch_extra_state_attributes_invalid_angles(self):
-        """Test oscillation switch extra state attributes with invalid angle data."""
-        # Arrange
-        coordinator = MagicMock()
-        coordinator.device = MagicMock()
-        coordinator.data = {"product-state": {"oson": "ON"}}
-        coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "oson": "ON",
-                "osal": "invalid",  # Invalid angle data
-                "osau": "also_invalid",
-            }.get(key, default)
-        )
-
-        switch = DysonOscillationSwitch(coordinator)
-
-        # Act
-        attributes = switch.extra_state_attributes
-
-        # Assert
-        assert attributes is not None
-        assert attributes["oscillation_enabled"] is True
-        # Invalid angles should not be included
-        assert "oscillation_angle_low" not in attributes
-        assert "oscillation_angle_high" not in attributes
+    # Oscillation switch tests removed - oscillation now handled by fan platform
 
     # Heating Switch Coverage Tests
     # COMMENTED OUT: Home Assistant entity setup complexity causing NoEntitySpecifiedError

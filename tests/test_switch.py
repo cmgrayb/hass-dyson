@@ -13,7 +13,6 @@ from custom_components.hass_dyson.switch import (
     DysonContinuousMonitoringSwitch,
     DysonHeatingSwitch,
     DysonNightModeSwitch,
-    DysonOscillationSwitch,
     async_setup_entry,
 )
 
@@ -308,95 +307,8 @@ class TestDysonNightModeSwitch:
         mock_coordinator.device.set_night_mode.assert_called_once_with(False)
 
 
-class TestDysonOscillationSwitch:
-    """Test DysonOscillationSwitch class."""
-
-    def test_init_sets_attributes_correctly(self, mock_coordinator):
-        """Test that __init__ sets all attributes correctly."""
-        # Act
-        switch = DysonOscillationSwitch(mock_coordinator)
-
-        # Assert
-        assert switch.coordinator == mock_coordinator
-        assert switch._attr_unique_id == "TEST-SERIAL-123_oscillation"
-        assert switch._attr_translation_key == "oscillation"
-        assert switch._attr_icon == "mdi:rotate-3d-variant"
-
-    def test_handle_coordinator_update_oscillation_on(self, mock_coordinator):
-        """Test coordinator update when oscillation is on."""
-        # Arrange
-        switch = DysonOscillationSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "ON"
-
-        with patch.object(switch, "async_write_ha_state"):
-            # Act
-            switch._handle_coordinator_update()
-
-            # Assert
-            assert switch._attr_is_on is True
-            mock_coordinator.device._get_current_value.assert_called_with(
-                mock_coordinator.data["product-state"], "oson", "OFF"
-            )
-
-    @pytest.mark.asyncio
-    async def test_async_turn_on_success(self, mock_coordinator):
-        """Test successful oscillation turn on."""
-        # Arrange
-        switch = DysonOscillationSwitch(mock_coordinator)
-        mock_coordinator.device.set_oscillation = AsyncMock()
-
-        # Act
-        await switch.async_turn_on()
-
-        # Assert
-        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
-
-    @pytest.mark.asyncio
-    async def test_async_turn_off_success(self, mock_coordinator):
-        """Test successful oscillation turn off."""
-        # Arrange
-        switch = DysonOscillationSwitch(mock_coordinator)
-        mock_coordinator.device.set_oscillation = AsyncMock()
-
-        # Act
-        await switch.async_turn_off()
-
-        # Assert
-        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
-
-    def test_extra_state_attributes_with_device(self, mock_coordinator):
-        """Test extra_state_attributes when device is available."""
-        # Arrange
-        switch = DysonOscillationSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "osal": "0045",
-                "osau": "0315",
-            }.get(key, default)
-        )
-
-        # Act
-        attributes = switch.extra_state_attributes
-
-        # Assert
-        assert attributes is not None
-        assert "oscillation_enabled" in attributes
-        assert "oscillation_angle_low" in attributes
-        assert "oscillation_angle_high" in attributes
-        assert attributes["oscillation_angle_low"] == 45
-        assert attributes["oscillation_angle_high"] == 315
-
-    def test_extra_state_attributes_without_device(self, mock_coordinator):
-        """Test extra_state_attributes when no device is available."""
-        # Arrange
-        mock_coordinator.device = None
-        switch = DysonOscillationSwitch(mock_coordinator)
-
-        # Act
-        attributes = switch.extra_state_attributes
-
-        # Assert
-        assert attributes is None
+# DysonOscillationSwitch tests removed - oscillation is now handled natively by the fan platform
+# via FanEntityFeature.OSCILLATE and the fan.oscillate service
 
 
 class TestDysonHeatingSwitch:
@@ -555,7 +467,7 @@ class TestSwitchIntegration:
         switches = [
             DysonAutoModeSwitch(mock_coordinator),
             DysonNightModeSwitch(mock_coordinator),
-            DysonOscillationSwitch(mock_coordinator),
+            # DysonOscillationSwitch removed - oscillation handled by fan platform
             DysonHeatingSwitch(mock_coordinator),
             DysonContinuousMonitoringSwitch(mock_coordinator),
         ]
