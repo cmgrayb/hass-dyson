@@ -202,7 +202,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "Received message update for %s on topic %s", self.serial_number, topic
         )
 
-        # Update entity states for STATE-CHANGE and CURRENT-STATE messages
+        # Update entity states for STATE-CHANGE, CURRENT-STATE, ENVIRONMENTAL-CURRENT-SENSOR-DATA, and CURRENT-FAULTS messages
         message_type = data.get("msg", "")
         if message_type == "STATE-CHANGE":
             _LOGGER.debug(
@@ -216,6 +216,51 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # CURRENT-STATE messages should also trigger coordinator updates
             # This handles responses from REQUEST-CURRENT-STATE (like timer polling)
             self._handle_state_change_message()
+        elif message_type == "ENVIRONMENTAL-CURRENT-SENSOR-DATA":
+            _LOGGER.debug(
+                "Processing ENVIRONMENTAL-CURRENT-SENSOR-DATA message for real-time entity updates"
+            )
+            # For environmental data, update coordinator data directly from the message
+            # No need for additional device calls since we have the data
+            self._handle_environmental_message(data)
+        elif message_type == "CURRENT-FAULTS":
+            _LOGGER.debug(
+                "Processing CURRENT-FAULTS message for real-time entity updates"
+            )
+            # CURRENT-FAULTS messages should trigger coordinator updates
+            # This ensures binary sensors and other fault-dependent entities are notified
+            self._handle_state_change_message()
+
+    def _handle_environmental_message(self, data: dict[str, Any]) -> None:
+        """Handle ENVIRONMENTAL-CURRENT-SENSOR-DATA message directly."""
+        try:
+            env_data = data.get("data", {})
+            if not env_data:
+                _LOGGER.debug("No environmental data in message")
+                return
+
+            _LOGGER.debug(
+                "Updating coordinator with environmental data: %s",
+                list(env_data.keys()),
+            )
+
+            # Update coordinator data with environmental information
+            if not self.data:
+                self.data = {}
+            if "environmental-data" not in self.data:
+                self.data["environmental-data"] = {}
+
+            # Update the environmental data in coordinator
+            self.data["environmental-data"].update(env_data)
+
+            # Notify Home Assistant of the update with the fresh environmental data
+            # This ensures entities see the latest environmental data immediately
+            self.hass.loop.call_soon_threadsafe(
+                lambda: self.async_set_updated_data(self.data)
+            )
+
+        except Exception as e:
+            _LOGGER.warning("Error handling environmental message: %s", e)
 
     def _handle_state_change_message(self) -> None:
         """Handle STATE-CHANGE message updates."""
@@ -1055,8 +1100,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Get current device state (from last received MQTT message)
             device_state = await self.device.get_state()
+
+            # Add environmental data to the state following Home Assistant best practices
+            if (
+                hasattr(self.device, "_environmental_data")
+                and self.device._environmental_data
+            ):
+                device_state["environmental-data"] = dict(
+                    self.device._environmental_data
+                )
+                _LOGGER.debug(
+                    "Added environmental data to coordinator state for %s: %s",
+                    self.serial_number,
+                    list(self.device._environmental_data.keys()),
+                )
+
             _LOGGER.debug(
-                "Retrieved cached device state for %s with keys: %s",
+                "Retrieved complete device state for %s with keys: %s",
                 self.serial_number,
                 list(device_state.keys()) if device_state else "None",
             )

@@ -684,7 +684,11 @@ class TestDysonDataUpdateCoordinatorUpdate:
 
         result = await coordinator._async_update_data()
 
-        assert result == {"mock": "data"}
+        # Should include both device state and environmental data
+        assert "mock" in result
+        assert result["mock"] == "data"
+        assert "environmental-data" in result
+        assert isinstance(result["environmental-data"], dict)
 
     @pytest.mark.asyncio
     async def test_update_coordinator_data_no_device(
@@ -753,18 +757,39 @@ class TestDysonDataUpdateCoordinatorMessageHandling:
     async def test_on_message_update_non_state_change(
         self, mock_hass, mock_config_entry_cloud
     ):
-        """Test message update for non-state change."""
+        """Test message update for environmental data messages."""
         with patch(
             "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
         ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
+            # Mock the methods that would be called during environmental updates
+            coordinator.async_set_updated_data = MagicMock()
             coordinator._schedule_listener_update = MagicMock()
+            # Initialize attributes that would normally be set by parent class
+            coordinator.data = {}
+            coordinator.hass = mock_hass  # Use the same mock_hass fixture
 
+        # ENVIRONMENTAL-CURRENT-SENSOR-DATA messages should now trigger updates
+        # Provide proper environmental data structure
         coordinator._on_message_update(
-            "test/topic", {"msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA", "data": "test"}
+            "test/topic",
+            {
+                "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
+                "data": {"pm25": "15", "pm10": "20"},
+            },
         )
 
-        coordinator._schedule_listener_update.assert_not_called()
+        # Should call async_set_updated_data through hass.loop.call_soon_threadsafe
+        # The actual call happens asynchronously, so we check the mock_hass.loop call
+        mock_hass.loop.call_soon_threadsafe.assert_called_once()
+
+        # Test that truly unknown message types still don't trigger updates
+        mock_hass.loop.call_soon_threadsafe.reset_mock()
+        coordinator._on_message_update(
+            "test/topic", {"msg": "UNKNOWN-MESSAGE-TYPE", "data": "test"}
+        )
+
+        mock_hass.loop.call_soon_threadsafe.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_state_change_message_success(

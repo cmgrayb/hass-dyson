@@ -67,6 +67,7 @@
       "manual_setup_failed": "Manual setup failed. Please check your device information.",
       "invalid_setup_method": "Invalid setup method selected.",
       "preferences_failed": "Failed to save cloud preferences. Please try again.",
+      "device_data_invalid": "Some devices in your Dyson account have invalid or missing data. Please run https://github.com/cmgrayb/libdyson-rest/blob/main/examples/dyson_api_device_scan.py or https://github.com/libdyson-wg/opendyson to retrieve a list of devices on the account before posting an issue, or try removing and re-adding the problematic devices in the Dyson app.",
       "api_format_changed": "Dyson cloud API format has changed. Cloud device discovery is temporarily unavailable. Please use manual device setup instead.",
       "api_validation_failed": "Dyson cloud API response validation failed. Please try again or use manual device setup.",
       "cloud_api_error": "Error communicating with Dyson cloud API. Please try again later.",
