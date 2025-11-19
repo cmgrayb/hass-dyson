@@ -87,8 +87,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._services_registered: bool = False
         self._firmware_latest_version: str | None = None
         self._firmware_update_in_progress: bool = False
-        # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-        # self._firmware_update_available: bool = False
 
         super().__init__(
             hass,
@@ -129,14 +127,14 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def firmware_update_in_progress(self) -> bool:
-        """Return whether a firmware update is in progress."""
-        return self._firmware_update_in_progress
+        """Return whether a firmware update is in progress.
 
-    # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-    # @property
-    # def firmware_update_available(self) -> bool:
-    #     """Return whether a firmware update is available."""
-    #     return self._firmware_update_available
+        Status is managed by:
+        1. Set to True when cloud API update is triggered
+        2. Updated via MQTT messages on /status/software topic (when implemented)
+        3. Set to False when update completes or fails
+        """
+        return self._firmware_update_in_progress
 
     async def ensure_device_services_registered(self) -> None:
         """Ensure device services are registered when capabilities become available."""
@@ -202,6 +200,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "Received message update for %s on topic %s", self.serial_number, topic
         )
 
+        # Handle firmware update progress messages on /status/software topic
+        if topic.endswith("/status/software"):
+            _LOGGER.debug("Received firmware update status message: %s", data)
+            self._handle_firmware_update_status(topic, data)
+            return
+
         # Update entity states for STATE-CHANGE, CURRENT-STATE, ENVIRONMENTAL-CURRENT-SENSOR-DATA, and CURRENT-FAULTS messages
         message_type = data.get("msg", "")
         if message_type == "STATE-CHANGE":
@@ -261,6 +265,54 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         except Exception as e:
             _LOGGER.warning("Error handling environmental message: %s", e)
+
+    def _handle_firmware_update_status(self, topic: str, data: dict[str, Any]) -> None:
+        """Handle firmware update status messages from /status/software topic.
+
+        TODO: Implement once the JSON key for status values is identified.
+
+        Known status values to handle:
+        - "acknowledged": Download started - keep _firmware_update_in_progress = True
+        - "downloaded": Installation started - keep _firmware_update_in_progress = True
+        - Unknown completion/success value - set _firmware_update_in_progress = False
+        - Unknown failure value - set _firmware_update_in_progress = False
+
+        Expected message structure (key unknown):
+        {
+            "unknown_key": "acknowledged"|"downloaded"|"completed"|"failed"|...,
+            ... other fields ...
+        }
+        """
+        try:
+            _LOGGER.info(
+                "Firmware update status received for %s: %s", self.serial_number, data
+            )
+
+            # TODO: Extract status value once key is identified
+            # status_value = data.get("unknown_key")
+            #
+            # if status_value in ["acknowledged", "downloaded"]:
+            #     # Update is in progress (downloading or installing)
+            #     self._firmware_update_in_progress = True
+            #     _LOGGER.info("Firmware update in progress: %s", status_value)
+            # elif status_value in ["completed", "success"]:  # TBD actual values
+            #     # Update completed successfully
+            #     self._firmware_update_in_progress = False
+            #     _LOGGER.info("Firmware update completed successfully")
+            # elif status_value in ["failed", "error"]:  # TBD actual values
+            #     # Update failed
+            #     self._firmware_update_in_progress = False
+            #     _LOGGER.error("Firmware update failed: %s", status_value)
+            #
+            # # Notify entities of status change
+            # self.async_update_listeners()
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error handling firmware update status for %s: %s",
+                self.serial_number,
+                e,
+            )
 
     def _handle_state_change_message(self) -> None:
         """Handle STATE-CHANGE message updates."""
@@ -704,8 +756,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Extract firmware version and update information from device info."""
         self._firmware_version = "Unknown"
         self._firmware_auto_update_enabled = False
-        # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-        # self._firmware_update_available = False
 
         connected_config = getattr(device_info, "connected_configuration", None)
         if connected_config:
@@ -735,28 +785,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "Found firmware auto-update enabled: %s",
                         self._firmware_auto_update_enabled,
                     )
-
-                # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-                # Extract update availability - try multiple possible field names
-                # update_available = None
-                # possible_update_fields = [
-                #     "new_version_available",
-                #     "update_available",
-                #     "upgrade_available",
-                #     "pending_update",
-                #     "has_update",
-                #     "available_update"
-                # ]
-                #
-                # for field_name in possible_update_fields:
-                #     update_available = getattr(firmware_obj, field_name, None)
-                #     if update_available is not None:
-                #         _LOGGER.debug("Found firmware update field '%s' with value: %s", field_name, update_available)
-                #         self._firmware_update_available = bool(update_available)
-                #         break
-                # else:
-                #     _LOGGER.debug("No firmware update availability field found in: %s",
-                #                   [attr for attr in dir(firmware_obj) if not attr.startswith("_")])
             else:
                 _LOGGER.debug("No firmware object found in connected configuration")
         else:
@@ -1225,7 +1253,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return True
 
     async def async_check_firmware_update(self) -> bool:
-        """Check for available firmware updates using libdyson-rest 0.7.0b1."""
+        """Check for available firmware updates using libdyson-rest >=0.7.0"""
         from libdyson_rest.exceptions import (
             DysonAPIError,
             DysonAuthError,
@@ -1289,52 +1317,64 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
 
     async def async_install_firmware_update(self, version: str) -> bool:
-        """Install firmware update via MQTT command."""
-        if not self.device:
-            _LOGGER.error("No device connection available for firmware update")
+        """Install firmware update via cloud API.
+
+        The firmware update process works as follows:
+        1. Trigger update via cloud API (trigger_firmware_update)
+        2. Device responds with progress updates via MQTT on topic ending with /status/software
+
+        Known MQTT Progress Values (key TBD):
+        - "acknowledged": Download started
+        - "downloaded": Installation started
+        - Additional status values may exist for completion/failure
+
+        TODO: Implement MQTT status monitoring once the JSON key is identified.
+        Expected topic: {mqtt_root}/{serial_number}/status/software
+        Example: 438M/9RJ-US-UAA8845A/status/software
+        """
+        # Only cloud-discovered devices support firmware updates
+        if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
+            _LOGGER.error(
+                "Firmware updates are only supported for cloud-discovered devices"
+            )
             return False
 
         try:
-            # Use the extracted device type for the firmware URL
-            device_type = self._device_type
-
-            # Construct firmware URL following the pattern from MQTT trace
-            firmware_url = f"http://ota-firmware.cp.dyson.com/{device_type}/M__SC04.WF02/{version}/manifest.bin"
-
-            _LOGGER.info(
-                "Using device type %s for firmware URL: %s", device_type, firmware_url
-            )
-
-            # Prepare MQTT command with current timestamp
-            from datetime import datetime
-
-            command_data = {
-                "msg": "SOFTWARE-UPGRADE",
-                "time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",
-                "version": version,
-                "url": firmware_url,
-            }
-
             _LOGGER.info(
                 "Initiating firmware update for %s to version %s",
                 self.serial_number,
                 version,
             )
 
-            # Mark update as in progress
+            # Mark update as in progress before attempting
             self._firmware_update_in_progress = True
             self.async_update_listeners()
 
-            # Send the command using device's send_command method
-            # send_command returns None on success and raises on failure
-            await self.device.send_command("SOFTWARE-UPGRADE", command_data)
+            # Authenticate cloud client
+            cloud_client = await self._authenticate_cloud_client()
 
-            _LOGGER.info(
-                "Firmware update command sent successfully for %s", self.serial_number
-            )
-            # Note: Update progress tracking would require monitoring device state
-            # but MQTT doesn't provide progress updates based on the trace
-            return True
+            try:
+                # Trigger firmware update using the new cloud API method
+                success = await cloud_client.trigger_firmware_update(self.serial_number)
+
+                if success:
+                    _LOGGER.info(
+                        "Firmware update initiated successfully for %s",
+                        self.serial_number,
+                    )
+                    return True
+                else:
+                    _LOGGER.error(
+                        "Cloud API returned failure for firmware update on %s",
+                        self.serial_number,
+                    )
+                    self._firmware_update_in_progress = False
+                    self.async_update_listeners()
+                    return False
+
+            finally:
+                # Always close the cloud client
+                await cloud_client.close()
 
         except Exception as e:
             _LOGGER.error(

@@ -458,7 +458,7 @@ Renovate automatically creates pull requests for dependency updates, which are r
 - **Home Assistant** 2025.8+
 - **Python** 3.11+
 - **Dependencies** (auto-installed):
-  - `libdyson-rest>=0.4.1`
+  - `libdyson-rest>=0.8.2`
   - `paho-mqtt>=2.1.0`
   - `cryptography>=3.4.0`
 
