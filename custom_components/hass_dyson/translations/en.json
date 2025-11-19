@@ -136,10 +136,10 @@
   "entity": {
     "sensor": {
       "temperature": {
-        "name": "[%key:component::sensor::entity_component::temperature::name%]"
+        "name": "Temperature"
       },
       "humidity": {
-        "name": "[%key:component::sensor::entity_component::humidity::name%]"
+        "name": "Humidity"
       },
       "pm25": {
         "name": "PM2.5"
@@ -152,6 +152,12 @@
       },
       "no2": {
         "name": "NO2"
+      },
+      "co2": {
+        "name": "CO2"
+      },
+      "hcho": {
+        "name": "HCHO"
       },
       "formaldehyde": {
         "name": "Formaldehyde"
@@ -176,6 +182,9 @@
       },
       "hepa_filter_type": {
         "name": "HEPA Filter Type"
+      },
+      "carbon_filter_type": {
+        "name": "Carbon Filter Type"
       },
       "p25r": {
         "name": "PM2.5 Raw"

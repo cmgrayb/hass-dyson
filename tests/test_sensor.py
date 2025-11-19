@@ -3,11 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -933,7 +929,7 @@ class TestDysonCarbonFilterTypeSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_carbon_filter_type"
-        assert sensor._attr_name == "Carbon Filter Type"
+        assert sensor._attr_translation_key == "carbon_filter_type"
         assert sensor._attr_icon == "mdi:air-filter"
 
     def test_native_value_with_valid_data(self, mock_coordinator):

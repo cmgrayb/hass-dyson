@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    PERCENTAGE,
-    EntityCategory,
-    UnitOfTemperature,
-)
+from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -1343,7 +1334,7 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_type"
-        self._attr_name = "Carbon Filter Type"
+        self._attr_translation_key = "carbon_filter_type"
         self._attr_icon = "mdi:air-filter"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
