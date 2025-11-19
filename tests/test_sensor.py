@@ -576,7 +576,7 @@ class TestSensorPlatformSetupAdvanced:
             "environmental-data": {
                 "pm25": "10",
                 "pm10": "15",
-                "hcho": "5",  # HCHO data present for formaldehyde sensor
+                "va10": "5",  # HCHO (VOC) data present using correct key
             },
         }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
@@ -726,7 +726,12 @@ class TestDysonNO2Sensor:
         # Arrange
         sensor = DysonNO2Sensor(mock_coordinator)
         mock_coordinator.device = MagicMock()
-        mock_coordinator.device.no2 = 15
+        # Update to use environmental data with correct key
+        mock_coordinator.data = {
+            "environmental-data": {
+                "noxl": "15"  # NO2 data using correct key
+            }
+        }
 
         # Act
         with patch.object(sensor, "async_write_ha_state"):

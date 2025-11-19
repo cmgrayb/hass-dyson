@@ -189,7 +189,7 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
                 if self.coordinator.data
                 else {}
             )
-            co2_raw = env_data.get("co2")
+            co2_raw = env_data.get("co2r")
 
             if co2_raw is not None:
                 try:
@@ -260,7 +260,7 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
                 if self.coordinator.data
                 else {}
             )
-            hcho_raw = env_data.get("hcho")
+            hcho_raw = env_data.get("va10")
 
             if hcho_raw is not None:
                 try:
@@ -335,6 +335,10 @@ async def async_setup_entry(  # noqa: C901
 
         # Add PM2.5, PM10, P25R, P10R, and gas sensors for devices with ExtendedAQ capability
         # ExtendedAQ now supports PM2.5, PM10, CO2, NO2, and HCHO (Formaldehyde) metrics per discovery.md
+        # Gas sensor key mappings (per cmgrayb/libdyson-neon):
+        # - CO2: co2r (not co2)
+        # - HCHO (VOC): va10 (not hcho)
+        # - NO2: noxl (not no2)
         if has_any_capability_safe(
             capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
         ):
@@ -351,7 +355,7 @@ async def async_setup_entry(  # noqa: C901
             )
 
             # Add CO2 sensor if CO2 data is present
-            if "co2" in env_data:
+            if "co2r" in env_data:
                 _LOGGER.debug(
                     "Adding CO2 sensor for device %s - CO2 data detected", device_serial
                 )
@@ -363,7 +367,7 @@ async def async_setup_entry(  # noqa: C901
                 )
 
             # Add NO2 sensor if NO2 data is present
-            if "no2" in env_data:
+            if "noxl" in env_data:
                 _LOGGER.debug(
                     "Adding NO2 sensor for device %s - NO2 data detected", device_serial
                 )
@@ -375,7 +379,7 @@ async def async_setup_entry(  # noqa: C901
                 )
 
             # Add HCHO sensor if HCHO data is present
-            if "hcho" in env_data:
+            if "va10" in env_data:
                 _LOGGER.debug(
                     "Adding HCHO sensor for device %s - HCHO data detected",
                     device_serial,
@@ -1005,27 +1009,45 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
 
         try:
             old_value = self._attr_native_value
-            new_value = getattr(self.coordinator.device, "no2", None)
+            new_value = None
 
-            # Validate the new value is reasonable for NO2
-            if new_value is not None:
-                if isinstance(new_value, int | float) and 0 <= new_value <= 200:
-                    self._attr_native_value = new_value
-                    _LOGGER.debug(
-                        "NO2 sensor updated for %s: %s -> %s",
-                        device_serial,
-                        old_value,
-                        new_value,
-                    )
-                else:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            no2_raw = env_data.get("noxl")
+
+            if no2_raw is not None:
+                try:
+                    # Convert and validate the NO2 value
+                    new_value = int(no2_raw)
+                    if not (0 <= new_value <= 200):
+                        _LOGGER.warning(
+                            "Invalid NO2 value for device %s: %s (expected 0-200)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
                     _LOGGER.warning(
-                        "Invalid NO2 value for device %s: %s (expected 0-200)",
+                        "Invalid NO2 value format for device %s: %s",
                         device_serial,
-                        new_value,
+                        no2_raw,
                     )
-                    self._attr_native_value = None
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "NO2 sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
             else:
-                self._attr_native_value = None
                 _LOGGER.debug("No NO2 data available for device %s", device_serial)
 
         except Exception as e:
