@@ -1,5 +1,5 @@
 # Development dependencies - exact versions for reproducibility
-ruff==0.14.2
+ruff==0.14.3
 bandit==1.8.6
 pytest==9.0.0
 pytest-cov>=7.0.0

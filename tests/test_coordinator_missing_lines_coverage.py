@@ -573,7 +573,7 @@ class TestCoordinatorCoveragePaths:
             ) as mock_logger:
                 # Should not fail despite send_command exception
                 result = await coordinator._async_update_data()
-                assert result == {"state": "connected"}
+                assert result == {"state": "connected", "environmental-data": {}}
                 mock_logger.warning.assert_called_with(
                     "Failed to request current state after reconnection for %s: %s",
                     "VS6-EU-HJA1234A",
