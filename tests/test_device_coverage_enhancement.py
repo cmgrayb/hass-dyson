@@ -1,15 +1,16 @@
 """Comprehensive tests to improve device.py coverage."""
 
 import asyncio
-import json
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 
-from custom_components.hass_dyson.const import CONNECTION_STATUS_DISCONNECTED, DOMAIN, MQTT_CMD_REQUEST_ENVIRONMENT
+from custom_components.hass_dyson.const import (
+    CONNECTION_STATUS_DISCONNECTED,
+)
 from custom_components.hass_dyson.device import DysonDevice
 
 
@@ -89,13 +90,17 @@ class TestDysonDeviceCoverageEnhancement:
         """Test should retry preferred connection after timeout expires."""
         device_basic._last_preferred_retry = time.time() - 400  # 6+ minutes ago
         device_basic._preferred_retry_interval = 300  # 5 minutes
-        assert device_basic._should_retry_preferred() is True  # Should retry after interval
+        assert (
+            device_basic._should_retry_preferred() is True
+        )  # Should retry after interval
 
     def test_should_retry_preferred_no_start_time(self, device_basic):
         """Test should retry preferred connection with no start time."""
         device_basic._last_preferred_retry = 0.0  # Start value
         device_basic._preferred_retry_interval = 300  # 5 minutes
-        assert device_basic._should_retry_preferred() is True  # Should retry after interval
+        assert (
+            device_basic._should_retry_preferred() is True
+        )  # Should retry after interval
 
     def test_get_connection_details_local(self, device_basic):
         """Test getting connection details for local connection."""
@@ -172,21 +177,29 @@ class TestDysonDeviceCoverageEnhancement:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_try_preferred_connection_after_disconnect_success(self, device_basic):
+    async def test_try_preferred_connection_after_disconnect_success(
+        self, device_basic
+    ):
         """Test trying preferred connection after disconnect succeeds."""
         # Set up conditions required for method to attempt reconnection
         device_basic._connected = False  # Not connected
         device_basic._using_fallback = True  # Using fallback connection
         device_basic._preferred_connection_type = "local"
-        device_basic._last_reconnect_attempt = time.time() - 100  # Set to avoid None error
+        device_basic._last_reconnect_attempt = (
+            time.time() - 100
+        )  # Set to avoid None error
 
-        with patch.object(device_basic, "_attempt_connection", return_value=True) as mock_attempt:
+        with patch.object(
+            device_basic, "_attempt_connection", return_value=True
+        ) as mock_attempt:
             result = await device_basic._try_preferred_connection_after_disconnect()
             assert result is True
             mock_attempt.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_try_preferred_connection_after_disconnect_timeout(self, device_basic):
+    async def test_try_preferred_connection_after_disconnect_timeout(
+        self, device_basic
+    ):
         """Test trying preferred connection after disconnect with timeout expired."""
         device_basic._preferred_connection_start = time.time() - 400  # Expired
         device_basic._preferred_retry_timeout = 300
@@ -200,10 +213,14 @@ class TestDysonDeviceCoverageEnhancement:
         # Set up conditions required for method to attempt retry
         device_basic._using_fallback = True  # Must be using fallback
         device_basic._preferred_connection_type = "local"
-        device_basic._last_reconnect_attempt = time.time() - 100  # Set to avoid None error
+        device_basic._last_reconnect_attempt = (
+            time.time() - 100
+        )  # Set to avoid None error
 
         with patch.object(device_basic, "_should_retry_preferred", return_value=True):
-            with patch.object(device_basic, "_attempt_connection", return_value=True) as mock_attempt:
+            with patch.object(
+                device_basic, "_attempt_connection", return_value=True
+            ) as mock_attempt:
                 result = await device_basic._try_preferred_connection_retry()
                 assert result is True
                 mock_attempt.assert_called_once()
@@ -220,11 +237,17 @@ class TestDysonDeviceCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_try_connection_order_success_first_attempt(self, device_basic):
         """Test connection order succeeds on first attempt."""
-        with patch.object(device_basic, "_get_connection_order", return_value=[
-            ("local", "192.168.1.100", "test_cred"),
-            ("cloud", "mqtt.dyson.com", "cloud_cred")
-        ]):
-            with patch.object(device_basic, "_attempt_connection", return_value=True) as mock_attempt:
+        with patch.object(
+            device_basic,
+            "_get_connection_order",
+            return_value=[
+                ("local", "192.168.1.100", "test_cred"),
+                ("cloud", "mqtt.dyson.com", "cloud_cred"),
+            ],
+        ):
+            with patch.object(
+                device_basic, "_attempt_connection", return_value=True
+            ) as mock_attempt:
                 result = await device_basic._try_connection_order()
                 assert result is True
                 assert mock_attempt.call_count == 1
@@ -232,11 +255,17 @@ class TestDysonDeviceCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_try_connection_order_success_second_attempt(self, device_basic):
         """Test connection order succeeds on second attempt."""
-        with patch.object(device_basic, "_get_connection_order", return_value=[
-            ("local", "192.168.1.100", "test_cred"),
-            ("cloud", "mqtt.dyson.com", "cloud_cred")
-        ]):
-            with patch.object(device_basic, "_attempt_connection", side_effect=[False, True]) as mock_attempt:
+        with patch.object(
+            device_basic,
+            "_get_connection_order",
+            return_value=[
+                ("local", "192.168.1.100", "test_cred"),
+                ("cloud", "mqtt.dyson.com", "cloud_cred"),
+            ],
+        ):
+            with patch.object(
+                device_basic, "_attempt_connection", side_effect=[False, True]
+            ) as mock_attempt:
                 result = await device_basic._try_connection_order()
                 assert result is True
                 assert mock_attempt.call_count == 2
@@ -244,11 +273,17 @@ class TestDysonDeviceCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_try_connection_order_all_fail(self, device_basic):
         """Test connection order when all attempts fail."""
-        with patch.object(device_basic, "_get_connection_order", return_value=[
-            ("local", "192.168.1.100", "test_cred"),
-            ("cloud", "mqtt.dyson.com", "cloud_cred")
-        ]):
-            with patch.object(device_basic, "_attempt_connection", return_value=False) as mock_attempt:
+        with patch.object(
+            device_basic,
+            "_get_connection_order",
+            return_value=[
+                ("local", "192.168.1.100", "test_cred"),
+                ("cloud", "mqtt.dyson.com", "cloud_cred"),
+            ],
+        ):
+            with patch.object(
+                device_basic, "_attempt_connection", return_value=False
+            ) as mock_attempt:
                 result = await device_basic._try_connection_order()
                 assert result is False
                 assert mock_attempt.call_count == 2
@@ -269,14 +304,18 @@ class TestDysonDeviceCoverageEnhancement:
     async def test_attempt_local_connection_exception(self, device_basic):
         """Test local connection attempt with exception."""
         with patch("paho.mqtt.client.Client", side_effect=Exception("MQTT error")):
-            result = await device_basic._attempt_local_connection("192.168.1.100", "credential")
+            result = await device_basic._attempt_local_connection(
+                "192.168.1.100", "credential"
+            )
             assert result is False
 
     @pytest.mark.asyncio
     async def test_attempt_cloud_connection_exception(self, device_basic):
         """Test cloud connection attempt with exception."""
         with patch("paho.mqtt.client.Client", side_effect=Exception("MQTT error")):
-            result = await device_basic._attempt_cloud_connection("mqtt.dyson.com", "credential")
+            result = await device_basic._attempt_cloud_connection(
+                "mqtt.dyson.com", "credential"
+            )
             assert result is False
 
     @pytest.mark.asyncio
@@ -306,8 +345,8 @@ class TestDysonDeviceCoverageEnhancement:
         result = await device_basic._wait_for_connection("local")
         assert result is True
 
-    # Note: disconnect_cleanup test removed due to complex async mocking requirements
-    # The disconnect functionality is tested in other integration tests
+        # Note: disconnect_cleanup test removed due to complex async mocking requirements
+        # The disconnect functionality is tested in other integration tests
         assert device_basic._heartbeat_task is None
 
     @pytest.mark.asyncio
@@ -404,7 +443,9 @@ class TestDysonDeviceCoverageEnhancement:
         device_basic._connected = True  # Must be connected to trigger disconnect
 
         with patch.object(device_basic, "disconnect") as mock_disconnect:
-            with patch.object(device_basic, "connect", return_value=True) as mock_connect:
+            with patch.object(
+                device_basic, "connect", return_value=True
+            ) as mock_connect:
                 result = await device_basic.force_reconnect()
                 assert result is True
                 mock_disconnect.assert_called_once()
@@ -417,7 +458,9 @@ class TestDysonDeviceCoverageEnhancement:
         device_basic._connected = True  # Must be connected to trigger disconnect
 
         with patch.object(device_basic, "disconnect") as mock_disconnect:
-            with patch.object(device_basic, "connect", return_value=False) as mock_connect:
+            with patch.object(
+                device_basic, "connect", return_value=False
+            ) as mock_connect:
                 result = await device_basic.force_reconnect()
                 assert result is False
                 mock_disconnect.assert_called_once()
@@ -475,10 +518,12 @@ class TestDysonDeviceCoverageEnhancement:
         """Test message callback with valid JSON."""
         client = MagicMock()
         message = MagicMock()
-        message.topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        message.topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
         # Mock the payload properly - it needs to be bytes that can be decoded
         payload_data = '{"msg": "CURRENT-STATE", "time": "2023-11-20T10:00:00Z"}'
-        message.payload = payload_data.encode('utf-8')
+        message.payload = payload_data.encode("utf-8")
 
         with patch.object(device_basic, "_process_message_data") as mock_process:
             device_basic._on_message(client, None, message)
@@ -488,8 +533,10 @@ class TestDysonDeviceCoverageEnhancement:
         """Test message callback with invalid JSON."""
         client = MagicMock()
         message = MagicMock()
-        message.topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
-        message.payload.decode.return_value = 'invalid json'
+        message.topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
+        message.payload.decode.return_value = "invalid json"
 
         with patch.object(device_basic, "_process_message_data") as mock_process:
             device_basic._on_message(client, None, message)
@@ -499,8 +546,12 @@ class TestDysonDeviceCoverageEnhancement:
         """Test message callback with decode error."""
         client = MagicMock()
         message = MagicMock()
-        message.topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
-        message.payload.decode.side_effect = UnicodeDecodeError("utf-8", b"", 0, 1, "error")
+        message.topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
+        message.payload.decode.side_effect = UnicodeDecodeError(
+            "utf-8", b"", 0, 1, "error"
+        )
 
         with patch.object(device_basic, "_process_message_data") as mock_process:
             device_basic._on_message(client, None, message)
@@ -508,8 +559,14 @@ class TestDysonDeviceCoverageEnhancement:
 
     def test_process_message_data_current_state_with_state_change(self, device_basic):
         """Test processing current state message with state change."""
-        data = {"msg": "CURRENT-STATE", "time": "2023-11-20T10:00:00Z", "product-state": {"fmod": "FAN"}}
-        topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        data = {
+            "msg": "CURRENT-STATE",
+            "time": "2023-11-20T10:00:00Z",
+            "product-state": {"fmod": "FAN"},
+        }
+        topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
 
         device_basic._state = {}  # Empty initial state
 
@@ -519,8 +576,14 @@ class TestDysonDeviceCoverageEnhancement:
 
     def test_process_message_data_current_state_no_change(self, device_basic):
         """Test processing current state message with no state change."""
-        data = {"msg": "CURRENT-STATE", "time": "2023-11-20T10:00:00Z", "product-state": {"fmod": "FAN"}}
-        topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        data = {
+            "msg": "CURRENT-STATE",
+            "time": "2023-11-20T10:00:00Z",
+            "product-state": {"fmod": "FAN"},
+        }
+        topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
 
         # CURRENT-STATE messages always call _handle_current_state regardless of state change
         # The actual logic inside _handle_current_state determines if callbacks are triggered
@@ -530,8 +593,14 @@ class TestDysonDeviceCoverageEnhancement:
 
     def test_process_message_data_environmental_current_data(self, device_basic):
         """Test processing environmental current-data message."""
-        data = {"msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA", "time": "2023-11-20T10:00:00Z", "data": {"tact": "2731"}}
-        topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        data = {
+            "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
+            "time": "2023-11-20T10:00:00Z",
+            "data": {"tact": "2731"},
+        }
+        topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
 
         with patch.object(device_basic, "_handle_environmental_data") as mock_handle:
             device_basic._process_message_data(data, topic)
@@ -540,8 +609,14 @@ class TestDysonDeviceCoverageEnhancement:
     def test_process_message_data_environmental_sensor_data(self, device_basic):
         """Test processing environmental sensor-data message."""
         # Use the correct message type that the device actually handles
-        data = {"msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA", "time": "2023-11-20T10:00:00Z", "data": {"tact": "2731"}}
-        topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        data = {
+            "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
+            "time": "2023-11-20T10:00:00Z",
+            "data": {"tact": "2731"},
+        }
+        topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
 
         with patch.object(device_basic, "_handle_environmental_data") as mock_handle:
             device_basic._process_message_data(data, topic)
@@ -550,15 +625,25 @@ class TestDysonDeviceCoverageEnhancement:
     def test_process_message_data_unknown_message_type(self, device_basic):
         """Test processing unknown message type."""
         data = {"msg": "UNKNOWN-MESSAGE", "time": "2023-11-20T10:00:00Z"}
-        topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
 
         # Should not raise an exception
         device_basic._process_message_data(data, topic)
 
-    def test_handle_current_state_updates_state_and_triggers_callbacks(self, device_basic):
+    def test_handle_current_state_updates_state_and_triggers_callbacks(
+        self, device_basic
+    ):
         """Test handling current state updates state and triggers callbacks."""
-        data = {"msg": "CURRENT-STATE", "time": "2023-11-20T10:00:00Z", "product-state": {"fmod": "FAN"}}
-        topic = f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        data = {
+            "msg": "CURRENT-STATE",
+            "time": "2023-11-20T10:00:00Z",
+            "product-state": {"fmod": "FAN"},
+        }
+        topic = (
+            f"{device_basic.mqtt_prefix}/{device_basic.serial_number}/status/current"
+        )
 
         callback = MagicMock()
         device_basic.add_message_callback(callback)
@@ -575,7 +660,16 @@ class TestDysonDeviceCoverageEnhancement:
         device_basic._environmental_data = {"pm25": "0002", "pm10": "0004"}
 
         # New data with different PM values to trigger callback
-        data = {"msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA", "data": {"tact": "2731", "hact": "0050", "pact": "0005", "p25r": "0003", "p10r": "0006"}}
+        data = {
+            "msg": "ENVIRONMENTAL-CURRENT-SENSOR-DATA",
+            "data": {
+                "tact": "2731",
+                "hact": "0050",
+                "pact": "0005",
+                "p25r": "0003",
+                "p10r": "0006",
+            },
+        }
 
         env_callback = MagicMock()
         device_basic.add_environmental_callback(env_callback)
@@ -583,7 +677,15 @@ class TestDysonDeviceCoverageEnhancement:
         device_basic._handle_environmental_data(data)
 
         # Environmental data merges old and new data
-        expected_data = {"pm25": "0002", "pm10": "0004", "tact": "2731", "hact": "0050", "pact": "0005", "p25r": "0003", "p10r": "0006"}
+        expected_data = {
+            "pm25": "0002",
+            "pm10": "0004",
+            "tact": "2731",
+            "hact": "0050",
+            "pact": "0005",
+            "p25r": "0003",
+            "p10r": "0006",
+        }
         assert device_basic._environmental_data == expected_data
         env_callback.assert_called_once()
 
@@ -649,14 +751,18 @@ class TestDysonDeviceCoverageEnhancement:
         """Test getting current value for existing key."""
         device_basic._state = {"product-state": {"fmod": "FAN", "fnsp": "0005"}}
 
-        value = device_basic._get_current_value(device_basic._state["product-state"], "fmod", "AUTO")
+        value = device_basic._get_current_value(
+            device_basic._state["product-state"], "fmod", "AUTO"
+        )
         assert value == "FAN"
 
     def test_get_current_value_missing_key_uses_default(self, device_basic):
         """Test getting current value for missing key uses default."""
         device_basic._state = {"product-state": {"fmod": "FAN"}}
 
-        value = device_basic._get_current_value(device_basic._state["product-state"], "missing", "DEFAULT")
+        value = device_basic._get_current_value(
+            device_basic._state["product-state"], "missing", "DEFAULT"
+        )
         assert value == "DEFAULT"
 
     def test_get_current_value_none_data_uses_default(self, device_basic):
