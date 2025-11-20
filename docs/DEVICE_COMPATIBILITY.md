@@ -25,7 +25,7 @@ The following capabilities can add additional entities to Environment Cleaner de
 | **AdvanceOscillationDay1** | Advanced oscillation control | • Number platform (oscillation angle range)<br>• Select platform (oscillation patterns) |
 | **Heating** (name subject to change) | Heat mode devices | • Temperature sensor<br>• Climate platform<br>• Heating switch |
 | **Humidifier** (name subject to change) | Humidity control devices | • Humidity sensor<br>• Humidifier platform<br>• Water tank level sensor |
-| **Formaldehyde** (name subject to change) | Chemical air quality monitoring | • Formaldehyde sensor (HCHO)<br>• Carbon filter life sensor<br>• Carbon filter type sensor | 
+| **Formaldehyde** (name subject to change) | Chemical air quality monitoring | • Formaldehyde sensor (HCHO)<br>• Carbon filter life sensor<br>• Carbon filter type sensor |
 | **NO2VOC** (name subject to change) | Gas and VOC monitoring | • NO2 sensor (nitrogen dioxide)<br>• VOC sensor (volatile organic compounds)<br>• Gas filter status sensor |
 
 ### Example Device Configurations
@@ -115,7 +115,7 @@ Monitor indoor air quality through particulate matter detection and filter statu
 ### Entities Provided
 
 1. PM2.5 Sensor: Fine particulate matter measurement (μg/m³)
-2. PM10 Sensor: Coarse particulate matter measurement (μg/m³)  
+2. PM10 Sensor: Coarse particulate matter measurement (μg/m³)
 3. HEPA Filter Life: Remaining filter life percentage (%)
 4. HEPA Filter Type: Installed filter model/type information
 
@@ -130,11 +130,24 @@ This capability is currently experimental.  If you can have one of these devices
 
 Enable temperature control and climate management through integrated heating systems.
 
+### Device Architecture
+
+Heating devices are **Environment Cleaners** (`ec`) with the `Heating` capability. They are not a separate device category.
+
 ### Entities Provided
 
-1. Temperature Sensor: Current ambient temperature measurement (°C)
-2. Climate Platform: Full HVAC interface with heat mode controls
-3. Heating Switch: Toggle heat mode on/off control
+1. **Fan Entity**: Main device control (speed, oscillation, preset modes)
+2. **Climate Entity**: Dedicated heating/temperature control interface
+   - HVAC modes: Off, Fan Only, Heat, Auto
+   - Target temperature setting (1-37°C)
+   - Current temperature display
+3. **Temperature Sensor**: Current ambient temperature measurement (°C)
+
+### Important Notes
+
+- **No separate heating switch**: Heating is controlled through the climate entity's HVAC modes
+- **No separate heating mode select**: Heating modes are part of the climate entity interface
+- **Clear separation**: Fan entity controls air circulation, climate entity controls temperature
 
 ## WiFi Connectivity Capability
 
@@ -348,5 +361,5 @@ Best practices for manually configured devices without cloud account integration
 Best practices for monitoring and maintaining integration health over time.
 
 1. Connection Monitoring: Check connection status sensor for connectivity issues
-2. Filter Maintenance: Watch filter life sensors for replacement scheduling  
+2. Filter Maintenance: Watch filter life sensors for replacement scheduling
 3. Performance Optimization: Use air quality sensors for automation triggers
