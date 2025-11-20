@@ -48,8 +48,8 @@ class TestSwitchCoverageEnhancement:
             mock_async_add_entities.assert_called_once()
             entities = mock_async_add_entities.call_args[0][0]
 
-            # Should have: NightMode, FirmwareAutoUpdate, Heating, ContinuousMonitoring
-            assert len(entities) == 4
+            # Should have: NightMode, FirmwareAutoUpdate, ContinuousMonitoring (heating integrated into fan)
+            assert len(entities) == 3
             assert any(
                 isinstance(entity, DysonFirmwareAutoUpdateSwitch) for entity in entities
             )
@@ -81,8 +81,8 @@ class TestSwitchCoverageEnhancement:
         assert result is True
         entities = mock_async_add_entities.call_args[0][0]
 
-        # Should have: NightMode, Heating (no FirmwareAutoUpdate)
-        assert len(entities) == 2
+        # Should have: NightMode only (heating integrated into fan, no FirmwareAutoUpdate)
+        assert len(entities) == 1
         assert not any(
             isinstance(entity, DysonFirmwareAutoUpdateSwitch) for entity in entities
         )

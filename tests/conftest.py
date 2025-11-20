@@ -383,6 +383,7 @@ def mock_coordinator():
     # Complete coordinator.data structure for dynamic sensor detection
     coordinator.data = {
         "product-state": {
+            "hmod": "OFF",  # Add heating mode key for heating-capable devices
             "pm25": "0010",
             "pm10": "0015",
             "hmax": "0030",

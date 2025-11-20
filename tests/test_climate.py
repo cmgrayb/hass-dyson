@@ -96,7 +96,7 @@ class TestDysonClimateEntity:
         # Assert
         assert entity.coordinator == mock_coordinator
         assert entity._attr_unique_id == "TEST-SERIAL-123_climate"
-        assert entity._attr_name == "Test Device Climate"
+        assert entity._attr_translation_key == "heating_controls"
         assert entity._attr_icon == "mdi:thermostat"
 
         # Climate features

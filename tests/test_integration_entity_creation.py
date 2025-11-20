@@ -496,7 +496,7 @@ class TestRealDeviceEntityCreationScenarios:
             "mqtt_password": "heater_password",
             "mqtt_hostname": "192.168.1.51",
             "capabilities": ["EnvironmentalData", "Heating", "FanControl"],
-            "device_category": "heater",
+            "device_category": "ec",  # Heating devices are Environment Cleaners
         }
 
         # Configure coordinator for Hot+Cool heater
@@ -505,7 +505,9 @@ class TestRealDeviceEntityCreationScenarios:
             "Heating",
             "FanControl",
         ]
-        mock_coordinator.device_category = ["heater"]
+        mock_coordinator.device_category = [
+            "ec"
+        ]  # Heating devices are Environment Cleaners
         mock_coordinator.config_entry = config_entry
         mock_coordinator.serial_number = "HEATER-REAL-002"
         mock_coordinator.has_capability = lambda cap: cap in [
@@ -538,8 +540,8 @@ class TestRealDeviceEntityCreationScenarios:
             or len([s for s in sensor_types if "PM" in s]) == 0
         )
 
-        # Should NOT have WiFi sensors (heater category doesn't enable them)
-        assert "DysonWiFiSensor" not in sensor_types
+        # Should have WiFi sensors (ec devices have connectivity monitoring)
+        assert "DysonWiFiSensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_dyson_robot_vacuum_entities(

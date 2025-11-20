@@ -68,11 +68,10 @@ class TestSwitchPlatformSetup:
         mock_add_entities.assert_called_once()
         added_entities = mock_add_entities.call_args[0][0]
 
-        # Should have night mode, heating, and continuous monitoring switches (no firmware switch for manual)
-        assert len(added_entities) == 3
+        # Should have night mode and continuous monitoring switches (heating integrated into fan)
+        assert len(added_entities) == 2
         entity_types = [type(entity).__name__ for entity in added_entities]
         assert "DysonNightModeSwitch" in entity_types
-        assert "DysonHeatingSwitch" in entity_types
         assert "DysonContinuousMonitoringSwitch" in entity_types
 
     @pytest.mark.asyncio
@@ -95,12 +94,11 @@ class TestSwitchPlatformSetup:
         mock_add_entities.assert_called_once()
         added_entities = mock_add_entities.call_args[0][0]
 
-        # Should have night mode, firmware auto-update, heating, and continuous monitoring switches
-        assert len(added_entities) == 4
+        # Should create night mode, continuous monitoring and firmware switches
+        assert len(added_entities) == 3
         entity_types = [type(entity).__name__ for entity in added_entities]
         assert "DysonNightModeSwitch" in entity_types
         assert "DysonFirmwareAutoUpdateSwitch" in entity_types
-        assert "DysonHeatingSwitch" in entity_types
         assert "DysonContinuousMonitoringSwitch" in entity_types
 
     @pytest.mark.asyncio
@@ -493,11 +491,12 @@ class TestSwitchIntegration:
 
         # Assert
         added_entities = mock_add_entities.call_args[0][0]
-        assert len(added_entities) == 3  # Night mode + heating + continuous monitoring
+        assert (
+            len(added_entities) == 2
+        )  # Night mode + continuous monitoring (heating integrated into fan)
 
         entity_types = [type(entity).__name__ for entity in added_entities]
         assert "DysonNightModeSwitch" in entity_types
-        assert "DysonHeatingSwitch" in entity_types
         assert "DysonContinuousMonitoringSwitch" in entity_types
 
     def test_switch_state_consistency_across_updates(self, mock_coordinator):

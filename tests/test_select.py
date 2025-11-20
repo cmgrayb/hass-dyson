@@ -84,15 +84,19 @@ class TestSelectPlatformSetup:
         coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
         coordinator.device_capabilities = ["Heating"]
 
+        # Mock device state with hmod key to indicate actual heating support
+        coordinator.data = {"product-state": {"hmod": "OFF"}}
+        coordinator.device = MagicMock()
+        coordinator.device.is_connected = True
+
         mock_add_entities = MagicMock()
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
-        # Should add only heating select entity (oscillation requires AdvanceOscillationDay1 capability)
+        # Should add no heating select entities (heating mode is now integrated into fan preset modes)
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 1
-        assert isinstance(entities[0], DysonHeatingModeSelect)
+        assert len(entities) == 0
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_both_capabilities(
@@ -106,12 +110,11 @@ class TestSelectPlatformSetup:
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
-        # Should add both select entities
+        # Should add only oscillation select entity (heating mode is now integrated into fan preset modes)
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 2
+        assert len(entities) == 1
         assert isinstance(entities[0], DysonOscillationModeSelect)
-        assert isinstance(entities[1], DysonHeatingModeSelect)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_no_capabilities(
