@@ -3,11 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -26,7 +22,6 @@ from custom_components.hass_dyson.sensor import (
     DysonPM10Sensor,
     DysonPM25Sensor,
     DysonTemperatureSensor,
-    DysonVOCSensor,
     DysonWiFiSensor,
     async_setup_entry,
 )
@@ -555,8 +550,8 @@ class TestSensorPlatformSetupAdvanced:
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
         assert (
-            len(entities) == 1
-        )  # Should only have legacy VOC sensor (no ExtendedAQ gas sensors)
+            len(entities) == 0
+        )  # VOC capability alone doesn't create any sensors (no ExtendedAQ or Formaldehyde)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_formaldehyde_devices(self, mock_coordinator):
@@ -669,48 +664,6 @@ class TestSensorPlatformSetupAdvanced:
         assert entities == []  # Should have empty entities list on error
 
 
-class TestDysonVOCSensor:
-    """Test Dyson VOC sensor."""
-
-    def test_init_sets_attributes_correctly(self, mock_coordinator):
-        """Test that VOC sensor initializes with correct attributes."""
-        # Act
-        sensor = DysonVOCSensor(mock_coordinator)
-
-        # Assert
-        assert sensor._attr_unique_id == "TEST-SERIAL-123_voc"
-        assert sensor._attr_translation_key == "voc"
-        assert sensor._attr_native_unit_of_measurement == "ppb"
-        assert sensor._attr_icon == "mdi:chemical-weapon"
-
-    def test_native_value_with_valid_data(self, mock_coordinator):
-        """Test native value calculation with valid VOC data."""
-        # Arrange
-        sensor = DysonVOCSensor(mock_coordinator)
-        mock_coordinator.device = MagicMock()
-        mock_coordinator.device.voc = 25
-
-        # Act
-        with patch.object(sensor, "async_write_ha_state"):
-            sensor._handle_coordinator_update()
-
-        # Assert
-        assert sensor._attr_native_value == 25
-
-    def test_native_value_with_no_device(self, mock_coordinator):
-        """Test native value when no device is available."""
-        # Arrange
-        sensor = DysonVOCSensor(mock_coordinator)
-        mock_coordinator.device = None
-
-        # Act
-        with patch.object(sensor, "async_write_ha_state"):
-            sensor._handle_coordinator_update()
-
-        # Assert
-        assert sensor._attr_native_value is None
-
-
 class TestDysonNO2Sensor:
     """Test Dyson NO2 sensor."""
 
@@ -767,24 +720,28 @@ class TestDysonFormaldehydeSensor:
         sensor = DysonFormaldehydeSensor(mock_coordinator)
 
         # Assert
-        assert sensor._attr_unique_id == "TEST-SERIAL-123_formaldehyde"
-        assert sensor._attr_translation_key == "formaldehyde"
-        assert sensor._attr_native_unit_of_measurement == "ppb"
+        assert sensor._attr_unique_id == "TEST-SERIAL-123_hcho"
+        assert sensor._attr_translation_key == "hcho"
+        assert sensor._attr_native_unit_of_measurement == "μg/m³"
         assert sensor._attr_icon == "mdi:chemical-weapon"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
         """Test native value calculation with valid formaldehyde data."""
         # Arrange
         sensor = DysonFormaldehydeSensor(mock_coordinator)
-        mock_coordinator.device = MagicMock()
-        mock_coordinator.device.formaldehyde = 8
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hchr": "5000"  # Raw value that converts to 5000/1000 = 5 ppb = 0.006 mg/m³
+            }
+        }
 
         # Act
         with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Assert
-        assert sensor._attr_native_value == 8
+        # 5000 raw -> 5.0 ppb -> 1.0 μg/m³ (1 decimal place)
+        assert sensor._attr_native_value == 1.0
 
     def test_native_value_with_no_device(self, mock_coordinator):
         """Test native value when no device is available."""
@@ -1104,7 +1061,6 @@ class TestSensorCoverageEnhancement:
             DysonPM10Sensor(mock_coordinator),
             DysonTemperatureSensor(mock_coordinator),
             DysonHumiditySensor(mock_coordinator),
-            DysonVOCSensor(mock_coordinator),
             DysonNO2Sensor(mock_coordinator),
             DysonFormaldehydeSensor(mock_coordinator),
         ]

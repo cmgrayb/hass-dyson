@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    PERCENTAGE,
-    EntityCategory,
-    UnitOfTemperature,
-)
+from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -252,7 +243,7 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hcho"
         self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:chemical-weapon"
 
     def _handle_coordinator_update(self) -> None:
@@ -274,14 +265,25 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
             if hcho_raw is not None:
                 try:
                     # Convert and validate the HCHO value
-                    new_value = int(hcho_raw)
-                    if not (0 <= new_value <= 1000):
+                    raw_value = int(hcho_raw)
+                    if not (0 <= raw_value <= 1000):
                         _LOGGER.warning(
-                            "Invalid HCHO value for device %s: %s (expected 0-1000)",
+                            "Invalid HCHO raw value for device %s: %s (expected 0-1000)",
                             device_serial,
-                            new_value,
+                            raw_value,
                         )
                         new_value = None
+                    else:
+                        # Convert from ppb to μg/m³ (based on user feedback: 5 ppb = 1 μg/m³)
+                        # HCHO: 1 ppb = 0.2 μg/m³
+                        # Range 0-1000 ppb becomes 0-200 μg/m³
+                        new_value = round(raw_value * 0.2, 1)
+                        _LOGGER.debug(
+                            "HCHO conversion for %s: %d ppb -> %.1f μg/m³",
+                            device_serial,
+                            raw_value,
+                            new_value,
+                        )
                 except (ValueError, TypeError):
                     _LOGGER.warning(
                         "Invalid HCHO value format for device %s: %s",
@@ -405,20 +407,6 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-        # Legacy VOC sensor support (keep for backward compatibility)
-        if has_any_capability_safe(
-            capabilities, ["VOC", "voc"]
-        ) and not has_any_capability_safe(
-            capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
-        ):
-            _LOGGER.debug("Adding legacy VOC sensors for device %s", device_serial)
-            entities.append(DysonVOCSensor(coordinator))
-        else:
-            _LOGGER.debug(
-                "Skipping legacy VOC sensors for device %s - ExtendedAQ provides gas monitoring",
-                device_serial,
-            )
-
         # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
         if any(cat in ["ec", "robot"] for cat in device_category):
             _LOGGER.debug("Adding WiFi sensors for device %s", device_serial)
@@ -528,6 +516,28 @@ async def async_setup_entry(  # noqa: C901
         else:
             _LOGGER.debug(
                 "Skipping humidity sensor for device %s - no humidifier or environmental capability detected",
+                device_serial,
+            )
+
+        # Add legacy formaldehyde sensor for devices with Formaldehyde capability AND hchr data
+        # This supports older devices that use 'hchr' data key instead of 'va10'
+        if (
+            has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"])
+            and "hchr" in env_data
+        ):
+            _LOGGER.debug(
+                "Adding legacy formaldehyde sensor for device %s - Formaldehyde capability and hchr data detected",
+                device_serial,
+            )
+            entities.append(DysonFormaldehydeSensor(coordinator))
+        elif has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"]):
+            _LOGGER.debug(
+                "Skipping legacy formaldehyde sensor for device %s - Formaldehyde capability present but no hchr data in environmental response",
+                device_serial,
+            )
+        else:
+            _LOGGER.debug(
+                "Skipping legacy formaldehyde sensor for device %s - no Formaldehyde capability",
                 device_serial,
             )
 
@@ -940,61 +950,6 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonVOCSensor(DysonEntity, SensorEntity):
-    """VOC (Volatile Organic Compounds) sensor for Dyson devices."""
-
-    coordinator: DysonDataUpdateCoordinator
-
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the VOC sensor."""
-        super().__init__(coordinator)
-
-        self._attr_unique_id = f"{coordinator.serial_number}_voc"
-        self._attr_translation_key = "voc"
-        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "ppb"
-        self._attr_icon = "mdi:chemical-weapon"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        device_serial = self.coordinator.serial_number
-
-        try:
-            old_value = self._attr_native_value
-            new_value = getattr(self.coordinator.device, "voc", None)
-
-            # Validate the new value is reasonable for VOC
-            if new_value is not None:
-                if isinstance(new_value, int | float) and 0 <= new_value <= 500:
-                    self._attr_native_value = new_value
-                    _LOGGER.debug(
-                        "VOC sensor updated for %s: %s -> %s",
-                        device_serial,
-                        old_value,
-                        new_value,
-                    )
-                else:
-                    _LOGGER.warning(
-                        "Invalid VOC value for device %s: %s (expected 0-500)",
-                        device_serial,
-                        new_value,
-                    )
-                    self._attr_native_value = None
-            else:
-                self._attr_native_value = None
-                _LOGGER.debug("No VOC data available for device %s", device_serial)
-
-        except Exception as e:
-            _LOGGER.error(
-                "Error updating VOC sensor for device %s: %s", device_serial, e
-            )
-            self._attr_native_value = None
-
-        super()._handle_coordinator_update()
-
-
 class DysonNO2Sensor(DysonEntity, SensorEntity):
     """NO2 (Nitrogen Dioxide) sensor for Dyson devices."""
 
@@ -1069,7 +1024,7 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
 
 
 class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
-    """Formaldehyde sensor for Dyson devices."""
+    """HCHO (Formaldehyde) sensor for legacy Dyson devices with Formaldehyde capability."""
 
     coordinator: DysonDataUpdateCoordinator
 
@@ -1077,13 +1032,11 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
         """Initialize the formaldehyde sensor."""
         super().__init__(coordinator)
 
-        self._attr_unique_id = f"{coordinator.serial_number}_formaldehyde"
-        self._attr_translation_key = "formaldehyde"
-        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS_PARTS
+        self._attr_unique_id = f"{coordinator.serial_number}_hcho"
+        self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:chemical-weapon"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1091,34 +1044,65 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
 
         try:
             old_value = self._attr_native_value
-            new_value = getattr(self.coordinator.device, "formaldehyde", None)
+            new_value = None
 
-            # Validate the new value is reasonable for formaldehyde
-            if new_value is not None:
-                if isinstance(new_value, int | float) and 0 <= new_value <= 100:
-                    self._attr_native_value = new_value
-                    _LOGGER.debug(
-                        "Formaldehyde sensor updated for %s: %s -> %s",
-                        device_serial,
-                        old_value,
-                        new_value,
-                    )
-                else:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            hcho_raw = env_data.get("hchr")  # Legacy key for formaldehyde display value
+
+            if hcho_raw is not None:
+                try:
+                    # Convert and validate the HCHO value
+                    # Legacy devices provide hchr as raw index value that needs /1000 to get ppb
+                    raw_value = int(hcho_raw)
+                    if not (
+                        0 <= raw_value <= 100000
+                    ):  # Adjusted range for raw index values
+                        _LOGGER.warning(
+                            "Invalid HCHO raw value for device %s: %s (expected 0-100000)",
+                            device_serial,
+                            raw_value,
+                        )
+                        new_value = None
+                    else:
+                        # Convert from raw index to ppb (divide by 1000) then to μg/m³
+                        # HCHO: 1 ppb = 0.2 μg/m³ (based on user feedback: 5 ppb = 1 μg/m³)
+                        ppb_value = raw_value / 1000.0
+                        new_value = round(ppb_value * 0.2, 1)
+                        _LOGGER.debug(
+                            "HCHO conversion for %s: %d raw -> %.3f ppb -> %.1f μg/m³",
+                            device_serial,
+                            raw_value,
+                            ppb_value,
+                            new_value,
+                        )
+                except (ValueError, TypeError):
                     _LOGGER.warning(
-                        "Invalid formaldehyde value for device %s: %s (expected 0-100)",
+                        "Invalid HCHO value format for device %s: %s",
                         device_serial,
-                        new_value,
+                        hcho_raw,
                     )
-                    self._attr_native_value = None
-            else:
-                self._attr_native_value = None
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
                 _LOGGER.debug(
-                    "No formaldehyde data available for device %s", device_serial
+                    "HCHO sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
                 )
+            else:
+                _LOGGER.debug("No HCHO data available for device %s", device_serial)
 
         except Exception as e:
             _LOGGER.error(
-                "Error updating formaldehyde sensor for device %s: %s", device_serial, e
+                "Error updating HCHO sensor for device %s: %s", device_serial, e
             )
             self._attr_native_value = None
 
