@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CAPABILITY_ENVIRONMENTAL_DATA, CAPABILITY_HEATING, DOMAIN
+from .const import CAPABILITY_ENVIRONMENTAL_DATA, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -48,8 +48,8 @@ async def async_setup_entry(
     # Note: Oscillation is now handled natively by the fan platform via FanEntityFeature.OSCILLATE
     # Advanced oscillation modes are available through the oscillation mode select entity
 
-    if CAPABILITY_HEATING in device_capabilities:
-        entities.append(DysonHeatingSwitch(coordinator))
+    # Note: Heating functionality is now integrated into the fan entity's HVAC modes
+    # No separate heating switch needed
 
     if CAPABILITY_ENVIRONMENTAL_DATA in device_capabilities:
         entities.append(DysonContinuousMonitoringSwitch(coordinator))

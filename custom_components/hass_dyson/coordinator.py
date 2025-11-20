@@ -1004,6 +1004,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not connected:
             raise UpdateFailed(f"Failed to connect to device {self.serial_number}")
 
+        # Now that device is connected, refine capabilities based on actual device state
+        await self._refine_capabilities_from_device_state()
+
         # Register for environmental update notifications
         self.device.add_environmental_callback(self._on_environmental_update)
         # Register for message updates to get real-time state changes
@@ -1072,6 +1075,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(
                     f"Failed to connect to manual device {self.serial_number}"
                 )
+
+            # For manual devices, trust user's capability selection - no refinement needed
+            _LOGGER.debug(
+                "Manual device %s connected - using user-selected capabilities: %s",
+                self.serial_number,
+                self._device_capabilities,
+            )
 
             # Register for environmental update notifications
             self.device.add_environmental_callback(self._on_environmental_update)
@@ -1412,22 +1422,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     capabilities = firmware.capabilities or []
 
         # Add virtual capabilities based on product type as per discovery.md
-        # HP models should have heater capability, PH models should have humidifier capability
+        # PH models should have humidifier capability
+        # Note: Heating capability is now determined dynamically after connection
+        # by checking for 'hmod' state key presence in _refine_capabilities_from_device_state()
         product_type = getattr(
             device_info, "product_type", getattr(device_info, "type", "")
         )
 
         if product_type:
-            # HP model (Heater/Purifier) should have virtual Heating capability
-            if product_type.startswith("HP"):
-                if "Heating" not in capabilities:
-                    capabilities.append("Heating")
-                    _LOGGER.debug(
-                        "Added virtual Heating capability for HP model %s", product_type
-                    )
-
             # PH model (Purifier/Humidifier) should have virtual Humidifier capability
-            elif product_type.startswith("PH"):
+            if product_type.startswith("PH"):
                 if "Humidifier" not in capabilities:
                     capabilities.append("Humidifier")
                     _LOGGER.debug(
@@ -1444,6 +1448,78 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         final_capabilities = list(set(capabilities))
         _LOGGER.debug("Final capabilities after deduplication: %s", final_capabilities)
         return final_capabilities
+
+    async def _refine_capabilities_from_device_state(self) -> None:
+        """Refine device capabilities based on actual device state keys after connection.
+
+        This method checks for specific state keys in the device's current state
+        to determine if certain capabilities should be added or removed.
+        For example, the presence of 'hmod' key indicates heating capability.
+
+        Note: Manual devices skip this refinement to trust user's explicit capability selection.
+        """
+        # Skip capability refinement for manual devices - trust user's selection
+        discovery_method = self.config_entry.data.get(
+            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+        )
+        if discovery_method == DISCOVERY_MANUAL:
+            _LOGGER.debug(
+                "Skipping capability refinement for manual device %s - trusting user selection",
+                self.serial_number,
+            )
+            return
+
+        if not self.device or not self.device.is_connected:
+            _LOGGER.debug("Device not connected, skipping capability refinement")
+            return
+
+        try:
+            # Get current device state to check for capability-indicating keys
+            device_state = await self.device.get_state()
+            _LOGGER.debug("Device state for capability refinement: %s", device_state)
+
+            # Check for heating capability based on 'hmod' state key presence
+            product_state = device_state.get("product-state", {})
+            original_capabilities = list(self._device_capabilities)  # Make a copy
+
+            if "hmod" in product_state:
+                # Device has heating mode state key, so it supports heating
+                if "Heating" not in self._device_capabilities:
+                    self._device_capabilities.append("Heating")
+                    _LOGGER.debug(
+                        "Device %s supports heating ('hmod' key found) - capability added for internal consistency",
+                        self.serial_number,
+                    )
+            else:
+                # Device doesn't have heating mode state key, remove heating capability if present
+                if "Heating" in self._device_capabilities:
+                    self._device_capabilities.remove("Heating")
+                    _LOGGER.debug(
+                        "Device %s does not support heating ('hmod' key not found) - capability removed",
+                        self.serial_number,
+                    )
+
+            # Log capability changes at debug level to avoid confusion
+            if original_capabilities != self._device_capabilities:
+                _LOGGER.debug(
+                    "Capabilities refined for %s based on device state: %s -> %s",
+                    self.serial_number,
+                    original_capabilities,
+                    self._device_capabilities,
+                )
+            else:
+                _LOGGER.debug(
+                    "Device capabilities match detected state for %s",
+                    self.serial_number,
+                )
+
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to refine capabilities from device state for %s: %s",
+                self.serial_number,
+                err,
+            )
+            # Don't raise - capability refinement is optional
 
     def _get_device_host(self, device_info: Any) -> str:
         """Get device host/IP address from device info."""

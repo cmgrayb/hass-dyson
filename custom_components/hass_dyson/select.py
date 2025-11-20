@@ -36,8 +36,8 @@ async def async_setup_entry(
     if "AdvanceOscillationDay1" in device_capabilities:
         entities.append(DysonOscillationModeSelect(coordinator))
 
-    if "Heating" in device_capabilities:
-        entities.append(DysonHeatingModeSelect(coordinator))
+    # Note: Heating mode control is now integrated into the fan entity's preset modes
+    # No separate heating mode select needed
 
     async_add_entities(entities, True)
 

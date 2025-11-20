@@ -47,7 +47,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         """Initialize the climate entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_climate"
-        self._attr_name = f"{coordinator.device_name} Climate"
+        self._attr_translation_key = "heating_controls"
         self._attr_icon = "mdi:thermostat"
 
         # Climate features
@@ -111,7 +111,15 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         )
         try:
             temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
-            self._attr_current_temperature = temp_kelvin - 273.15  # Convert to Celsius
+            # Only set temperature if we have a valid reading (not default 0000)
+            if current_temp != "0000" and temp_kelvin > 0:
+                self._attr_current_temperature = (
+                    temp_kelvin - 273.15
+                )  # Convert to Celsius
+            else:
+                self._attr_current_temperature = (
+                    None  # No temperature sensor or invalid reading
+                )
         except (ValueError, TypeError):
             self._attr_current_temperature = None
 
@@ -121,7 +129,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         )
         try:
             temp_kelvin = int(target_temp) / 10
-            self._attr_target_temperature = temp_kelvin - 273.15
+            # Only set target temperature if we have a valid reading
+            if target_temp != "0000" and temp_kelvin > 0:
+                self._attr_target_temperature = temp_kelvin - 273.15
+            else:
+                self._attr_target_temperature = 20  # Default to 20°C
         except (ValueError, TypeError):
             self._attr_target_temperature = 20  # Default to 20°C
 

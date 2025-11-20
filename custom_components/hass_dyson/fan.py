@@ -8,8 +8,10 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.components.climate.const import HVACMode
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -41,6 +43,8 @@ class DysonFan(DysonEntity, FanEntity):
     """Representation of a Dyson fan."""
 
     coordinator: DysonDataUpdateCoordinator
+    _attr_current_temperature: float | None
+    _attr_target_temperature: float
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the fan."""
@@ -64,8 +68,28 @@ class DysonFan(DysonEntity, FanEntity):
         self._attr_speed_count = 10  # Dyson supports 10 speed levels
         self._attr_percentage_step = 10  # Step size of 10%
 
-        # Set up preset modes - Auto and Manual for all device types
-        self._attr_preset_modes = ["Auto", "Manual"]
+        # Check if device has heating capability for integrated climate features
+        self._has_heating = "Heating" in coordinator.device_capabilities
+
+        # Set up preset modes based on heating capability
+        if self._has_heating:
+            self._attr_preset_modes = ["Auto", "Manual", "Heat"]
+            # Add climate-specific attributes for heating devices
+            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+            self._attr_min_temp = 1
+            self._attr_max_temp = 37
+            self._attr_target_temperature_step = 1
+            self._attr_target_temperature = 20  # Default target temperature
+            self._attr_current_temperature = None
+            self._attr_hvac_modes = [
+                HVACMode.OFF,
+                HVACMode.FAN_ONLY,
+                HVACMode.HEAT,
+                HVACMode.AUTO,
+            ]
+            self._attr_hvac_mode = HVACMode.OFF
+        else:
+            self._attr_preset_modes = ["Auto", "Manual"]
 
         # Initialize state attributes to ensure clean state
         self._attr_is_on = None  # Will be set properly in first coordinator update
@@ -115,13 +139,29 @@ class DysonFan(DysonEntity, FanEntity):
         # For now, we'll use forward direction (can be enhanced later)
         self._attr_current_direction = "forward"
 
-        # Update preset mode based on auto mode state
+        # Update preset mode and heating data if applicable
         if self.coordinator.device and self.coordinator.data:
             product_state = self.coordinator.data.get("product-state", {})
             auto_mode = self.coordinator.device._get_current_value(
                 product_state, "auto", "OFF"
             )
-            self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
+
+            # Update heating information if device has heating capability
+            if self._has_heating:
+                self._update_heating_data(product_state)
+                # For heating devices, preset mode includes heating state
+                heating_mode = self.coordinator.device._get_current_value(
+                    product_state, "hmod", "OFF"
+                )
+                if heating_mode == "HEAT":
+                    self._attr_preset_mode = "Heat"
+                elif auto_mode == "ON":
+                    self._attr_preset_mode = "Auto"
+                else:
+                    self._attr_preset_mode = "Manual"
+            else:
+                # Non-heating devices use simple Auto/Manual logic
+                self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
 
             # Update oscillation state from device data if supported
             if self._oscillation_supported:
@@ -290,6 +330,11 @@ class DysonFan(DysonEntity, FanEntity):
                 await self.coordinator.device.set_auto_mode(True)
             elif preset_mode == "Manual":
                 await self.coordinator.device.set_auto_mode(False)
+            elif preset_mode == "Heat" and self._has_heating:
+                # Enable heating mode
+                await self.coordinator.async_send_command(
+                    "set_climate_mode", {"fnst": "FAN", "hmod": "HEAT", "auto": "OFF"}
+                )
             else:
                 _LOGGER.warning("Unknown preset mode: %s", preset_mode)
                 return
@@ -394,6 +439,26 @@ class DysonFan(DysonEntity, FanEntity):
             except (ValueError, TypeError):
                 attributes["sleep_timer"] = 0
 
+            # Heating information if device has heating capability
+            if self._has_heating:
+                # Current and target temperatures
+                attributes["current_temperature"] = self._attr_current_temperature  # type: ignore[assignment]
+                attributes["target_temperature"] = self._attr_target_temperature  # type: ignore[assignment]
+                attributes["hvac_mode"] = self._attr_hvac_mode  # type: ignore[assignment]
+                attributes["temperature_unit"] = self._attr_temperature_unit  # type: ignore[assignment]
+
+                # Raw device heating state for scene support
+                hmod = self.coordinator.device._get_current_value(
+                    product_state, "hmod", "OFF"
+                )
+                attributes["heating_mode"] = hmod  # type: ignore[assignment]
+                attributes["heating_enabled"] = hmod != "OFF"  # type: ignore[assignment]
+
+                # Target temperature in Kelvin format for device commands
+                if self._attr_target_temperature is not None:
+                    temp_kelvin = int((self._attr_target_temperature + 273.15) * 10)
+                    attributes["target_temperature_kelvin"] = f"{temp_kelvin:04d}"  # type: ignore[assignment]
+
         return attributes if attributes else None
 
     def _check_oscillation_support(self) -> bool:
@@ -453,6 +518,120 @@ class DysonFan(DysonEntity, FanEntity):
         except Exception as err:
             _LOGGER.error(
                 "Failed to set oscillation angles for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+
+    # Climate functionality for heating-enabled devices
+    def _update_heating_data(self, device_data: dict[str, Any]) -> None:
+        """Update temperature and heating mode data."""
+        if not self._has_heating:
+            return
+
+        # Current temperature
+        current_temp = self.coordinator.device._get_current_value(
+            device_data, "tmp", "0000"
+        )
+        try:
+            temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
+            self._attr_current_temperature = float(
+                temp_kelvin - 273.15
+            )  # Convert to Celsius
+        except (ValueError, TypeError):
+            self._attr_current_temperature = None
+
+        # Target temperature
+        target_temp = self.coordinator.device._get_current_value(
+            device_data, "hmax", "0000"
+        )
+        try:
+            temp_kelvin = int(target_temp) / 10
+            self._attr_target_temperature = float(temp_kelvin - 273.15)
+        except (ValueError, TypeError):
+            self._attr_target_temperature = 20.0  # Default to 20°C
+
+        # HVAC mode based on device state
+        heating_mode = self.coordinator.device._get_current_value(
+            device_data, "hmod", "OFF"
+        )
+        fan_power = self.coordinator.device._get_current_value(
+            device_data, "fpwr", "OFF"
+        )
+        auto_mode = self.coordinator.device._get_current_value(
+            device_data, "auto", "OFF"
+        )
+
+        if fan_power == "OFF":
+            self._attr_hvac_mode = HVACMode.OFF
+        elif heating_mode == "HEAT":
+            self._attr_hvac_mode = HVACMode.HEAT
+        elif auto_mode == "ON":
+            self._attr_hvac_mode = HVACMode.AUTO
+        else:
+            self._attr_hvac_mode = HVACMode.FAN_ONLY
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Set new target temperature."""
+        if not self._has_heating or not self.coordinator.device:
+            return
+
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is None:
+            return
+
+        try:
+            # Call the device method directly
+            await self.coordinator.device.set_target_temperature(temperature)
+
+            # Request updated state after command
+            await asyncio.sleep(1)  # Give device time to process
+            await self.coordinator.async_request_refresh()
+
+            _LOGGER.debug(
+                "Set target temperature to %s°C for %s",
+                temperature,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to set target temperature for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set new target HVAC mode."""
+        if not self._has_heating or not self.coordinator.device:
+            return
+
+        try:
+            if hvac_mode == HVACMode.OFF:
+                await self.coordinator.async_send_command("set_power", {"fnst": "OFF"})
+            elif hvac_mode == HVACMode.HEAT:
+                await self.coordinator.async_send_command(
+                    "set_climate_mode", {"fnst": "FAN", "hmod": "HEAT", "auto": "OFF"}
+                )
+            elif hvac_mode == HVACMode.FAN_ONLY:
+                await self.coordinator.async_send_command(
+                    "set_climate_mode", {"fnst": "FAN", "hmod": "OFF", "auto": "OFF"}
+                )
+            elif hvac_mode == HVACMode.AUTO:
+                await self.coordinator.async_send_command(
+                    "set_climate_mode", {"fnst": "FAN", "hmod": "OFF", "auto": "ON"}
+                )
+
+            # Request updated state after command
+            await asyncio.sleep(1)
+            await self.coordinator.async_request_refresh()
+
+            _LOGGER.debug(
+                "Set HVAC mode to %s for %s",
+                hvac_mode,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to set HVAC mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )

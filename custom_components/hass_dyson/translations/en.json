@@ -235,6 +235,11 @@
         "name": "Oscillation High Angle"
       }
     },
+    "climate": {
+      "heating_controls": {
+        "name": "Heating Controls"
+      }
+    },
     "update": {
       "firmware_update": {
         "name": "Firmware Update"
