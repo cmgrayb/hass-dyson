@@ -1890,6 +1890,39 @@ class DysonDevice:
                 self._mqtt_client.publish, command_topic, command
             )
 
+    async def set_target_temperature(self, temperature: float) -> None:
+        """Set target temperature in Celsius.
+
+        Args:
+            temperature: Target temperature in Celsius (1-37°C)
+        """
+        # Validate temperature range (convert to Kelvin for validation)
+        temp_kelvin = temperature + 273.15
+        if not 274 <= temp_kelvin <= 310:
+            raise ValueError("Target temperature must be between 1°C and 37°C")
+
+        # Convert Celsius to Kelvin × 10 format for device
+        temp_value = int(temp_kelvin * 10)
+        temp_str = f"{temp_value:04d}"
+
+        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+        command = json.dumps(
+            {
+                "msg": "STATE-SET",
+                "time": self._get_command_timestamp(),
+                "data": {
+                    "hmod": "HEAT",  # Enable heating mode when setting temperature
+                    "hmax": temp_str,
+                },
+                "mode-reason": "RAPP",
+            }
+        )
+
+        if self._mqtt_client:
+            await self.hass.async_add_executor_job(
+                self._mqtt_client.publish, command_topic, command
+            )
+
     async def set_continuous_monitoring(self, enabled: bool) -> None:
         """Set continuous monitoring on/off."""
         command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"

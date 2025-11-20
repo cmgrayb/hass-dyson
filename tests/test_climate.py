@@ -19,9 +19,11 @@ def mock_coordinator():
     coordinator.device_name = "Test Device"
     coordinator.device = MagicMock()
     coordinator.device._get_current_value = MagicMock(return_value="OFF")
+    coordinator.device.set_target_temperature = AsyncMock()
     coordinator.device_capabilities = ["Heating"]
     coordinator.data = {"product-state": {}}
     coordinator.async_send_command = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
     return coordinator
 
 
@@ -417,10 +419,9 @@ class TestDysonClimateEntity:
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 22.5})
 
         # Assert
-        # 22.5°C = 295.65K = 2956.5 -> 2956 (int conversion)
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_target_temperature", {"hmax": "2956"}
-        )
+        # Should call the device's set_target_temperature method with temperature in Celsius
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(22.5)
+        mock_coordinator.async_request_refresh.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_no_temperature(self, mock_coordinator):
@@ -592,11 +593,17 @@ class TestClimateIntegration:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         mock_coordinator.async_send_command.side_effect = Exception("Test error")
+        mock_coordinator.device.set_target_temperature.side_effect = Exception(
+            "Temperature test error"
+        )
 
         # Act & Assert - should not raise exception
         await entity.async_set_hvac_mode(HVACMode.HEAT)
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
         await entity.async_set_fan_mode("5")
 
-        # Should have attempted to call the command despite errors
-        assert mock_coordinator.async_send_command.call_count == 3
+        # Should have attempted to call the commands despite errors
+        # HVAC mode and fan mode go through async_send_command
+        assert mock_coordinator.async_send_command.call_count == 2
+        # Temperature setting goes through device.set_target_temperature
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(20.0)

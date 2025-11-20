@@ -1689,3 +1689,94 @@ class TestDysonDeviceMQTTCallbacks:
 
         device._handle_current_state.assert_called_once_with(data, topic)
         device._notify_callbacks.assert_called_once_with(topic, data)
+
+    @pytest.mark.asyncio
+    async def test_set_target_temperature_valid(self, mock_hass, mock_mqtt_client):
+        """Test setting target temperature with valid value."""
+        with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+            mock_mqtt_client.connect.return_value = 0  # CONNACK_ACCEPTED
+            mock_mqtt_client.is_connected.return_value = True
+
+            # Mock async_add_executor_job to actually call the function
+            def mock_executor_job(func, *args):
+                return func(*args) if args else func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+            device = DysonDevice(
+                hass=mock_hass,
+                serial_number="TEST123",
+                host="192.168.1.100",
+                credential="test_cred",
+            )
+
+            # Mock connection state
+            device._connected = True
+            device._mqtt_client = mock_mqtt_client
+
+            # Test setting valid temperature
+            await device.set_target_temperature(22.5)
+
+            # Verify MQTT publish was called with correct data
+            mock_mqtt_client.publish.assert_called_once()
+            call_args = mock_mqtt_client.publish.call_args
+
+            # Parse the JSON command
+            import json
+
+            command_data = json.loads(
+                call_args[0][1]
+            )  # Second argument is the JSON payload
+
+            assert command_data["msg"] == "STATE-SET"
+            assert command_data["data"]["hmod"] == "HEAT"
+            # 22.5°C = 295.65K = 2956.5 -> 2956 (int conversion)
+            assert command_data["data"]["hmax"] == "2956"
+
+    @pytest.mark.asyncio
+    async def test_set_target_temperature_out_of_range_low(self, mock_hass):
+        """Test setting target temperature below minimum range."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        with pytest.raises(
+            ValueError, match="Target temperature must be between 1°C and 37°C"
+        ):
+            await device.set_target_temperature(0.5)  # Below 1°C
+
+    @pytest.mark.asyncio
+    async def test_set_target_temperature_out_of_range_high(self, mock_hass):
+        """Test setting target temperature above maximum range."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        with pytest.raises(
+            ValueError, match="Target temperature must be between 1°C and 37°C"
+        ):
+            await device.set_target_temperature(37.5)  # Above 37°C
+
+    @pytest.mark.asyncio
+    async def test_set_target_temperature_not_connected(self, mock_hass):
+        """Test setting target temperature when device is not connected."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        # Device is not connected (default state)
+        assert device._connected is False
+
+        # Should not raise an exception but also should not publish anything
+        await device.set_target_temperature(22.0)
+
+        # No MQTT client should have been used since device is not connected

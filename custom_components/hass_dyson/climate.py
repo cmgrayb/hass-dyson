@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import (
-    ClimateEntityFeature,
-    HVACMode,
-)
+from homeassistant.components.climate.const import ClimateEntityFeature, HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
@@ -213,13 +211,13 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             return
 
         try:
-            # Convert Celsius to Kelvin and format for device
-            temp_kelvin = int((temperature + 273.15) * 10)
-            temp_str = f"{temp_kelvin:04d}"
+            # Call the device method directly
+            await self.coordinator.device.set_target_temperature(temperature)
 
-            await self.coordinator.async_send_command(
-                "set_target_temperature", {"hmax": temp_str}
-            )
+            # Request updated state after command
+            await asyncio.sleep(1)  # Give device time to process
+            await self.coordinator.async_request_refresh()
+
             _LOGGER.debug(
                 "Set target temperature to %s°C for %s",
                 temperature,
