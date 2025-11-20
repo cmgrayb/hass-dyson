@@ -720,7 +720,7 @@ class TestDysonFormaldehydeSensor:
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_hcho"
         assert sensor._attr_translation_key == "hcho"
-        assert sensor._attr_native_unit_of_measurement == "μg/m³"
+        assert sensor._attr_native_unit_of_measurement == "mg/m³"
         assert sensor._attr_icon == "mdi:chemical-weapon"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
@@ -729,7 +729,7 @@ class TestDysonFormaldehydeSensor:
         sensor = DysonFormaldehydeSensor(mock_coordinator)
         mock_coordinator.data = {
             "environmental-data": {
-                "hchr": "5000"  # Raw value that converts to 5000/1000 = 5 ppb = 0.006 mg/m³
+                "hchr": "0002"  # Raw value that converts to 2/1000 = 0.002 mg/m³ (matches libdyson-neon tests)
             }
         }
 
@@ -738,8 +738,8 @@ class TestDysonFormaldehydeSensor:
             sensor._handle_coordinator_update()
 
         # Assert
-        # 5000 raw -> 5.0 ppb -> 1.0 μg/m³ (1 decimal place)
-        assert sensor._attr_native_value == 1.0
+        # 2 raw (from "0002") -> 0.002 mg/m³ (matches libdyson-neon implementation: raw/1000)
+        assert sensor._attr_native_value == 0.002
 
     def test_native_value_with_no_device(self, mock_coordinator):
         """Test native value when no device is available."""

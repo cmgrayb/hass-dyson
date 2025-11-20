@@ -423,7 +423,7 @@ class TestDysonFaultSensor:
         sensor = DysonFaultSensor(mock_coordinator, "aqs", fault_info)
 
         assert sensor._attr_unique_id == "NK6-EU-MHA0000A_fault_aqs"
-        assert sensor._attr_name == "Test Device Fault Air Quality Sensor"
+        assert sensor._attr_name == "Fault Air Quality Sensor"
         assert sensor._attr_device_class == BinarySensorDeviceClass.PROBLEM
         assert sensor._attr_entity_category == EntityCategory.DIAGNOSTIC
         assert sensor._fault_code == "aqs"
