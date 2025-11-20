@@ -136,12 +136,21 @@ class DysonFan(DysonEntity, FanEntity):
             except (ValueError, TypeError):
                 self._attr_percentage = 0
 
-        # For now, we'll use forward direction (can be enhanced later)
-        self._attr_current_direction = "forward"
-
         # Update preset mode and heating data if applicable
         if self.coordinator.device and self.coordinator.data:
             product_state = self.coordinator.data.get("product-state", {})
+
+            # Update fan direction based on device state (fdir)
+            # fdir="ON" means front airflow is on (forward direction in HA terms)
+            # fdir="OFF" means front airflow is off (reverse direction in HA terms)
+            fdir_value = self.coordinator.device._get_current_value(
+                product_state,
+                "fdir",
+                "ON",  # Default to ON (forward) if not available
+            )
+            self._attr_current_direction = (
+                "forward" if fdir_value == "ON" else "reverse"
+            )
             auto_mode = self.coordinator.device._get_current_value(
                 product_state, "auto", "OFF"
             )
@@ -175,6 +184,9 @@ class DysonFan(DysonEntity, FanEntity):
         else:
             self._attr_preset_mode = None
             self._attr_oscillating = False
+            self._attr_current_direction = (
+                "forward"  # Default fallback when no device data
+            )
 
         _LOGGER.debug(
             "Fan %s final state - is_on: %s, percentage: %s",
@@ -292,9 +304,9 @@ class DysonFan(DysonEntity, FanEntity):
             return
 
         # Map Home Assistant direction to Dyson direction values
-        direction_value = (
-            "ON" if direction == "reverse" else "OFF"
-        )  # Adjust based on actual Dyson values
+        # Based on libdyson-neon: fdir="ON" = front airflow = forward direction
+        #                         fdir="OFF" = no front airflow = reverse direction
+        direction_value = "ON" if direction == "forward" else "OFF"
 
         try:
             # Use device method directly instead of coordinator
