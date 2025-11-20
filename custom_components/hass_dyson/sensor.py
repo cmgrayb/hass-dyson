@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, EntityCategory, UnitOfTemperature
+from homeassistant.const import (
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -711,43 +720,70 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        from .device_utils import convert_sensor_value_safe, get_sensor_data_safe
-
         device_serial = self.coordinator.serial_number
 
-        if not self.coordinator.data:
-            self._attr_native_value = None
-            _LOGGER.debug(
-                "Humidity sensor update: no coordinator data available for device %s",
-                device_serial,
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
             )
-            return
+            humidity_raw = env_data.get("hact")
 
-        # Safely extract humidity data
-        humidity = get_sensor_data_safe(self.coordinator.data, "hact", device_serial)
+            if humidity_raw is not None:
+                try:
+                    # Convert and validate the humidity value
+                    # libdyson-neon shows hact as 4-digit string: "0030" = 30%, "0058" = 58%
+                    humidity_value = int(humidity_raw)
+                    if not (0 <= humidity_value <= 100):
+                        _LOGGER.warning(
+                            "Invalid humidity value for device %s: %s%% (expected 0-100)",
+                            device_serial,
+                            humidity_value,
+                        )
+                        new_value = None
+                    else:
+                        new_value = humidity_value
+                        _LOGGER.debug(
+                            "Humidity conversion for %s: %s -> %d%%",
+                            device_serial,
+                            humidity_raw,
+                            new_value,
+                        )
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid humidity value format for device %s: %s",
+                        device_serial,
+                        humidity_raw,
+                    )
+                    new_value = None
 
-        if humidity is not None:
-            # Safely convert to integer with proper error handling
-            converted_humidity = convert_sensor_value_safe(
-                humidity, int, device_serial, "humidity"
-            )
-            self._attr_native_value = converted_humidity
+            self._attr_native_value = new_value
 
-            if converted_humidity is not None:
+            if new_value is not None:
                 _LOGGER.debug(
-                    "Humidity sensor updated for device %s: %s%%",
+                    "Humidity sensor updated for %s: %s -> %s%%",
                     device_serial,
-                    converted_humidity,
+                    old_value,
+                    new_value,
                 )
             else:
-                _LOGGER.warning(
-                    "Failed to convert humidity value for device %s: %s",
+                _LOGGER.debug(
+                    "Humidity sensor update: no valid humidity data for device %s",
                     device_serial,
-                    humidity,
                 )
-        else:
+
+        except Exception as e:
+            _LOGGER.exception(
+                "Error updating humidity sensor for device %s: %s", device_serial, e
+            )
             self._attr_native_value = None
-            _LOGGER.debug("No humidity data available for device %s", device_serial)
+
+        self.async_write_ha_state()
 
         super()._handle_coordinator_update()
 

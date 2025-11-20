@@ -3,7 +3,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -312,24 +316,18 @@ class TestDysonHumiditySensor:
         """Test sensor updates when device has humidity data."""
         # Arrange
         sensor = DysonHumiditySensor(mock_coordinator)
-        mock_coordinator.data = {"hact": "030"}  # 30% humidity
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hact": "0058"
+            }  # 58% humidity in libdyson-neon format
+        }
 
-        # Act - trigger update with mocked device_utils
-        with (
-            patch.object(sensor, "async_write_ha_state"),
-            patch(
-                "custom_components.hass_dyson.device_utils.get_sensor_data_safe",
-                return_value="030",
-            ),
-            patch(
-                "custom_components.hass_dyson.device_utils.convert_sensor_value_safe",
-                return_value=30,
-            ),
-        ):
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Assert
-        assert sensor._attr_native_value == 30
+        assert sensor._attr_native_value == 58
 
 
 class TestDysonFilterLifeSensor:
