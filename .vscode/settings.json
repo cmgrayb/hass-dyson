@@ -1,0 +1,27 @@
+{
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit",
+      "source.fixAll.ruff": "explicit"
+    }
+  },
+
+  "ruff.configuration": "./pyproject.toml",
+  "ruff.interpreter": [".venv/bin/python"],
+
+  "files.associations": {
+    "*.py": "python"
+  },
+
+  "editor.rulers": [88],
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
+}
