@@ -678,6 +678,9 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "temperature"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_state_class = SensorStateClass.MEASUREMENT
+
+        # Use Home Assistant's unit system for temperature display
+        # Always report in Celsius as native unit - HA will convert for display
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
 
     def _handle_coordinator_update(self) -> None:
@@ -693,6 +696,7 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
             try:
                 # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
                 # Convert to Celsius: (K * 10) / 10 - 273.15
+                # Home Assistant will automatically convert to Fahrenheit for imperial users
                 temp_celsius = (float(temperature) / 10) - 273.15
                 self._attr_native_value = round(temp_celsius, 1)
             except (ValueError, TypeError):
