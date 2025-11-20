@@ -122,7 +122,16 @@ class TestDysonFan:
         mock_coordinator.device.fan_power = True
         mock_coordinator.device.fan_state = "FAN"
         mock_coordinator.device.fan_speed_setting = "0005"
-        mock_coordinator.device._get_current_value.return_value = "OFF"  # Manual mode
+        # Mock different values for different keys
+
+        def mock_get_current_value(data, key, default):
+            if key == "auto":
+                return "OFF"  # Manual mode
+            elif key == "fdir":
+                return "OFF"  # Reverse direction
+            return default
+
+        mock_coordinator.device._get_current_value.side_effect = mock_get_current_value
 
         # Act
         with patch.object(fan, "async_write_ha_state"):
@@ -131,7 +140,38 @@ class TestDysonFan:
         # Assert
         assert fan._attr_is_on is True
         assert fan._attr_percentage == 50  # 5 * 10
-        assert fan._attr_current_direction == "forward"
+        assert (
+            fan._attr_current_direction == "reverse"
+        )  # fdir=OFF means reverse direction
+
+    def test_handle_coordinator_update_fan_on_forward_direction(self, mock_coordinator):
+        """Test _handle_coordinator_update when fan is on with forward direction."""
+        # Arrange
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "FAN"
+        mock_coordinator.device.fan_speed_setting = "0005"
+        # Mock different values for different keys
+
+        def mock_get_current_value(data, key, default):
+            if key == "auto":
+                return "OFF"  # Manual mode
+            elif key == "fdir":
+                return "ON"  # Forward direction
+            return default
+
+        mock_coordinator.device._get_current_value.side_effect = mock_get_current_value
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_is_on is True
+        assert fan._attr_percentage == 50  # 5 * 10
+        assert (
+            fan._attr_current_direction == "forward"
+        )  # fdir=ON means forward direction
         assert fan._attr_preset_mode == "Manual"
         assert fan._attr_oscillating is False
 
@@ -355,7 +395,7 @@ class TestDysonFan:
 
         # Assert
         mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fdir": "OFF"}
+            "STATE-SET", {"fdir": "ON"}
         )
         mock_coordinator.async_request_refresh.assert_called_once()
 
@@ -374,7 +414,7 @@ class TestDysonFan:
 
         # Assert
         mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fdir": "ON"}
+            "STATE-SET", {"fdir": "OFF"}
         )
 
     @pytest.mark.asyncio

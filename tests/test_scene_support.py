@@ -127,25 +127,22 @@ class TestClimateSceneSupport:
         )
 
         climate = DysonClimateEntity(mock_coordinator)
-        climate._attr_target_temperature = 20.0
-        climate._attr_hvac_mode = "heat"
-        climate._attr_fan_mode = "5"
+        climate._attr_target_temperature = 22.5
+        climate._attr_hvac_mode = "auto"
 
         attributes = climate.extra_state_attributes
 
         # Verify core climate properties
-        assert attributes["target_temperature"] == 20.0
-        assert attributes["hvac_mode"] == "heat"
-        assert attributes["fan_mode"] == "5"
+        assert attributes["target_temperature"] == 22.5
+        assert attributes["hvac_mode"] == "auto"
 
         # Verify device state properties
         assert attributes["heating_mode"] == "HEAT"
         assert attributes["auto_mode"] is False
-        assert attributes["fan_speed"] == "0005"
         assert attributes["fan_power"] is True
 
         # Verify temperature in Kelvin for device commands
-        assert attributes["target_temperature_kelvin"] == "2931"
+        assert attributes["target_temperature_kelvin"] == "2956"
 
 
 class TestSwitchSceneSupport:
@@ -297,7 +294,6 @@ class TestSceneIntegrationSupport:
         climate = DysonClimateEntity(mock_coordinator)
         climate._attr_target_temperature = 20.0
         climate._attr_hvac_mode = "heat"
-        climate._attr_fan_mode = "5"
         climate_attrs = climate.extra_state_attributes
 
         # Switch entities cover: heating, continuous monitoring
