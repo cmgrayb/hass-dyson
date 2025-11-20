@@ -12,6 +12,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER,
     PERCENTAGE,
     EntityCategory,
     UnitOfTemperature,
@@ -252,7 +253,7 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hcho"
         self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:chemical-weapon"
 
     def _handle_coordinator_update(self) -> None:
@@ -275,20 +276,20 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
                 try:
                     # Convert and validate the HCHO value
                     raw_value = int(hcho_raw)
-                    if not (0 <= raw_value <= 1000):
+                    if not (0 <= raw_value <= 9999):
                         _LOGGER.warning(
-                            "Invalid HCHO raw value for device %s: %s (expected 0-1000)",
+                            "Invalid HCHO raw value for device %s: %s (expected 0-9999)",
                             device_serial,
                             raw_value,
                         )
                         new_value = None
                     else:
-                        # Convert from ppb to μg/m³ (based on user feedback: 5 ppb = 1 μg/m³)
-                        # HCHO: 1 ppb = 0.2 μg/m³
-                        # Range 0-1000 ppb becomes 0-200 μg/m³
-                        new_value = round(raw_value * 0.2, 1)
+                        # Convert from raw index to mg/m³ (matches libdyson-neon implementation)
+                        # Same calculation as DysonFormaldehydeSensor: raw_value / 1000.0
+                        # Range 0-9999 raw becomes 0.000-9.999 mg/m³ (reports actual conditions)
+                        new_value = round(raw_value / 1000.0, 3)
                         _LOGGER.debug(
-                            "HCHO conversion for %s: %d ppb -> %.1f μg/m³",
+                            "HCHO conversion for %s: %d raw -> %.3f mg/m³",
                             device_serial,
                             raw_value,
                             new_value,
@@ -1005,7 +1006,6 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = "ppb"
         self._attr_icon = "mdi:molecule"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1075,7 +1075,7 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hcho"
         self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:chemical-weapon"
 
     def _handle_coordinator_update(self) -> None:
@@ -1100,24 +1100,22 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                     # Legacy devices provide hchr as raw index value that needs /1000 to get ppb
                     raw_value = int(hcho_raw)
                     if not (
-                        0 <= raw_value <= 100000
-                    ):  # Adjusted range for raw index values
+                        0 <= raw_value <= 9999
+                    ):  # Full range to report actual device measurements
                         _LOGGER.warning(
-                            "Invalid HCHO raw value for device %s: %s (expected 0-100000)",
+                            "Invalid HCHO raw value for device %s: %s (expected 0-9999)",
                             device_serial,
                             raw_value,
                         )
                         new_value = None
                     else:
-                        # Convert from raw index to ppb (divide by 1000) then to μg/m³
-                        # HCHO: 1 ppb = 0.2 μg/m³ (based on user feedback: 5 ppb = 1 μg/m³)
-                        ppb_value = raw_value / 1000.0
-                        new_value = round(ppb_value * 0.2, 1)
+                        # Convert from raw index to mg/m³ (matches libdyson-neon implementation)
+                        # libdyson-neon uses: val = self._get_environmental_field_value("hchr", divisor=1000)
+                        new_value = round(raw_value / 1000.0, 3)
                         _LOGGER.debug(
-                            "HCHO conversion for %s: %d raw -> %.3f ppb -> %.1f μg/m³",
+                            "HCHO conversion for %s: %d raw -> %.3f mg/m³",
                             device_serial,
                             raw_value,
-                            ppb_value,
                             new_value,
                         )
                 except (ValueError, TypeError):
