@@ -71,6 +71,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             HVACMode.AUTO,
         ]
 
+        # Initialize HVAC mode to OFF (will be updated in _handle_coordinator_update)
+        self._attr_hvac_mode = HVACMode.OFF
+
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if not self.coordinator.device:
@@ -213,7 +216,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         await self.async_set_hvac_mode(HVACMode.OFF)
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
+    def extra_state_attributes(self):
         """Return climate-specific state attributes for scene support."""
         if not self.coordinator.device:
             return None
