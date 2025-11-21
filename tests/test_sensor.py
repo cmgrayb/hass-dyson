@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
-from custom_components.hass_dyson.const import DOMAIN
+from custom_components.hass_dyson.const import CAPABILITY_VOC, DOMAIN
 from custom_components.hass_dyson.sensor import (
     DysonAirQualitySensor,
     DysonCarbonFilterLifeSensor,
@@ -523,17 +523,17 @@ class TestSensorPlatformSetupAdvanced:
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_voc_devices(self, mock_coordinator):
-        """Test setting up sensors for devices with legacy VOC capability only."""
+        """Test setting up sensors for devices with VOC/NO2 Detection capability for UI testing."""
         # Arrange
         hass = MagicMock()
         config_entry = MagicMock()
         config_entry.entry_id = "test-entry-id"
         async_add_entities = MagicMock()
 
-        # Set up device with VOC capability only (no ExtendedAQ)
-        mock_coordinator.device_capabilities = ["VOC"]
+        # Set up device with VOC capability (manual testing)
+        mock_coordinator.device_capabilities = [CAPABILITY_VOC]
         mock_coordinator.device_category = ["EC"]
-        # Override coordinator.data to not include ExtendedAQ data since this is legacy VOC only
+        # Override coordinator.data to not include ExtendedAQ data since this is manual testing
         mock_coordinator.data = {
             "product-state": {"pm25": "0010", "pm10": "0015"},
             "environmental-data": {"pm25": "10", "pm10": "15"},  # No gas sensor data
@@ -548,8 +548,8 @@ class TestSensorPlatformSetupAdvanced:
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
         assert (
-            len(entities) == 0
-        )  # VOC capability alone doesn't create any sensors (no ExtendedAQ or Formaldehyde)
+            len(entities) == 3
+        )  # VOC/NO2 Detection capability creates gas sensors (VOC, NO2, CO2) for UI testing
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_formaldehyde_devices(self, mock_coordinator):

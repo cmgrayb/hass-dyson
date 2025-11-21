@@ -1776,7 +1776,8 @@ class TestDysonDeviceMQTTCallbacks:
         # Device is not connected (default state)
         assert device._connected is False
 
-        # Should not raise an exception but also should not publish anything
-        await device.set_target_temperature(22.0)
+        # Should raise RuntimeError when device is not connected
+        with pytest.raises(RuntimeError, match="Device TEST123 is not connected"):
+            await device.set_target_temperature(22.0)
 
         # No MQTT client should have been used since device is not connected
