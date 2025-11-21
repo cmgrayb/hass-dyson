@@ -695,7 +695,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_capabilities = self.config_entry.data.get("capabilities")
 
             if config_capabilities and len(config_capabilities) > 0:
-                # Use capabilities from config entry if non-empty
+                # Use capabilities from config entry if non-empty (prioritize config entry for cloud devices)
                 self._device_capabilities = normalize_capabilities(config_capabilities)
                 _LOGGER.debug(
                     "Using capabilities from config entry for %s: %s",
@@ -710,31 +710,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.serial_number,
                         config_capabilities,
                     )
+                    # Fall back to API extraction if config normalization failed
+                    self._extract_from_api_fallback(device_info)
             else:
-                # Extract capabilities from API response
-                try:
-                    api_capabilities = self._extract_capabilities(device_info)
-                    self._device_capabilities = normalize_capabilities(api_capabilities)
-                    _LOGGER.debug(
-                        "Extracted capabilities from API for %s: %s",
-                        self.serial_number,
-                        self._device_capabilities,
-                    )
-
-                    # Validate that we got meaningful capabilities from API
-                    if not self._device_capabilities:
-                        _LOGGER.warning(
-                            "API capabilities for %s resulted in empty list after normalization: %s",
-                            self.serial_number,
-                            api_capabilities,
-                        )
-                except Exception as api_error:
-                    _LOGGER.error(
-                        "Failed to extract capabilities from API for %s: %s",
-                        self.serial_number,
-                        api_error,
-                    )
-                    self._device_capabilities = []
+                # Extract capabilities from API response (fallback for older entries or missing data)
+                self._extract_from_api_fallback(device_info)
 
         except Exception as e:
             _LOGGER.error(
@@ -751,6 +731,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.serial_number,
             self._device_capabilities,
         )
+
+    def _extract_from_api_fallback(self, device_info) -> None:
+        """Extract capabilities from API response as fallback."""
+        try:
+            api_capabilities = self._extract_capabilities(device_info)
+            from .device_utils import normalize_capabilities
+            self._device_capabilities = normalize_capabilities(api_capabilities)
+            _LOGGER.debug(
+                "Extracted capabilities from API for %s: %s",
+                self.serial_number,
+                self._device_capabilities,
+            )
+
+            # Validate that we got meaningful capabilities from API
+            if not self._device_capabilities:
+                _LOGGER.warning(
+                    "API capabilities for %s resulted in empty list after normalization: %s",
+                    self.serial_number,
+                    api_capabilities,
+                )
+        except Exception as api_error:
+            _LOGGER.error(
+                "Failed to extract capabilities from API for %s: %s",
+                self.serial_number,
+                api_error,
+            )
+            self._device_capabilities = []
 
     def _extract_firmware_version(self, device_info) -> None:
         """Extract firmware version and update information from device info."""
@@ -1264,11 +1271,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest >=0.7.0"""
-        from libdyson_rest.exceptions import (
-            DysonAPIError,
-            DysonAuthError,
-            DysonConnectionError,
-        )
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
 
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug(
@@ -1474,6 +1477,20 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         try:
+            # Request current state to ensure we have fresh data for capability detection
+            try:
+                await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+                _LOGGER.debug("Requested current state for capability refinement")
+
+                # Give device a moment to respond with current state
+                import asyncio
+                await asyncio.sleep(2)
+            except Exception as cmd_err:
+                _LOGGER.warning(
+                    "Failed to request current state for capability refinement: %s",
+                    cmd_err
+                )
+
             # Get current device state to check for capability-indicating keys
             device_state = await self.device.get_state()
             _LOGGER.debug("Device state for capability refinement: %s", device_state)
@@ -1798,17 +1815,11 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
 
-        device_info = {
-            "serial_number": device_serial,
-            "name": device_name,
-            "product_type": getattr(device, "product_type", "unknown"),
-            "category": getattr(device, "category", "unknown"),
-        }
-
+        # Pass the actual device object to extract capabilities properly
         device_data = create_cloud_device_config(
             serial_number=device_serial,
             username=self._email,
-            device_info=device_info,
+            device_info=device,  # Pass the actual device object, not a dict
             auth_token=self._auth_token,
             parent_entry_id=self.config_entry.entry_id,
         )
@@ -1879,6 +1890,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "serial_number": device_serial,
                         "name": device_name,
                         "product_type": getattr(device, "product_type", "unknown"),
+                        "category": getattr(device, "category", "unknown"),
                         "auth_token": self._auth_token,
                         "email": self._email,
                         "parent_entry_id": self.config_entry.entry_id,

@@ -265,11 +265,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Authenticate with Dyson API and return challenge ID and any errors."""
         # Import here to avoid scoping issues
         from libdyson_rest import AsyncDysonClient
-        from libdyson_rest.exceptions import (
-            DysonAPIError,
-            DysonAuthError,
-            DysonConnectionError,
-        )
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
 
         errors = {}
 
@@ -1094,6 +1090,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "serial_number": device_serial,
             "name": device_name,
             "product_type": discovery_info.get("product_type", "unknown"),
+            "category": discovery_info.get("category", "unknown"),
         }
 
         config_data = create_cloud_device_config(
