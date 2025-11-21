@@ -171,7 +171,7 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         """Initialize the filter replacement sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_filter_replacement"
-        self._attr_name = f"{coordinator.device_name} Filter Replacement"
+        self._attr_name = "Filter Replacement"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
 
