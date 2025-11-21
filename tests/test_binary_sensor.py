@@ -243,7 +243,7 @@ class TestDysonFilterReplacementSensor:
         sensor = DysonFilterReplacementSensor(mock_coordinator)
 
         assert sensor._attr_unique_id == "NK6-EU-MHA0000A_filter_replacement"
-        assert sensor._attr_name == "Test Device Filter Replacement"
+        assert sensor._attr_name == "Filter Replacement"
         assert sensor._attr_device_class == BinarySensorDeviceClass.PROBLEM
         assert sensor._attr_icon == "mdi:air-filter"
 
