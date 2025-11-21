@@ -737,6 +737,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             api_capabilities = self._extract_capabilities(device_info)
             from .device_utils import normalize_capabilities
+
             self._device_capabilities = normalize_capabilities(api_capabilities)
             _LOGGER.debug(
                 "Extracted capabilities from API for %s: %s",
@@ -1271,7 +1272,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest >=0.7.0"""
-        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
+        from libdyson_rest.exceptions import (
+            DysonAPIError,
+            DysonAuthError,
+            DysonConnectionError,
+        )
 
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug(
@@ -1484,11 +1489,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 # Give device a moment to respond with current state
                 import asyncio
+
                 await asyncio.sleep(2)
             except Exception as cmd_err:
                 _LOGGER.warning(
                     "Failed to request current state for capability refinement: %s",
-                    cmd_err
+                    cmd_err,
                 )
 
             # Get current device state to check for capability-indicating keys

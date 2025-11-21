@@ -193,9 +193,7 @@ def extract_capabilities_from_device_info(device_info: Any) -> list[str]:
         # state key presence. This avoids hardcoding product types.
 
     _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
-    _LOGGER.debug(
-        "Capability types: %s", [type(cap).__name__ for cap in capabilities]
-    )
+    _LOGGER.debug("Capability types: %s", [type(cap).__name__ for cap in capabilities])
 
     # Remove duplicates and return
     final_capabilities = list(set(capabilities))
@@ -557,7 +555,9 @@ def create_cloud_device_config(
     """
     # Extract capabilities from device_info if it's a libdyson-rest object
     capabilities = []
-    if hasattr(device_info, "capabilities") or hasattr(device_info, "connected_configuration"):
+    if hasattr(device_info, "capabilities") or hasattr(
+        device_info, "connected_configuration"
+    ):
         # This is a libdyson-rest device object with capability data
         capabilities = extract_capabilities_from_device_info(device_info)
         _LOGGER.debug(

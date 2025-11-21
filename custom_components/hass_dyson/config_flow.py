@@ -265,7 +265,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Authenticate with Dyson API and return challenge ID and any errors."""
         # Import here to avoid scoping issues
         from libdyson_rest import AsyncDysonClient
-        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
+        from libdyson_rest.exceptions import (
+            DysonAPIError,
+            DysonAuthError,
+            DysonConnectionError,
+        )
 
         errors = {}
 
