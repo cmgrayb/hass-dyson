@@ -20,7 +20,12 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import (
+    CAPABILITY_EXTENDED_AQ,
+    CAPABILITY_FORMALDEHYDE,
+    CAPABILITY_VOC,
+    DOMAIN,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -241,20 +246,20 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
-class DysonHCHOSensor(DysonEntity, SensorEntity):
-    """HCHO (Formaldehyde) sensor for Dyson devices with ExtendedAQ capability."""
+class DysonVOCSensor(DysonEntity, SensorEntity):
+    """VOC (Volatile Organic Compounds) sensor for Dyson devices with ExtendedAQ capability."""
 
     coordinator: DysonDataUpdateCoordinator
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the HCHO sensor."""
+        """Initialize the VOC sensor."""
         super().__init__(coordinator)
 
-        self._attr_unique_id = f"{coordinator.serial_number}_hcho"
-        self._attr_translation_key = "hcho"
+        self._attr_unique_id = f"{coordinator.serial_number}_voc"
+        self._attr_translation_key = "voc"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
-        self._attr_icon = "mdi:chemical-weapon"
+        self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -274,29 +279,28 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
 
             if hcho_raw is not None:
                 try:
-                    # Convert and validate the HCHO value
+                    # Convert and validate the VOC value
                     raw_value = int(hcho_raw)
                     if not (0 <= raw_value <= 9999):
                         _LOGGER.warning(
-                            "Invalid HCHO raw value for device %s: %s (expected 0-9999)",
+                            "Invalid VOC raw value for device %s: %s (expected 0-9999)",
                             device_serial,
                             raw_value,
                         )
                         new_value = None
                     else:
                         # Convert from raw index to mg/m³ (matches libdyson-neon implementation)
-                        # Same calculation as DysonFormaldehydeSensor: raw_value / 1000.0
                         # Range 0-9999 raw becomes 0.000-9.999 mg/m³ (reports actual conditions)
                         new_value = round(raw_value / 1000.0, 3)
                         _LOGGER.debug(
-                            "HCHO conversion for %s: %d raw -> %.3f mg/m³",
+                            "VOC conversion for %s: %d raw -> %.3f mg/m³",
                             device_serial,
                             raw_value,
                             new_value,
                         )
                 except (ValueError, TypeError):
                     _LOGGER.warning(
-                        "Invalid HCHO value format for device %s: %s",
+                        "Invalid VOC value format for device %s: %s",
                         device_serial,
                         hcho_raw,
                     )
@@ -306,17 +310,17 @@ class DysonHCHOSensor(DysonEntity, SensorEntity):
 
             if new_value is not None:
                 _LOGGER.debug(
-                    "HCHO sensor updated for %s: %s -> %s",
+                    "VOC sensor updated for %s: %s -> %s",
                     device_serial,
                     old_value,
                     new_value,
                 )
             else:
-                _LOGGER.debug("No HCHO data available for device %s", device_serial)
+                _LOGGER.debug("No VOC data available for device %s", device_serial)
 
         except Exception as e:
             _LOGGER.error(
-                "Error updating HCHO sensor for device %s: %s", device_serial, e
+                "Error updating VOC sensor for device %s: %s", device_serial, e
             )
             self._attr_native_value = None
 
@@ -365,13 +369,13 @@ async def async_setup_entry(  # noqa: C901
         ):
             _LOGGER.debug("Adding ExtendedAQ sensors for device %s", device_serial)
 
-            # Always add PM2.5, PM10, P25R, P10R sensors for ExtendedAQ devices
+            # Add PM2.5 and PM10 sensors for ExtendedAQ devices
+            # These sensors now automatically use revised values (p25r, p10r) when available,
+            # falling back to legacy values (pm25, pm10) for older devices
             entities.extend(
                 [
                     DysonPM25Sensor(coordinator),
                     DysonPM10Sensor(coordinator),
-                    DysonP25RSensor(coordinator),
-                    DysonP10RSensor(coordinator),
                 ]
             )
 
@@ -399,16 +403,29 @@ async def async_setup_entry(  # noqa: C901
                     device_serial,
                 )
 
-            # Add HCHO sensor if HCHO data is present
+            # Add VOC sensor if VOC data is present (va10)
             if "va10" in env_data:
                 _LOGGER.debug(
-                    "Adding HCHO sensor for device %s - HCHO data detected",
+                    "Adding VOC sensor for device %s - VOC data detected",
                     device_serial,
                 )
-                entities.append(DysonHCHOSensor(coordinator))
+                entities.append(DysonVOCSensor(coordinator))
             else:
                 _LOGGER.debug(
-                    "Skipping HCHO sensor for device %s - no HCHO data in environmental response",
+                    "Skipping VOC sensor for device %s - no VOC data in environmental response",
+                    device_serial,
+                )
+
+            # Add Formaldehyde sensor if HCHO data is present (hchr or hcho)
+            if "hchr" in env_data or "hcho" in env_data:
+                _LOGGER.debug(
+                    "Adding Formaldehyde sensor for device %s - HCHO data detected",
+                    device_serial,
+                )
+                entities.append(DysonFormaldehydeSensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response",
                     device_serial,
                 )
         else:
@@ -529,25 +546,64 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-        # Add legacy formaldehyde sensor for devices with Formaldehyde capability AND hchr data
-        # This supports older devices that use 'hchr' data key instead of 'va10'
-        if (
-            has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"])
-            and "hchr" in env_data
+        # Add formaldehyde sensor for devices with Formaldehyde capability (manual testing placeholder)
+        # Only add if NOT already covered by ExtendedAQ capability to prevent duplicates
+        # Formaldehyde capability forces sensor creation for UI testing (regardless of data presence)
+        if has_any_capability_safe(
+            capabilities, [CAPABILITY_FORMALDEHYDE]
+        ) and not has_any_capability_safe(
+            capabilities, [CAPABILITY_EXTENDED_AQ, "extended_aq", "extendedAQ"]
         ):
             _LOGGER.debug(
-                "Adding legacy formaldehyde sensor for device %s - Formaldehyde capability and hchr data detected",
+                "Adding formaldehyde sensor for device %s - Formaldehyde capability (forced creation for UI testing)",
                 device_serial,
             )
             entities.append(DysonFormaldehydeSensor(coordinator))
-        elif has_any_capability_safe(capabilities, ["Formaldehyde", "formaldehyde"]):
+        elif has_any_capability_safe(
+            capabilities, [CAPABILITY_FORMALDEHYDE]
+        ) and has_any_capability_safe(
+            capabilities, [CAPABILITY_EXTENDED_AQ, "extended_aq", "extendedAQ"]
+        ):
             _LOGGER.debug(
-                "Skipping legacy formaldehyde sensor for device %s - Formaldehyde capability present but no hchr data in environmental response",
+                "Skipping formaldehyde sensor for device %s - already covered by ExtendedAQ capability",
                 device_serial,
             )
         else:
             _LOGGER.debug(
-                "Skipping legacy formaldehyde sensor for device %s - no Formaldehyde capability",
+                "Skipping formaldehyde sensor for device %s - no Formaldehyde capability",
+                device_serial,
+            )
+
+        # Add gas sensors for devices with VOC capability (manual testing placeholder)
+        # Only add if NOT already covered by ExtendedAQ capability to prevent duplicates
+        # VOC capability forces sensor creation for UI testing (regardless of data presence)
+        if has_any_capability_safe(
+            capabilities, [CAPABILITY_VOC]
+        ) and not has_any_capability_safe(
+            capabilities, [CAPABILITY_EXTENDED_AQ, "extended_aq", "extendedAQ"]
+        ):
+            _LOGGER.debug(
+                "Adding gas sensors for device %s - VOC capability (forced creation for UI testing)",
+                device_serial,
+            )
+            # Add VOC sensor for UI testing
+            entities.append(DysonVOCSensor(coordinator))
+            # Add NO2 sensor for UI testing
+            entities.append(DysonNO2Sensor(coordinator))
+            # Add CO2 sensor for UI testing
+            entities.append(DysonCO2Sensor(coordinator))
+        elif has_any_capability_safe(
+            capabilities, [CAPABILITY_VOC]
+        ) and has_any_capability_safe(
+            capabilities, [CAPABILITY_EXTENDED_AQ, "extended_aq", "extendedAQ"]
+        ):
+            _LOGGER.debug(
+                "Skipping gas sensors for device %s - already covered by ExtendedAQ capability",
+                device_serial,
+            )
+        else:
+            _LOGGER.debug(
+                "Skipping gas sensors for device %s - no VOC capability",
                 device_serial,
             )
 
@@ -850,7 +906,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
                 if self.coordinator.data
                 else {}
             )
-            pm25_raw = env_data.get("pm25")
+
+            # Try revised value first (p25r), fall back to legacy (pm25)
+            pm25_raw = env_data.get("p25r") or env_data.get("pm25")
 
             if pm25_raw is not None:
                 try:
@@ -949,7 +1007,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
                 if self.coordinator.data
                 else {}
             )
-            pm10_raw = env_data.get("pm10")
+
+            # Try revised value first (p10r), fall back to legacy (pm10)
+            pm10_raw = env_data.get("p10r") or env_data.get("pm10")
 
             if pm10_raw is not None:
                 try:
@@ -1092,7 +1152,8 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                 if self.coordinator.data
                 else {}
             )
-            hcho_raw = env_data.get("hchr")  # Legacy key for formaldehyde display value
+            # Try revised value first (hchr), fall back to legacy (hcho)
+            hcho_raw = env_data.get("hchr") or env_data.get("hcho")
 
             if hcho_raw is not None:
                 try:
