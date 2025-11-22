@@ -55,11 +55,15 @@ class DysonFan(DysonEntity, FanEntity):
         # Base features for all fans
         self._attr_supported_features = (
             FanEntityFeature.SET_SPEED
-            | FanEntityFeature.DIRECTION
             | FanEntityFeature.PRESET_MODE
             | FanEntityFeature.TURN_ON
             | FanEntityFeature.TURN_OFF
         )
+
+        # Add direction support if device reports direction state (fdir)
+        self._direction_supported = self._check_direction_support()
+        if self._direction_supported:
+            self._attr_supported_features |= FanEntityFeature.DIRECTION
 
         # Add oscillation support if device reports oscillation state (oson)
         self._oscillation_supported = self._check_oscillation_support()
@@ -140,17 +144,21 @@ class DysonFan(DysonEntity, FanEntity):
         if self.coordinator.device and self.coordinator.data:
             product_state = self.coordinator.data.get("product-state", {})
 
-            # Update fan direction based on device state (fdir)
-            # fdir="ON" means front airflow is on (forward direction in HA terms)
-            # fdir="OFF" means front airflow is off (reverse direction in HA terms)
-            fdir_value = self.coordinator.device._get_current_value(
-                product_state,
-                "fdir",
-                "ON",  # Default to ON (forward) if not available
-            )
-            self._attr_current_direction = (
-                "forward" if fdir_value == "ON" else "reverse"
-            )
+            # Update fan direction based on device state (fdir) if supported
+            if self._direction_supported:
+                # fdir="ON" means front airflow is on (forward direction in HA terms)
+                # fdir="OFF" means front airflow is off (reverse direction in HA terms)
+                fdir_value = self.coordinator.device._get_current_value(
+                    product_state,
+                    "fdir",
+                    "ON",  # Default to ON (forward) if not available
+                )
+                self._attr_current_direction = (
+                    "forward" if fdir_value == "ON" else "reverse"
+                )
+            else:
+                # Device doesn't support direction control
+                self._attr_current_direction = "forward"  # Default fallback
             auto_mode = self.coordinator.device._get_current_value(
                 product_state, "auto", "OFF"
             )
@@ -184,9 +192,10 @@ class DysonFan(DysonEntity, FanEntity):
         else:
             self._attr_preset_mode = None
             self._attr_oscillating = False
-            self._attr_current_direction = (
-                "forward"  # Default fallback when no device data
-            )
+            if not self._direction_supported:
+                self._attr_current_direction = (
+                    "forward"  # Default fallback when no device data
+                )
 
         _LOGGER.debug(
             "Fan %s final state - is_on: %s, percentage: %s",
@@ -301,6 +310,14 @@ class DysonFan(DysonEntity, FanEntity):
     async def async_set_direction(self, direction: str) -> None:
         """Set the fan direction."""
         if not self.coordinator.device:
+            return
+
+        # Only allow direction control if device supports it
+        if not self._direction_supported:
+            _LOGGER.warning(
+                "Device %s does not support direction control",
+                self.coordinator.serial_number,
+            )
             return
 
         # Map Home Assistant direction to Dyson direction values
@@ -481,6 +498,15 @@ class DysonFan(DysonEntity, FanEntity):
         product_state = self.coordinator.data.get("product-state", {})
         # Check if device reports oscillation state (oson key exists)
         return "oson" in product_state
+
+    def _check_direction_support(self) -> bool:
+        """Check if device supports direction control by looking for 'fdir' in device state."""
+        if not self.coordinator.device or not self.coordinator.data:
+            return False
+
+        product_state = self.coordinator.data.get("product-state", {})
+        # Check if device reports fan direction state (fdir key exists)
+        return "fdir" in product_state
 
     async def async_oscillate(self, oscillating: bool) -> None:
         """Set oscillation on/off via Home Assistant's native fan.oscillate service."""

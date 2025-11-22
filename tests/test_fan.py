@@ -23,6 +23,7 @@ def mock_coordinator():
             "fnst": "FAN",  # Fan state
             "fnsp": "0005",  # Fan speed
             "auto": "OFF",  # Auto mode
+            "fdir": "ON",  # Fan direction - include to enable direction support
         }
     }
 
@@ -38,6 +39,41 @@ def mock_coordinator():
     coordinator.device.send_command = AsyncMock()
     coordinator.device._get_current_value = MagicMock(return_value="OFF")
     coordinator.async_request_refresh = AsyncMock()
+    coordinator.device_capabilities = []  # Add device capabilities mock
+
+    return coordinator
+
+
+@pytest.fixture
+def mock_coordinator_no_direction():
+    """Create a mock coordinator without direction support."""
+    coordinator = MagicMock()
+    coordinator.serial_number = "TEST-SERIAL-123"
+    coordinator.device_name = "Test Device"
+    coordinator.device_category = "ec"  # Environment Cleaner
+    coordinator.data = {
+        "product-state": {
+            "fpwr": "ON",  # Fan power
+            "fnst": "FAN",  # Fan state
+            "fnsp": "0005",  # Fan speed
+            "auto": "OFF",  # Auto mode
+            # No "fdir" key - direction not supported
+        }
+    }
+
+    # Mock device with all required methods
+    coordinator.device = MagicMock()
+    coordinator.device.fan_power = True
+    coordinator.device.fan_state = "FAN"
+    coordinator.device.fan_speed_setting = "0005"
+    coordinator.device.fan_speed = 5
+    coordinator.device.set_fan_power = AsyncMock()
+    coordinator.device.set_fan_speed = AsyncMock()
+    coordinator.device.set_auto_mode = AsyncMock()
+    coordinator.device.send_command = AsyncMock()
+    coordinator.device._get_current_value = MagicMock(return_value="OFF")
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.device_capabilities = []  # Add device capabilities mock
 
     return coordinator
 
@@ -114,6 +150,21 @@ class TestDysonFan:
         assert fan._attr_current_direction == "forward"
         assert fan._attr_preset_mode is None
         assert fan._attr_oscillating is False
+
+    def test_init_sets_attributes_correctly_no_direction_support(self, mock_coordinator_no_direction):
+        """Test that __init__ sets attributes correctly when direction is not supported."""
+        # Act
+        fan = DysonFan(mock_coordinator_no_direction)
+
+        # Assert - should not include DIRECTION feature
+        expected_features = (
+            FanEntityFeature.SET_SPEED
+            | FanEntityFeature.PRESET_MODE
+            | FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+        )
+        assert fan._attr_supported_features == expected_features
+        assert not fan._direction_supported
 
     def test_handle_coordinator_update_fan_on(self, mock_coordinator):
         """Test _handle_coordinator_update when fan is on."""
@@ -431,6 +482,22 @@ class TestDysonFan:
         mock_coordinator.device.send_command.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_async_set_direction_forward_no_support(self, mock_coordinator_no_direction):
+        """Test async_set_direction with forward direction when direction is not supported."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_no_direction)
+
+        # Act
+        with (
+            patch.object(fan, "async_write_ha_state"),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await fan.async_set_direction("forward")
+
+        # Assert - should not send command when direction not supported
+        mock_coordinator_no_direction.device.send_command.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_async_set_preset_mode_auto(self, mock_coordinator):
         """Test async_set_preset_mode with Auto mode."""
         # Arrange
@@ -471,14 +538,28 @@ class TestFanIntegration:
     """Test fan integration scenarios."""
 
     def test_all_fan_features_supported(self, mock_coordinator):
-        """Test that fan entity supports all expected features."""
+        """Test that fan entity supports all expected features when direction is supported."""
         # Arrange & Act
         fan = DysonFan(mock_coordinator)
 
-        # Assert
+        # Assert - with direction support (fdir key present)
         expected_features = (
             FanEntityFeature.SET_SPEED
             | FanEntityFeature.DIRECTION
+            | FanEntityFeature.PRESET_MODE
+            | FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+        )
+        assert fan._attr_supported_features == expected_features
+
+    def test_fan_features_without_direction_support(self, mock_coordinator_no_direction):
+        """Test that fan entity does not include direction feature when not supported."""
+        # Arrange & Act
+        fan = DysonFan(mock_coordinator_no_direction)
+
+        # Assert - without direction support (no fdir key)
+        expected_features = (
+            FanEntityFeature.SET_SPEED
             | FanEntityFeature.PRESET_MODE
             | FanEntityFeature.TURN_ON
             | FanEntityFeature.TURN_OFF
@@ -635,7 +716,7 @@ class TestFanCoverageEnhancement:
         expected_features = (
             FanEntityFeature.SET_SPEED
             | FanEntityFeature.PRESET_MODE
-            | FanEntityFeature.DIRECTION
+            | FanEntityFeature.DIRECTION  # Included because mock has fdir key
             | FanEntityFeature.TURN_ON
             | FanEntityFeature.TURN_OFF
         )
@@ -645,6 +726,8 @@ class TestFanCoverageEnhancement:
     async def test_async_set_direction_error_handling_coverage(self, mock_coordinator):
         """Test async_set_direction error handling coverage (lines 356-358)."""
         fan = DysonFan(mock_coordinator)
+        # Ensure direction is supported
+        assert fan._direction_supported
 
         # Test with device command failure
         mock_coordinator.device.send_command.side_effect = Exception("Command failed")
@@ -699,6 +782,7 @@ class TestFanCoverageEnhancement:
                 "fnst": "FAN",
                 "fnsp": "0005",
                 "auto": "OFF",
+                "fdir": "ON",  # Direction support
                 "oson": "OFF",  # Device supports oscillation
             }
         }
@@ -706,7 +790,7 @@ class TestFanCoverageEnhancement:
         # Act
         fan = DysonFan(mock_coordinator)
 
-        # Assert - Should include OSCILLATE feature
+        # Assert - Should include OSCILLATE and DIRECTION features
         expected_features = (
             FanEntityFeature.SET_SPEED
             | FanEntityFeature.DIRECTION
@@ -727,16 +811,16 @@ class TestFanCoverageEnhancement:
                 "fnsp": "0005",
                 "auto": "OFF",
                 # No "oson" key = no oscillation support
+                # No "fdir" key = no direction support
             }
         }
 
         # Act
         fan = DysonFan(mock_coordinator)
 
-        # Assert - Should not include OSCILLATE feature
+        # Assert - Should not include OSCILLATE or DIRECTION features
         expected_features = (
             FanEntityFeature.SET_SPEED
-            | FanEntityFeature.DIRECTION
             | FanEntityFeature.PRESET_MODE
             | FanEntityFeature.TURN_ON
             | FanEntityFeature.TURN_OFF
