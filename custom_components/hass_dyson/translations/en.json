@@ -233,6 +233,12 @@
       },
       "oscillation_high_angle": {
         "name": "Oscillation High Angle"
+      },
+      "oscillation_center_angle": {
+        "name": "Oscillation Center Angle"
+      },
+      "oscillation_angle_span": {
+        "name": "Oscillation Angle"
       }
     },
     "climate": {

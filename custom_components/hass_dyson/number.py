@@ -62,6 +62,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_sleep_timer"
         self._attr_translation_key = "sleep_timer"
         self._attr_icon = "mdi:timer"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.BOX
         self._attr_native_min_value = 0
         self._attr_native_max_value = 540  # 9 hours in minutes
@@ -128,13 +129,13 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             _LOGGER.warning(
                 "Communication error during timer polling for %s: %s",
                 self.coordinator.serial_number,
-                err,
+                err
             )
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error in timer polling for %s: %s",
                 self.coordinator.serial_number,
-                err,
+                err
             )
 
     async def _do_frequent_initial_polling(self) -> None:
@@ -338,6 +339,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_lower_angle"
         self._attr_translation_key = "oscillation_low_angle"
         self._attr_icon = "mdi:rotate-left"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -359,7 +361,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 0
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation lower angle."""
@@ -426,6 +428,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_upper_angle"
         self._attr_translation_key = "oscillation_high_angle"
         self._attr_icon = "mdi:rotate-right"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -447,7 +450,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 350
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation upper angle."""
@@ -512,8 +515,9 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation center angle number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_center_angle"
-        self._attr_name = "Oscillation Center Angle"
+        self._attr_translation_key = "oscillation_center_angle"
         self._attr_icon = "mdi:crosshairs"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -540,7 +544,7 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 175  # Default center
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation center angle - adjusts lower and upper to maintain current span."""
@@ -620,8 +624,9 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation angle span number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle_span"
-        self._attr_name = "Oscillation Angle"
+        self._attr_translation_key = "oscillation_angle_span"
         self._attr_icon = "mdi:angle-acute"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 10
         self._attr_native_max_value = 350
@@ -648,7 +653,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 350  # Default full span
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation angle span - adjusts lower and upper to maintain current center."""
