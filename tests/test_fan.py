@@ -981,9 +981,10 @@ class TestFanCoverageEnhancement:
             # Act
             await fan.async_oscillate(True)
 
-            # Assert
+            # Assert - Updated to match improved exception handling
             mock_logger.error.assert_called_once_with(
-                "Failed to set oscillation for %s: %s",
+                "Unexpected error setting oscillation to %s for %s: %s",
+                True,  # oscillating parameter
                 mock_coordinator.serial_number,
-                mock_logger.error.call_args[0][2],  # The exception object
+                mock_logger.error.call_args[0][3],  # The exception object
             )

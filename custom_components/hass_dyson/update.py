@@ -5,11 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.update import (
-    UpdateDeviceClass,
-    UpdateEntity,
-    UpdateEntityFeature,
-)
+from homeassistant.components.update import UpdateDeviceClass, UpdateEntity, UpdateEntityFeature
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -135,10 +131,31 @@ class DysonFirmwareUpdateEntity(DysonEntity, UpdateEntity):
                     self.coordinator.serial_number,
                 )
 
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error during firmware update for %s to version %s: %s",
+                self.coordinator.serial_number,
+                target_version,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for firmware update on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid firmware version %s for %s: %s",
+                target_version,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Error installing firmware update for %s: %s",
+                "Unexpected error installing firmware update for %s to version %s: %s",
                 self.coordinator.serial_number,
+                target_version,
                 err,
             )
 

@@ -1006,7 +1006,7 @@ class TestSensorCoverageEnhancement:
             # It should log the error and warning (fallback behavior)
             assert result is True
             mock_logger.error.assert_called_once_with(
-                "Error during sensor setup for device %s: %s",
+                "Unexpected error during sensor setup for device %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )

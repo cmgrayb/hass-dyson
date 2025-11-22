@@ -92,9 +92,21 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
             await self.coordinator.device.set_auto_mode(True)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on auto mode for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling auto mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for auto mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on auto mode for %s: %s",
+                "Unexpected error enabling auto mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -108,9 +120,21 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
             await self.coordinator.device.set_auto_mode(False)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned off auto mode for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling auto mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for auto mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off auto mode for %s: %s",
+                "Unexpected error disabling auto mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -150,9 +174,21 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             await self.coordinator.device.set_night_mode(True)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on night mode for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling night mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for night mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on night mode for %s: %s",
+                "Unexpected error enabling night mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -168,9 +204,21 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             _LOGGER.debug(
                 "Turned off night mode for %s", self.coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling night mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for night mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off night mode for %s: %s",
+                "Unexpected error disabling night mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -213,9 +261,21 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_heating_mode("HEAT")
             _LOGGER.debug("Turned on heating for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling heating for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for heating on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on heating for %s: %s",
+                "Unexpected error enabling heating for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -228,9 +288,21 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_heating_mode("OFF")
             _LOGGER.debug("Turned off heating for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling heating for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for heating on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off heating for %s: %s",
+                "Unexpected error disabling heating for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -304,9 +376,21 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
             _LOGGER.debug(
                 "Turned on continuous monitoring for %s", self.coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling continuous monitoring for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for continuous monitoring on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on continuous monitoring for %s: %s",
+                "Unexpected error enabling continuous monitoring for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -322,9 +406,21 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
                 "Turned off continuous monitoring for %s",
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling continuous monitoring for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for continuous monitoring on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off continuous monitoring for %s: %s",
+                "Unexpected error disabling continuous monitoring for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )

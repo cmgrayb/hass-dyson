@@ -209,11 +209,17 @@ async def _create_device_entry(
         )
         _LOGGER.info("Background task: Device entry creation result: %s", result)
 
-    except Exception as e:
+    except (KeyError, ValueError) as err:
         _LOGGER.error(
-            "Background task: Failed to create device entry for %s: %s",
+            "Background task: Invalid device data for entry creation %s: %s",
             device_serial,
-            e,
+            err,
+        )
+    except Exception as err:
+        _LOGGER.error(
+            "Background task: Unexpected error creating device entry for %s: %s",
+            device_serial,
+            err,
         )
 
 
@@ -269,11 +275,17 @@ async def _create_discovery_flow(
             result,
         )
 
-    except Exception as e:
+    except (KeyError, ValueError) as err:
         _LOGGER.error(
-            "Background task: Failed to create discovery flow for %s: %s",
+            "Background task: Invalid device data for discovery flow %s: %s",
             device_serial,
-            e,
+            err,
+        )
+    except Exception as err:
+        _LOGGER.error(
+            "Background task: Unexpected error creating discovery flow for %s: %s",
+            device_serial,
+            err,
         )
 
 
@@ -437,9 +449,21 @@ async def _check_firmware_updates(
     if entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
         try:
             await coordinator.async_check_firmware_update()
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.debug(
+                "Initial firmware update check - communication error for %s: %s",
+                coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Initial firmware update check - device data unavailable for %s: %s",
+                coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.debug(
-                "Initial firmware update check failed for %s: %s",
+                "Initial firmware update check - unexpected error for %s: %s",
                 coordinator.serial_number,
                 err,
             )
@@ -551,8 +575,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             # Handle individual device config entries
             return await _setup_individual_device_entry(hass, entry)
 
+    except (ConnectionError, TimeoutError) as err:
+        _LOGGER.error("Connection error setting up Dyson device '%s': %s", entry.title, err)
+        raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
+    except (KeyError, ValueError) as err:
+        _LOGGER.error("Invalid configuration for Dyson device '%s': %s", entry.title, err)
+        return False
     except Exception as err:
-        _LOGGER.error("Failed to set up Dyson device '%s': %s", entry.title, err)
+        _LOGGER.error("Unexpected error setting up Dyson device '%s': %s", entry.title, err)
         raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
 
 

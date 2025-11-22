@@ -4,11 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hass_dyson.const import (
-    CONF_DISCOVERY_METHOD,
-    DISCOVERY_CLOUD,
-    DOMAIN,
-)
+from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD, DOMAIN
 from custom_components.hass_dyson.switch import (
     DysonAutoModeSwitch,
     DysonContinuousMonitoringSwitch,
@@ -148,7 +144,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn on auto mode for %s: %s",
+                "Unexpected error enabling auto mode for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -171,7 +167,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn off auto mode for %s: %s",
+                "Unexpected error disabling auto mode for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -237,7 +233,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn on night mode for %s: %s",
+                "Unexpected error enabling night mode for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -260,7 +256,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn off night mode for %s: %s",
+                "Unexpected error disabling night mode for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -344,7 +340,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn on heating for %s: %s",
+                "Unexpected error enabling heating for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -367,7 +363,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn off heating for %s: %s",
+                "Unexpected error disabling heating for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -495,7 +491,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn on continuous monitoring for %s: %s",
+                "Unexpected error enabling continuous monitoring for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -518,7 +514,7 @@ class TestSwitchCoverageEnhancement:
 
             # Assert
             mock_logger.error.assert_called_with(
-                "Failed to turn off continuous monitoring for %s: %s",
+                "Unexpected error disabling continuous monitoring for %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )

@@ -189,9 +189,19 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No P25R data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "P25R data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid P25R data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating P25R sensor for device %s: %s", device_serial, e
+                "Unexpected error updating P25R sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -260,9 +270,19 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No P10R data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "P10R data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid P10R data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating P10R sensor for device %s: %s", device_serial, e
+                "Unexpected error updating P10R sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -332,9 +352,19 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No CO2 data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "CO2 data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid CO2 data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating CO2 sensor for device %s: %s", device_serial, e
+                "Unexpected error updating CO2 sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -413,9 +443,19 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No VOC data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "VOC data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid VOC data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating VOC sensor for device %s: %s", device_serial, e
+                "Unexpected error updating VOC sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -717,9 +757,35 @@ async def async_setup_entry(  # noqa: C901
             device_serial,
         )
 
-    except Exception as e:
+    except (KeyError, AttributeError) as err:
+        _LOGGER.warning(
+            "Device capability data unavailable for sensor setup on %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        # Don't fail completely - add basic sensors at minimum
+        _LOGGER.info(
+            "Falling back to basic sensor setup for device %s",
+            coordinator.serial_number,
+        )
+        entities = []  # Reset entities list to prevent partial setup
+    except (ValueError, TypeError) as err:
         _LOGGER.error(
-            "Error during sensor setup for device %s: %s", coordinator.serial_number, e
+            "Invalid device data format during sensor setup for %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        # Don't fail completely - add basic sensors at minimum
+        _LOGGER.info(
+            "Falling back to basic sensor setup for device %s",
+            coordinator.serial_number,
+        )
+        entities = []  # Reset entities list to prevent partial setup
+    except Exception as err:
+        _LOGGER.error(
+            "Unexpected error during sensor setup for device %s: %s",
+            coordinator.serial_number,
+            err,
         )
         # Don't fail completely - add basic sensors at minimum
         _LOGGER.warning(
@@ -933,9 +999,19 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
                     device_serial,
                 )
 
-        except Exception as e:
-            _LOGGER.exception(
-                "Error updating humidity sensor for device %s: %s", device_serial, e
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Humidity data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid humidity data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating humidity sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -1036,9 +1112,19 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No PM2.5 data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "PM2.5 data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid PM2.5 data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating PM2.5 sensor for device %s: %s", device_serial, e
+                "Unexpected error updating PM2.5 sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -1137,9 +1223,19 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No PM10 data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "PM10 data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid PM10 data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating PM10 sensor for device %s: %s", device_serial, e
+                "Unexpected error updating PM10 sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -1209,9 +1305,19 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No NO2 data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "NO2 data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid NO2 data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating NO2 sensor for device %s: %s", device_serial, e
+                "Unexpected error updating NO2 sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -1294,9 +1400,19 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
             else:
                 _LOGGER.debug("No HCHO data available for device %s", device_serial)
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "HCHO data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid HCHO data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating HCHO sensor for device %s: %s", device_serial, e
+                "Unexpected error updating HCHO sensor for device %s: %s", device_serial, err
             )
             self._attr_native_value = None
 
@@ -1391,11 +1507,21 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
                     "No HEPA filter life data available for device %s", device_serial
                 )
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "HEPA filter life data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid HEPA filter life data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating HEPA filter life sensor for device %s: %s",
+                "Unexpected error updating HEPA filter life sensor for device %s: %s",
                 device_serial,
-                e,
+                err,
             )
             self._attr_native_value = None
 
@@ -1462,11 +1588,21 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
                     "No carbon filter life data available for device %s", device_serial
                 )
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Carbon filter life data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid carbon filter life data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
             _LOGGER.error(
-                "Error updating carbon filter life sensor for device %s: %s",
+                "Unexpected error updating carbon filter life sensor for device %s: %s",
                 device_serial,
-                e,
+                err,
             )
             self._attr_native_value = None
 
@@ -1610,11 +1746,21 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
                     "No carbon filter type data available for device %s", device_serial
                 )
 
-        except Exception as e:
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Carbon filter type data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = "Unknown"
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid carbon filter type data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = "Unknown"
+        except Exception as err:
             _LOGGER.error(
-                "Error updating carbon filter type sensor for device %s: %s",
+                "Unexpected error updating carbon filter type sensor for device %s: %s",
                 device_serial,
-                e,
+                err,
             )
             self._attr_native_value = "Unknown"
 

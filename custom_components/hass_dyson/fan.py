@@ -543,9 +543,21 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Force Home Assistant to update with confirmed device state
             self.async_write_ha_state()
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting fan direction for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, KeyError) as err:
+            _LOGGER.error(
+                "Invalid direction value for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set fan direction for %s: %s",
+                "Unexpected error setting fan direction for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -596,9 +608,24 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Force Home Assistant to update with confirmed device state
             self.async_write_ha_state()
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting preset mode '%s' for %s: %s",
+                preset_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, KeyError) as err:
+            _LOGGER.error(
+                "Invalid preset mode '%s' for %s: %s",
+                preset_mode,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set fan preset mode for %s: %s",
+                "Unexpected error setting preset mode '%s' for %s: %s",
+                preset_mode,
                 self.coordinator.serial_number,
                 err,
             )
@@ -756,9 +783,23 @@ class DysonFan(DysonEntity, FanEntity):
                 oscillating,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation to %s for %s: %s",
+                oscillating,
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for oscillation on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation for %s: %s",
+                "Unexpected error setting oscillation to %s for %s: %s",
+                oscillating,
                 self.coordinator.serial_number,
                 err,
             )
@@ -776,9 +817,27 @@ class DysonFan(DysonEntity, FanEntity):
                 self.coordinator.serial_number,
             )
             await self.coordinator.device.set_oscillation_angles(angle_low, angle_high)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation angles (%s°-%s°) for %s: %s",
+                angle_low,
+                angle_high,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid angle values (%s°-%s°) for %s: %s",
+                angle_low,
+                angle_high,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation angles for %s: %s",
+                "Unexpected error setting oscillation angles (%s°-%s°) for %s: %s",
+                angle_low,
+                angle_high,
                 self.coordinator.serial_number,
                 err,
             )
@@ -853,9 +912,24 @@ class DysonFan(DysonEntity, FanEntity):
                 temperature,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting temperature to %s°C for %s: %s",
+                temperature,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid temperature value %s°C for %s: %s",
+                temperature,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set target temperature for %s: %s",
+                "Unexpected error setting temperature to %s°C for %s: %s",
+                temperature,
                 self.coordinator.serial_number,
                 err,
             )
@@ -890,9 +964,24 @@ class DysonFan(DysonEntity, FanEntity):
                 hvac_mode,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting HVAC mode to %s for %s: %s",
+                hvac_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, KeyError) as err:
+            _LOGGER.error(
+                "Invalid HVAC mode '%s' for %s: %s",
+                hvac_mode,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set HVAC mode for %s: %s",
+                "Unexpected error setting HVAC mode to %s for %s: %s",
+                hvac_mode,
                 self.coordinator.serial_number,
                 err,
             )

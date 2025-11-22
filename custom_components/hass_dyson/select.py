@@ -118,9 +118,24 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
                 option,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting air quality mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid air quality mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set air quality mode for %s: %s",
+                "Unexpected error setting air quality mode to '%s' for %s: %s",
+                option,
                 self.coordinator.serial_number,
                 err,
             )
@@ -470,9 +485,24 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid oscillation mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation mode for %s: %s",
+                "Unexpected error setting oscillation mode to '%s' for %s: %s",
+                option,
                 self.coordinator.serial_number,
                 err,
             )
@@ -569,9 +599,24 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
             _LOGGER.debug(
                 "Set heating mode to %s for %s", option, self.coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting heating mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid heating mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set heating mode for %s: %s",
+                "Unexpected error setting heating mode to '%s' for %s: %s",
+                option,
                 self.coordinator.serial_number,
                 err,
             )

@@ -259,9 +259,19 @@ def _decrypt_device_mqtt_credentials(cloud_client, device) -> str:
             len(mqtt_password),
         )
         return mqtt_password
-    except Exception as e:
+    except (ValueError, TypeError) as err:
+        _LOGGER.warning(
+            "Invalid credential format for decryption on %s: %s", device.serial_number, err
+        )
+        return ""
+    except (KeyError, AttributeError) as err:
         _LOGGER.debug(
-            "Failed to decrypt local credentials for %s: %s", device.serial_number, e
+            "Missing credential data for decryption on %s: %s", device.serial_number, err
+        )
+        return ""
+    except Exception as err:
+        _LOGGER.error(
+            "Unexpected error decrypting local credentials for %s: %s", device.serial_number, err
         )
         return ""
 
@@ -334,9 +344,30 @@ async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> Non
             minutes,
             coordinator.serial_number,
         )
+    except (ConnectionError, TimeoutError) as err:
+        _LOGGER.error(
+            "Communication error setting sleep timer for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Device communication failed: {err}") from err
+    except (ValueError, TypeError) as err:
+        _LOGGER.warning(
+            "Invalid timer value for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Invalid timer value: {err}") from err
+    except AttributeError as err:
+        _LOGGER.debug(
+            "Sleep timer method not available for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Sleep timer not supported: {err}") from err
     except Exception as err:
         _LOGGER.error(
-            "Failed to set sleep timer for device %s: %s",
+            "Unexpected error setting sleep timer for device %s: %s",
             coordinator.serial_number,
             err,
         )
@@ -357,9 +388,23 @@ async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> 
         # Request refresh to update the coordinator with new sleep timer state
         await coordinator.async_request_refresh()
         _LOGGER.info("Cancelled sleep timer for device %s", coordinator.serial_number)
+    except (ConnectionError, TimeoutError) as err:
+        _LOGGER.error(
+            "Communication error cancelling sleep timer for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Device communication failed: {err}") from err
+    except AttributeError as err:
+        _LOGGER.debug(
+            "Sleep timer method not available for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Sleep timer not supported: {err}") from err
     except Exception as err:
         _LOGGER.error(
-            "Failed to cancel sleep timer for device %s: %s",
+            "Unexpected error cancelling sleep timer for device %s: %s",
             coordinator.serial_number,
             err,
         )
@@ -402,7 +447,7 @@ async def _handle_schedule_operation(hass: HomeAssistant, call: ServiceCall) -> 
         ) from err
     except Exception as err:
         _LOGGER.error(
-            "Failed to schedule operation for device %s: %s",
+            "Unexpected error scheduling operation for device %s: %s",
             coordinator.serial_number,
             err,
         )
@@ -432,9 +477,32 @@ async def _handle_set_oscillation_angles(
             upper_angle,
             coordinator.serial_number,
         )
+    except (ConnectionError, TimeoutError) as err:
+        _LOGGER.error(
+            "Communication error setting oscillation angles for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Device communication failed: {err}") from err
+    except (ValueError, TypeError) as err:
+        _LOGGER.warning(
+            "Invalid angle values for device %s (lower=%s, upper=%s): %s",
+            coordinator.serial_number,
+            lower_angle,
+            upper_angle,
+            err,
+        )
+        raise HomeAssistantError(f"Invalid angle values: {err}") from err
+    except AttributeError as err:
+        _LOGGER.debug(
+            "Oscillation angles method not available for device %s: %s",
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(f"Oscillation angles not supported: {err}") from err
     except Exception as err:
         _LOGGER.error(
-            "Failed to set oscillation angles for device %s: %s",
+            "Unexpected error setting oscillation angles for device %s: %s",
             coordinator.serial_number,
             err,
         )
@@ -458,9 +526,16 @@ async def async_handle_refresh_account_data(
             _LOGGER.info(
                 "Refreshed account data for device %s", coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error refreshing account data for device %s: %s",
+                coordinator.serial_number,
+                err,
+            )
+            raise HomeAssistantError(f"Device communication failed: {err}") from err
         except Exception as err:
             _LOGGER.error(
-                "Failed to refresh account data for device %s: %s",
+                "Unexpected error refreshing account data for device %s: %s",
                 coordinator.serial_number,
                 err,
             )
@@ -479,9 +554,15 @@ async def async_handle_refresh_account_data(
                 _LOGGER.debug(
                     "Refreshed account data for device %s", coordinator.serial_number
                 )
+            except (ConnectionError, TimeoutError) as err:
+                _LOGGER.warning(
+                    "Communication error refreshing account data for device %s: %s",
+                    coordinator.serial_number,
+                    err,
+                )
             except Exception as err:
                 _LOGGER.error(
-                    "Failed to refresh account data for device %s: %s",
+                    "Unexpected error refreshing account data for device %s: %s",
                     coordinator.serial_number,
                     err,
                 )
@@ -516,9 +597,29 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
                 "Reset both filter lives for device %s", coordinator.serial_number
             )
 
+    except (ConnectionError, TimeoutError) as err:
+        _LOGGER.error(
+            "Communication error resetting %s filter for device %s: %s",
+            filter_type,
+            coordinator.serial_number,
+            err,
+        )
+        raise HomeAssistantError(
+            f"Device communication failed: {err}"
+        ) from err
+    except AttributeError as err:
+        _LOGGER.debug(
+            "Filter reset method not available for device %s (%s filter): %s",
+            coordinator.serial_number,
+            filter_type,
+            err,
+        )
+        raise HomeAssistantError(
+            f"{filter_type.title()} filter reset not supported: {err}"
+        ) from err
     except Exception as err:
         _LOGGER.error(
-            "Failed to reset %s filter for device %s: %s",
+            "Unexpected error resetting %s filter for device %s: %s",
             filter_type,
             coordinator.serial_number,
             err,
@@ -808,9 +909,19 @@ async def _get_cloud_device_data_from_coordinator(
                 },
             }
 
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error fetching devices from cloud account coordinator: %s", err
+            )
+            raise HomeAssistantError(f"Cloud service communication failed: {err}") from err
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Missing data fetching devices from cloud account coordinator: %s", err
+            )
+            raise HomeAssistantError(f"Cloud service data unavailable: {err}") from err
         except Exception as err:
             _LOGGER.error(
-                "Error fetching devices from cloud account coordinator: %s", err
+                "Unexpected error fetching devices from cloud account coordinator: %s", err
             )
             raise HomeAssistantError(f"Failed to fetch cloud devices: {err}") from err
     else:
@@ -899,9 +1010,21 @@ async def _get_device_data_from_config_entry(
                 email,
             )
             return await _build_device_data_from_live_api(live_devices, email, sanitize)
+    except (ConnectionError, TimeoutError) as err:
+        _LOGGER.warning(
+            "Communication timeout getting live cloud data for account %s, falling back to stored config: %s",
+            email,
+            err,
+        )
+    except (KeyError, AttributeError) as err:
+        _LOGGER.debug(
+            "Missing data getting live cloud data for account %s, falling back to stored config: %s",
+            email,
+            err,
+        )
     except Exception as err:
         _LOGGER.warning(
-            "Failed to get live cloud data for account %s, falling back to stored config: %s",
+            "Unexpected error getting live cloud data for account %s, falling back to stored config: %s",
             email,
             err,
         )
