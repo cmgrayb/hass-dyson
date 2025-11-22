@@ -209,7 +209,6 @@ hass_dyson:
 
 - **[Actions](docs/ACTIONS.md)** - Information on included Home Assistant Actions
 - **[Controls](docs/CONTROLS.md)** - Information on included controls for devices
-- **[Developers Guide](docs/DEVELOPERS_GUIDE.md)** - See something you can help with?  This is where to start!
 - **[Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md)** - Complete breakdown of which entities are available for each device type and capability
 - **[Device Management](docs/DEVICE_MANAGEMENT.md)** - Information on device discovery and configuration
 - **[Entities](docs/ENTITIES.md)** - Information on entities to expect for a given device type
@@ -220,6 +219,11 @@ hass_dyson:
 
 - **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Troubleshooting Guide
+
+### **For Developers**
+
+- **[API Documentation](docs/API.md)** - Comprehensive API documentation with code examples and usage patterns for developers
+- **[Developers Guide](docs/DEVELOPERS_GUIDE.md)** - See something you can help with?  This is where to start!
 
 ## Requirements
 
