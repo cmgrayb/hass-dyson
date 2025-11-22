@@ -18,7 +18,7 @@ def mock_coordinator():
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device = MagicMock()
-    coordinator.device._get_current_value = MagicMock(return_value="OFF")
+    coordinator.device.get_state_value = MagicMock(return_value="OFF")
     coordinator.device.set_target_temperature = AsyncMock()
     coordinator.device_capabilities = ["Heating"]
     coordinator.data = {"product-state": {}}
@@ -126,7 +126,7 @@ class TestDysonClimateEntity:
         """Test coordinator update handling when device is available."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "tmp": "2730",  # 0°C in 0.1K (273.0K)
                 "hmax": "2930",  # 20°C in 0.1K (293.0K)
@@ -167,7 +167,7 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "tmp": "2980",  # 25°C in 0.1K (298.0K)
                 "hmax": "3000",  # 26.85°C in 0.1K (300.0K)
@@ -190,7 +190,7 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "tmp": "invalid",
                 "hmax": "also_invalid",
@@ -209,7 +209,7 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "fnst": "OFF",
                 "hmod": "HEAT",
@@ -228,7 +228,7 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "fnst": "FAN",
                 "hmod": "HEAT",
@@ -247,7 +247,7 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "fnst": "FAN",
                 "hmod": "OFF",
@@ -266,7 +266,7 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "fnst": "FAN",
                 "hmod": "OFF",
@@ -423,7 +423,7 @@ class TestDysonClimateEntity:
         entity._attr_target_temperature = 21.5
         entity._attr_hvac_mode = HVACMode.HEAT
 
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hmod": "HEAT",
                 "auto": "OFF",

@@ -393,7 +393,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Log current environmental data state for debugging
         if self.device and hasattr(self.device, "_environmental_data"):
-            env_data = self.device._environmental_data
+            env_data = self.device.get_environmental_data()
             _LOGGER.debug(
                 "Environmental data at callback time for %s: pm25=%s, pm10=%s",
                 self.serial_number,
@@ -1379,15 +1379,15 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Add environmental data to the state following Home Assistant best practices
             if (
                 hasattr(self.device, "_environmental_data")
-                and self.device._environmental_data
+                and self.device.get_environmental_data()
             ):
                 device_state["environmental-data"] = dict(
-                    self.device._environmental_data
+                    self.device.get_environmental_data()
                 )
                 _LOGGER.debug(
                     "Added environmental data to coordinator state for %s: %s",
                     self.serial_number,
-                    list(self.device._environmental_data.keys()),
+                    list(self.device.get_environmental_data().keys()),
                 )
 
             _LOGGER.debug(
@@ -1496,7 +1496,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest >=0.7.0"""
-        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
+        from libdyson_rest.exceptions import (
+            DysonAPIError,
+            DysonAuthError,
+            DysonConnectionError,
+        )
 
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug(

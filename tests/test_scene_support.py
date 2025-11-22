@@ -34,7 +34,7 @@ def mock_coordinator():
 
     # Mock device
     device = MagicMock()
-    device._get_current_value = MagicMock()
+    device.get_state_value = MagicMock()
     coordinator.device = device
 
     # Mock device data
@@ -66,7 +66,7 @@ class TestFanSceneSupport:
     def test_fan_extra_state_attributes(self, mock_coordinator):
         """Test fan entity exposes all properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "fpwr": "ON",
                 "fnst": "FAN",
@@ -117,7 +117,7 @@ class TestClimateSceneSupport:
     def test_climate_extra_state_attributes(self, mock_coordinator):
         """Test climate entity exposes all properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
                 "auto": "OFF",
@@ -151,7 +151,7 @@ class TestSwitchSceneSupport:
     def test_heating_switch_extra_state_attributes(self, mock_coordinator):
         """Test heating switch exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
                 "hmax": "2930",
@@ -173,7 +173,7 @@ class TestSwitchSceneSupport:
     ):
         """Test continuous monitoring switch exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {"rhtm": "ON"}.get(key, default)
         )
 
@@ -190,7 +190,7 @@ class TestSelectSceneSupport:
     def test_oscillation_mode_select_extra_state_attributes(self, mock_coordinator):
         """Test oscillation mode select exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "osal": "0045",
@@ -214,7 +214,7 @@ class TestSelectSceneSupport:
     def test_heating_mode_select_extra_state_attributes(self, mock_coordinator):
         """Test heating mode select exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
                 "hmax": "2930",
@@ -241,7 +241,7 @@ class TestNumberSceneSupport:
     def test_sleep_timer_extra_state_attributes(self, mock_coordinator):
         """Test sleep timer number exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {"sltm": "120"}.get(key, default)
         )
 
@@ -261,7 +261,7 @@ class TestSceneIntegrationSupport:
     def test_comprehensive_device_state_exposure(self, mock_coordinator):
         """Test that all settable device properties are exposed across entities."""
         # Setup device mock return values for comprehensive state
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "fpwr": "ON",  # Fan power - fan entity
                 "fnst": "FAN",  # Fan state - fan entity

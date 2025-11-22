@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.update import UpdateDeviceClass, UpdateEntity, UpdateEntityFeature
+from homeassistant.components.update import (
+    UpdateDeviceClass,
+    UpdateEntity,
+    UpdateEntityFeature,
+)
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback

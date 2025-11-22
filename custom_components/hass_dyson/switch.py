@@ -75,7 +75,7 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get auto mode from device state (auto)
             product_state = self.coordinator.data.get("product-state", {})
-            auto_mode = self.coordinator.device._get_current_value(
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
             self._attr_is_on = auto_mode == "ON"
@@ -157,7 +157,7 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get night mode from device state (nmod)
             product_state = self.coordinator.data.get("product-state", {})
-            night_mode = self.coordinator.device._get_current_value(
+            night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
             self._attr_is_on = night_mode == "ON"
@@ -245,9 +245,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get heating from device state (hmod)
             product_state = self.coordinator.data.get("product-state", {})
-            hmod = self.coordinator.device._get_current_value(
-                product_state, "hmod", "OFF"
-            )
+            hmod = self.coordinator.device.get_state_value(product_state, "hmod", "OFF")
             self._attr_is_on = hmod != "OFF"
         else:
             self._attr_is_on = None
@@ -317,7 +315,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         product_state = self.coordinator.data.get("product-state", {})
 
         # Heating mode state for scene support
-        hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+        hmod = self.coordinator.device.get_state_value(product_state, "hmod", "OFF")
         attributes["heating_mode"] = hmod
         heating_enabled: bool = hmod != "OFF"
         attributes["heating_enabled"] = heating_enabled  # type: ignore[assignment]
@@ -325,7 +323,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         # Include related heating properties if available
         try:
             # Target temperature in Kelvin
-            hmax = self.coordinator.device._get_current_value(
+            hmax = self.coordinator.device.get_state_value(
                 product_state, "hmax", "2980"
             )
             temp_kelvin: float = int(hmax) / 10  # Device reports in 0.1K increments
@@ -358,9 +356,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get monitoring from device state (rhtm)
             product_state = self.coordinator.data.get("product-state", {})
-            rhtm = self.coordinator.device._get_current_value(
-                product_state, "rhtm", "OFF"
-            )
+            rhtm = self.coordinator.device.get_state_value(product_state, "rhtm", "OFF")
             self._attr_is_on = rhtm == "ON"
         else:
             self._attr_is_on = None
@@ -435,7 +431,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         product_state = self.coordinator.data.get("product-state", {})
 
         # Continuous monitoring state for scene support
-        rhtm = self.coordinator.device._get_current_value(product_state, "rhtm", "OFF")
+        rhtm = self.coordinator.device.get_state_value(product_state, "rhtm", "OFF")
         continuous_monitoring: bool = rhtm == "ON"
         attributes["continuous_monitoring"] = continuous_monitoring  # type: ignore[assignment]
         attributes["monitoring_mode"] = rhtm

@@ -1531,14 +1531,14 @@ class DysonDevice:
     def night_mode(self) -> bool:
         """Return if night mode is enabled (nmod)."""
         product_state = self._state_data.get("product-state", {})
-        nmod = self._get_current_value(product_state, "nmod", "OFF")
+        nmod = self.get_state_value(product_state, "nmod", "OFF")
         return nmod == "ON"
 
     @property
     def auto_mode(self) -> bool:
         """Return if auto mode is enabled (wacd)."""
         product_state = self._state_data.get("product-state", {})
-        wacd = self._get_current_value(product_state, "wacd", "NONE")
+        wacd = self.get_state_value(product_state, "wacd", "NONE")
         return wacd != "NONE"
 
     @property
@@ -1546,7 +1546,7 @@ class DysonDevice:
         """Return fan speed (nmdv)."""
         try:
             product_state = self._state_data.get("product-state", {})
-            nmdv = self._get_current_value(product_state, "nmdv", "0000")
+            nmdv = self.get_state_value(product_state, "nmdv", "0000")
             return int(nmdv)
         except (ValueError, TypeError):
             return 0
@@ -1555,21 +1555,21 @@ class DysonDevice:
     def fan_power(self) -> bool:
         """Return if fan power is on (fpwr)."""
         product_state = self._state_data.get("product-state", {})
-        fpwr = self._get_current_value(product_state, "fpwr", "OFF")
+        fpwr = self.get_state_value(product_state, "fpwr", "OFF")
         return fpwr == "ON"
 
     @property
     def fan_speed_setting(self) -> str:
         """Return fan speed setting (fnsp) - controllable setting."""
         product_state = self._state_data.get("product-state", {})
-        fnsp = self._get_current_value(product_state, "fnsp", "0001")
+        fnsp = self.get_state_value(product_state, "fnsp", "0001")
         return fnsp
 
     @property
     def fan_state(self) -> str:
         """Return fan state (fnst) - OFF/FAN."""
         product_state = self._state_data.get("product-state", {})
-        fnst = self._get_current_value(product_state, "fnst", "OFF")
+        fnst = self.get_state_value(product_state, "fnst", "OFF")
         return fnst
 
     @property
@@ -1577,7 +1577,7 @@ class DysonDevice:
         """Return display brightness (bril)."""
         try:
             product_state = self._state_data.get("product-state", {})
-            bril = self._get_current_value(product_state, "bril", "0002")
+            bril = self.get_state_value(product_state, "bril", "0002")
             return int(bril)
         except (ValueError, TypeError):
             return 2
@@ -1818,7 +1818,7 @@ class DysonDevice:
         """Return carbon filter life percentage."""
         try:
             product_state = self._state_data.get("product-state", {})
-            cflr = self._get_current_value(product_state, "cflr", "0000")
+            cflr = self.get_state_value(product_state, "cflr", "0000")
             if cflr == "INV":  # Invalid/no filter installed
                 return 0
             return int(cflr)
@@ -1829,7 +1829,7 @@ class DysonDevice:
     def hepa_filter_type(self) -> str:
         """Return HEPA filter type."""
         product_state = self._state_data.get("product-state", {})
-        filter_type = self._get_current_value(product_state, "hflt", "NONE")
+        filter_type = self.get_state_value(product_state, "hflt", "NONE")
         _LOGGER.debug("HEPA filter type for %s: %s", self.serial_number, filter_type)
         return filter_type
 
@@ -1837,7 +1837,7 @@ class DysonDevice:
     def carbon_filter_type(self) -> str:
         """Return carbon filter type."""
         product_state = self._state_data.get("product-state", {})
-        filter_type = self._get_current_value(product_state, "cflt", "NONE")
+        filter_type = self.get_state_value(product_state, "cflt", "NONE")
         _LOGGER.debug("Carbon filter type for %s: %s", self.serial_number, filter_type)
         return filter_type
 
@@ -1847,19 +1847,53 @@ class DysonDevice:
 
         return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def _get_current_value(
+    def get_state_value(
         self, data: dict[str, Any], key: str, default: str = "OFF"
     ) -> str:
         """Get current value from device data.
 
-        Values are normalized at message processing time:
-        - CURRENT-STATE messages: already strings
-        - STATE-CHANGE messages: [previous, current] arrays converted to current string
-        - ENVIRONMENTAL-CURRENT-SENSOR-DATA messages: already strings
-        - Fault messages: already strings
+        Public interface for retrieving device state values from formatted data.
+
+        Args:
+            data: Device state data dictionary
+            key: The state key to retrieve
+            default: Default value if key is not found
+
+        Returns:
+            String representation of the state value
+
+        Note:
+            Values are normalized at message processing time:
+            - CURRENT-STATE messages: already strings
+            - STATE-CHANGE messages: [previous, current] arrays converted to current string
+            - ENVIRONMENTAL-CURRENT-SENSOR-DATA messages: already strings
+            - Fault messages: already strings
         """
         value = data.get(key, default)
         return str(value)
+
+    def get_environmental_data(self) -> dict[str, Any]:
+        """Get environmental data from the device.
+
+        Public interface for accessing environmental sensor data such as PM2.5,
+        PM10, humidity, temperature, and other air quality measurements.
+
+        Returns:
+            Dictionary containing environmental data with keys like:
+            - pm25: PM2.5 particle concentration
+            - pm10: PM10 particle concentration
+            - va10: Volatile organic compounds
+            - noxl: Nitrogen dioxide levels
+            - hchr: Formaldehyde concentration
+            - hact: Humidity percentage
+            - tact: Temperature readings
+
+        Note:
+            Returns a copy of the internal environmental data to prevent
+            external modifications. Use specific properties like pm25,
+            pm10, etc. for type-safe access to individual values.
+        """
+        return dict(self._environmental_data)
 
     # Command methods for device control
     async def set_night_mode(self, enabled: bool) -> None:

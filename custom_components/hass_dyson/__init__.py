@@ -576,13 +576,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
             return await _setup_individual_device_entry(hass, entry)
 
     except (ConnectionError, TimeoutError) as err:
-        _LOGGER.error("Connection error setting up Dyson device '%s': %s", entry.title, err)
+        _LOGGER.error(
+            "Connection error setting up Dyson device '%s': %s", entry.title, err
+        )
         raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
     except (KeyError, ValueError) as err:
-        _LOGGER.error("Invalid configuration for Dyson device '%s': %s", entry.title, err)
+        _LOGGER.error(
+            "Invalid configuration for Dyson device '%s': %s", entry.title, err
+        )
         return False
     except Exception as err:
-        _LOGGER.error("Unexpected error setting up Dyson device '%s': %s", entry.title, err)
+        _LOGGER.error(
+            "Unexpected error setting up Dyson device '%s': %s", entry.title, err
+        )
         raise ConfigEntryNotReady(f"Failed to connect to Dyson device: {err}") from err
 
 

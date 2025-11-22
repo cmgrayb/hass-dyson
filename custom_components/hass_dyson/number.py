@@ -89,7 +89,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         # Check if timer is currently active
         if self.coordinator.device:
             product_state = self.coordinator.data.get("product-state", {})
-            timer_data = self.coordinator.device._get_current_value(
+            timer_data = self.coordinator.device.get_state_value(
                 product_state, "sltm", "OFF"
             )
             if timer_data != "OFF":
@@ -128,13 +128,13 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             _LOGGER.warning(
                 "Communication error during timer polling for %s: %s",
                 self.coordinator.serial_number,
-                err
+                err,
             )
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error in timer polling for %s: %s",
                 self.coordinator.serial_number,
-                err
+                err,
             )
 
     async def _do_frequent_initial_polling(self) -> None:
@@ -160,7 +160,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             return False
 
         product_state = self.coordinator.data.get("product-state", {})
-        timer_data = self.coordinator.device._get_current_value(
+        timer_data = self.coordinator.device.get_state_value(
             product_state, "sltm", "OFF"
         )
 
@@ -198,7 +198,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             # Get sleep timer from device state (sltm)
             product_state = self.coordinator.data.get("product-state", {})
             try:
-                timer_data = self.coordinator.device._get_current_value(
+                timer_data = self.coordinator.device.get_state_value(
                     product_state, "sltm", "OFF"
                 )
                 if timer_data == "OFF":
@@ -320,7 +320,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         attributes["sleep_timer_minutes"] = native_value  # type: ignore[assignment]
 
         # Raw device state
-        sltm = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
+        sltm = self.coordinator.device.get_state_value(product_state, "sltm", "OFF")
         attributes["sleep_timer_raw"] = sltm  # type: ignore[assignment]
         attributes["sleep_timer_enabled"] = sltm != "OFF"
 
@@ -349,7 +349,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Get lower oscillation angle from device state (osal)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device._get_current_value(
+            angle_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
             try:
@@ -437,7 +437,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Get upper oscillation angle from device state (osau)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device._get_current_value(
+            angle_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             try:
@@ -525,10 +525,10 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Calculate center angle from lower and upper angles
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             try:
@@ -550,10 +550,10 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         try:
             # Get current span (upper - lower)
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             lower_angle = int(lower_data.lstrip("0") or "0")
@@ -633,10 +633,10 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Calculate span from lower and upper angles
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             try:
@@ -658,10 +658,10 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         try:
             # Get current center angle
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             lower_angle = int(lower_data.lstrip("0") or "0")

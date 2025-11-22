@@ -95,9 +95,9 @@ _LOGGER = logging.getLogger(__name__)
 # Services are registered based on device capabilities detected during setup
 DEVICE_CAPABILITY_SERVICES = {
     "Scheduling": [  # Sleep timer and scheduling capabilities
-        SERVICE_SET_SLEEP_TIMER,      # Configure automatic shutdown timer
-        SERVICE_CANCEL_SLEEP_TIMER,   # Cancel active sleep timer
-        SERVICE_SCHEDULE_OPERATION,   # Schedule future device operations
+        SERVICE_SET_SLEEP_TIMER,  # Configure automatic shutdown timer
+        SERVICE_CANCEL_SLEEP_TIMER,  # Cancel active sleep timer
+        SERVICE_SCHEDULE_OPERATION,  # Schedule future device operations
     ],
     "AdvanceOscillationDay1": [  # Advanced oscillation control
         SERVICE_SET_OSCILLATION_ANGLES,  # Custom oscillation angle control (0-350°)
@@ -164,10 +164,12 @@ SERVICE_SET_OSCILLATION_ANGLES_SCHEMA = vol.Schema(
     {
         vol.Required("device_id"): str,  # Home Assistant device registry ID
         vol.Required("lower_angle"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=350)  # Lower bound: 0-350 degrees
+            vol.Coerce(int),
+            vol.Range(min=0, max=350),  # Lower bound: 0-350 degrees
         ),
         vol.Required("upper_angle"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=350)  # Upper bound: 0-350 degrees
+            vol.Coerce(int),
+            vol.Range(min=0, max=350),  # Upper bound: 0-350 degrees
         ),  # Note: lower_angle must be < upper_angle (validated in handler)
     }
 )
@@ -261,17 +263,23 @@ def _decrypt_device_mqtt_credentials(cloud_client, device) -> str:
         return mqtt_password
     except (ValueError, TypeError) as err:
         _LOGGER.warning(
-            "Invalid credential format for decryption on %s: %s", device.serial_number, err
+            "Invalid credential format for decryption on %s: %s",
+            device.serial_number,
+            err,
         )
         return ""
     except (KeyError, AttributeError) as err:
         _LOGGER.debug(
-            "Missing credential data for decryption on %s: %s", device.serial_number, err
+            "Missing credential data for decryption on %s: %s",
+            device.serial_number,
+            err,
         )
         return ""
     except Exception as err:
         _LOGGER.error(
-            "Unexpected error decrypting local credentials for %s: %s", device.serial_number, err
+            "Unexpected error decrypting local credentials for %s: %s",
+            device.serial_number,
+            err,
         )
         return ""
 
@@ -604,9 +612,7 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
             coordinator.serial_number,
             err,
         )
-        raise HomeAssistantError(
-            f"Device communication failed: {err}"
-        ) from err
+        raise HomeAssistantError(f"Device communication failed: {err}") from err
     except AttributeError as err:
         _LOGGER.debug(
             "Filter reset method not available for device %s (%s filter): %s",
@@ -911,9 +917,12 @@ async def _get_cloud_device_data_from_coordinator(
 
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
-                "Communication error fetching devices from cloud account coordinator: %s", err
+                "Communication error fetching devices from cloud account coordinator: %s",
+                err,
             )
-            raise HomeAssistantError(f"Cloud service communication failed: {err}") from err
+            raise HomeAssistantError(
+                f"Cloud service communication failed: {err}"
+            ) from err
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
                 "Missing data fetching devices from cloud account coordinator: %s", err
@@ -921,7 +930,8 @@ async def _get_cloud_device_data_from_coordinator(
             raise HomeAssistantError(f"Cloud service data unavailable: {err}") from err
         except Exception as err:
             _LOGGER.error(
-                "Unexpected error fetching devices from cloud account coordinator: %s", err
+                "Unexpected error fetching devices from cloud account coordinator: %s",
+                err,
             )
             raise HomeAssistantError(f"Failed to fetch cloud devices: {err}") from err
     else:

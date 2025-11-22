@@ -4,7 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD, DOMAIN
+from custom_components.hass_dyson.const import (
+    CONF_DISCOVERY_METHOD,
+    DISCOVERY_CLOUD,
+    DOMAIN,
+)
 from custom_components.hass_dyson.switch import (
     DysonAutoModeSwitch,
     DysonContinuousMonitoringSwitch,
@@ -387,12 +391,10 @@ class TestSwitchCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {"product-state": {"hmod": "HEAT", "hmax": "2930"}}
-        coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "hmod": "HEAT",
-                "hmax": "2930",  # 20°C in Kelvin * 10
-            }.get(key, default)
-        )
+        coordinator.device.get_state_value.side_effect = lambda state, key, default: {
+            "hmod": "HEAT",
+            "hmax": "2930",  # 20°C in Kelvin * 10
+        }.get(key, default)
 
         switch = DysonHeatingSwitch(coordinator)
 
@@ -412,12 +414,10 @@ class TestSwitchCoverageEnhancement:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.data = {"product-state": {"hmod": "OFF"}}
-        coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "hmod": "OFF",
-                "hmax": "invalid",  # Invalid temperature data
-            }.get(key, default)
-        )
+        coordinator.device.get_state_value.side_effect = lambda state, key, default: {
+            "hmod": "OFF",
+            "hmax": "invalid",  # Invalid temperature data
+        }.get(key, default)
 
         switch = DysonHeatingSwitch(coordinator)
 

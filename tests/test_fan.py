@@ -37,7 +37,7 @@ def mock_coordinator():
     coordinator.device.set_fan_speed = AsyncMock()
     coordinator.device.set_auto_mode = AsyncMock()
     coordinator.device.send_command = AsyncMock()
-    coordinator.device._get_current_value = MagicMock(return_value="OFF")
+    coordinator.device.get_state_value = MagicMock(return_value="OFF")
     coordinator.async_request_refresh = AsyncMock()
     coordinator.device_capabilities = []  # Add device capabilities mock
 
@@ -71,7 +71,7 @@ def mock_coordinator_no_direction():
     coordinator.device.set_fan_speed = AsyncMock()
     coordinator.device.set_auto_mode = AsyncMock()
     coordinator.device.send_command = AsyncMock()
-    coordinator.device._get_current_value = MagicMock(return_value="OFF")
+    coordinator.device.get_state_value = MagicMock(return_value="OFF")
     coordinator.async_request_refresh = AsyncMock()
     coordinator.device_capabilities = []  # Add device capabilities mock
 
@@ -177,14 +177,14 @@ class TestDysonFan:
         mock_coordinator.device.fan_speed_setting = "0005"
         # Mock different values for different keys
 
-        def mock_get_current_value(data, key, default):
+        def mockget_state_value(data, key, default):
             if key == "auto":
                 return "OFF"  # Manual mode
             elif key == "fdir":
                 return "OFF"  # Reverse direction
             return default
 
-        mock_coordinator.device._get_current_value.side_effect = mock_get_current_value
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
 
         # Act
         with patch.object(fan, "async_write_ha_state"):
@@ -206,14 +206,14 @@ class TestDysonFan:
         mock_coordinator.device.fan_speed_setting = "0005"
         # Mock different values for different keys
 
-        def mock_get_current_value(data, key, default):
+        def mockget_state_value(data, key, default):
             if key == "auto":
                 return "OFF"  # Manual mode
             elif key == "fdir":
                 return "ON"  # Forward direction
             return default
 
-        mock_coordinator.device._get_current_value.side_effect = mock_get_current_value
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
 
         # Act
         with patch.object(fan, "async_write_ha_state"):
@@ -251,7 +251,7 @@ class TestDysonFan:
         mock_coordinator.device.fan_power = True
         mock_coordinator.device.fan_speed_setting = "AUTO"
         mock_coordinator.device.fan_speed = 7  # Actual speed
-        mock_coordinator.device._get_current_value.return_value = "ON"  # Auto mode
+        mock_coordinator.device.get_state_value.return_value = "ON"  # Auto mode
 
         # Act
         with patch.object(fan, "async_write_ha_state"):
@@ -849,10 +849,10 @@ class TestFanCoverageEnhancement:
         fan = DysonFan(mock_coordinator)
 
         # Mock device method calls
-        def mock_get_current_value(state, key, default):
+        def mockget_state_value(state, key, default):
             return state.get(key, default)
 
-        mock_coordinator.device._get_current_value.side_effect = mock_get_current_value
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
 
         # Act
         with patch.object(fan, "async_write_ha_state"):

@@ -97,8 +97,8 @@ def mock_coordinator(mock_hass, mock_config_entry):
         mock_device.set_direction = AsyncMock()
         mock_device.set_oscillation = AsyncMock()
 
-        # Set up _get_current_value method for device state access
-        mock_device._get_current_value = MagicMock(
+        # Set up get_state_value method for device state access
+        mock_device.get_state_value = MagicMock(
             side_effect=lambda data, key, default: {
                 "fdir": "ON",  # Forward direction (ON = forward, OFF = reverse)
                 "auto": "OFF",

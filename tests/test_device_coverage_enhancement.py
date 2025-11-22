@@ -8,9 +8,7 @@ import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 
-from custom_components.hass_dyson.const import (
-    CONNECTION_STATUS_DISCONNECTED,
-)
+from custom_components.hass_dyson.const import CONNECTION_STATUS_DISCONNECTED
 from custom_components.hass_dyson.device import DysonDevice
 
 
@@ -747,28 +745,28 @@ class TestDysonDeviceCoverageEnhancement:
         device_basic.remove_message_callback(callback)
         assert callback not in device_basic._message_callbacks
 
-    def test_get_current_value_existing_key(self, device_basic):
+    def testget_state_value_existing_key(self, device_basic):
         """Test getting current value for existing key."""
         device_basic._state = {"product-state": {"fmod": "FAN", "fnsp": "0005"}}
 
-        value = device_basic._get_current_value(
+        value = device_basic.get_state_value(
             device_basic._state["product-state"], "fmod", "AUTO"
         )
         assert value == "FAN"
 
-    def test_get_current_value_missing_key_uses_default(self, device_basic):
+    def testget_state_value_missing_key_uses_default(self, device_basic):
         """Test getting current value for missing key uses default."""
         device_basic._state = {"product-state": {"fmod": "FAN"}}
 
-        value = device_basic._get_current_value(
+        value = device_basic.get_state_value(
             device_basic._state["product-state"], "missing", "DEFAULT"
         )
         assert value == "DEFAULT"
 
-    def test_get_current_value_none_data_uses_default(self, device_basic):
+    def testget_state_value_none_data_uses_default(self, device_basic):
         """Test getting current value with None data uses default."""
         # The method expects a dict, so provide empty dict instead of None
-        value = device_basic._get_current_value({}, "fmod", "DEFAULT")
+        value = device_basic.get_state_value({}, "fmod", "DEFAULT")
         assert value == "DEFAULT"
 
     @pytest.mark.asyncio

@@ -298,7 +298,7 @@ class DysonFan(DysonEntity, FanEntity):
             if self._direction_supported:
                 # fdir="ON" means front airflow is on (forward direction in HA terms)
                 # fdir="OFF" means front airflow is off (reverse direction in HA terms)
-                fdir_value = self.coordinator.device._get_current_value(
+                fdir_value = self.coordinator.device.get_state_value(
                     product_state,
                     "fdir",
                     "ON",  # Default to ON (forward) if not available
@@ -309,7 +309,7 @@ class DysonFan(DysonEntity, FanEntity):
             else:
                 # Device doesn't support direction control
                 self._attr_current_direction = "forward"  # Default fallback
-            auto_mode = self.coordinator.device._get_current_value(
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
 
@@ -317,7 +317,7 @@ class DysonFan(DysonEntity, FanEntity):
             if self._has_heating:
                 self._update_heating_data(product_state)
                 # For heating devices, preset mode includes heating state
-                heating_mode = self.coordinator.device._get_current_value(
+                heating_mode = self.coordinator.device.get_state_value(
                     product_state, "hmod", "OFF"
                 )
                 if heating_mode == "HEAT":
@@ -332,7 +332,7 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Update oscillation state from device data if supported
             if self._oscillation_supported:
-                oson = self.coordinator.device._get_current_value(
+                oson = self.coordinator.device.get_state_value(
                     product_state, "oson", "OFF"
                 )
                 self._attr_oscillating = oson == "ON"
@@ -650,19 +650,19 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["is_on"] = is_on  # type: ignore[assignment]
 
             # Device state properties
-            fan_power = self.coordinator.device._get_current_value(
+            fan_power = self.coordinator.device.get_state_value(
                 product_state, "fpwr", "OFF"
             )
-            fan_state = self.coordinator.device._get_current_value(
+            fan_state = self.coordinator.device.get_state_value(
                 product_state, "fnst", "OFF"
             )
-            fan_speed_setting = self.coordinator.device._get_current_value(
+            fan_speed_setting = self.coordinator.device.get_state_value(
                 product_state, "fnsp", "0001"
             )
-            auto_mode = self.coordinator.device._get_current_value(
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
-            night_mode = self.coordinator.device._get_current_value(
+            night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
 
@@ -673,15 +673,13 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["night_mode"] = night_mode == "ON"
 
             # Oscillation information
-            oson = self.coordinator.device._get_current_value(
-                product_state, "oson", "OFF"
-            )
+            oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
             attributes["oscillation_enabled"] = oson == "ON"
 
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
 
@@ -697,7 +695,7 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Sleep timer if available
             try:
-                sltm = self.coordinator.device._get_current_value(
+                sltm = self.coordinator.device.get_state_value(
                     product_state, "sltm", "OFF"
                 )
                 if sltm != "OFF":
@@ -716,7 +714,7 @@ class DysonFan(DysonEntity, FanEntity):
                 attributes["temperature_unit"] = self._attr_temperature_unit  # type: ignore[assignment]
 
                 # Raw device heating state for scene support
-                hmod = self.coordinator.device._get_current_value(
+                hmod = self.coordinator.device.get_state_value(
                     product_state, "hmod", "OFF"
                 )
                 attributes["heating_mode"] = hmod  # type: ignore[assignment]
@@ -849,7 +847,7 @@ class DysonFan(DysonEntity, FanEntity):
             return
 
         # Current temperature
-        current_temp = self.coordinator.device._get_current_value(
+        current_temp = self.coordinator.device.get_state_value(
             device_data, "tmp", "0000"
         )
         try:
@@ -861,7 +859,7 @@ class DysonFan(DysonEntity, FanEntity):
             self._attr_current_temperature = None
 
         # Target temperature
-        target_temp = self.coordinator.device._get_current_value(
+        target_temp = self.coordinator.device.get_state_value(
             device_data, "hmax", "0000"
         )
         try:
@@ -871,15 +869,11 @@ class DysonFan(DysonEntity, FanEntity):
             self._attr_target_temperature = 20.0  # Default to 20°C
 
         # HVAC mode based on device state
-        heating_mode = self.coordinator.device._get_current_value(
+        heating_mode = self.coordinator.device.get_state_value(
             device_data, "hmod", "OFF"
         )
-        fan_power = self.coordinator.device._get_current_value(
-            device_data, "fpwr", "OFF"
-        )
-        auto_mode = self.coordinator.device._get_current_value(
-            device_data, "auto", "OFF"
-        )
+        fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
+        auto_mode = self.coordinator.device.get_state_value(device_data, "auto", "OFF")
 
         if fan_power == "OFF":
             self._attr_hvac_mode = HVACMode.OFF

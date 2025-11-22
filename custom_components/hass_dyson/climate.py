@@ -92,7 +92,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             return
 
         # Current temperature
-        current_temp = self.coordinator.device._get_current_value(
+        current_temp = self.coordinator.device.get_state_value(
             device_data, "tmp", "0000"
         )
         try:
@@ -110,7 +110,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             self._attr_current_temperature = None
 
         # Target temperature
-        target_temp = self.coordinator.device._get_current_value(
+        target_temp = self.coordinator.device.get_state_value(
             device_data, "hmax", "0000"
         )
         try:
@@ -128,15 +128,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if not self.coordinator.device:
             return
 
-        fan_power = self.coordinator.device._get_current_value(
-            device_data, "fnst", "OFF"
-        )
-        heating_mode = self.coordinator.device._get_current_value(
+        fan_power = self.coordinator.device.get_state_value(device_data, "fnst", "OFF")
+        heating_mode = self.coordinator.device.get_state_value(
             device_data, "hmod", "OFF"
         )
-        auto_mode = self.coordinator.device._get_current_value(
-            device_data, "auto", "OFF"
-        )
+        auto_mode = self.coordinator.device.get_state_value(device_data, "auto", "OFF")
 
         if fan_power == "OFF":
             self._attr_hvac_mode = HVACMode.OFF
@@ -232,13 +228,13 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         attributes["hvac_mode"] = hvac_mode  # type: ignore[assignment]
 
         # Device state properties that can be controlled
-        heating_mode = self.coordinator.device._get_current_value(
+        heating_mode = self.coordinator.device.get_state_value(
             product_state, "hmod", "OFF"
         )
-        auto_mode = self.coordinator.device._get_current_value(
+        auto_mode = self.coordinator.device.get_state_value(
             product_state, "auto", "OFF"
         )
-        fan_power = self.coordinator.device._get_current_value(
+        fan_power = self.coordinator.device.get_state_value(
             product_state, "fnst", "OFF"
         )
 

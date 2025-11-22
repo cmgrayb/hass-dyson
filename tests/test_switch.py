@@ -139,7 +139,7 @@ class TestDysonAutoModeSwitch:
         """Test coordinator update when auto mode is on."""
         # Arrange
         switch = DysonAutoModeSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "ON"
+        mock_coordinator.device.get_state_value.return_value = "ON"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act
@@ -147,7 +147,7 @@ class TestDysonAutoModeSwitch:
 
             # Assert
             assert switch._attr_is_on is True
-            mock_coordinator.device._get_current_value.assert_called_with(
+            mock_coordinator.device.get_state_value.assert_called_with(
                 mock_coordinator.data["product-state"], "auto", "OFF"
             )
 
@@ -155,7 +155,7 @@ class TestDysonAutoModeSwitch:
         """Test coordinator update when auto mode is off."""
         # Arrange
         switch = DysonAutoModeSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "OFF"
+        mock_coordinator.device.get_state_value.return_value = "OFF"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act
@@ -266,7 +266,7 @@ class TestDysonNightModeSwitch:
         """Test coordinator update when night mode is on."""
         # Arrange
         switch = DysonNightModeSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "ON"
+        mock_coordinator.device.get_state_value.return_value = "ON"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act
@@ -274,7 +274,7 @@ class TestDysonNightModeSwitch:
 
             # Assert
             assert switch._attr_is_on is True
-            mock_coordinator.device._get_current_value.assert_called_with(
+            mock_coordinator.device.get_state_value.assert_called_with(
                 mock_coordinator.data["product-state"], "nmod", "OFF"
             )
 
@@ -327,7 +327,7 @@ class TestDysonHeatingSwitch:
         """Test coordinator update when heating is on."""
         # Arrange
         switch = DysonHeatingSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "HEAT"
+        mock_coordinator.device.get_state_value.return_value = "HEAT"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act
@@ -335,7 +335,7 @@ class TestDysonHeatingSwitch:
 
             # Assert
             assert switch._attr_is_on is True
-            mock_coordinator.device._get_current_value.assert_called_with(
+            mock_coordinator.device.get_state_value.assert_called_with(
                 mock_coordinator.data["product-state"], "hmod", "OFF"
             )
 
@@ -343,7 +343,7 @@ class TestDysonHeatingSwitch:
         """Test coordinator update when heating is off."""
         # Arrange
         switch = DysonHeatingSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "OFF"
+        mock_coordinator.device.get_state_value.return_value = "OFF"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act
@@ -382,7 +382,7 @@ class TestDysonHeatingSwitch:
         """Test extra_state_attributes when device is available."""
         # Arrange
         switch = DysonHeatingSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {"hmax": "2980"}.get(key, default)
         )
 
@@ -418,7 +418,7 @@ class TestDysonContinuousMonitoringSwitch:
         """Test coordinator update when continuous monitoring is on."""
         # Arrange
         switch = DysonContinuousMonitoringSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "ON"
+        mock_coordinator.device.get_state_value.return_value = "ON"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act
@@ -426,7 +426,7 @@ class TestDysonContinuousMonitoringSwitch:
 
             # Assert
             assert switch._attr_is_on is True
-            mock_coordinator.device._get_current_value.assert_called_with(
+            mock_coordinator.device.get_state_value.assert_called_with(
                 mock_coordinator.data["product-state"], "rhtm", "OFF"
             )
 
@@ -503,7 +503,7 @@ class TestSwitchIntegration:
         """Test that switch state remains consistent across multiple updates."""
         # Arrange
         switch = DysonNightModeSwitch(mock_coordinator)
-        mock_coordinator.device._get_current_value.return_value = "ON"
+        mock_coordinator.device.get_state_value.return_value = "ON"
 
         with patch.object(switch, "async_write_ha_state"):
             # Act - call update multiple times

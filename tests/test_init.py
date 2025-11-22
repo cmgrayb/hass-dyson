@@ -321,16 +321,12 @@ class TestInitBackgroundTasks:
     @pytest.mark.asyncio
     async def test_create_device_entry_success(self, mock_hass):
         """Test successful background device entry creation."""
-        device_data = {
-            "serial_number": "TEST123",
-            "device_name": "Test Device"
-        }
-        device_info = {
-            "serial_number": "TEST123",
-            "name": "Test Device"
-        }
+        device_data = {"serial_number": "TEST123", "device_name": "Test Device"}
+        device_info = {"serial_number": "TEST123", "name": "Test Device"}
 
-        mock_hass.config_entries.flow.async_init = AsyncMock(return_value={"type": "create_entry"})
+        mock_hass.config_entries.flow.async_init = AsyncMock(
+            return_value={"type": "create_entry"}
+        )
 
         await _create_device_entry(mock_hass, device_data, device_info)
 
@@ -343,16 +339,12 @@ class TestInitBackgroundTasks:
     @pytest.mark.asyncio
     async def test_create_device_entry_exception(self, mock_hass):
         """Test background device entry creation with exception."""
-        device_data = {
-            "serial_number": "TEST123",
-            "device_name": "Test Device"
-        }
-        device_info = {
-            "serial_number": "TEST123",
-            "name": "Test Device"
-        }
+        device_data = {"serial_number": "TEST123", "device_name": "Test Device"}
+        device_info = {"serial_number": "TEST123", "name": "Test Device"}
 
-        mock_hass.config_entries.flow.async_init = AsyncMock(side_effect=Exception("Test error"))
+        mock_hass.config_entries.flow.async_init = AsyncMock(
+            side_effect=Exception("Test error")
+        )
 
         # Should not raise exception - error should be logged
         await _create_device_entry(mock_hass, device_data, device_info)
@@ -366,35 +358,38 @@ class TestInitBackgroundTasks:
             "serial_number": "TEST123",
             "name": "Test Device",
             "product_type": "VS6",
-            "category": "Fan"
+            "category": "Fan",
         }
 
         mock_hass.config_entries.flow.async_progress = MagicMock(return_value=[])
-        mock_hass.config_entries.flow.async_init = AsyncMock(return_value={"type": "form"})
+        mock_hass.config_entries.flow.async_init = AsyncMock(
+            return_value={"type": "form"}
+        )
 
         await _create_discovery_flow(mock_hass, mock_config_entry, device_info)
 
         mock_hass.config_entries.flow.async_init.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_discovery_flow_existing_flow(self, mock_hass, mock_config_entry):
+    async def test_create_discovery_flow_existing_flow(
+        self, mock_hass, mock_config_entry
+    ):
         """Test discovery flow creation when flow already exists."""
         device_info = {
             "serial_number": "TEST123",
             "name": "Test Device",
             "product_type": "VS6",
-            "category": "Fan"
+            "category": "Fan",
         }
 
         # Mock existing flow
         existing_flow = {
             "handler": DOMAIN,
-            "context": {
-                "source": "discovery",
-                "unique_id": "TEST123"
-            }
+            "context": {"source": "discovery", "unique_id": "TEST123"},
         }
-        mock_hass.config_entries.flow.async_progress = MagicMock(return_value=[existing_flow])
+        mock_hass.config_entries.flow.async_progress = MagicMock(
+            return_value=[existing_flow]
+        )
         mock_hass.config_entries.flow.async_init = AsyncMock()
 
         await _create_discovery_flow(mock_hass, mock_config_entry, device_info)
@@ -409,11 +404,13 @@ class TestInitBackgroundTasks:
             "serial_number": "TEST123",
             "name": "Test Device",
             "product_type": "VS6",
-            "category": "Fan"
+            "category": "Fan",
         }
 
         mock_hass.config_entries.flow.async_progress = MagicMock(return_value=[])
-        mock_hass.config_entries.flow.async_init = AsyncMock(side_effect=Exception("Test error"))
+        mock_hass.config_entries.flow.async_init = AsyncMock(
+            side_effect=Exception("Test error")
+        )
 
         # Should not raise exception - error should be logged
         await _create_discovery_flow(mock_hass, mock_config_entry, device_info)
@@ -445,11 +442,15 @@ class TestInitAccountManagement:
         child_entry2.data = {"parent_entry_id": "account_123"}
 
         # Mock config entries
-        mock_hass.config_entries.async_entries = MagicMock(return_value=[child_entry1, child_entry2])
+        mock_hass.config_entries.async_entries = MagicMock(
+            return_value=[child_entry1, child_entry2]
+        )
         mock_hass.config_entries.async_remove = AsyncMock()
         mock_hass.data = {DOMAIN: {}}
 
-        with patch("custom_components.hass_dyson.async_remove_cloud_services") as mock_remove_services:
+        with patch(
+            "custom_components.hass_dyson.async_remove_cloud_services"
+        ) as mock_remove_services:
             result = await async_unload_entry(mock_hass, account_entry)
 
         assert result is True
@@ -468,14 +469,12 @@ class TestInitAccountManagement:
         mock_coordinator = MagicMock()
         mock_coordinator.async_shutdown = AsyncMock()
 
-        mock_hass.data = {
-            DOMAIN: {
-                "account_123_cloud": mock_coordinator
-            }
-        }
+        mock_hass.data = {DOMAIN: {"account_123_cloud": mock_coordinator}}
         mock_hass.config_entries.async_entries = MagicMock(return_value=[])
 
-        with patch("custom_components.hass_dyson.async_remove_cloud_services") as mock_remove_services:
+        with patch(
+            "custom_components.hass_dyson.async_remove_cloud_services"
+        ) as mock_remove_services:
             result = await async_unload_entry(mock_hass, account_entry)
 
         assert result is True
@@ -497,9 +496,13 @@ class TestInitAccountManagement:
         remaining_account.data = {"devices": ["device2"]}
 
         mock_hass.data = {DOMAIN: {}}
-        mock_hass.config_entries.async_entries = MagicMock(return_value=[remaining_account])
+        mock_hass.config_entries.async_entries = MagicMock(
+            return_value=[remaining_account]
+        )
 
-        with patch("custom_components.hass_dyson.async_remove_cloud_services") as mock_remove_services:
+        with patch(
+            "custom_components.hass_dyson.async_remove_cloud_services"
+        ) as mock_remove_services:
             result = await async_unload_entry(mock_hass, account_entry)
 
         assert result is True
@@ -525,7 +528,9 @@ class TestInitDeviceManagement:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_async_unload_entry_device_with_coordinator_shutdown_error(self, mock_hass):
+    async def test_async_unload_entry_device_with_coordinator_shutdown_error(
+        self, mock_hass
+    ):
         """Test unloading device entry when coordinator shutdown fails."""
         device_entry = MagicMock(spec=ConfigEntry)
         device_entry.entry_id = "device_123"
@@ -534,13 +539,20 @@ class TestInitDeviceManagement:
 
         # Mock coordinator with failing shutdown
         mock_coordinator = MagicMock()
-        mock_coordinator.async_shutdown = AsyncMock(side_effect=Exception("Shutdown failed"))
+        mock_coordinator.async_shutdown = AsyncMock(
+            side_effect=Exception("Shutdown failed")
+        )
 
         mock_hass.data = {DOMAIN: {"device_123": mock_coordinator}}
         mock_hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
 
-        with patch("custom_components.hass_dyson.async_remove_device_services_for_coordinator") as mock_remove_services:
-            with patch("custom_components.hass_dyson._get_platforms_for_device", return_value=["sensor", "switch"]):
+        with patch(
+            "custom_components.hass_dyson.async_remove_device_services_for_coordinator"
+        ) as mock_remove_services:
+            with patch(
+                "custom_components.hass_dyson._get_platforms_for_device",
+                return_value=["sensor", "switch"],
+            ):
                 # Should propagate the shutdown error
                 with pytest.raises(Exception, match="Shutdown failed"):
                     await async_unload_entry(mock_hass, device_entry)
@@ -549,36 +561,52 @@ class TestInitDeviceManagement:
         mock_remove_services.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_platform_error_handling(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_platform_error_handling(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async_setup_entry with platform setup errors."""
         mock_hass.data = {}
 
         # Mock coordinator setup
-        with patch("custom_components.hass_dyson.DysonDataUpdateCoordinator") as mock_coordinator_class:
+        with patch(
+            "custom_components.hass_dyson.DysonDataUpdateCoordinator"
+        ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator.async_config_entry_first_refresh = AsyncMock()
             mock_coordinator_class.return_value = mock_coordinator
 
             # Mock platform setup with one platform failing
-            with patch("custom_components.hass_dyson.async_setup_device_services_for_coordinator") as mock_setup_services:
-                with patch.object(mock_hass.config_entries, "async_forward_entry_setups") as mock_forward:
+            with patch(
+                "custom_components.hass_dyson.async_setup_device_services_for_coordinator"
+            ) as mock_setup_services:
+                with patch.object(
+                    mock_hass.config_entries, "async_forward_entry_setups"
+                ) as mock_forward:
                     mock_forward.side_effect = Exception("Platform setup failed")
 
                     # Should handle platform setup errors by raising ConfigEntryNotReady
-                    with pytest.raises(Exception):  # ConfigEntryNotReady or platform error
+                    with pytest.raises(
+                        Exception
+                    ):  # ConfigEntryNotReady or platform error
                         await async_setup_entry(mock_hass, mock_config_entry)
 
                     mock_coordinator.async_config_entry_first_refresh.assert_called_once()
                     mock_setup_services.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_setup_entry_coordinator_refresh_error_comprehensive(self, mock_hass, mock_config_entry):
+    async def test_async_setup_entry_coordinator_refresh_error_comprehensive(
+        self, mock_hass, mock_config_entry
+    ):
         """Test async_setup_entry when coordinator refresh fails."""
         mock_hass.data = {}
 
-        with patch("custom_components.hass_dyson.DysonDataUpdateCoordinator") as mock_coordinator_class:
+        with patch(
+            "custom_components.hass_dyson.DysonDataUpdateCoordinator"
+        ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
-            mock_coordinator.async_config_entry_first_refresh = AsyncMock(side_effect=Exception("Refresh failed"))
+            mock_coordinator.async_config_entry_first_refresh = AsyncMock(
+                side_effect=Exception("Refresh failed")
+            )
             mock_coordinator_class.return_value = mock_coordinator
 
             # Should handle coordinator refresh errors by raising ConfigEntryNotReady

@@ -104,22 +104,146 @@ await device.set_target_temperature(22.5)  # Set target temperature
 await device.set_heater_mode("HEAT")  # Enable heating
 await device.set_fan_direction("FRONT")  # Set airflow direction
 
-# Air quality and monitoring
-current_state = device.get_current_state()
-pm25_level = current_state.get("pm25", 0)
-temperature = current_state.get("temperature", 0)
+# Air quality and monitoring using public interface
+current_state = device.state
+pm25_level = device.get_state_value(current_state, "pm25", "0")
+temperature = device.get_state_value(current_state, "tact", "0")
+
+# Environmental data access
+env_data = device.get_environmental_data()
+pm25_level = env_data.get("pm25", 0)
+pm10_level = env_data.get("pm10", 0)
+humidity = env_data.get("hact", 0)
+temperature = env_data.get("tact", 0)
 ```
 
 ### Device State Properties
 
 ```python
-# Access device state information
-print(f"Fan speed: {device.fan_speed}")
-print(f"Temperature: {device.temperature}°C")
-print(f"Humidity: {device.humidity}%")
-print(f"PM2.5: {device.pm25} μg/m³")
-print(f"Filter life: {device.filter_life}%")
+# Access device state information using public interface
+state_data = device.state
+env_data = device.get_environmental_data()
+
+print(f"Fan speed: {device.get_state_value(state_data, 'fnsp', '0')}")
+print(f"Temperature: {env_data.get('tact', 0)}°C")
+print(f"Humidity: {env_data.get('hact', 0)}%")
+print(f"PM2.5: {env_data.get('pm25', 0)} μg/m³")
+print(f"PM10: {env_data.get('pm10', 0)} μg/m³")
+print(f"VOC: {env_data.get('va10', 0)}")
+print(f"NO2: {env_data.get('noxl', 0)}")
 print(f"Connection status: {device.connection_status}")
+
+# Alternative direct property access (if available)
+print(f"Fan power: {device.get_state_value(state_data, 'fpwr', 'OFF')}")
+print(f"Oscillation: {device.get_state_value(state_data, 'oson', 'OFF')}")
+print(f"Night mode: {device.get_state_value(state_data, 'nmod', 'OFF')}")
+print(f"Auto mode: {device.get_state_value(state_data, 'auto', 'OFF')}")
+```
+
+### Public Interface Methods
+
+The `DysonDevice` class provides public interface methods for safe access to device data:
+
+```python
+# get_state_value() - Safe access to device state values
+def get_state_value(data: dict[str, Any], key: str, default: str = "OFF") -> str:
+    """
+    Get current value from device data with proper encapsulation.
+
+    Args:
+        data: Device state data dictionary (from device.state)
+        key: The state key to retrieve (e.g., 'fnsp', 'fpwr', 'oson')
+        default: Default value if key is not found (default: "OFF")
+
+    Returns:
+        String representation of the state value
+
+    Note:
+        Values are normalized at message processing time:
+        - CURRENT-STATE messages: already strings
+        - STATE-CHANGE messages: [previous, current] arrays converted to current string
+        - ENVIRONMENTAL-CURRENT-SENSOR-DATA messages: already strings
+        - Fault messages: already strings
+    """
+
+# Example usage of get_state_value()
+state_data = device.state
+fan_speed = device.get_state_value(state_data, "fnsp", "0")  # Fan speed
+fan_power = device.get_state_value(state_data, "fpwr", "OFF")  # Fan power
+oscillation = device.get_state_value(state_data, "oson", "OFF")  # Oscillation
+night_mode = device.get_state_value(state_data, "nmod", "OFF")  # Night mode
+auto_mode = device.get_state_value(state_data, "auto", "OFF")  # Auto mode
+
+# Heating-specific state values (for compatible models)
+heating_mode = device.get_state_value(state_data, "hmod", "OFF")  # Heating mode
+target_temp = device.get_state_value(state_data, "hmax", "0")  # Target temperature
+```
+
+```python
+# get_environmental_data() - Safe access to environmental sensor data
+def get_environmental_data() -> dict[str, Any]:
+    """
+    Get environmental data from the device with proper encapsulation.
+
+    Returns:
+        Dictionary containing environmental data with keys:
+        - pm25: PM2.5 particle concentration (μg/m³)
+        - pm10: PM10 particle concentration (μg/m³)
+        - va10: Volatile organic compounds (VOC index)
+        - noxl: Nitrogen dioxide levels (ppb)
+        - hchr: Formaldehyde concentration (μg/m³)
+        - hact: Humidity percentage (%)
+        - tact: Temperature readings (°C * 10)
+
+    Note:
+        Returns a copy of the internal environmental data to prevent
+        external modifications. Use this method instead of accessing
+        internal attributes directly.
+    """
+
+# Example usage of get_environmental_data()
+env_data = device.get_environmental_data()
+
+# Air quality measurements
+pm25 = env_data.get("pm25", 0)  # PM2.5 concentration
+pm10 = env_data.get("pm10", 0)  # PM10 concentration
+voc = env_data.get("va10", 0)   # Volatile organic compounds
+no2 = env_data.get("noxl", 0)   # Nitrogen dioxide
+formaldehyde = env_data.get("hchr", 0)  # Formaldehyde
+
+# Environmental conditions
+humidity = env_data.get("hact", 0)  # Humidity percentage
+temperature = env_data.get("tact", 0) / 10  # Temperature (convert from °C * 10)
+
+print(f"Air Quality - PM2.5: {pm25}μg/m³, PM10: {pm10}μg/m³, VOC: {voc}")
+print(f"Environment - Temp: {temperature}°C, Humidity: {humidity}%")
+```
+
+### Data Access Best Practices
+
+```python
+# ✅ RECOMMENDED: Use public interface methods
+state_data = device.state
+env_data = device.get_environmental_data()
+
+fan_speed = device.get_state_value(state_data, "fnsp", "0")
+pm25_level = env_data.get("pm25", 0)
+
+# ❌ AVOID: Direct access to private attributes
+# fan_speed = device._current_state.get("fnsp", "0")  # Don't do this
+# pm25_level = device._environmental_data.get("pm25", 0)  # Don't do this
+
+# ✅ RECOMMENDED: Safe data retrieval with defaults
+temperature = env_data.get("tact", 0)  # Returns 0 if not available
+humidity = env_data.get("hact", 0)     # Returns 0 if not available
+
+# ✅ RECOMMENDED: Type conversion with error handling
+try:
+    temp_celsius = int(env_data.get("tact", 0)) / 10
+    humidity_percent = int(env_data.get("hact", 0))
+except (ValueError, TypeError):
+    temp_celsius = 0.0
+    humidity_percent = 0
 ```
 
 ## Entity System
@@ -139,8 +263,11 @@ class CustomDysonEntity(DysonEntity):
 
     @property
     def native_value(self):
-        """Return the current value."""
-        return self.coordinator.data.get("custom_value")
+        """Return the current value using public interface."""
+        if not self.coordinator.device:
+            return None
+        state_data = self.coordinator.device.state
+        return self.coordinator.device.get_state_value(state_data, "custom_key", "0")
 
     async def async_update(self):
         """Update entity state from coordinator."""
@@ -185,8 +312,11 @@ class AirQualitySensor(DysonP25RSensor):
 
     @property
     def native_value(self):
-        """Return PM2.5 value."""
-        return self.coordinator.data.get("pm25", 0)
+        """Return PM2.5 value using public interface."""
+        if not self.coordinator.device:
+            return 0
+        env_data = self.coordinator.device.get_environmental_data()
+        return env_data.get("pm25", 0)
 
     @property
     def native_unit_of_measurement(self):
@@ -229,18 +359,25 @@ await async_unregister_device_services(
 from custom_components.hass_dyson.services import async_set_sleep_timer
 
 # Call service handler directly
-await async_set_sleep_timer(
-    hass=hass,
-    call_data={
-        "serial_number": "VS6-EU-HJA1234A",
+from homeassistant.helpers.service import ServiceCall
+
+service_call = ServiceCall(
+    domain="hass_dyson",
+    service="set_sleep_timer",
+    data={
+        "device_id": "VS6-EU-HJA1234A",
         "minutes": 60
     }
 )
 
+await async_set_sleep_timer(hass, service_call)
+
 # Service schema example
-SLEEP_TIMER_SCHEMA = vol.Schema({
-    vol.Required("serial_number"): cv.string,
-    vol.Required("minutes"): vol.All(vol.Coerce(int), vol.Range(min=0, max=540))
+SERVICE_SET_SLEEP_TIMER_SCHEMA = vol.Schema({
+    vol.Required("device_id"): str,  # Home Assistant device registry ID
+    vol.Required("minutes"): vol.All(
+        vol.Coerce(int), vol.Range(min=15, max=540)  # 15 minutes to 9 hours
+    )
 })
 ```
 
@@ -382,6 +519,92 @@ climate_command = {
 }
 ```
 
+## API Design and Encapsulation
+
+### Encapsulation Principles
+
+The Dyson integration follows strict encapsulation principles to ensure maintainability and prevent accidental misuse:
+
+```python
+# ✅ CORRECT: Use public interface methods
+device = coordinator.device
+if device:
+    # Get state data safely
+    state_data = device.state
+    env_data = device.get_environmental_data()
+
+    # Access values through public methods
+    fan_speed = device.get_state_value(state_data, "fnsp", "0")
+    pm25 = env_data.get("pm25", 0)
+
+# ❌ INCORRECT: Direct access to private members
+# fan_speed = device._current_state.get("fnsp", "0")  # Breaks encapsulation
+# pm25 = device._environmental_data.get("pm25", 0)   # Breaks encapsulation
+```
+
+### Public vs Private Interface
+
+**Public Interface (Safe to Use):**
+- `device.state` - Current device state dictionary
+- `device.get_state_value(data, key, default)` - Safe state value retrieval
+- `device.get_environmental_data()` - Environmental sensor data
+- `device.send_command(command, data)` - Device command execution
+- `device.connect()` / `device.disconnect()` - Connection management
+- `device.is_connected` - Connection status property
+
+**Private Interface (Do Not Use):**
+- `device._current_state` - Internal state storage
+- `device._environmental_data` - Internal environmental data
+- `device._mqtt_client` - Internal MQTT client
+- `device._connected` - Internal connection flag
+- `device._callbacks` - Internal callback management
+
+### Migration from Legacy Code
+
+If you have existing code using private members, migrate as follows:
+
+```python
+# OLD (deprecated):
+fan_speed = device._current_state.get("fnsp", "0")
+pm25 = device._environmental_data.get("pm25", 0)
+
+# NEW (recommended):
+state_data = device.state
+env_data = device.get_environmental_data()
+fan_speed = device.get_state_value(state_data, "fnsp", "0")
+pm25 = env_data.get("pm25", 0)
+```
+
+### Type Safety and Error Handling
+
+```python
+from typing import Optional
+
+def get_device_temperature(coordinator) -> Optional[float]:
+    """Get device temperature with proper error handling."""
+    if not coordinator.device:
+        return None
+
+    try:
+        env_data = coordinator.device.get_environmental_data()
+        temp_raw = env_data.get("tact", 0)
+        return float(temp_raw) / 10  # Convert from °C * 10
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None
+
+def get_device_fan_speed(coordinator) -> Optional[int]:
+    """Get device fan speed with proper error handling."""
+    if not coordinator.device:
+        return None
+
+    try:
+        state_data = coordinator.device.state
+        speed_str = coordinator.device.get_state_value(state_data, "fnsp", "0")
+        return int(speed_str)
+    except (ValueError, TypeError):
+        return None
+```
+
 ## Error Handling
 
 ### Exception Types and Handling
@@ -509,10 +732,13 @@ async def setup_complete_integration():
     await coordinator.device.set_fan_speed(7)
     await coordinator.device.set_oscillation(True)
 
-    # 5. Access sensor data
-    data = coordinator.data
-    print(f"PM2.5: {data.get('pm25')} μg/m³")
-    print(f"Temperature: {data.get('temperature')}°C")
+    # 5. Access sensor data using public interface
+    if coordinator.device:
+        env_data = coordinator.device.get_environmental_data()
+        state_data = coordinator.device.state
+        print(f"PM2.5: {env_data.get('pm25', 0)} μg/m³")
+        print(f"Temperature: {env_data.get('tact', 0) / 10}°C")
+        print(f"Fan speed: {coordinator.device.get_state_value(state_data, 'fnsp', '0')}")
 
     return True
 ```
@@ -529,21 +755,79 @@ automation_config = {
     },
     "action": [
         {
-            "service": "hass_dyson.set_fan_speed",
+            "service": "hass_dyson.set_sleep_timer",
             "data": {
-                "serial_number": "VS6-EU-HJA1234A",
-                "speed": 8
+                "device_id": "dyson_vs6_eu_hja1234a",
+                "minutes": 60
             }
         },
         {
-            "service": "hass_dyson.set_oscillation",
+            "service": "fan.set_percentage",
+            "target": {
+                "entity_id": "fan.dyson_purifier"
+            },
             "data": {
-                "serial_number": "VS6-EU-HJA1234A",
-                "oscillation": True
+                "percentage": 80
             }
         }
     ]
 }
 ```
 
+## API Changelog and Updates
+
+### v0.19.0 - Enhanced Encapsulation and Public Interfaces
+
+**New Public Interface Methods:**
+- `DysonDevice.get_state_value(data, key, default)` - Safe state value retrieval
+- `DysonDevice.get_environmental_data()` - Environmental sensor data access
+
+**Improved Encapsulation:**
+- All external access to device data now uses public interface methods
+- Private member access (`_current_state`, `_environmental_data`) is deprecated
+- Enhanced type safety and error handling throughout the API
+
+**Migration Required:**
+If you're upgrading from previous versions, update your code to use the new public interface:
+
+```python
+# OLD (v0.18.x and earlier):
+pm25 = device._environmental_data.get("pm25", 0)
+fan_speed = device._current_state.get("fnsp", "0")
+
+# NEW (v0.19.0+):
+env_data = device.get_environmental_data()
+state_data = device.state
+pm25 = env_data.get("pm25", 0)
+fan_speed = device.get_state_value(state_data, "fnsp", "0")
+```
+
+**Service Updates:**
+- All services now use `device_id` parameter (Home Assistant device registry ID)
+- Enhanced error handling and validation for all service calls
+- Improved service schemas with proper range validation
+
+### Compatibility Notes
+
+- **Backward Compatibility**: Existing integrations will continue to work but should migrate to the new public interface
+- **Performance**: New public interface methods provide better performance through optimized data access
+- **Type Safety**: Enhanced type hints and validation throughout the API
+- **Documentation**: All examples updated to reflect current best practices
+
+### Future API Evolution
+
+The public interface methods are designed to be stable and will maintain backward compatibility. Future enhancements will focus on:
+- Additional environmental sensor support
+- Extended device capability detection
+- Enhanced error reporting and diagnostics
+- Performance optimizations
+
+---
+
 This API documentation provides comprehensive examples for developers working with the Dyson Home Assistant integration. For additional information, see the other documentation files in the `docs/` directory.
+
+**Related Documentation:**
+- [Setup Guide](SETUP.md) - Integration installation and configuration
+- [Device Compatibility](DEVICE_COMPATIBILITY.md) - Supported device models
+- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
+- [Developer's Guide](DEVELOPERS_GUIDE.md) - Development environment setup
