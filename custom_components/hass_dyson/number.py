@@ -129,13 +129,13 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             _LOGGER.warning(
                 "Communication error during timer polling for %s: %s",
                 self.coordinator.serial_number,
-                err
+                err,
             )
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error in timer polling for %s: %s",
                 self.coordinator.serial_number,
-                err
+                err,
             )
 
     async def _do_frequent_initial_polling(self) -> None:
