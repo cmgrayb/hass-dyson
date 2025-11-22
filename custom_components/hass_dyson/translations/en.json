@@ -61,7 +61,7 @@
     },
     "error": {
       "auth_failed": "Authentication failed. Please check your email and password.",
-      "verification_failed": "Verification failed. Please check the code and try again.",
+      "verification_failed": "Verification failed. Please check your password and the code and try again.",
       "connection_failed": "Connection failed. Please try again later.",
       "no_devices": "No devices found in your Dyson account.",
       "manual_setup_failed": "Manual setup failed. Please check your device information.",
