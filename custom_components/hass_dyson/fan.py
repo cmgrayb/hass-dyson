@@ -248,6 +248,10 @@ class DysonFan(DysonEntity, FanEntity):
         self._attr_preset_mode = None
         self._attr_oscillating = False
 
+        # Initialize command pending attributes to prevent linting errors
+        self._command_pending = False
+        self._command_end_time: float | None = None
+
         # Note: Oscillation control removed - will be handled by custom advanced oscillation entities
         # Standard Home Assistant oscillation (on/off) doesn't support Dyson's advanced oscillation features
 
@@ -392,6 +396,24 @@ class DysonFan(DysonEntity, FanEntity):
             "Fan %s stopped command pending period", self.coordinator.serial_number
         )
 
+    def turn_on(
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Turn on the fan (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            percentage: Fan speed percentage (0-100)
+            preset_mode: Preset mode to set ("Auto", "Manual", "Heat")
+            **kwargs: Additional arguments
+        """
+        self.hass.create_task(self.async_turn_on(percentage, preset_mode, **kwargs))
+
     async def async_turn_on(
         self,
         percentage: int | None = None,
@@ -424,6 +446,17 @@ class DysonFan(DysonEntity, FanEntity):
         # Let the coordinator update naturally from MQTT messages
         # No forced refresh or immediate state writing to prevent race conditions
 
+    def turn_off(self, **kwargs: Any) -> None:
+        """Turn off the fan (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            **kwargs: Additional arguments
+        """
+        self.hass.create_task(self.async_turn_off(**kwargs))
+
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
         if not self.coordinator.device:
@@ -437,6 +470,17 @@ class DysonFan(DysonEntity, FanEntity):
         self.async_write_ha_state()
 
         # Let the coordinator update naturally from MQTT messages for final state
+
+    def set_percentage(self, percentage: int) -> None:
+        """Set the fan speed percentage (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            percentage: Fan speed percentage (0-100)
+        """
+        self.hass.create_task(self.async_set_percentage(percentage))
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the fan speed percentage."""
@@ -452,6 +496,17 @@ class DysonFan(DysonEntity, FanEntity):
             await self.coordinator.device.set_fan_speed(speed)
 
             # Let the coordinator update naturally from MQTT messages for final state
+
+    def set_direction(self, direction: str) -> None:
+        """Set the fan direction (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            direction: Direction to set ("forward" or "reverse")
+        """
+        self.hass.create_task(self.async_set_direction(direction))
 
     async def async_set_direction(self, direction: str) -> None:
         """Set the fan direction."""
@@ -494,6 +549,17 @@ class DysonFan(DysonEntity, FanEntity):
                 self.coordinator.serial_number,
                 err,
             )
+
+    def set_preset_mode(self, preset_mode: str) -> None:
+        """Set the fan preset mode (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            preset_mode: Preset mode to set ("Auto", "Manual", "Heat")
+        """
+        self.hass.create_task(self.async_set_preset_mode(preset_mode))
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set the fan preset mode."""
@@ -653,6 +719,17 @@ class DysonFan(DysonEntity, FanEntity):
         product_state = self.coordinator.data.get("product-state", {})
         # Check if device reports fan direction state (fdir key exists)
         return "fdir" in product_state
+
+    def oscillate(self, oscillating: bool) -> None:
+        """Set oscillation on/off (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            oscillating: True to enable oscillation, False to disable
+        """
+        self.hass.create_task(self.async_oscillate(oscillating))
 
     async def async_oscillate(self, oscillating: bool) -> None:
         """Set oscillation on/off via Home Assistant's native fan.oscillate service."""
