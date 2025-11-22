@@ -1,4 +1,63 @@
-"""Service handlers for Dyson integration."""
+"""Service handlers for Dyson integration.
+
+This module implements comprehensive service management for the Dyson Home Assistant
+integration, providing device control services, cloud account management, and
+dynamic service registration based on device capabilities.
+
+Service Categories:
+
+Device Control Services:
+    - set_sleep_timer: Configure automatic device shutdown (15-540 minutes)
+    - cancel_sleep_timer: Cancel active sleep timer
+    - set_oscillation_angles: Custom oscillation angle control (0-350 degrees)
+    - reset_filter: Reset HEPA and/or carbon filter life indicators
+    - schedule_operation: Schedule future device operations (turn on/off, speed, etc.)
+
+Cloud Account Services:
+    - get_cloud_devices: Retrieve device information from Dyson cloud accounts
+    - refresh_account_data: Update cloud account and device information
+
+Key Features:
+    - Capability-based service registration (only relevant services for each device)
+    - Category-based service management with reference counting
+    - Parameter validation using voluptuous schemas
+    - Comprehensive error handling with detailed logging
+    - Support for both device-specific and account-level operations
+    - Thread-safe service registration and unregistration
+
+Service Registration Architecture:
+    Services are dynamically registered based on device capabilities and categories:
+    - Device capabilities (Scheduling, AdvanceOscillationDay1, ExtendedAQ)
+    - Device categories (ec, robot, vacuum, flrc) for backward compatibility
+    - Reference counting prevents premature service removal
+    - Services persist until all devices of a category are removed
+
+Parameter Validation:
+    All services use voluptuous schemas for parameter validation:
+    - Type checking and coercion
+    - Range validation for numeric parameters
+    - Required/optional parameter handling
+    - Input sanitization and security
+
+Error Handling:
+    Comprehensive error handling with specific exception types:
+    - ServiceValidationError: Invalid parameters or device not found
+    - HomeAssistantError: Device communication or operation failures
+    - Detailed logging for troubleshooting and debugging
+
+Example Usage:
+    Services are automatically registered when devices are added:
+
+    >>> # Device with Scheduling capability
+    >>> # Automatically registers: set_sleep_timer, cancel_sleep_timer, schedule_operation
+    >>>
+    >>> # Call service via Home Assistant
+    >>> await hass.services.async_call(
+    >>>     "hass_dyson",
+    >>>     "set_sleep_timer",
+    >>>     {"device_id": "device_123", "minutes": 120}
+    >>> )
+"""
 
 from __future__ import annotations
 
@@ -32,21 +91,22 @@ from .coordinator import DysonDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Device capability to services mapping
+# Device capability to services mapping for dynamic service registration
+# Services are registered based on device capabilities detected during setup
 DEVICE_CAPABILITY_SERVICES = {
     "Scheduling": [  # Sleep timer and scheduling capabilities
-        SERVICE_SET_SLEEP_TIMER,
-        SERVICE_CANCEL_SLEEP_TIMER,
-        SERVICE_SCHEDULE_OPERATION,
+        SERVICE_SET_SLEEP_TIMER,      # Configure automatic shutdown timer
+        SERVICE_CANCEL_SLEEP_TIMER,   # Cancel active sleep timer
+        SERVICE_SCHEDULE_OPERATION,   # Schedule future device operations
     ],
     "AdvanceOscillationDay1": [  # Advanced oscillation control
-        SERVICE_SET_OSCILLATION_ANGLES,
+        SERVICE_SET_OSCILLATION_ANGLES,  # Custom oscillation angle control (0-350°)
     ],
-    "ExtendedAQ": [  # Extended air quality with filters
-        SERVICE_RESET_FILTER,
+    "ExtendedAQ": [  # Extended air quality monitoring with advanced filters
+        SERVICE_RESET_FILTER,  # Reset HEPA/carbon filter life indicators
     ],
-    "EnvironmentalData": [  # Environmental monitoring with filters
-        SERVICE_RESET_FILTER,
+    "EnvironmentalData": [  # Basic environmental monitoring with filters
+        SERVICE_RESET_FILTER,  # Reset filter life for environmental monitoring devices
     ],
 }
 
@@ -75,13 +135,14 @@ DEVICE_CATEGORY_SERVICES = {
 # Global reference counter for device categories
 _device_category_counts: dict[str, int] = {}
 
-# Service schema definitions
+# Service schema definitions with comprehensive parameter validation
+# Sleep timer schema: device identification and duration validation
 SERVICE_SET_SLEEP_TIMER_SCHEMA = vol.Schema(
     {
-        vol.Required("device_id"): str,
+        vol.Required("device_id"): str,  # Home Assistant device registry ID
         vol.Required("minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=SLEEP_TIMER_MIN, max=SLEEP_TIMER_MAX)
-        ),
+        ),  # Timer duration: 15-540 minutes (15min to 9 hours)
     }
 )
 
@@ -98,15 +159,16 @@ SERVICE_SCHEDULE_OPERATION_SCHEMA = vol.Schema(
     }
 )
 
+# Custom oscillation angles schema: device ID and angle range validation
 SERVICE_SET_OSCILLATION_ANGLES_SCHEMA = vol.Schema(
     {
-        vol.Required("device_id"): str,
+        vol.Required("device_id"): str,  # Home Assistant device registry ID
         vol.Required("lower_angle"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=350)
+            vol.Coerce(int), vol.Range(min=0, max=350)  # Lower bound: 0-350 degrees
         ),
         vol.Required("upper_angle"): vol.All(
-            vol.Coerce(int), vol.Range(min=0, max=350)
-        ),
+            vol.Coerce(int), vol.Range(min=0, max=350)  # Upper bound: 0-350 degrees
+        ),  # Note: lower_angle must be < upper_angle (validated in handler)
     }
 )
 
@@ -128,7 +190,43 @@ SERVICE_GET_CLOUD_DEVICES_SCHEMA = vol.Schema(
 
 
 def _convert_to_string(item) -> str:
-    """Convert an item to string, handling enum values properly."""
+    """Convert any item to string with proper enum value handling.
+
+    Utility function for safely converting various data types to strings,
+    with special handling for enum values that have a .value attribute.
+    Used throughout the service module for data serialization and logging.
+
+    Args:
+        item: Any object to convert to string representation
+
+    Returns:
+        String representation of the item:
+        - For enums: Returns str(item.value) to get the actual enum value
+        - For other objects: Returns str(item) using standard string conversion
+
+    Enum Handling:
+        Many Dyson API responses contain enum values that need special handling:
+        - Device states (ON/OFF enums)
+        - Connection types (LOCAL/CLOUD enums)
+        - Error codes (numeric enums)
+
+    Example:
+        Converting various data types:
+
+        >>> # Enum with .value attribute
+        >>> enum_obj = SomeEnum.ACTIVE  # enum_obj.value = "ON"
+        >>> result = _convert_to_string(enum_obj)  # Returns "ON"
+        >>>
+        >>> # Regular string
+        >>> result = _convert_to_string("hello")  # Returns "hello"
+        >>>
+        >>> # Number
+        >>> result = _convert_to_string(42)  # Returns "42"
+
+    Note:
+        This function is used internally for data processing and should handle
+        any object type gracefully without raising exceptions.
+    """
     if hasattr(item, "value"):
         return str(item.value)
     return str(item)
@@ -169,7 +267,56 @@ def _decrypt_device_mqtt_credentials(cloud_client, device) -> str:
 
 
 async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle set sleep timer service call."""
+    """Handle set sleep timer service call with comprehensive validation.
+
+    Sets a sleep timer on a Dyson device to automatically turn off after the
+    specified duration. The timer operates independently of Home Assistant and
+    will function even if Home Assistant is offline.
+
+    Args:
+        hass: Home Assistant instance
+        call: Service call containing device_id and minutes parameters
+
+    Service Parameters:
+        device_id (str): Home Assistant device ID of the target Dyson device
+        minutes (int): Sleep timer duration (15-540 minutes)
+
+    Process:
+        1. Validate device_id exists and device is available
+        2. Extract timer duration from service call parameters
+        3. Send sleep timer command to device via MQTT
+        4. Request coordinator refresh to update timer state
+        5. Log successful operation for confirmation
+
+    Timer Behavior:
+        - Timer starts immediately upon successful command
+        - Device will power off automatically when timer expires
+        - Timer can be cancelled using cancel_sleep_timer service
+        - Timer persists through Home Assistant restarts
+        - Display shows remaining time (device-dependent)
+
+    Validation:
+        - Device must exist in Home Assistant device registry
+        - Device must be connected and responsive
+        - Minutes must be within valid range (15-540)
+        - Coordinator must have active device connection
+
+    Example:
+        Setting a 2-hour sleep timer:
+
+        >>> await hass.services.async_call(
+        >>>     "hass_dyson",
+        >>>     "set_sleep_timer",
+        >>>     {
+        >>>         "device_id": "abc123def456",
+        >>>         "minutes": 120  # 2 hours
+        >>>     }
+        >>> )
+
+    Raises:
+        ServiceValidationError: If device not found or unavailable
+        HomeAssistantError: If device communication fails
+    """
     device_id = call.data["device_id"]
     minutes = call.data["minutes"]
 
@@ -384,7 +531,71 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
 async def _handle_get_cloud_devices(
     hass: HomeAssistant, call: ServiceCall
 ) -> dict[str, Any]:
-    """Handle get cloud devices service call."""
+    """Handle get cloud devices service call with comprehensive device information.
+
+    Retrieves detailed information about Dyson devices associated with cloud
+    accounts configured in Home Assistant. Provides both sanitized and detailed
+    device information for integration management and troubleshooting.
+
+    Args:
+        hass: Home Assistant instance
+        call: Service call with optional account_email and sanitize parameters
+
+    Service Parameters:
+        account_email (str, optional): Specific Dyson account email to query.
+                                     If not provided, uses first available account.
+        sanitize (bool, default=False): If True, removes sensitive information
+                                       from device data (credentials, tokens, etc.)
+
+    Returns:
+        Dict containing comprehensive device information:
+        - account_email: Email of the queried Dyson account
+        - total_devices: Number of devices found in the account
+        - devices: List of device information dictionaries
+        - query_timestamp: ISO timestamp of the query
+        - integration_status: Current integration health status
+
+    Device Information Structure:
+        Each device entry contains:
+        - basic_info: Serial number, name, model, product type
+        - connectivity: Network status, MQTT topics, connection health
+        - capabilities: List of device features and supported operations
+        - environmental_data: Current sensor readings (if available)
+        - maintenance: Filter life, cleaning status, error conditions
+        - credentials: MQTT credentials (if sanitize=False)
+
+    Account Discovery:
+        Automatically discovers all configured Dyson cloud accounts by:
+        1. Scanning Home Assistant data for cloud coordinators
+        2. Extracting account information from configuration entries
+        3. Filtering for coordinators with active cloud connections
+        4. Providing account selection if multiple accounts exist
+
+    Data Sanitization:
+        When sanitize=True, removes sensitive information:
+        - MQTT passwords and tokens
+        - API authentication credentials
+        - Internal device identifiers
+        - Network configuration details
+
+    Example:
+        Retrieve all devices from first account:
+
+        >>> result = await hass.services.async_call(
+        >>>     "hass_dyson",
+        >>>     "get_cloud_devices",
+        >>>     {"sanitize": True},
+        >>>     return_response=True
+        >>> )
+        >>>
+        >>> print(f"Found {result['total_devices']} devices")
+        >>> for device in result['devices']:
+        >>>     print(f"- {device['basic_info']['name']} ({device['basic_info']['model']})")
+
+    Raises:
+        ServiceValidationError: If specified account not found or no cloud accounts configured
+        HomeAssistantError: If cloud API communication fails
+    """
     account_email = call.data.get("account_email")
     sanitize = call.data.get("sanitize", False)
 
@@ -1094,7 +1305,58 @@ def _get_device_categories_for_coordinator(
 async def async_register_device_services_for_coordinator(
     hass: HomeAssistant, coordinator: DysonDataUpdateCoordinator
 ) -> None:
-    """Register device services for a specific coordinator based on capabilities and categories."""
+    """Register device services based on coordinator capabilities and categories.
+
+    Dynamically registers Home Assistant services based on the specific capabilities
+    and categories of a Dyson device. Services are only registered once per capability
+    type to avoid duplicate registrations.
+
+    Args:
+        hass: Home Assistant instance for service registration
+        coordinator: DysonDataUpdateCoordinator containing device information
+
+    Service Registration Logic:
+        1. Extract device capabilities from coordinator.device_capabilities
+        2. Fallback to coordinator.device.capabilities if primary is empty
+        3. Map capabilities to services using DEVICE_CAPABILITY_SERVICES
+        4. Add category-based services for backward compatibility
+        5. Register all unique services via _register_services
+
+    Capability to Service Mapping:
+        - "Scheduling": sleep_timer, cancel_sleep_timer, schedule_operation
+        - "AdvanceOscillationDay1": set_oscillation_angles
+        - "ExtendedAQ": reset_filter (for advanced air quality devices)
+        - "EnvironmentalData": reset_filter (for basic environmental monitoring)
+
+    Category to Service Mapping (legacy compatibility):
+        - "ec" (Environment Cleaner): All timer and filter services
+        - "robot": Scheduling and filter reset for cleaning devices
+        - "vacuum": Basic cleaning device services
+        - "flrc" (Floor Cleaning): Floor cleaning specific services
+
+    Note:
+        Services are registered globally but only if not already present.
+        Multiple devices can share the same services without conflicts.
+        Reference counting ensures services persist until all devices
+        of a given type are removed.
+
+    Example:
+        Automatic service registration during device setup:
+
+        >>> coordinator = DysonDataUpdateCoordinator(...)
+        >>> coordinator.device_capabilities = ["Scheduling", "ExtendedAQ"]
+        >>>
+        >>> await async_register_device_services_for_coordinator(hass, coordinator)
+        >>>
+        >>> # Services now available:
+        >>> # - hass_dyson.set_sleep_timer
+        >>> # - hass_dyson.cancel_sleep_timer
+        >>> # - hass_dyson.schedule_operation
+        >>> # - hass_dyson.reset_filter
+
+    Raises:
+        Exception: Service registration failures are logged but not propagated
+    """
     # Determine which services need to be registered based on capabilities
     services_to_register = set()
 
@@ -1257,7 +1519,64 @@ async def async_unregister_device_services_for_categories(
 
 
 async def async_setup_cloud_services(hass: HomeAssistant) -> None:
-    """Set up cloud/account-level services for Dyson integration."""
+    """Set up cloud and account-level services for Dyson integration.
+
+    Registers services that operate at the account level rather than on
+    individual devices. These services manage cloud account information
+    and provide integration-wide functionality.
+
+    Args:
+        hass: Home Assistant instance for service registration
+
+    Registered Services:
+        get_cloud_devices: Retrieve comprehensive device information from
+                          Dyson cloud accounts with optional sanitization
+        refresh_account_data: Update cloud account information and device
+                            discovery for all configured accounts
+
+    Service Characteristics:
+        - get_cloud_devices: Supports response data (return_response=True)
+        - refresh_account_data: Fire-and-forget operation
+        - Both services validate parameters using voluptuous schemas
+        - Comprehensive error handling with detailed logging
+
+    Registration Logic:
+        - Checks if services already exist to prevent duplicate registration
+        - Uses Home Assistant's service registry for proper lifecycle management
+        - Applies appropriate service schemas for parameter validation
+        - Logs successful registration for confirmation
+
+    Usage Context:
+        Cloud services are registered when:
+        1. First cloud account is configured in the integration
+        2. Integration startup with existing cloud accounts
+        3. Manual service registration during development/testing
+
+    Service Persistence:
+        Cloud services remain registered until:
+        - Integration is removed completely
+        - Home Assistant is restarted
+        - Manual service removal is performed
+
+    Example:
+        Services are registered automatically during integration setup:
+
+        >>> await async_setup_cloud_services(hass)
+        >>>
+        >>> # Services now available:
+        >>> # - hass_dyson.get_cloud_devices (with response support)
+        >>> # - hass_dyson.refresh_account_data
+        >>>
+        >>> # Example usage:
+        >>> devices = await hass.services.async_call(
+        >>>     "hass_dyson", "get_cloud_devices",
+        >>>     {"sanitize": True}, return_response=True
+        >>> )
+
+    Note:
+        Cloud services are independent of device services and can be used
+        even when no devices are currently configured or connected.
+    """
 
     # Create async service handlers with hass context
     async def async_handle_get_cloud_devices(call: ServiceCall) -> dict[str, Any]:
@@ -1335,7 +1654,67 @@ async def async_remove_cloud_services(hass: HomeAssistant) -> None:
 
 
 async def async_remove_services(hass: HomeAssistant) -> None:
-    """Remove services for Dyson integration."""
+    """Remove all services for Dyson integration during cleanup.
+
+    Performs comprehensive cleanup of all Dyson integration services during
+    integration removal or Home Assistant shutdown. Ensures proper service
+    lifecycle management and prevents service registry pollution.
+
+    Args:
+        hass: Home Assistant instance for service removal
+
+    Removal Process:
+        1. Check each service for existence in the service registry
+        2. Remove existing services using async_remove
+        3. Log removal operations for confirmation
+        4. Handle missing services gracefully (no error)
+
+    Services Removed:
+        Device Control Services:
+        - set_sleep_timer: Sleep timer configuration
+        - cancel_sleep_timer: Sleep timer cancellation
+        - set_oscillation_angles: Custom oscillation control
+        - reset_filter: Filter life reset
+        - schedule_operation: Future operation scheduling
+
+        Cloud Account Services:
+        - get_cloud_devices: Device information retrieval
+        - refresh_account_data: Account data updates
+
+    Safety Features:
+        - Checks service existence before attempting removal
+        - Gracefully handles already-removed services
+        - No exceptions raised for missing services
+        - Comprehensive logging for debugging
+
+    Cleanup Context:
+        This function is called during:
+        - Integration removal/uninstall
+        - Home Assistant shutdown
+        - Integration reload operations
+        - Manual service cleanup (development/testing)
+
+    Global State Cleanup:
+        Also resets global service registration state:
+        - Clears device category reference counts
+        - Resets service registration flags
+        - Ensures clean state for future registrations
+
+    Example:
+        Automatic cleanup during integration removal:
+
+        >>> # Integration being removed
+        >>> await async_remove_services(hass)
+        >>>
+        >>> # All hass_dyson.* services now removed
+        >>> # Service registry cleaned up
+        >>> # Global state reset
+
+    Note:
+        This is a comprehensive cleanup function that should only be called
+        when completely removing the Dyson integration. For removing services
+        for specific devices or categories, use the more targeted removal functions.
+    """
     services_to_remove = [
         SERVICE_SET_SLEEP_TIMER,
         SERVICE_CANCEL_SLEEP_TIMER,
@@ -1356,7 +1735,62 @@ async def async_remove_services(hass: HomeAssistant) -> None:
 async def _get_coordinator_from_device_id(
     hass: HomeAssistant, device_id: str
 ) -> DysonDataUpdateCoordinator | None:
-    """Get coordinator from device ID."""
+    """Resolve Home Assistant device ID to Dyson coordinator.
+
+    Translates a Home Assistant device registry ID to the corresponding
+    DysonDataUpdateCoordinator instance for service operations. Provides
+    the bridge between Home Assistant's device registry and the integration's
+    coordinator architecture.
+
+    Args:
+        hass: Home Assistant instance
+        device_id: Home Assistant device registry ID
+
+    Returns:
+        DysonDataUpdateCoordinator instance if found, None if not found
+
+    Resolution Process:
+        1. Query Home Assistant device registry for device entry
+        2. Extract device identifiers from registry entry
+        3. Find Dyson serial number from device identifiers
+        4. Search integration data for matching coordinator
+        5. Validate coordinator has active device connection
+
+    Device Identifier Format:
+        Dyson devices use identifiers in format:
+        - ("hass_dyson", "SERIAL-NUMBER") for integration devices
+        - Serial numbers follow Dyson format: "VS6-EU-HJA1234A"
+
+    Coordinator Validation:
+        Found coordinators are validated for:
+        - Active device connection (coordinator.device exists)
+        - MQTT connectivity (coordinator.device.is_connected)
+        - Recent successful updates (coordinator.last_update_success)
+
+    Error Handling:
+        Returns None (rather than raising exceptions) for:
+        - Invalid or non-existent device IDs
+        - Devices not belonging to Dyson integration
+        - Coordinators without active device connections
+        - Network connectivity issues
+
+    Example:
+        Service handler using coordinator resolution:
+
+        >>> async def service_handler(call: ServiceCall):
+        >>>     device_id = call.data["device_id"]
+        >>>     coordinator = await _get_coordinator_from_device_id(hass, device_id)
+        >>>
+        >>>     if not coordinator:
+        >>>         raise ServiceValidationError(f"Device {device_id} not found")
+        >>>
+        >>>     # Use coordinator.device for device operations
+        >>>     await coordinator.device.set_fan_speed(5)
+
+    Note:
+        This function is used internally by all device-specific service handlers
+        to ensure consistent device resolution and validation across the integration.
+    """
     device_registry = dr.async_get(hass)
     device_entry = device_registry.async_get(device_id)
 

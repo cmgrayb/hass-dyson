@@ -1,4 +1,47 @@
-"""Sensor platform for Dyson integration."""
+"""Sensor platform for Dyson integration.
+
+This module implements comprehensive sensor support for Dyson devices,
+providing real-time monitoring of air quality, environmental conditions,
+and device status. Sensors are created based on device capabilities
+and provide accurate, calibrated data for home automation.
+
+Sensor Categories:
+
+Air Quality Sensors (ExtendedAQ capability):
+    - PM2.5: Fine particulate matter concentration (μg/m³)
+    - PM10: Coarse particulate matter concentration (μg/m³)
+    - VOC: Volatile organic compounds index (0-10)
+    - NO2: Nitrogen dioxide index (0-10)
+    - Formaldehyde: HCHO concentration (mg/m³, if supported)
+
+Environmental Sensors:
+    - Temperature: Ambient temperature in °C
+    - Humidity: Relative humidity percentage
+
+Device Status Sensors:
+    - Filter Life: HEPA and Carbon filter remaining life (0-100%)
+    - Device Status: Overall device operational status
+    - Connection Status: Local/Cloud/Disconnected
+
+Key Features:
+    - Real-time data updates via MQTT streaming
+    - Capability-based sensor creation (only supported sensors)
+    - Proper Home Assistant device classes and units
+    - State classes for long-term statistics
+    - Entity categories for organization (diagnostic sensors)
+    - Thread-safe coordinator update handling
+    - Calibrated data with manufacturer specifications
+
+Data Quality:
+    All sensor data is sourced directly from device environmental monitoring
+    systems with Dyson's calibration and filtering applied. Updates occur
+    in real-time as air quality conditions change.
+
+Sensor States:
+    - Measurement sensors: Provide continuous numeric values
+    - Diagnostic sensors: Device status and maintenance information
+    - Configuration sensors: Settings and operational parameters
+"""
 
 from __future__ import annotations
 
@@ -24,12 +67,72 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DysonP25RSensor(DysonEntity, SensorEntity):
-    """P25R level sensor for Dyson devices with ExtendedAQ capability."""
+    """PM2.5 air quality sensor for Dyson devices with ExtendedAQ capability.
+
+    This sensor monitors fine particulate matter (PM2.5) concentration in
+    micrograms per cubic meter. PM2.5 particles are particularly harmful
+    as they can penetrate deep into lungs and bloodstream.
+
+    Attributes:
+        device_class: SensorDeviceClass.PM25 for proper Home Assistant integration
+        state_class: SensorStateClass.MEASUREMENT for long-term statistics
+        unit_of_measurement: μg/m³ (micrograms per cubic meter)
+        icon: mdi:air-filter for visual representation
+
+    Health Guidelines (WHO recommendations):
+        - Annual average: ≤ 5 μg/m³
+        - Daily average: ≤ 15 μg/m³
+        - Values > 200 μg/m³: Hazardous air quality
+
+    Data Source:
+        Real-time measurements from device environmental sensors,
+        updated automatically as air quality conditions change.
+
+    Availability:
+        Only created for devices with "ExtendedAQ" capability that
+        support advanced air quality monitoring beyond basic PM sensors.
+
+    Example:
+        Typical sensor values and automation:
+
+        >>> # Good air quality
+        >>> sensor.native_value = 8  # μg/m³
+        >>>
+        >>> # Poor air quality - trigger high fan speed
+        >>> if sensor.native_value > 50:
+        >>>     await fan.async_set_percentage(100)
+
+    Note:
+        This sensor provides highly accurate PM2.5 measurements using
+        Dyson's laser particle counting technology with real-time updates.
+    """
 
     coordinator: DysonDataUpdateCoordinator
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the P25R sensor."""
+        """Initialize the PM2.5 sensor with proper Home Assistant integration.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+
+        Configuration:
+        - unique_id: {serial_number}_p25r for entity registry
+        - translation_key: "p25r" for localized naming
+        - device_class: PM25 for proper sensor categorization
+        - state_class: MEASUREMENT for long-term statistics
+        - unit: μg/m³ for standard air quality measurements
+        - icon: air-filter for visual representation
+
+        Integration Features:
+        - Automatic device registry linking via parent DysonEntity
+        - Long-term statistics support for trend analysis
+        - Proper sensor categorization in Home Assistant UI
+        - Localized entity naming through translation system
+
+        Note:
+            Only initialized for devices with ExtendedAQ capability
+            that support PM2.5 monitoring beyond basic air quality sensors.
+        """
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_p25r"

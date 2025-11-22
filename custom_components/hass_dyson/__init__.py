@@ -1,4 +1,47 @@
-"""The Dyson integration."""
+"""The Dyson integration for Home Assistant.
+
+This integration provides comprehensive support for Dyson air purifiers, fans, heaters,
+humidifiers, and robotic vacuums through real-time MQTT communication.
+
+Key Features:
+    - Cloud Discovery: Automatic device detection via Dyson API
+    - Manual Setup: Sticker-based or network configuration
+    - Capability Detection: Automatic platform setup based on device features
+    - Real-time Control: Direct MQTT communication for instant response
+    - Environmental Monitoring: PM2.5, PM10, VOC, NO2, CO2, HCHO sensors
+    - Climate Control: Heating, cooling, and air purification controls
+
+Supported Device Categories:
+    - ec (Environment Cleaner): Air purifiers, fans, heaters
+    - robot (Robot Vacuum): Automated cleaning devices
+    - vacuum (Vacuum Cleaner): Traditional vacuum cleaners
+    - flrc (Floor Cleaner): Mopping and wet cleaning devices
+
+Public API:
+    The integration exposes its functionality through Home Assistant's standard
+    integration patterns:
+
+    - async_setup(hass, config): Initialize integration from YAML
+    - async_setup_entry(hass, entry): Set up individual config entries
+    - async_unload_entry(hass, entry): Clean shutdown of config entries
+    - DysonDataUpdateCoordinator: Device state coordination
+    - DysonCloudAccountCoordinator: Cloud account management
+
+Example:
+    Basic integration setup through config flow:
+
+    >>> # User adds integration via UI
+    >>> # Integration automatically discovers devices
+    >>> # Platforms are set up based on device capabilities
+
+    YAML configuration (optional):
+
+    >>> dyson:
+    >>>   devices:
+    >>>     - serial_number: "VS6-EU-HJA1234A"
+    >>>       discovery_method: "cloud"
+    >>>       capabilities: ["WiFi", "ExtendedAQ"]
+"""
 
 from __future__ import annotations
 
@@ -416,7 +459,82 @@ async def _setup_platforms_and_services(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  # noqa: C901
-    """Set up Dyson from a config entry."""
+    """Set up Dyson device or account from a config entry.
+
+    This function handles the setup of individual Dyson devices or cloud accounts.
+    It creates appropriate coordinators, establishes connections, and sets up
+    all relevant Home Assistant platforms based on device capabilities.
+
+    Args:
+        hass: Home Assistant instance for platform registration.
+        entry: Configuration entry containing device or account settings.
+               Device entry data structure:
+               {
+                   'serial_number': str,          # Device serial number
+                   'device_name': str,            # Human-readable name
+                   'connection_type': str,        # 'local_only'|'cloud_only'|'local_cloud_fallback'
+                   'hostname': str,               # Local IP address (optional)
+                   'credential': str,             # MQTT credential (optional)
+                   'mqtt_prefix': str,            # Device MQTT prefix (optional)
+                   'capabilities': List[str],     # Device capabilities (optional)
+                   'parent_entry_id': str         # Cloud account entry ID (optional)
+               }
+               Account entry data structure:
+               {
+                   'username': str,               # Dyson account email
+                   'password': str,               # Dyson account password
+                   'country': str,                # Account country code
+                   'culture': str,                # Locale culture
+                   'auto_add_devices': bool,      # Auto-add discovered devices
+                   'poll_for_devices': bool,      # Enable device polling
+                   'devices': List[dict]          # Associated device list
+               }
+
+    Returns:
+        bool: True if setup completed successfully.
+
+    Raises:
+        ConfigEntryNotReady: If device connection fails or cloud authentication fails.
+
+    Example:
+        Individual device setup:
+
+        >>> entry = ConfigEntry(
+        >>>     domain="hass_dyson",
+        >>>     data={
+        >>>         "serial_number": "VS6-EU-HJA1234A",
+        >>>         "device_name": "Living Room Purifier",
+        >>>         "connection_type": "local_cloud_fallback",
+        >>>         "hostname": "192.168.1.100",
+        >>>         "capabilities": ["WiFi", "ExtendedAQ", "Heating"]
+        >>>     }
+        >>> )
+        >>> success = await async_setup_entry(hass, entry)
+
+        Cloud account setup:
+
+        >>> entry = ConfigEntry(
+        >>>     domain="hass_dyson",
+        >>>     data={
+        >>>         "username": "user@example.com",
+        >>>         "password": "password123",
+        >>>         "country": "US",
+        >>>         "auto_add_devices": True,
+        >>>         "poll_for_devices": True
+        >>>     }
+        >>> )
+        >>> success = await async_setup_entry(hass, entry)
+
+    Note:
+        The function automatically determines entry type based on the presence
+        of the 'devices' key for account entries vs device-specific keys.
+
+        Platform setup is capability-driven - only relevant platforms are
+        initialized based on what the device actually supports.
+
+        Services are registered once globally and managed based on device
+        categories present in the integration.
+    """
     _LOGGER.debug("Setting up Dyson integration for device: %s", entry.title)
 
     try:
@@ -439,7 +557,54 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a Dyson config entry."""
+    """Unload a Dyson device or account config entry with proper cleanup.
+
+    This function handles the complete shutdown and cleanup of Dyson devices
+    or cloud accounts, including coordinator shutdown, service removal,
+    and child entry cleanup for account-level entries.
+
+    Args:
+        entry: Configuration entry to unload. Can be either:
+               - Device entry: Individual device with coordinator and platforms
+               - Account entry: Cloud account managing multiple child devices
+        hass: Home Assistant instance for cleanup operations.
+
+    Returns:
+        bool: True if unload completed successfully.
+
+    Raises:
+        Exception: May propagate coordinator shutdown errors for debugging.
+
+    Example:
+        Device entry unload:
+
+        >>> # Device coordinator is shut down
+        >>> # All platforms are unloaded
+        >>> # Device-specific services are removed
+        >>> # Entry is removed from hass.data
+        >>> success = await async_unload_entry(hass, device_entry)
+
+        Account entry unload:
+
+        >>> # All child device entries are removed
+        >>> # Cloud coordinator is shut down
+        >>> # Cloud services are removed (if last account)
+        >>> # Account entry cleanup is completed
+        >>> success = await async_unload_entry(hass, account_entry)
+
+    Note:
+        Account entries automatically remove all associated child device
+        entries as part of the cleanup process.
+
+        Cloud services are only removed when the last cloud account is
+        unloaded to avoid affecting other cloud accounts.
+
+        Device coordinator shutdown errors are propagated to aid in
+        debugging connection or cleanup issues.
+
+        If a device entry is not found in hass.data, the function still
+        returns True as the cleanup objective is achieved.
+    """
     _LOGGER.debug("Unloading Dyson integration for device: %s", entry.title)
 
     # Check if this is an account-level entry

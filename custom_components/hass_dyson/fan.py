@@ -1,4 +1,40 @@
-"""Fan platform for Dyson integration."""
+"""Fan platform for Dyson integration.
+
+This module implements the Home Assistant fan platform for Dyson devices,
+providing comprehensive fan control including speed, oscillation, direction,
+and preset modes. It also integrates climate functionality for heating-capable
+devices like the Hot+Cool series.
+
+Key Features:
+    - 10-level speed control (1-10) mapped to percentage
+    - Oscillation control with angle specification support
+    - Direction control (forward/reverse airflow)
+    - Preset modes: Auto, Manual, Heat (device-dependent)
+    - Night mode integration for quiet operation
+    - Climate integration for heating-enabled devices
+    - Real-time state updates via MQTT coordinator
+    - Command pending system to prevent UI flickering
+
+Supported Device Features (capability-dependent):
+    - SET_SPEED: All devices (1-10 speed levels)
+    - PRESET_MODE: All devices (Auto, Manual, Heat if available)
+    - TURN_ON/TURN_OFF: All devices
+    - OSCILLATE: Devices with oscillation capability (oson state)
+    - DIRECTION: Devices with direction control (fdir state)
+
+Device Compatibility:
+    - Pure series: Basic fan control, air quality automation
+    - Hot+Cool series: Full fan + heating climate control
+    - Humidify series: Fan control + humidity management
+    - All models: Speed, oscillation, night mode (if supported)
+
+Climate Integration:
+    Heating-capable devices (Hot+Cool series) provide additional attributes:
+    - current_temperature: Ambient temperature reading
+    - target_temperature: Heating target temperature
+    - hvac_mode: Heat/Fan/Off modes
+    - temperature_unit: Celsius
+"""
 
 from __future__ import annotations
 
@@ -27,7 +63,34 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Dyson fan platform."""
+    """Set up Dyson fan platform entities.
+
+    Creates fan entities for devices that support fan functionality,
+    specifically devices in the "ec" (Environment Cleaner) category.
+
+    Args:
+        hass: Home Assistant instance
+        config_entry: Configuration entry for the Dyson integration
+        async_add_entities: Callback to add entities to Home Assistant
+
+    Note:
+        Only creates fan entities for devices with "ec" in device_category,
+        which includes most Dyson air purifiers and fans. Other device
+        types (like lighting) are handled by their respective platforms.
+
+        The fan entity provides the primary control interface for:
+        - Air circulation and filtration
+        - Speed control and automation
+        - Oscillation and airflow direction
+        - Climate control (for heating-capable models)
+
+    Example:
+        Entity created for Environment Cleaner devices:
+
+        >>> # Device with device_category = ["ec"]
+        >>> # Creates: fan.living_room_dyson
+        >>> # Features: speed, oscillation, preset modes
+    """
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities = []
@@ -40,14 +103,97 @@ async def async_setup_entry(
 
 
 class DysonFan(DysonEntity, FanEntity):
-    """Representation of a Dyson fan."""
+    """Home Assistant fan entity for Dyson air purifiers and fans.
+
+    This entity provides comprehensive fan control for Dyson devices including
+    speed management, oscillation control, preset modes, and integrated climate
+    functionality for heating-capable models.
+
+    Supported Features (device-dependent):
+        - SET_SPEED: 10-level speed control (mapped to 0-100% range)
+        - PRESET_MODE: Auto, Manual, Heat modes
+        - TURN_ON/TURN_OFF: Power control
+        - OSCILLATE: On/off oscillation (if device supports oson)
+        - DIRECTION: Forward/reverse airflow (if device supports fdir)
+
+    Attributes:
+        _attr_speed_count: Always 10 (Dyson's native speed levels)
+        _attr_percentage_step: 10% (10% per speed level)
+        _attr_preset_modes: ["Auto", "Manual"] or ["Auto", "Manual", "Heat"]
+        _has_heating: True for Hot+Cool series devices
+        _direction_supported: True if device reports fdir state
+        _oscillation_supported: True if device reports oson state
+
+    Climate Integration (Hot+Cool models):
+        When heating capability is detected, the fan entity provides:
+        - current_temperature: Real-time temperature reading
+        - target_temperature: Heating target (1-37°C)
+        - HVAC modes: Heat, Fan Only, Off
+        - Automatic heating control based on target temperature
+
+    State Management:
+        Uses command pending system to prevent UI flickering:
+        - Commands trigger immediate state updates
+        - Coordinator updates ignored for 7 seconds after commands
+        - Ensures responsive UI during device communication delays
+
+    Example:
+        Basic fan operations:
+
+        >>> # Set speed to 70% (level 7)
+        >>> await fan.async_set_percentage(70)
+        >>>
+        >>> # Enable oscillation for wider coverage
+        >>> await fan.async_oscillate(True)
+        >>>
+        >>> # Use auto mode for air quality response
+        >>> await fan.async_set_preset_mode("Auto")
+        >>>
+        >>> # For Hot+Cool models - set heating
+        >>> if fan._has_heating:
+        >>>     await fan.async_set_temperature(temperature=22.0)
+
+    Note:
+        The entity automatically detects device capabilities during initialization
+        and enables corresponding features. Unsupported operations are handled
+        gracefully with appropriate logging.
+    """
 
     coordinator: DysonDataUpdateCoordinator
     _attr_current_temperature: float | None
     _attr_target_temperature: float
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the fan."""
+        """Initialize the Dyson fan entity with capability detection.
+
+        Sets up the fan entity with appropriate features based on device
+        capabilities detected from device state and coordinator information.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+
+        Initialization Process:
+        1. Configure base fan features (speed, preset modes, power control)
+        2. Detect oscillation support via device state (oson key presence)
+        3. Detect direction support via device state (fdir key presence)
+        4. Configure heating integration for Hot+Cool series devices
+        5. Set up preset modes based on heating capability
+        6. Configure entity attributes and identifiers
+
+        Feature Detection:
+        - Oscillation: Enabled if device reports 'oson' in product state
+        - Direction: Enabled if device reports 'fdir' in product state
+        - Heating: Enabled if 'Heating' in coordinator.device_capabilities
+
+        Preset Modes:
+        - Standard devices: ["Auto", "Manual"]
+        - Heating devices: ["Auto", "Manual", "Heat"]
+
+        Note:
+            Feature detection is dynamic and based on actual device capabilities
+            rather than device model assumptions, ensuring accuracy across
+            different firmware versions and device configurations.
+        """
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_fan"

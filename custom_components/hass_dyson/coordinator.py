@@ -1,4 +1,21 @@
-"""Data update coordinator for Dyson devices."""
+"""Data update coordinator for Dyson devices and cloud accounts.
+
+This module provides coordinators for managing Dyson device state and cloud account
+operations. The coordinators handle MQTT communication, data synchronization,
+service registration, and device lifecycle management.
+
+Classes:
+    DysonDataUpdateCoordinator: Manages individual device state and communication
+    DysonCloudAccountCoordinator: Manages cloud account and device discovery
+
+Key Features:
+    - Real-time MQTT communication with devices
+    - Automatic device capability detection and service registration
+    - Connection failover (local → cloud → reconnection attempts)
+    - Environmental data streaming and caching
+    - Firmware update coordination
+    - Service lifecycle management based on device categories
+"""
 
 from __future__ import annotations
 
@@ -73,7 +90,51 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
 
 
 class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator to manage data updates for a Dyson device."""
+    """Coordinator for managing individual Dyson device state and communication.
+
+    This coordinator handles all aspects of device communication including MQTT
+    connection management, data synchronization, service registration, and
+    device lifecycle management.
+
+    Attributes:
+        device: DysonDevice wrapper for MQTT communication
+        serial_number: Unique device identifier
+        device_capabilities: List of device capabilities (WiFi, ExtendedAQ, etc.)
+        device_category: List of device categories (FAN, SENSOR, etc.)
+        device_type: Device type identifier from product info
+        firmware_version: Current device firmware version
+        firmware_auto_update_enabled: Whether auto-updates are enabled
+        firmware_latest_version: Latest available firmware version
+        firmware_update_in_progress: Whether update is currently running
+
+    Example:
+        Creating and using a device coordinator:
+
+        >>> coordinator = DysonDataUpdateCoordinator(
+        >>>     hass=hass,
+        >>>     config_entry=config_entry
+        >>> )
+        >>> await coordinator.async_config_entry_first_refresh()
+        >>>
+        >>> # Access device state
+        >>> if coordinator.device:
+        >>>     pm25 = coordinator.device.pm25
+        >>>     fan_speed = coordinator.device.fan_speed
+        >>>
+        >>> # Check capabilities
+        >>> if "ExtendedAQ" in coordinator.device_capabilities:
+        >>>     voc_level = coordinator.device.voc
+
+    Note:
+        The coordinator automatically manages connection failover, attempting
+        local connection first, then cloud fallback if configured.
+
+        Service registration is capability-driven and happens automatically
+        when device capabilities are detected.
+
+        Environmental data is streamed in real-time via MQTT callbacks,
+        providing immediate updates to sensor entities.
+    """
 
     def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
         """Initialize the coordinator."""
@@ -97,47 +158,210 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def device_capabilities(self) -> list[str]:
-        """Return device capabilities."""
+        """Return detected device capabilities.
+
+        Returns:
+            List of capability strings that determine available features:
+            - "WiFi": Device supports wireless connectivity
+            - "ExtendedAQ": Advanced air quality sensors (VOC, FORMALDEHYDE)
+            - "AirQuality": Basic air quality sensors (PM2.5, PM10)
+            - "Night": Night mode functionality
+            - "Oscillation": Fan oscillation control
+            - "Heat": Heating functionality
+            - "Cool": Cooling functionality
+            - "Humidify": Humidification capability
+            - "WakeupFunnel": Advanced wake-up air delivery
+
+        Example:
+            Check for extended air quality features:
+
+            >>> if "ExtendedAQ" in coordinator.device_capabilities:
+            >>>     # VOC and formaldehyde sensors available
+            >>>     voc_level = coordinator.device.voc
+            >>>     formaldehyde = coordinator.device.formaldehyde
+        """
         return self._device_capabilities
 
     @property
     def device_category(self) -> list[str]:
-        """Return device category list."""
+        """Return device category classifications.
+
+        Returns:
+            List of category strings that define device type and services:
+            - "FAN": Air circulation and filtration device
+            - "HEATER": Heating functionality available
+            - "COOLER": Cooling functionality available
+            - "PURIFIER": Air purification capability
+            - "HUMIDIFIER": Humidity control
+            - "SENSOR": Environmental monitoring
+            - "LIGHTING": Built-in lighting controls
+
+        Note:
+            Categories determine which Home Assistant services are registered.
+            Multiple categories indicate multi-functional devices.
+
+        Example:
+            Check device capabilities:
+
+            >>> if "FAN" in coordinator.device_category:
+            >>>     # Fan controls available
+            >>>     await coordinator.device.set_fan_speed(5)
+            >>> if "SENSOR" in coordinator.device_category:
+            >>>     # Environmental data available
+            >>>     temperature = coordinator.device.temperature
+        """
         return self._device_category
 
     @property
     def device_type(self) -> str:
-        """Return device type."""
+        """Return device type identifier.
+
+        Returns:
+            Device type string extracted from product information, such as:
+            - "438": Pure Cool (Tower fan with purification)
+            - "455": Pure Cool Link (Connected tower fan)
+            - "358": Pure Hot+Cool (Heater/cooler/purifier)
+            - "527": Pure Cool Me (Personal air purifier)
+            - "520": Pure Humidity+Cool (Humidifier with cooling)
+
+        Note:
+            Used for device identification and capability inference.
+            Different device types support different feature sets.
+
+        Example:
+            Check device type for features:
+
+            >>> if coordinator.device_type in ["358", "455"]:
+            >>>     # Hot+Cool models support heating
+            >>>     heating_available = True
+        """
         return self._device_type
 
     @property
     def firmware_version(self) -> str:
-        """Return device firmware version."""
+        """Return current device firmware version.
+
+        Returns:
+            Firmware version string in format "XX.YY.ZZ" or "Unknown" if
+            version cannot be determined from device state.
+
+        Example:
+            Check firmware version:
+
+            >>> current_fw = coordinator.firmware_version
+            >>> if current_fw != "Unknown":
+            >>>     _LOGGER.info(f"Device firmware: {current_fw}")
+        """
         return self._firmware_version
 
     @property
     def firmware_auto_update_enabled(self) -> bool:
-        """Return whether firmware auto-update is enabled."""
+        """Return whether automatic firmware updates are enabled.
+
+        Returns:
+            True if device is configured to automatically download and install
+            firmware updates, False otherwise.
+
+        Note:
+            This setting is managed through the Dyson Link app and affects
+            whether the device will automatically update its firmware when
+            new versions are available.
+
+        Example:
+            Check auto-update status:
+
+            >>> if coordinator.firmware_auto_update_enabled:
+            >>>     _LOGGER.info("Device will auto-update firmware")
+            >>> else:
+            >>>     _LOGGER.info("Manual firmware updates required")
+        """
         return self._firmware_auto_update_enabled
 
     @property
     def firmware_latest_version(self) -> str | None:
-        """Return the latest available firmware version."""
+        """Return the latest available firmware version from Dyson servers.
+
+        Returns:
+            Latest firmware version string if available from cloud API,
+            None if version information is not available or cannot be retrieved.
+
+        Note:
+            This information is fetched from Dyson's cloud service during
+            coordinator updates. May be None if cloud connectivity is unavailable
+            or if the device doesn't support cloud-based update checking.
+
+        Example:
+            Compare current vs latest firmware:
+
+            >>> current = coordinator.firmware_version
+            >>> latest = coordinator.firmware_latest_version
+            >>> if latest and latest != current:
+            >>>     _LOGGER.info(f"Firmware update available: {current} -> {latest}")
+        """
         return self._firmware_latest_version
 
     @property
     def firmware_update_in_progress(self) -> bool:
-        """Return whether a firmware update is in progress.
+        """Return whether a firmware update is currently in progress.
 
-        Status is managed by:
-        1. Set to True when cloud API update is triggered
-        2. Updated via MQTT messages on /status/software topic (when implemented)
-        3. Set to False when update completes or fails
+        Returns:
+            True if a firmware update is currently being downloaded or installed,
+            False if no update is active.
+
+        Note:
+            Status is managed through multiple channels:
+            1. Set to True when cloud API firmware update is triggered
+            2. Updated via MQTT messages on /status/software topic (when available)
+            3. Set to False when update completes successfully or fails
+
+            During updates, device functionality may be limited and the device
+            may temporarily disconnect from network or MQTT.
+
+        Example:
+            Check for active firmware update:
+
+            >>> if coordinator.firmware_update_in_progress:
+            >>>     _LOGGER.info("Firmware update in progress - device may be unavailable")
+            >>>     # Avoid sending commands during update
+            >>> else:
+            >>>     # Safe to send device commands
+            >>>     await coordinator.device.set_fan_speed(5)
         """
         return self._firmware_update_in_progress
 
     async def ensure_device_services_registered(self) -> None:
-        """Ensure device services are registered when capabilities become available."""
+        """Ensure device services are registered when capabilities become available.
+
+        This method dynamically registers Home Assistant services based on detected
+        device capabilities and categories. Services are registered only once when
+        capabilities are first detected to avoid duplicate registrations.
+
+        Registered services include:
+            - Fan control (speed, oscillation, night mode)
+            - Temperature control (heating/cooling targets)
+            - Timer operations (sleep timer, auto-off)
+            - Maintenance (filter reset, device reset)
+            - Air quality (auto mode, sensitivity settings)
+
+        Note:
+            Called automatically during device initialization and capability updates.
+            Services are capability-driven - only relevant services are registered
+            based on what the device actually supports.
+
+        Raises:
+            Exception: If service registration fails (logged but not propagated)
+
+        Example:
+            Services are registered automatically, but can be triggered manually:
+
+            >>> # Usually not needed - called automatically
+            >>> await coordinator.ensure_device_services_registered()
+            >>>
+            >>> # Check if services are registered
+            >>> if coordinator._services_registered:
+            >>>     # Services available for use
+            >>>     pass
+        """
         if not self._services_registered and (
             self._device_capabilities
             or (self.device and getattr(self.device, "capabilities", []))
@@ -1272,11 +1496,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest >=0.7.0"""
-        from libdyson_rest.exceptions import (
-            DysonAPIError,
-            DysonAuthError,
-            DysonConnectionError,
-        )
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
 
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug(

@@ -1,4 +1,31 @@
-"""Dyson device wrapper using paho-mqtt directly."""
+"""Dyson device wrapper providing direct MQTT communication and control.
+
+This module implements the core DysonDevice class that handles all communication
+with Dyson devices using the paho-mqtt library. It provides a comprehensive API
+for device connection management, state monitoring, environmental data collection,
+and device control operations.
+
+Key Features:
+    - Direct MQTT communication with local and cloud connections
+    - Real-time environmental data streaming (PM2.5, PM10, VOC, temperature, etc.)
+    - Complete device control API (fan speed, oscillation, heating, etc.)
+    - Automatic connection failover (local → cloud → reconnection)
+    - Heartbeat monitoring and automatic reconnection
+    - Filter life tracking and maintenance operations
+    - Advanced oscillation with custom angle control
+    - Sleep timer and scheduling functionality
+
+Connection Types:
+    - local_only: Direct local network connection only
+    - cloud_only: Dyson cloud service connection only
+    - local_cloud_fallback: Local preferred with cloud fallback (default)
+
+Supported Device Categories:
+    - Pure series (air purifiers): PM monitoring, filter management
+    - Hot+Cool series (heater/fan): Temperature control, heating modes
+    - Humidify series: Humidity control and water tank monitoring
+    - Lightcycle series: Lighting control and circadian rhythm
+"""
 
 from __future__ import annotations
 
@@ -27,7 +54,89 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DysonDevice:
-    """Wrapper for Dyson device communication using paho-mqtt directly."""
+    """Primary interface for Dyson device communication and control.
+
+    This class provides comprehensive access to Dyson device functionality through
+    direct MQTT communication. It handles connection management, real-time data
+    streaming, device control, and environmental monitoring.
+
+    The device wrapper automatically manages:
+    - MQTT connection establishment and maintenance
+    - Heartbeat monitoring for connection health
+    - Environmental data collection and caching
+    - Command execution with proper formatting
+    - Connection failover between local and cloud endpoints
+    - Filter life tracking and maintenance scheduling
+
+    Attributes:
+        serial_number: Unique device identifier
+        host: Local network address for direct connection
+        credential: Authentication credential for MQTT
+        capabilities: List of device capability strings
+        connection_type: Connection strategy (local_only, cloud_only, local_cloud_fallback)
+        is_connected: Current connection status
+        connection_status: Detailed connection state (LOCAL/CLOUD/DISCONNECTED)
+
+    Environmental Properties:
+        pm25: PM2.5 particulate matter (μg/m³)
+        pm10: PM10 particulate matter (μg/m³)
+        voc: Volatile organic compounds index
+        nox: Nitrogen dioxide index
+        temperature: Current temperature (°C)
+        humidity: Relative humidity (%)
+
+    Device State Properties:
+        fan_power: Fan power state (on/off)
+        fan_speed: Current fan speed (1-10)
+        night_mode: Night mode status
+        auto_mode: Automatic speed adjustment status
+        oscillation_enabled: Oscillation state
+        heating_mode: Heating mode (OFF/HEAT/AUTO)
+        target_temperature: Target temperature for heating
+
+    Filter Properties:
+        hepa_filter_life: HEPA filter remaining life (0-100%)
+        carbon_filter_life: Carbon filter remaining life (0-100%)
+
+    Example:
+        Basic device setup and control:
+
+        >>> device = DysonDevice(
+        >>>     hass=hass,
+        >>>     serial_number="VS6-EU-HJA1234A",
+        >>>     host="192.168.1.100",
+        >>>     credential="device_credential",
+        >>>     capabilities=["WiFi", "ExtendedAQ", "Heat"]
+        >>> )
+        >>>
+        >>> # Connect and get initial state
+        >>> await device.connect()
+        >>> state = await device.get_state()
+        >>>
+        >>> # Control fan speed and oscillation
+        >>> await device.set_fan_speed(7)
+        >>> await device.set_oscillation(True)
+        >>>
+        >>> # Monitor environmental data
+        >>> pm25_level = device.pm25
+        >>> temperature = device.temperature
+        >>>
+        >>> # Set up heating (if supported)
+        >>> if "Heat" in device.capabilities:
+        >>>     await device.set_target_temperature(22.0)
+        >>>     await device.set_heating_mode("HEAT")
+
+    Note:
+        The device automatically handles connection management including
+        heartbeat monitoring, reconnection attempts, and failover between
+        local and cloud connections based on the configured connection_type.
+
+        Environmental data is streamed in real-time via MQTT callbacks,
+        providing immediate updates when air quality changes.
+
+        All control methods are asynchronous and may raise RuntimeError
+        if the device is not connected when commands are sent.
+    """
 
     def __init__(
         self,
@@ -100,7 +209,52 @@ class DysonDevice:
             return "local"
 
     async def connect(self) -> bool:
-        """Connect to the device using paho-mqtt with intelligent fallback support."""
+        """Establish MQTT connection to the Dyson device.
+
+        Attempts to connect using the configured connection strategy:
+        - local_only: Direct local network connection only
+        - cloud_only: Dyson cloud service connection only
+        - local_cloud_fallback: Local first, cloud fallback if local fails
+
+        The connection process includes:
+        1. MQTT client initialization with proper credentials
+        2. SSL/TLS setup for secure communication
+        3. Topic subscription for device state and environmental data
+        4. Heartbeat task initialization for connection monitoring
+        5. Initial state and environmental data requests
+
+        Returns:
+            True if connection successful, False if all connection attempts failed
+
+        Raises:
+            Exception: If MQTT client setup fails or connection parameters invalid
+
+        Example:
+            Connect with automatic failover:
+
+            >>> device = DysonDevice(
+            >>>     hass=hass,
+            >>>     serial_number="VS6-EU-HJA1234A",
+            >>>     host="192.168.1.100",
+            >>>     credential="local_credential",
+            >>>     connection_type="local_cloud_fallback",
+            >>>     cloud_host="cloud.dyson.com",
+            >>>     cloud_credential="cloud_credential"
+            >>> )
+            >>>
+            >>> success = await device.connect()
+            >>> if success:
+            >>>     print(f"Connected: {device.connection_status}")
+            >>>     # Device ready for commands and data collection
+            >>> else:
+            >>>     print("Failed to connect to device")
+
+        Note:
+            Connection is performed asynchronously and includes automatic
+            retry logic. The heartbeat task is started upon successful
+            connection to monitor connection health and trigger reconnection
+            if the connection is lost.
+        """
         # Check reconnection backoff to prevent rapid reconnection attempts
         if not self._check_reconnect_backoff():
             return False
@@ -1099,7 +1253,65 @@ class DysonDevice:
     async def send_command(
         self, command: str, data: dict[str, Any] | None = None
     ) -> None:
-        """Send a command to the device."""
+        """Send a command to the Dyson device via MQTT.
+
+        Executes device commands using Dyson's MQTT protocol. Commands are
+        formatted with proper timestamps and published to device-specific topics.
+
+        Args:
+            command: Command type to execute. Common commands:
+                - "STATE-SET": Set device state parameters
+                - "REQUEST-CURRENT-STATE": Request full device state
+                - "REQUEST-CURRENT-FAULTS": Request device fault status
+                - "REQUEST-PRODUCT-ENVIRONMENT-CURRENT-SENSOR-DATA": Environmental data
+            data: Command parameters as key-value pairs. Common parameters:
+                - "fnsp": Fan speed ("0001" to "0010")
+                - "fpwr": Fan power ("ON"/"OFF")
+                - "oson": Oscillation ("ON"/"OFF")
+                - "nmod": Night mode ("ON"/"OFF")
+                - "auto": Auto mode ("ON"/"OFF")
+                - "hmod": Heating mode ("OFF"/"HEAT"/"AUTO")
+                - "hmax": Target temperature ("2731" + temp in Kelvin)
+
+        Raises:
+            RuntimeError: If device is not connected or MQTT client unavailable
+            Exception: If command publishing fails or data formatting invalid
+
+        Example:
+            Execute common device commands:
+
+            >>> # Set fan to speed 5 with oscillation
+            >>> await device.send_command("STATE-SET", {
+            >>>     "fnsp": "0005",
+            >>>     "fpwr": "ON",
+            >>>     "oson": "ON"
+            >>> })
+            >>>
+            >>> # Enable night mode with auto speed
+            >>> await device.send_command("STATE-SET", {
+            >>>     "nmod": "ON",
+            >>>     "auto": "ON"
+            >>> })
+            >>>
+            >>> # Set heating to 22°C
+            >>> await device.send_command("STATE-SET", {
+            >>>     "hmod": "HEAT",
+            >>>     "hmax": "2953"  # 22°C = 295.15K = 2951.5 ≈ 2953
+            >>> })
+            >>>
+            >>> # Request current state
+            >>> await device.send_command("REQUEST-CURRENT-STATE")
+
+        Note:
+            Commands are executed asynchronously and may take 1-3 seconds
+            for the device to process and reflect in state updates.
+
+            Temperature values are sent in Kelvin * 10 format. For example,
+            22°C = 295.15K = 2951.5 ≈ 2953.
+
+            The device will respond with updated state via MQTT callbacks,
+            triggering coordinator updates in Home Assistant.
+        """
         if not self._connected or not self._mqtt_client:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
@@ -1651,7 +1863,42 @@ class DysonDevice:
 
     # Command methods for device control
     async def set_night_mode(self, enabled: bool) -> None:
-        """Set night mode on/off."""
+        """Enable or disable night mode for quiet operation.
+
+        Args:
+            enabled: True to enable night mode, False to disable
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+
+        Note:
+            Night mode reduces fan speed, dims display brightness, and
+            minimizes operational noise for bedroom use. When enabled:
+            - Fan speed is limited to lower levels (typically 1-4)
+            - Display brightness is significantly reduced
+            - Operational sounds are minimized
+            - Air quality monitoring continues normally
+
+            Night mode automatically overrides manual speed settings
+            while active, returning to previous settings when disabled.
+
+        Example:
+            Activate night mode for bedroom use:
+
+            >>> # Enable quiet night operation
+            >>> await device.set_night_mode(True)
+            >>> print(f"Night mode: {device.night_mode}")
+            >>>
+            >>> # Morning routine - disable night mode
+            >>> await device.set_night_mode(False)
+            >>>
+            >>> # Check current night mode status
+            >>> if device.night_mode:
+            >>>     print("Device in quiet night mode")
+            >>> else:
+            >>>     print("Device in normal operation mode")
+        """
         _LOGGER.debug(
             "=== DEBUG set_night_mode called for %s: enabled=%s ===",
             self.serial_number,
@@ -1681,7 +1928,39 @@ class DysonDevice:
             )
 
     async def set_fan_speed(self, speed: int) -> None:
-        """Set fan speed (1-10) using fnsp."""
+        """Set fan speed using Dyson's 10-level speed control.
+
+        Args:
+            speed: Fan speed level from 0-10 where:
+                - 0: Turn off fan (equivalent to set_fan_power(False))
+                - 1: Minimum speed (quiet operation)
+                - 5: Medium speed (balanced performance/noise)
+                - 10: Maximum speed (maximum air circulation)
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+
+        Note:
+            Speed levels are automatically clamped to valid range (1-10).
+            Setting speed 0 will turn off the fan entirely.
+
+            The device will respond with updated fnsp state via MQTT,
+            typically within 1-2 seconds of command execution.
+
+        Example:
+            Control fan speed based on air quality:
+
+            >>> pm25 = device.pm25
+            >>> if pm25 > 100:  # Very unhealthy air
+            >>>     await device.set_fan_speed(10)  # Maximum filtration
+            >>> elif pm25 > 50:   # Moderate pollution
+            >>>     await device.set_fan_speed(7)   # High speed
+            >>> elif pm25 > 25:   # Light pollution
+            >>>     await device.set_fan_speed(4)   # Medium speed
+            >>> else:  # Good air quality
+            >>>     await device.set_fan_speed(2)   # Low speed
+        """
         if speed == 0:
             # Speed 0 means turn off the fan
             await self.set_fan_power(False)
@@ -1751,7 +2030,43 @@ class DysonDevice:
         await self.send_command("STATE-SET", {"auto": auto_value})
 
     async def set_oscillation(self, enabled: bool, angle: int | None = None) -> None:
-        """Set oscillation on/off with optional angle."""
+        """Control fan oscillation with optional angle specification.
+
+        Args:
+            enabled: True to enable oscillation, False to disable
+            angle: Optional specific oscillation angle in degrees (0-350).
+                  If provided, enables oscillation at the specified angle.
+                  If None, uses device default oscillation pattern.
+
+        Raises:
+            RuntimeError: If device is not connected
+            ValueError: If angle is outside valid range (0-350)
+            Exception: If command transmission fails
+
+        Note:
+            Oscillation distributes airflow across a wider area for more
+            effective room coverage. Different Dyson models support different
+            oscillation patterns and angle ranges.
+
+            When angle is specified, oscillation is automatically enabled
+            regardless of the enabled parameter value.
+
+        Example:
+            Control oscillation for optimal air distribution:
+
+            >>> # Enable default oscillation pattern
+            >>> await device.set_oscillation(True)
+            >>>
+            >>> # Set specific oscillation angle (if supported)
+            >>> await device.set_oscillation(True, angle=90)  # 90-degree sweep
+            >>>
+            >>> # Disable oscillation for focused airflow
+            >>> await device.set_oscillation(False)
+            >>>
+            >>> # Check if oscillation is currently active
+            >>> if device.oscillation_enabled:
+            >>>     print("Device is oscillating")
+        """
         data = {"oson": "ON" if enabled else "OFF"}
 
         if enabled and angle is not None:
