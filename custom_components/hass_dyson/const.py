@@ -194,6 +194,7 @@ EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
 
 # Fault code translations
 # Based on Dyson device fault codes - only non-OK values represent actual faults
+# To do: investigate moving these to localization files for translation support
 FAULT_TRANSLATIONS: Final = {
     # Air quality sensor faults
     "aqs": {

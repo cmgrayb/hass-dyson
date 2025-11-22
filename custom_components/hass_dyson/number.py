@@ -429,7 +429,7 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation center angle number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_center_angle"
-        self._attr_name = f"{coordinator.device_name} Oscillation Center Angle"
+        self._attr_name = "Oscillation Center Angle"
         self._attr_icon = "mdi:crosshairs"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
@@ -516,7 +516,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation angle span number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle_span"
-        self._attr_name = f"{coordinator.device_name} Oscillation Angle"
+        self._attr_name = "Oscillation Angle"
         self._attr_icon = "mdi:angle-acute"
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 10

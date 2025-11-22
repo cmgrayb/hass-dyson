@@ -4,7 +4,7 @@ homeassistant:
   latitude: 37.7749
   longitude: -122.4194
   elevation: 0
-  unit_system: metric
+  unit_system: us_customary
   time_zone: UTC
 
 logger:

@@ -514,8 +514,9 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
         platforms.append("fan")
         # Add number and select platforms for advanced controls
         platforms.extend(["number", "select"])
-        # Climate platform for heating/cooling modes if device supports it
-        platforms.append("climate")
+        # Add climate platform only for devices with heating capability
+        if "Heating" in device_capabilities:
+            platforms.append("climate")
 
     elif any(
         cat in ["robot", "vacuum", "flrc"] for cat in device_category

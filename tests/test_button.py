@@ -84,7 +84,7 @@ class TestDysonReconnectButton:
         # Assert
         assert button.coordinator == mock_coordinator
         assert button._attr_unique_id == "TEST-SERIAL-123_reconnect"
-        assert button._attr_name == "Test Device Reconnect"
+        assert button._attr_name == "Reconnect"
         assert button._attr_icon == "mdi:wifi-sync"
         assert button._attr_entity_category == EntityCategory.DIAGNOSTIC
 
@@ -233,7 +233,7 @@ class TestButtonPlatformIntegration:
 
         # Verify button properties work as expected
         assert button.unique_id == "TEST-SERIAL-123_reconnect"
-        assert button.name == "Test Device Reconnect"
+        assert button.name == "Reconnect"
         assert button.icon == "mdi:wifi-sync"
         assert button.entity_category == EntityCategory.DIAGNOSTIC
 
@@ -271,9 +271,9 @@ class TestButtonPlatformIntegration:
 
         # Assert
         assert button1.unique_id == "DEVICE-001_reconnect"
-        assert button1.name == "Living Room Fan Reconnect"
+        assert button1.name == "Reconnect"
         assert button2.unique_id == "DEVICE-002_reconnect"
-        assert button2.name == "Bedroom Purifier Reconnect"
+        assert button2.name == "Reconnect"
 
     @pytest.mark.asyncio
     async def test_button_press_integration_with_coordinator(self, mock_coordinator):

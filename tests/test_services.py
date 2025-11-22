@@ -1479,6 +1479,75 @@ class TestCloudDevicesService:
         assert "mqtt_password" not in device  # Should not be in sanitized output
         assert "firmware_version" not in device
 
+    def test_extract_enhanced_device_info_product_type_variants(self):
+        """Test product type extraction with various device type and variant combinations."""
+        from custom_components.hass_dyson.services import _extract_enhanced_device_info
+
+        # Test Case 1: Numeric device type with variant (should combine)
+        mock_device = MagicMock()
+        mock_device.type = "438"
+        mock_device.variant = "M"
+        mock_device.name = "Test Device"
+        mock_device.category = "ec"
+        mock_device.model = None
+        mock_device.connection_category = None
+        mock_device.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device)
+        assert result["product_type"] == "438M"
+
+        # Test Case 2: Device type already ends with letter (should NOT append variant)
+        mock_device_alpha = MagicMock()
+        mock_device_alpha.type = "438K"  # Already has letter suffix
+        mock_device_alpha.variant = "K"  # Same letter variant
+        mock_device_alpha.name = "Test Device"
+        mock_device_alpha.category = "ec"
+        mock_device_alpha.model = None
+        mock_device_alpha.connection_category = None
+        mock_device_alpha.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_alpha)
+        assert result["product_type"] == "438K"  # Should NOT be "438KK"
+
+        # Test Case 3: Device type ends with different letter than variant
+        mock_device_diff = MagicMock()
+        mock_device_diff.type = "438E"  # Ends with E
+        mock_device_diff.variant = "K"  # Different variant
+        mock_device_diff.name = "Test Device"
+        mock_device_diff.category = "ec"
+        mock_device_diff.model = None
+        mock_device_diff.connection_category = None
+        mock_device_diff.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_diff)
+        assert result["product_type"] == "438E"  # Should NOT append variant
+
+        # Test Case 4: No variant provided
+        mock_device_no_variant = MagicMock()
+        mock_device_no_variant.type = "438"
+        mock_device_no_variant.variant = None
+        mock_device_no_variant.name = "Test Device"
+        mock_device_no_variant.category = "ec"
+        mock_device_no_variant.model = None
+        mock_device_no_variant.connection_category = None
+        mock_device_no_variant.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_no_variant)
+        assert result["product_type"] == "438"
+
+        # Test Case 5: Empty device type string with letter check
+        mock_device_empty = MagicMock()
+        mock_device_empty.type = ""
+        mock_device_empty.variant = "M"
+        mock_device_empty.name = "Test Device"
+        mock_device_empty.category = "ec"
+        mock_device_empty.model = None
+        mock_device_empty.connection_category = None
+        mock_device_empty.connected_configuration = None
+
+        result = _extract_enhanced_device_info(mock_device_empty)
+        assert result["product_type"] == "Unknown"  # Falls back to default
+
 
 class TestDecryptDeviceMqttCredentials:
     """Test _decrypt_device_mqtt_credentials helper function."""

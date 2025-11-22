@@ -67,6 +67,7 @@ class DysonDevice:
         self._preferred_retry_interval = (
             300.0  # Retry preferred connection every 5 minutes
         )
+        self._intentional_disconnect = False  # Track intentional disconnections
 
         # Heartbeat mechanism to keep device active and get regular updates
         self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
@@ -495,6 +496,9 @@ class DysonDevice:
         # Stop heartbeat before disconnecting
         await self._stop_heartbeat()
 
+        # Mark this as an intentional disconnect
+        self._intentional_disconnect = True
+
         if self._mqtt_client and self._connected:
             try:
                 _LOGGER.debug("Disconnecting from device %s", self.serial_number)
@@ -573,6 +577,8 @@ class DysonDevice:
                 if current_time - self._last_heartbeat >= self._heartbeat_interval:
                     _LOGGER.debug("Sending heartbeat to device %s", self.serial_number)
                     await self._request_current_state()
+                    # Check for faults on each heartbeat per discovery.md requirements
+                    await self._request_current_faults()
                     self._last_heartbeat = current_time
 
             except asyncio.CancelledError:
@@ -644,9 +650,19 @@ class DysonDevice:
         self, client: mqtt.Client, userdata: Any, rc, properties=None, *args
     ) -> None:
         """Handle MQTT disconnection callback."""
-        _LOGGER.warning(
-            "MQTT client disconnected for %s, code: %s", self.serial_number, rc
-        )
+        # Use appropriate log level based on whether disconnect was intentional
+        if self._intentional_disconnect:
+            _LOGGER.debug(
+                "MQTT client disconnected for %s (intentional), code: %s",
+                self.serial_number,
+                rc,
+            )
+            # Reset the flag after logging
+            self._intentional_disconnect = False
+        else:
+            _LOGGER.warning(
+                "MQTT client disconnected for %s, code: %s", self.serial_number, rc
+            )
         self._connected = False
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
 
@@ -779,7 +795,7 @@ class DysonDevice:
             pm10_in_message,
         )
 
-        # Log PM2.5 and PM10 updates specifically
+        # Log PM2.5, PM10, and level updates specifically
         if "pm25" in env_data:
             _LOGGER.debug(
                 "PM2.5 updated for %s: %s", self.serial_number, env_data["pm25"]
@@ -792,6 +808,18 @@ class DysonDevice:
             _LOGGER.debug("P25R value for %s: %s", self.serial_number, env_data["p25r"])
         if "p10r" in env_data:
             _LOGGER.debug("P10R value for %s: %s", self.serial_number, env_data["p10r"])
+
+        # Log gaseous sensor updates (ExtendedAQ capability)
+        if "co2" in env_data:
+            _LOGGER.debug("CO2 updated for %s: %s", self.serial_number, env_data["co2"])
+        if "no2" in env_data:
+            _LOGGER.debug("NO2 updated for %s: %s", self.serial_number, env_data["no2"])
+        if "hcho" in env_data:
+            _LOGGER.debug(
+                "HCHO (Formaldehyde) updated for %s: %s",
+                self.serial_number,
+                env_data["hcho"],
+            )
 
         # Store previous environmental data for comparison
         previous_pm25 = self._environmental_data.get("pm25")
@@ -863,9 +891,40 @@ class DysonDevice:
             self._message_callbacks.remove(callback)
 
     def _handle_faults_data(self, data: dict[str, Any]) -> None:
-        """Handle faults data message."""
+        """Handle faults data message and create Home Assistant events for device faults."""
+        fault_data = data.get("data", {})
+
+        # Check if there are any faults reported
+        if fault_data:
+            _LOGGER.warning(
+                "Device faults detected for %s: %s", self.serial_number, fault_data
+            )
+
+            # Create Home Assistant event for device fault detection
+            # Per discovery.md: event should have description "Device Fault Detected"
+            self.hass.bus.async_fire(
+                "dyson_device_fault_detected",
+                {
+                    "device_serial": self.serial_number,
+                    "description": "Device Fault Detected",
+                    "fault_data": fault_data,
+                    "timestamp": self._get_timestamp(),
+                },
+            )
+
+            # Log each individual fault for debugging
+            for fault_key, fault_value in fault_data.items():
+                _LOGGER.warning(
+                    "Fault detected on %s - %s: %s",
+                    self.serial_number,
+                    fault_key,
+                    fault_value,
+                )
+        else:
+            _LOGGER.debug("No faults reported for %s", self.serial_number)
+
         self._faults_data.update(data)
-        _LOGGER.debug("Updated faults for %s", self.serial_number)
+        _LOGGER.debug("Updated faults data for %s", self.serial_number)
 
     def _handle_state_change(self, data: dict[str, Any]) -> None:
         """Handle state change message."""
@@ -1065,12 +1124,18 @@ class DysonDevice:
 
             if data:
                 # If data is provided, construct command with data
-                command_msg = {
+                command_msg: dict[str, Any] = {
                     "msg": command,
                     "time": self._get_timestamp(),
                     "mode-reason": "RAPP",
                 }
-                command_msg.update(data)
+
+                # STATE-SET commands need data wrapped in a "data" field
+                if command == "STATE-SET":
+                    command_msg["data"] = data
+                else:
+                    command_msg.update(data)
+
                 command_json = json.dumps(command_msg)
             else:
                 # Simple command without additional data
@@ -1598,47 +1663,25 @@ class DysonDevice:
             self._connected,
         )
 
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         nmod_value = "ON" if enabled else "OFF"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"nmod": nmod_value},
-                "mode-reason": "RAPP",
-            }
-        )
+        _LOGGER.debug("=== Sending night mode command: nmod=%s ===", nmod_value)
 
-        _LOGGER.debug(
-            "=== Sending night mode command to topic %s: %s ===", command_topic, command
-        )
-
-        if self._mqtt_client:
-            try:
-                _LOGGER.debug("=== About to publish MQTT command ===")
-                await self.hass.async_add_executor_job(
-                    self._mqtt_client.publish, command_topic, command
-                )
-                _LOGGER.debug(
-                    "=== Successfully sent night mode command to %s ===",
-                    self.serial_number,
-                )
-            except Exception as err:
-                _LOGGER.error(
-                    "=== Failed to publish night mode command to %s: %s ===",
-                    self.serial_number,
-                    err,
-                )
-        else:
-            _LOGGER.warning(
-                "=== No MQTT client available for device %s ===", self.serial_number
+        try:
+            await self.send_command("STATE-SET", {"nmod": nmod_value})
+            _LOGGER.debug(
+                "=== Successfully sent night mode command to %s ===",
+                self.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "=== Failed to publish night mode command to %s: %s ===",
+                self.serial_number,
+                err,
             )
 
     async def set_fan_speed(self, speed: int) -> None:
         """Set fan speed (1-10) using fnsp."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         if speed == 0:
             # Speed 0 means turn off the fan
             await self.set_fan_power(False)
@@ -1648,79 +1691,23 @@ class DysonDevice:
         speed = max(1, min(10, speed))
         speed_str = f"{speed:04d}"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"fnsp": speed_str},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"fnsp": speed_str})
 
     async def set_fan_power(self, enabled: bool) -> None:
         """Set fan power on/off using fpwr."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         fpwr_value = "ON" if enabled else "OFF"
-
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"fpwr": fpwr_value},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"fpwr": fpwr_value})
 
     async def reset_hepa_filter_life(self) -> None:
         """Reset HEPA filter life to 100%."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"hflr": "0100"},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"hflr": "0100"})
 
     async def reset_carbon_filter_life(self) -> None:
         """Reset carbon filter life to 100%."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"cflr": "0100"},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"cflr": "0100"})
 
     async def set_sleep_timer(self, minutes: int) -> None:
         """Set sleep timer in minutes (0 to cancel, 15-540 for active timer)."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-
         # Convert minutes to the format expected by the device
         # Dyson uses a specific encoding for sleep timer values
         if minutes == 0:
@@ -1731,24 +1718,10 @@ class DysonDevice:
             # Convert to 4-digit string format (e.g., 15 minutes = "0015", 240 minutes = "0240")
             timer_value = f"{minutes:04d}"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"sltm": timer_value},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"sltm": timer_value})
 
     async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
         """Set custom oscillation angles."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
 
         # Ensure angles are within valid range (0-350 degrees)
         lower_angle = max(0, min(350, lower_angle))
@@ -1762,50 +1735,23 @@ class DysonDevice:
         lower_str = f"{lower_angle:04d}"
         upper_str = f"{upper_angle:04d}"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
+        await self.send_command(
+            "STATE-SET",
             {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {
-                    "osal": lower_str,  # Oscillation angle lower
-                    "osau": upper_str,  # Oscillation angle upper
-                    "oson": "ON",  # Enable oscillation
-                    "ancp": "CUST",  # Custom angles
-                },
-                "mode-reason": "RAPP",
-            }
+                "osal": lower_str,  # Oscillation angle lower
+                "osau": upper_str,  # Oscillation angle upper
+                "oson": "ON",  # Enable oscillation
+                "ancp": "CUST",  # Custom angles
+            },
         )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
 
     async def set_auto_mode(self, enabled: bool) -> None:
         """Set auto mode on/off."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         auto_value = "ON" if enabled else "OFF"
-
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"auto": auto_value},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"auto": auto_value})
 
     async def set_oscillation(self, enabled: bool, angle: int | None = None) -> None:
         """Set oscillation on/off with optional angle."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-
         data = {"oson": "ON" if enabled else "OFF"}
 
         if enabled and angle is not None:
@@ -1813,51 +1759,35 @@ class DysonDevice:
             angle_str = f"{angle:04d}"
             data["ancp"] = angle_str
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": data,
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", data)
 
     async def set_heating_mode(self, mode: str) -> None:
         """Set heating mode (OFF, HEAT, AUTO)."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"hmod": mode},
-                "mode-reason": "RAPP",
-            }
-        )
+        await self.send_command("STATE-SET", {"hmod": mode})
 
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+    async def set_target_temperature(self, temperature: float) -> None:
+        """Set target temperature in Celsius.
+
+        Args:
+            temperature: Target temperature in Celsius (1-37°C)
+        """
+        # Validate temperature range (convert to Kelvin for validation)
+        temp_kelvin = temperature + 273.15
+        if not 274 <= temp_kelvin <= 310:
+            raise ValueError("Target temperature must be between 1°C and 37°C")
+
+        # Convert Celsius to Kelvin × 10 format for device
+        temp_value = int(temp_kelvin * 10)
+        temp_str = f"{temp_value:04d}"
+
+        await self.send_command(
+            "STATE-SET",
+            {
+                "hmod": "HEAT",  # Enable heating mode when setting temperature
+                "hmax": temp_str,
+            },
+        )
 
     async def set_continuous_monitoring(self, enabled: bool) -> None:
         """Set continuous monitoring on/off."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"rhtm": "ON" if enabled else "OFF"},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"rhtm": "ON" if enabled else "OFF"})

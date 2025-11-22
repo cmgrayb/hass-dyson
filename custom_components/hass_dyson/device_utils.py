@@ -143,6 +143,64 @@ def normalize_capabilities(capabilities: Any) -> list[str]:  # noqa: C901
         return []
 
 
+def extract_capabilities_from_device_info(device_info: Any) -> list[str]:
+    """Extract device capabilities from cloud device info.
+
+    This function mirrors the logic from coordinator._extract_capabilities
+    to ensure capabilities are available during config entry creation.
+
+    Args:
+        device_info: Device info object from libdyson-rest
+
+    Returns:
+        List of device capabilities
+    """
+    capabilities: list[str] = []
+
+    # Get capabilities from device info if available
+    if hasattr(device_info, "capabilities"):
+        capabilities = device_info.capabilities or []
+    elif hasattr(device_info, "connected_configuration"):
+        # Try nested structure: device_info.connected_configuration.firmware.capabilities
+        connected_config = device_info.connected_configuration
+        if connected_config and hasattr(connected_config, "firmware"):
+            firmware = connected_config.firmware
+            if firmware and hasattr(firmware, "capabilities"):
+                capabilities = firmware.capabilities or []
+
+    # Add virtual capabilities based on product type
+    product_type = getattr(
+        device_info, "product_type", getattr(device_info, "type", "")
+    )
+
+    # Note: We do not want to use product type to determine device capabilities
+    # Please do not replicate this functionality.  Instead, extract capabilities
+    # from device state in the coordinator as needed.
+    # To do: replace product_type.startswith("PH") with a function which determines
+    # Humidifier capability from device state.
+    if product_type:
+        # PH model (Purifier/Humidifier) should have virtual Humidifier capability
+        if product_type.startswith("PH"):
+            if "Humidifier" not in capabilities:
+                capabilities.append("Humidifier")
+                _LOGGER.debug(
+                    "Added virtual Humidifier capability for PH model %s",
+                    product_type,
+                )
+
+        # Note: Heating capability detection is handled by the coordinator's
+        # _refine_capabilities_from_device_state() method which checks for 'hmod'
+        # state key presence. This avoids hardcoding product types.
+
+    _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
+    _LOGGER.debug("Capability types: %s", [type(cap).__name__ for cap in capabilities])
+
+    # Remove duplicates and return
+    final_capabilities = list(set(capabilities))
+    _LOGGER.debug("Final capabilities after deduplication: %s", final_capabilities)
+    return final_capabilities
+
+
 def has_capability_safe(capabilities: list[str] | None, capability_name: str) -> bool:
     """Safely check if device has a specific capability with case-insensitive matching.
 
@@ -479,7 +537,7 @@ def create_manual_device_config(
 def create_cloud_device_config(
     serial_number: str,
     username: str,
-    device_info: dict[str, Any],
+    device_info: dict[str, Any] | Any,
     auth_token: str | None = None,
     parent_entry_id: str | None = None,
 ) -> dict[str, Any]:
@@ -488,22 +546,48 @@ def create_cloud_device_config(
     Args:
         serial_number: Device serial number
         username: Cloud account username/email
-        device_info: Device information from cloud API
+        device_info: Device information from cloud API (dict or object)
         auth_token: Authentication token
         parent_entry_id: Parent account entry ID
 
     Returns:
         Dictionary of config entry data for cloud device
     """
+    # Extract capabilities from device_info if it's a libdyson-rest object
+    capabilities = []
+    if hasattr(device_info, "capabilities") or hasattr(
+        device_info, "connected_configuration"
+    ):
+        # This is a libdyson-rest device object with capability data
+        capabilities = extract_capabilities_from_device_info(device_info)
+        _LOGGER.debug(
+            "Extracted capabilities for %s during config creation: %s",
+            serial_number,
+            capabilities,
+        )
+    elif isinstance(device_info, dict):
+        # This is already a dict (like from config flow discovery)
+        capabilities = device_info.get("capabilities", [])
+
+    # Get device info values (handle both dict and object)
+    if isinstance(device_info, dict):
+        device_name = device_info.get("name")
+        product_type = device_info.get("product_type")
+        category = device_info.get("category")
+    else:
+        device_name = getattr(device_info, "name", None)
+        product_type = getattr(device_info, "product_type", None)
+        category = getattr(device_info, "category", None)
+
     return create_device_config_data(
         serial_number=serial_number,
         discovery_method=DISCOVERY_CLOUD,
-        device_name=device_info.get("name"),
+        device_name=device_name,
         username=username,
         auth_token=auth_token,
-        product_type=device_info.get("product_type"),
-        category=device_info.get("category"),
-        device_category=device_info.get("category"),
-        capabilities=[],  # Will be extracted during coordinator setup
+        product_type=product_type,
+        category=category,
+        device_category=category,
+        capabilities=capabilities,  # Now properly extracted from device_info
         parent_entry_id=parent_entry_id,
     )

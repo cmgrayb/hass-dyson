@@ -5,7 +5,7 @@ This module tests the complete entity creation pipeline to ensure the right enti
 are created based on device capabilities and categories.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -47,29 +47,16 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_extended_aq_creates_air_quality_sensors(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that ExtendedAQ capability creates PM2.5/PM10 sensors."""
         config_entry = self.create_config_entry(["ExtendedAQ"], "purifier")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "ExtendedAQ"
-            mock_coordinator._device_category = ["purifier"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = ["ExtendedAQ"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for ExtendedAQ capabilities
+        mock_coordinator.device_capabilities = ["ExtendedAQ"]
+        mock_coordinator.device_category = ["purifier"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "ExtendedAQ"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -99,29 +86,16 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_heating_capability_creates_temperature_sensor(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that Heating capability creates temperature sensor."""
         config_entry = self.create_config_entry(["Heating"], "heater")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "Heating"
-            mock_coordinator._device_category = ["heater"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = ["Heating"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for Heating capabilities
+        mock_coordinator.device_capabilities = ["Heating"]
+        mock_coordinator.device_category = ["heater"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "Heating"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -144,29 +118,16 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_ec_category_creates_wifi_sensors(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that 'ec' category creates WiFi signal sensors."""
         config_entry = self.create_config_entry(["EnvironmentalData"], "ec")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "EnvironmentalData"
-            mock_coordinator._device_category = ["ec"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = ["EnvironmentalData"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for EC category with EnvironmentalData
+        mock_coordinator.device_capabilities = ["EnvironmentalData"]
+        mock_coordinator.device_category = ["ec"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "EnvironmentalData"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -189,29 +150,16 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_robot_category_creates_wifi_sensors(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that 'robot' category creates WiFi signal sensors."""
         config_entry = self.create_config_entry(["Navigation"], "robot")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "Navigation"
-            mock_coordinator._device_category = ["robot"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = ["Navigation"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for robot category with Navigation
+        mock_coordinator.device_capabilities = ["Navigation"]
+        mock_coordinator.device_category = ["robot"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "Navigation"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -234,29 +182,16 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_vacuum_category_no_wifi_sensors(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that 'vacuum' category does NOT create WiFi sensors."""
         config_entry = self.create_config_entry(["Cleaning"], "vacuum")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "Cleaning"
-            mock_coordinator._device_category = ["vacuum"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = ["Cleaning"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for vacuum category with Cleaning capability
+        mock_coordinator.device_capabilities = ["Cleaning"]
+        mock_coordinator.device_category = ["vacuum"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "Cleaning"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -279,39 +214,26 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_multiple_capabilities_create_multiple_sensors(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that multiple capabilities create multiple sensor types."""
         config_entry = self.create_config_entry(
             ["ExtendedAQ", "Heating", "EnvironmentalData"], "ec"
         )
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap in [
-                "ExtendedAQ",
-                "Heating",
-                "EnvironmentalData",
-            ]
-            mock_coordinator._device_category = ["ec"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = [
-                "ExtendedAQ",
-                "Heating",
-                "EnvironmentalData",
-            ]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for multiple capabilities
+        mock_coordinator.device_capabilities = [
+            "ExtendedAQ",
+            "Heating",
+            "EnvironmentalData",
+        ]
+        mock_coordinator.device_category = ["ec"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap in [
+            "ExtendedAQ",
+            "Heating",
+            "EnvironmentalData",
+        ]
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -342,29 +264,21 @@ class TestEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_no_capabilities_minimal_sensors(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that devices with no capabilities create minimal sensors."""
         config_entry = self.create_config_entry([], "unknown")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: False
-            mock_coordinator._device_category = ["unknown"]
-            mock_coordinator.device_serial = "TEST-INTEGRATION-123"
-            mock_coordinator._device_capabilities = []
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator with no capabilities and no device data
+        mock_coordinator.device_capabilities = []
+        mock_coordinator.device_category = ["unknown"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: False
+        # Remove carbon filter data for minimal sensor test
+        mock_coordinator.data = {
+            "product-state": {},  # No carbon filter data (cflt)
+            "environmental-data": {},  # No environmental data
+        }
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -424,29 +338,17 @@ class TestBinarySensorEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_binary_sensor_creation_with_filtering(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that binary sensors are created with proper fault code filtering."""
         config_entry = self.create_config_entry(["EnvironmentalData"], "ec")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "EnvironmentalData"
-            mock_coordinator._device_category = ["ec"]
-            mock_coordinator.device_serial = "TEST-BINARY-123"
-            mock_coordinator._device_capabilities = ["EnvironmentalData"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for binary sensor test
+        mock_coordinator.device_capabilities = ["EnvironmentalData"]
+        mock_coordinator.device_category = ["ec"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "EnvironmentalData"
+        mock_coordinator.serial_number = "TEST-BINARY-123"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -472,29 +374,17 @@ class TestBinarySensorEntityCreationIntegration:
 
     @pytest.mark.asyncio
     async def test_ec_category_binary_sensor_faults(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test that 'ec' category creates appropriate fault sensors."""
         config_entry = self.create_config_entry(["EnvironmentalData"], "ec")
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap == "EnvironmentalData"
-            mock_coordinator._device_category = ["ec"]
-            mock_coordinator.device_serial = "TEST-BINARY-123"
-            mock_coordinator._device_capabilities = ["EnvironmentalData"]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for EC binary sensor test
+        mock_coordinator.device_capabilities = ["EnvironmentalData"]
+        mock_coordinator.device_category = ["ec"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.has_capability = lambda cap: cap == "EnvironmentalData"
+        mock_coordinator.serial_number = "TEST-BINARY-123"
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -532,7 +422,7 @@ class TestRealDeviceEntityCreationScenarios:
 
     @pytest.mark.asyncio
     async def test_dyson_pure_cool_purifier_entities(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test entity creation for a Dyson Pure Cool air purifier."""
         config_entry = MagicMock()
@@ -551,34 +441,22 @@ class TestRealDeviceEntityCreationScenarios:
             "device_category": "purifier",
         }
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap in [
-                "EnvironmentalData",
-                "ExtendedAQ",
-                "FanControl",
-                "Oscillation",
-            ]
-            mock_coordinator._device_category = ["purifier"]
-            mock_coordinator.device_serial = "PURIFIER-REAL-001"
-            mock_coordinator._device_capabilities = [
-                "EnvironmentalData",
-                "ExtendedAQ",
-                "FanControl",
-                "Oscillation",
-            ]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for Pure Cool purifier
+        mock_coordinator.device_capabilities = [
+            "EnvironmentalData",
+            "ExtendedAQ",
+            "FanControl",
+            "Oscillation",
+        ]
+        mock_coordinator.device_category = ["purifier"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.serial_number = "PURIFIER-REAL-001"
+        mock_coordinator.has_capability = lambda cap: cap in [
+            "EnvironmentalData",
+            "ExtendedAQ",
+            "FanControl",
+            "Oscillation",
+        ]
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -601,12 +479,13 @@ class TestRealDeviceEntityCreationScenarios:
         # Should NOT have WiFi sensors (purifier category doesn't enable them)
         assert "DysonWiFiSensor" not in sensor_types
 
-        # Should NOT have temperature sensors (no Heating capability)
-        assert "DysonTemperatureSensor" not in sensor_types
+        # Should have temperature and humidity sensors (EnvironmentalData capability present)
+        assert "DysonTemperatureSensor" in sensor_types
+        assert "DysonHumiditySensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_dyson_hot_cool_heater_entities(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test entity creation for a Dyson Hot+Cool heater/fan."""
         config_entry = MagicMock()
@@ -617,35 +496,25 @@ class TestRealDeviceEntityCreationScenarios:
             "mqtt_password": "heater_password",
             "mqtt_hostname": "192.168.1.51",
             "capabilities": ["EnvironmentalData", "Heating", "FanControl"],
-            "device_category": "heater",
+            "device_category": "ec",  # Heating devices are Environment Cleaners
         }
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap in [
-                "EnvironmentalData",
-                "Heating",
-                "FanControl",
-            ]
-            mock_coordinator._device_category = ["heater"]
-            mock_coordinator.device_serial = "HEATER-REAL-002"
-            mock_coordinator._device_capabilities = [
-                "EnvironmentalData",
-                "Heating",
-                "FanControl",
-            ]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for Hot+Cool heater
+        mock_coordinator.device_capabilities = [
+            "EnvironmentalData",
+            "Heating",
+            "FanControl",
+        ]
+        mock_coordinator.device_category = [
+            "ec"
+        ]  # Heating devices are Environment Cleaners
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.serial_number = "HEATER-REAL-002"
+        mock_coordinator.has_capability = lambda cap: cap in [
+            "EnvironmentalData",
+            "Heating",
+            "FanControl",
+        ]
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -671,12 +540,12 @@ class TestRealDeviceEntityCreationScenarios:
             or len([s for s in sensor_types if "PM" in s]) == 0
         )
 
-        # Should NOT have WiFi sensors (heater category doesn't enable them)
-        assert "DysonWiFiSensor" not in sensor_types
+        # Should have WiFi sensors (ec devices have connectivity monitoring)
+        assert "DysonWiFiSensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_dyson_robot_vacuum_entities(
-        self, mock_hass, mock_platform_add_entities
+        self, mock_hass, mock_platform_add_entities, mock_coordinator
     ):
         """Test entity creation for a Dyson robot vacuum."""
         config_entry = MagicMock()
@@ -690,32 +559,20 @@ class TestRealDeviceEntityCreationScenarios:
             "device_category": "robot",
         }
 
-        # Mock DataUpdateCoordinator class to avoid Frame helper issues
-        with patch(
-            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
-        ):
-            from custom_components.hass_dyson.coordinator import (
-                DysonDataUpdateCoordinator,
-            )
-
-            mock_coordinator = DysonDataUpdateCoordinator.__new__(
-                DysonDataUpdateCoordinator
-            )
-            mock_coordinator.hass = mock_hass
-            mock_coordinator.config_entry = config_entry
-            mock_coordinator.has_capability = lambda cap: cap in [
-                "Navigation",
-                "Cleaning",
-                "BatteryStatus",
-            ]
-            mock_coordinator._device_category = ["robot"]
-            mock_coordinator.device_serial = "ROBOT-REAL-003"
-            mock_coordinator._device_capabilities = [
-                "Navigation",
-                "Cleaning",
-                "BatteryStatus",
-            ]
-            mock_coordinator.device = MagicMock()  # Add mock device
+        # Configure coordinator for robot vacuum
+        mock_coordinator.device_capabilities = [
+            "Navigation",
+            "Cleaning",
+            "BatteryStatus",
+        ]
+        mock_coordinator.device_category = ["robot"]
+        mock_coordinator.config_entry = config_entry
+        mock_coordinator.serial_number = "ROBOT-REAL-003"
+        mock_coordinator.has_capability = lambda cap: cap in [
+            "Navigation",
+            "Cleaning",
+            "BatteryStatus",
+        ]
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN

@@ -61,7 +61,7 @@
     },
     "error": {
       "auth_failed": "Authentication failed. Please check your email and password.",
-      "verification_failed": "Verification failed. Please check the code and try again.",
+      "verification_failed": "Verification failed. Please check your password and the code and try again.",
       "connection_failed": "Connection failed. Please try again later.",
       "no_devices": "No devices found in your Dyson account.",
       "manual_setup_failed": "Manual setup failed. Please check your device information.",
@@ -136,10 +136,10 @@
   "entity": {
     "sensor": {
       "temperature": {
-        "name": "[%key:component::sensor::entity_component::temperature::name%]"
+        "name": "Temperature"
       },
       "humidity": {
-        "name": "[%key:component::sensor::entity_component::humidity::name%]"
+        "name": "Humidity"
       },
       "pm25": {
         "name": "PM2.5"
@@ -152,6 +152,12 @@
       },
       "no2": {
         "name": "NO2"
+      },
+      "co2": {
+        "name": "CO2"
+      },
+      "hcho": {
+        "name": "HCHO"
       },
       "formaldehyde": {
         "name": "Formaldehyde"
@@ -176,6 +182,15 @@
       },
       "hepa_filter_type": {
         "name": "HEPA Filter Type"
+      },
+      "carbon_filter_type": {
+        "name": "Carbon Filter Type"
+      },
+      "p25r": {
+        "name": "PM2.5 Raw"
+      },
+      "p10r": {
+        "name": "PM10 Raw"
       }
     },
     "switch": {
@@ -218,6 +233,11 @@
       },
       "oscillation_high_angle": {
         "name": "Oscillation High Angle"
+      }
+    },
+    "climate": {
+      "heating_controls": {
+        "name": "Heating Controls"
       }
     },
     "update": {

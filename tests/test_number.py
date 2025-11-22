@@ -363,7 +363,7 @@ class TestDysonOscillationCenterAngleNumber:
         entity = DysonOscillationCenterAngleNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_center_angle"
-        assert entity._attr_name == "Test Dyson Oscillation Center Angle"
+        assert entity._attr_name == "Oscillation Center Angle"
         assert entity._attr_icon == "mdi:crosshairs"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
@@ -424,7 +424,7 @@ class TestDysonOscillationAngleSpanNumber:
         entity = DysonOscillationAngleSpanNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_angle_span"
-        assert entity._attr_name == "Test Dyson Oscillation Angle"
+        assert entity._attr_name == "Oscillation Angle"
         assert entity._attr_icon == "mdi:angle-acute"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):

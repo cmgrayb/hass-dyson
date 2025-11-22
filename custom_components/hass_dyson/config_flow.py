@@ -1094,6 +1094,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "serial_number": device_serial,
             "name": device_name,
             "product_type": discovery_info.get("product_type", "unknown"),
+            "category": discovery_info.get("category", "unknown"),
         }
 
         config_data = create_cloud_device_config(

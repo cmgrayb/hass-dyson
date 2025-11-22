@@ -4,6 +4,19 @@
   <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/image_assets/logo.png" alt="Dyson Logo" width="400"/>
 </p>
 
+
+<!-- Badge Links -->
+
+[releases-shield]: https://img.shields.io/github/release/cmgrayb/hass-dyson.svg?style=for-the-badge
+[releases]: https://github.com/cmgrayb/hass-dyson/releases
+[commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/hass-dyson.svg?style=for-the-badge
+[commits]: https://github.com/cmgrayb/hass-dyson/commits/main
+[hacs]: https://github.com/hacs/integration
+[hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
+[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
+[forum]: https://community.home-assistant.io/
+[license-shield]: https://img.shields.io/github/license/cmgrayb/hass-dyson.svg?style=for-the-badge
+
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
 [![License][license-shield]](LICENSE)
@@ -12,39 +25,41 @@
 
 A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, and robotic vacuums featuring real-time MQTT communication and complete platform coverage.
 
-## ✨ Current Features
+## Current Features
+
+### All Supported Devices
+
+- **Cloud Discovery** - Automatic device detection via Dyson API
+- **Manual Setup** - Sticker-based or network-isolated configuration for local devices
+- **Capability Based Detection** - Automatic platform setup based on device features
 
 ### Environmental Cleaners (Fans/Purifiers)
 
 - **Fan Control** - Speed adjustment (1-10), on/off, night mode
 - **Air Quality Monitoring** - PM2.5, PM10, real-time sensor data
 - **Smart Controls** - Auto mode, oscillation
-- **Status Monitoring** - Connectivity, filter life, fault detection
+- **Status Monitoring** - Connectivity, filter life, fault detection, firmware version
 - **Precise Adjustments** - Timers, oscillation angles
+- **Heating Support** - Climate Control with Heater mode, Heater Thermostat, and Fan Direction
 
-### Advanced Configuration
-
-- **Dynamic MQTT Prefix** - Supports all Dyson models with local MQTT broker or Cloud connection
-- **Cloud Discovery** - Automatic device detection via Dyson API
-- **Manual Setup** - Sticker-based configuration for local devices
-- **Capability Detection** - Automatic platform setup based on device features
-
-## 🌟 Planned Features
+## Planned Features
 
 ### Environmental Cleaners (Fans/Purifiers)
 
-- **Heating** (HP models)
-- **Climate Control** - Full HVAC interface for heating models
+- **Humidifier Support** (e.g. PH models) - All functions should currently work except for humidification controls
+- **Climate Control** - Climate Control with Humidistat
+- **TBD** - Any features found which can be supported, will be
 
 ### Robotic Vacuums
 
-- **Battery Sensor**
+- **Battery Sensor** - Monitor your 360 robotic vacuum's battery
+- **TBD** - Any features found which can be supported, will be
 
 ### BLE Devices
 
 - **lec Support** - We hope to someday support Dyson "lec" or BLE devices such as lights via BLE proxy devices
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -70,48 +85,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
    - **Cloud Discovery** - Enter Dyson account credentials
    - **Manual Setup** - Enter device details from sticker or information gained through the Get Cloud Devices Action, or external tooling such as libdyson-rest or opendyson
 
-## 📱 Supported Entities
-
-### **Fan Platform**
-
-- Primary fan control with speed adjustment (1-10)
-- Night mode for quiet operation
-- Real-time status updates
-
-### **Sensors**
-
-- **PM2.5 Sensor** - Fine particulate matter (µg/m³)
-- **PM10 Sensor** - Coarse particulate matter (µg/m³)
-- **WiFi RSSI** - Connection strength monitoring
-- **HEPA Filter Life** - HEPA filter remaining life (%)
-- **Carbon Filter Life** - Carbon filter remaining life (%)
-
-### **Binary Sensors**
-
-- **Connectivity** - Online/offline status
-- **Filter Replacement** - Alert when any filter needs changing
-- **Individual Fault Sensors** - Dedicated sensors for each fault type:
-  - **Air Quality Sensor Fault** - AQS malfunction detection
-  - **Filter Fault** - General filter issues
-  - **HEPA Filter Fault** - HEPA filter specific problems
-  - **Carbon Filter Fault** - Carbon filter issues
-  - **Motor Fault** - Fan motor problems and stalls
-  - **Temperature Sensor Fault** - Temperature monitoring issues
-  - **Humidity Sensor Fault** - Humidity measurement problems
-  - **Power Supply Fault** - Electrical and power issues
-  - **WiFi Connection Fault** - Connectivity problems
-  - **System Fault** - General device malfunctions
-  - **Brush Fault** - Brush blockages and wear (vacuum models)
-  - **Dustbin Fault** - Bin full/missing alerts (vacuum models)
-
-### **Controls**
-
-- **Speed Control** - Fan Speed in 10% increments (1-10)
-- **Sleep Timer** - Auto-off timer (0-540 minutes)
-- **Mode Selection** - Auto/Manual operation
-- **Oscillation** - Enable/disable with comprehensive angle control
-
-## 🔧 Configuration
+## Configuration
 
 ### Cloud Account Configuration (**Recommended**)
 
@@ -121,16 +95,18 @@ When selecting **Cloud Discovery**, you'll be guided through the following steps
 
 - **Email**: Your Dyson account email address
 - **Password**: Your Dyson account password
-- **Country**: Select your country (affects API region)
+- **Country**: Verify your country and culture (affects API region and localization)
 
 #### **Step 2: Device Discovery**
 
 The integration will:
 
 - Connect to Dyson's cloud API using your credentials
-- Automatically discover all devices linked to your account
+- Prompt the user for configuration preferences
 - Extract device capabilities and configuration from cloud data
-- Display a list of found devices for selection
+- If configured to do so (default), automatically discover and add all supportable devices linked to your account
+- Alternatively, prompt to add a list of found devices for selection
+- If polling and auto-add are both deselected, the cloud account may be used for fetching account and device data via Home Assistant Actions only.  For more information, see: [Actions](docs/ACTIONS.md)
 
 #### **What You'll See**
 
@@ -144,12 +120,17 @@ Based on your device capabilities and category, you'll automatically get:
 
 **All Devices (Basic Support):**
 
-- Basic binary sensors (online/offline, night mode, auto mode)
+- Basic binary sensors (online/offline, faults)
 
 **WiFi-Enabled Devices (EC/Robot Categories):**
 
 - Connection status sensor (Local/Cloud/Disconnected)
+- Reconnect button to attempt to re-establish preferred connectivity
 - WiFi signal strength sensor (diagnostic)
+- Temperature sensor
+- Humidity sensor
+- Carbon filter sensors
+- HEPA filter sensors
 
 **Air Quality Models (ExtendedAQ Capability):**
 
@@ -157,40 +138,32 @@ Based on your device capabilities and category, you'll automatically get:
 - PM10 air quality sensor
 - HEPA filter life sensor (%)
 - HEPA filter type sensor
-
-### Future Support (Under Development):
+- Carbon filter life sensor (%)
+- Carbon filter type sensor
+- VOC sensor
+- NO2/NOx sensor
+- CO2 sensor
+- HCHO/Formaldehyde sensor
 
 **Heating Models (Heating Capability):**
 
-- Temperature sensor
 - Climate control platform
-- Heating switch control
+- Heating controls
 
-**Formaldehyde/VOC models (Carbon Filter Models):**
+### Future Support (Under Development):
 
-- Carbon filter sensors
-- VOC sensor
-- NO2 sensor
-- Formaldehyde sensor
+**Humidifier models (Humidifier Capability):**
 
-**Humidifier models:**
-
-- Humidity sensors
+- Climate control platform
+- Humidifier controls
 
 **Robot Models:**
 
 - Battery sensors
+- Cleaning modes
+- Dustbin status
 
-> 📖 **See [Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md) for complete entity breakdown by device type**
-
-**Future Support (Under Development):**
-
-- **Carbon Filter Sensors**: Life and type monitoring (pending Formaldehyde capability identification)
-- **Humidity Controls**: Sensor and controls (pending Humidifier capability identification)
-- **Robot-Specific Features**: Battery monitoring, cleaning modes, dustbin status
-
-**Troubleshooting Missing Entities:**
-If expected sensors are missing, see our [Entity Troubleshooting Guide](docs/TROUBLESHOOTING_ENTITIES.md)
+> **See [Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md) for complete entity breakdown by device type**
 
 #### **Setup Time**
 
@@ -230,239 +203,34 @@ hass_dyson:
       capabilities: ["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"]
 ```
 
-## ⚙️ Device Management
+## Documentation
 
-The integration provides comprehensive device management options through the **Configure** button in Home Assistant's Devices & Services section.
+### **Additional Information**
 
-### **Account-Level Management**
-
-- **🔄 Reload All Devices** - Refresh connection and state for all devices
-- **⚙️ Set Default Connection** - Configure default connection method for all devices
-
-### **Individual Device Management**
-
-- **⚙️ Configure**: Device-specific connection settings only
-- **🔄 Reload**: Native Home Assistant button (top of device page)
-- **🗑️ Delete**: Native Home Assistant button (device menu)
-
-### **Connection Type Hierarchy**
-
-1. **Device Override** - Takes priority if set
-2. **Account Default** - Used when no device override
-3. **System Default** - Final fallback (`local_cloud_fallback`)
-
-### **How to Access**
-
-- **Account**: Configure button on main integration entry
-- **Device**: Native HA controls + Configure button for connection settings
-
-### **Device Status Indicators**
-
-- **✅ Active** - Device is currently set up and running
-- **❌ Inactive** - Device exists in account but not currently active
-
-> 📖 **See [DEVICE_MANAGEMENT.md](DEVICE_MANAGEMENT.md) for detailed documentation**
-
-## 🏠 Device Support
-
-### **Tested Models**
-
-- ✅ **438 Series** - Pure Cool Air Purifiers (verified with real device)
-- ✅ **475 Series** - Hot+Cool models (mocked)
-- ✅ **527 Series** - V10/V11 models (mocked)
-
-### **Supported Features by Model**
-
-| Feature     | 438M | 475 | 527 | Notes           |
-| ----------- | ---- | --- | --- | --------------- |
-| Fan Control | ✅   | ✅  | ✅  | Speed 1-10      |
-| Air Quality | ✅   | ✅  | ✅  | PM2.5, PM10     |
-| Auto Mode   | ✅   | ✅  | ✅  | Smart response  |
-| Oscillation | ✅   | ✅  | ❌  | Angle control   |
-| Heating     | ❌   | ✅  | ❌  | HP models only  |
-| Night Mode  | ✅   | ✅  | ✅  | Quiet operation |
-| Scheduling  | ✅   | ✅  | ✅  | Sleep timer     |
-
-## 🔍 Troubleshooting
-
-### **Connection Issues**
-
-```bash
-# Check device network connectivity
-ping 192.168.1.100  # Your device IP
-
-# Verify MQTT prefix in logs
-grep "MQTT prefix" /config/home-assistant.log
-```
-
-### **Device Not Found**
-
-1. Verify device is on same network as Home Assistant
-2. Check serial number from device sticker
-3. Ensure device password is correct
-4. Try manual IP address in hostname field
-
-### **No Data Updates**
-
-1. Check device MQTT topics in logs
-2. Verify paho-mqtt dependency installed
-3. Restart integration from UI
-4. Check firewall settings for MQTT traffic
-
-### **Debug Logging**
-
-```yaml
-# In configuration.yaml
-logger:
-  logs:
-    custom_components.hass_dyson: debug
-```
-
-## 📚 Documentation
-
-### **Comprehensive Guides**
-
+- **[Actions](docs/ACTIONS.md)** - Information on included Home Assistant Actions
+- **[Controls](docs/CONTROLS.md)** - Information on included controls for devices
+- **[Developers Guide](docs/DEVELOPERS_GUIDE.md)** - See something you can help with?  This is where to start!
 - **[Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md)** - Complete breakdown of which entities are available for each device type and capability
-- **[Entity Troubleshooting Guide](docs/TROUBLESHOOTING_ENTITIES.md)** - Resolve missing or unexpected sensors and controls
-- **[API Documentation](docs/API.md)** - Technical details about the Dyson API integration
-- **[Security Guide](docs/SECURITY.md)** - Security considerations and best practices
-- **[Live Testing Guide](docs/LIVE_TESTING_GUIDE.md)** - How to test with real Dyson devices
+- **[Device Management](docs/DEVICE_MANAGEMENT.md)** - Information on device discovery and configuration
+- **[Entities](docs/ENTITIES.md)** - Information on entities to expect for a given device type
+- **[Sensors](docs/SENSORS.md)** - Information on included sensors for devices
+- **[Supported Devices](docs/SUPPORTED_DEVICES.md)** - Information on devices tested and known to be supported
 
 ### **Quick References**
 
 - **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
-- **[Testing Guide](docs/TESTING_GUIDE.md)** - How to test with real Dyson devices
-- **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)** - Technical architecture overview
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Troubleshooting Guide
 
-## 🛠️ Development
-
-### **Quick Start with DevContainer**
-
-The easiest way to get started with development is using the provided devcontainer:
-
-1. **Prerequisites**: Install VS Code with the "Dev Containers" extension
-2. **Open Project**: Open the repository in VS Code
-3. **Reopen in Container**: Press `Ctrl+Shift+P` → "Dev Containers: Reopen in Container"
-4. **Start Developing**: All dependencies, tools, and Home Assistant are pre-installed!
-
-The devcontainer includes:
-
-- **Home Assistant Core** with all dependencies
-- **Development Tools**: Ruff, mypy, pytest
-- **MQTT Broker**: Local Mosquitto for testing
-- **VS Code Extensions**: Python tools and GitHub Copilot
-- **Pre-configured Settings**: Optimized for HA development
-
-See [`.devcontainer/README.md`](.devcontainer/README.md) for detailed documentation.
-
-### **Manual Development Setup**
-
-If you prefer local development:
-
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
-
-# Install development dependencies
-pip install -r requirements-dev.txt
-pip install -e .
-
-# Install Home Assistant for testing
-pip install homeassistant
-```
-
-### **Architecture**
-
-```
-Config Flow → Coordinator → Device Wrapper → MQTT Client
-     ↓            ↓              ↓
-Platform Setup → Data Updates → Real Device
-```
-
-### **Project Structure**
-
-```
-custom_components/hass_dyson/
-├── __init__.py          # Integration setup
-├── config_flow.py       # Setup wizard
-├── coordinator.py       # Data coordination
-├── device.py           # MQTT device wrapper
-├── const.py            # Constants
-├── manifest.json       # Metadata
-├── fan.py              # Fan platform
-├── sensor.py           # Sensor platform
-├── binary_sensor.py    # Binary sensor platform
-├── button.py           # Button platform
-├── number.py           # Number platform
-├── select.py           # Select platform
-├── switch.py           # Switch platform
-└── climate.py          # Climate platform
-```
-
-### **Contributing**
-
-1. Fork the repository
-2. **Recommended**: Use the devcontainer for consistent development environment
-   - Open in VS Code with Dev Containers extension
-   - All tools and dependencies are pre-configured
-3. Create feature branch (`git checkout -b feature/amazing-feature`)
-4. Make your changes following the code quality standards:
-
-   ```bash
-   # Format and lint code (unified with Ruff)
-   python -m ruff format .
-   python -m ruff check . --fix
-
-   # Run tests
-   python -m pytest
-   ```
-
-5. **For developers**: See [Testing Patterns Documentation](.github/design/testing-patterns.md) for unit testing guidance and mock setups
-6. Commit changes (`git commit -am 'Add amazing feature'`)
-7. Push branch (`git push origin feature/amazing-feature`)
-8. Open Pull Request
-
-## 🤖 Automated Dependency Management
-
-This project uses [Renovate Bot](https://github.com/renovatebot/renovate) for automated dependency management across multiple file types:
-
-### **Managed Dependencies**
-
-- **`requirements.txt`** - Production dependencies (conservative 7-day minimum age)
-- **`requirements-dev.txt`** - Development tools (3-day minimum age)
-- **`.devcontainer/Dockerfile`** - Docker base images and system packages
-- **`custom_components/hass_dyson/manifest.json`** - Home Assistant integration requirements
-
-### **Update Categories**
-
-- **🏠 Home Assistant Dependencies** - 14-day stabilization period for core HA packages
-- **🔒 Security Updates** - 1-day minimum age for security-related packages (cryptography, requests, etc.)
-- **🔧 Code Quality Tools** - 3-day minimum age for development tools (ruff, pytest, mypy)
-- **📦 Dyson Libraries** - 14-day stabilization with code owner review for `libdyson-rest`
-- **🐳 Docker Images** - 7-day minimum age for base images and system dependencies
-
-### **Automation Features**
-
-- **Weekly Schedule** - Runs every Monday at 6 AM UTC
-- **Dependency Dashboard** - GitHub issue tracking all available updates
-- **Smart Grouping** - Related dependencies updated together
-- **Security Priority** - Vulnerability fixes get immediate attention
-- **Self-hosted** - No external reporting, all processing within GitHub
-
-Renovate automatically creates pull requests for dependency updates, which are reviewed and tested by the CI pipeline before merging.
-
-## 📋 Requirements
+## Requirements
 
 - **Home Assistant** 2025.8+
 - **Python** 3.11+
 - **Dependencies** (auto-installed):
-  - `libdyson-rest>=0.4.1`
+  - `libdyson-rest>=0.8.2`
   - `paho-mqtt>=2.1.0`
   - `cryptography>=3.4.0`
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **libshenxn** - For getting the Dyson community started with the original libdyson
 - **dotvezz** - For maintaining the libdyson-wg working group, ha-dyson, and opendyson, the inspiration for this integration
@@ -471,25 +239,10 @@ Renovate automatically creates pull requests for dependency updates, which are r
 - **Home Assistant** - Amazing home automation platform
 - **Dyson** - For making great products worth putting in the work for
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-<!-- Badge Links -->
-
-[releases-shield]: https://img.shields.io/github/release/cmgrayb/hass-dyson.svg?style=for-the-badge
-[releases]: https://github.com/cmgrayb/hass-dyson/releases
-[commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/hass-dyson.svg?style=for-the-badge
-[commits]: https://github.com/cmgrayb/hass-dyson/commits/main
-[hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
-[forum]: https://community.home-assistant.io/
-[license-shield]: https://img.shields.io/github/license/cmgrayb/hass-dyson.svg?style=for-the-badge
-
----
-
 **⚠️ Disclaimer**: This is an unofficial integration not affiliated with Dyson Ltd. Use at your own risk.
-

@@ -9,10 +9,7 @@ which covers critical missing lines and helps push overall coverage toward 75%.
 from unittest.mock import Mock
 
 from custom_components.hass_dyson import _get_platforms_for_device
-from custom_components.hass_dyson.const import (
-    CONF_DISCOVERY_METHOD,
-    DISCOVERY_CLOUD,
-)
+from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
 
 
 class TestPlatformDetermination:
@@ -37,7 +34,11 @@ class TestPlatformDetermination:
         """Test platform determination for fan with advanced capabilities."""
         mock_coordinator = Mock()
         mock_coordinator.device_category = ["ec"]
-        mock_coordinator.device_capabilities = ["Scheduling", "AdvanceOscillationDay1"]
+        mock_coordinator.device_capabilities = [
+            "Scheduling",
+            "AdvanceOscillationDay1",
+            "Heating",
+        ]
         mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD}
 
         platforms = _get_platforms_for_device(mock_coordinator)
@@ -109,10 +110,9 @@ class TestPlatformDetermination:
 
         platforms = _get_platforms_for_device(mock_coordinator)
 
-        # Should include platforms for EC devices
+        # Should include platforms for EC devices (no climate without Heating capability)
         assert "fan" in platforms
         assert "switch" in platforms
-        assert "climate" in platforms
 
     def test_get_platforms_empty_categories(self):
         """Test platform determination with empty device categories."""

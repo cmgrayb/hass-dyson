@@ -171,7 +171,7 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         """Initialize the filter replacement sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_filter_replacement"
-        self._attr_name = f"{coordinator.device_name} Filter Replacement"
+        self._attr_name = "Filter Replacement"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
 
@@ -296,9 +296,7 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
         self._fault_code = fault_code
         self._fault_info = fault_info
         self._attr_unique_id = f"{coordinator.serial_number}_fault_{fault_code}"
-        self._attr_name = (
-            f"{coordinator.device_name} Fault {self._get_fault_friendly_name()}"
-        )
+        self._attr_name = f"Fault {self._get_fault_friendly_name()}"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 

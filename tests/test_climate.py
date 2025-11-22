@@ -19,9 +19,11 @@ def mock_coordinator():
     coordinator.device_name = "Test Device"
     coordinator.device = MagicMock()
     coordinator.device._get_current_value = MagicMock(return_value="OFF")
+    coordinator.device.set_target_temperature = AsyncMock()
     coordinator.device_capabilities = ["Heating"]
     coordinator.data = {"product-state": {}}
     coordinator.async_send_command = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
     return coordinator
 
 
@@ -94,13 +96,12 @@ class TestDysonClimateEntity:
         # Assert
         assert entity.coordinator == mock_coordinator
         assert entity._attr_unique_id == "TEST-SERIAL-123_climate"
-        assert entity._attr_name == "Test Device Climate"
+        assert entity._attr_translation_key == "heating_controls"
         assert entity._attr_icon == "mdi:thermostat"
 
         # Climate features
         expected_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE
-            | ClimateEntityFeature.FAN_MODE
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TURN_OFF
         )
@@ -120,10 +121,6 @@ class TestDysonClimateEntity:
             HVACMode.AUTO,
         ]
         assert entity._attr_hvac_modes == expected_hvac_modes
-
-        # Fan modes
-        expected_fan_modes = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Auto"]
-        assert entity._attr_fan_modes == expected_fan_modes
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
         """Test coordinator update handling when device is available."""
@@ -152,7 +149,6 @@ class TestDysonClimateEntity:
         )  # Allow for floating point precision
         assert abs(entity._attr_target_temperature - 19.85) < 0.2
         assert entity._attr_hvac_mode == HVACMode.HEAT
-        assert entity._attr_fan_mode == "5"
 
     def test_handle_coordinator_update_no_device(self, mock_coordinator):
         """Test coordinator update handling when device is not available."""
@@ -284,60 +280,6 @@ class TestDysonClimateEntity:
         # Assert
         assert entity._attr_hvac_mode == HVACMode.FAN_ONLY
 
-    def test_update_fan_mode_auto(self, mock_coordinator):
-        """Test fan mode update when auto mode is on."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-        device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "fnsp": "0007",
-                "auto": "ON",
-            }.get(key, default)
-        )
-
-        # Act
-        entity._update_fan_mode(device_data)
-
-        # Assert
-        assert entity._attr_fan_mode == "Auto"
-
-    def test_update_fan_mode_manual_speed(self, mock_coordinator):
-        """Test fan mode update with manual speed setting."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-        device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "fnsp": "0003",
-                "auto": "OFF",
-            }.get(key, default)
-        )
-
-        # Act
-        entity._update_fan_mode(device_data)
-
-        # Assert
-        assert entity._attr_fan_mode == "3"
-
-    def test_update_fan_mode_invalid_speed(self, mock_coordinator):
-        """Test fan mode update with invalid speed value."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-        device_data = {"product-state": {}}
-        mock_coordinator.device._get_current_value.side_effect = (
-            lambda state, key, default: {
-                "fnsp": "invalid",
-                "auto": "OFF",
-            }.get(key, default)
-        )
-
-        # Act
-        entity._update_fan_mode(device_data)
-
-        # Assert
-        assert entity._attr_fan_mode == "1"  # Default value
-
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_off(self, mock_coordinator):
         """Test setting HVAC mode to OFF."""
@@ -417,10 +359,9 @@ class TestDysonClimateEntity:
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 22.5})
 
         # Assert
-        # 22.5°C = 295.65K = 2956.5 -> 2956 (int conversion)
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_target_temperature", {"hmax": "2956"}
-        )
+        # Should call the device's set_target_temperature method with temperature in Celsius
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(22.5)
+        mock_coordinator.async_request_refresh.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_no_temperature(self, mock_coordinator):
@@ -443,47 +384,6 @@ class TestDysonClimateEntity:
 
         # Act
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
-
-        # Assert
-        mock_coordinator.async_send_command.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_async_set_fan_mode_auto(self, mock_coordinator):
-        """Test setting fan mode to Auto."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-
-        # Act
-        await entity.async_set_fan_mode("Auto")
-
-        # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_fan_mode", {"auto": "ON"}
-        )
-
-    @pytest.mark.asyncio
-    async def test_async_set_fan_mode_manual_speed(self, mock_coordinator):
-        """Test setting fan mode to manual speed."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-
-        # Act
-        await entity.async_set_fan_mode("7")
-
-        # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_fan_mode", {"auto": "OFF", "fnsp": "0007"}
-        )
-
-    @pytest.mark.asyncio
-    async def test_async_set_fan_mode_no_device(self, mock_coordinator):
-        """Test setting fan mode when device is not available."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-        mock_coordinator.device = None
-
-        # Act
-        await entity.async_set_fan_mode("5")
 
         # Assert
         mock_coordinator.async_send_command.assert_not_called()
@@ -522,7 +422,6 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity._attr_target_temperature = 21.5
         entity._attr_hvac_mode = HVACMode.HEAT
-        entity._attr_fan_mode = "5"
 
         mock_coordinator.device._get_current_value.side_effect = (
             lambda state, key, default: {
@@ -540,10 +439,8 @@ class TestDysonClimateEntity:
         assert attributes is not None
         assert attributes["target_temperature"] == 21.5
         assert attributes["hvac_mode"] == HVACMode.HEAT
-        assert attributes["fan_mode"] == "5"
         assert attributes["heating_mode"] == "HEAT"
         assert attributes["auto_mode"] is False
-        assert attributes["fan_speed"] == "0005"
         assert attributes["fan_power"] is True
         # 21.5°C = 294.65K = 2946.5 -> 2946 (int conversion)
         assert attributes["target_temperature_kelvin"] == "2946"
@@ -592,11 +489,16 @@ class TestClimateIntegration:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         mock_coordinator.async_send_command.side_effect = Exception("Test error")
+        mock_coordinator.device.set_target_temperature.side_effect = Exception(
+            "Temperature test error"
+        )
 
         # Act & Assert - should not raise exception
         await entity.async_set_hvac_mode(HVACMode.HEAT)
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
-        await entity.async_set_fan_mode("5")
 
-        # Should have attempted to call the command despite errors
-        assert mock_coordinator.async_send_command.call_count == 3
+        # Should have attempted to call the commands despite errors
+        # Only HVAC mode goes through async_send_command (fan mode removed)
+        assert mock_coordinator.async_send_command.call_count == 1
+        # Temperature setting goes through device.set_target_temperature
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(20.0)
