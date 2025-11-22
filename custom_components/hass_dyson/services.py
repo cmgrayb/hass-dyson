@@ -1073,8 +1073,9 @@ def _create_detailed_device_info_from_cloud_device(
 
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Set up all services for Dyson integration."""
-    await async_setup_cloud_services(hass)
-    # Note: Device services are now registered per-category when devices are set up
+    # Cloud services are registered separately when cloud accounts are configured
+    # Device services are registered per-category when devices are set up
+    pass
 
 
 def _get_device_categories_for_coordinator(
@@ -1303,9 +1304,6 @@ async def async_setup_device_services_for_coordinator(
     hass: HomeAssistant, coordinator: DysonDataUpdateCoordinator
 ) -> None:
     """Set up device-specific services for a specific coordinator based on its capabilities and categories."""
-    # Ensure cloud services are available (will only register if not already registered)
-    await async_setup_cloud_services(hass)
-
     # Register device-specific services based on capabilities
     await async_register_device_services_for_coordinator(hass, coordinator)
 
@@ -1317,6 +1315,23 @@ async def async_remove_device_services_for_coordinator(
     categories = _get_device_categories_for_coordinator(coordinator)
     if categories:
         await async_unregister_device_services_for_categories(hass, categories)
+
+
+async def async_remove_cloud_services(hass: HomeAssistant) -> None:
+    """Remove cloud services for Dyson integration."""
+    cloud_services_to_remove = [
+        SERVICE_GET_CLOUD_DEVICES,
+        SERVICE_REFRESH_ACCOUNT_DATA,
+    ]
+
+    removed_services = []
+    for service in cloud_services_to_remove:
+        if hass.services.has_service(DOMAIN, service):
+            hass.services.async_remove(DOMAIN, service)
+            removed_services.append(service)
+
+    if removed_services:
+        _LOGGER.info("Removed Dyson cloud services: %s", removed_services)
 
 
 async def async_remove_services(hass: HomeAssistant) -> None:

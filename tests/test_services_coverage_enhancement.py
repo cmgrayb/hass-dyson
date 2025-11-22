@@ -47,13 +47,12 @@ class TestServicesCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_async_setup_services_success(self, mock_hass):
         """Test successful service setup."""
-        # Mock the async_setup_cloud_services function
-        with patch(
-            "custom_components.hass_dyson.services.async_setup_cloud_services",
-            new_callable=AsyncMock,
-        ) as mock_setup_cloud:
-            await async_setup_services(mock_hass)
-            mock_setup_cloud.assert_called_once_with(mock_hass)
+        # async_setup_services no longer sets up cloud services automatically
+        # Cloud services are only set up when cloud accounts are configured
+        await async_setup_services(mock_hass)
+
+        # Verify the function completed without error
+        # (It should be a no-op pass-through now)
 
     @pytest.mark.asyncio
     async def test_async_setup_cloud_services_success(self, mock_hass):
@@ -131,9 +130,7 @@ class TestServicesCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_service_registration_with_coordinator_categories(self, mock_hass):
         """Test service registration based on coordinator categories."""
-        from custom_components.hass_dyson.services import (
-            async_register_device_services_for_categories,
-        )
+        from custom_components.hass_dyson.services import async_register_device_services_for_categories
 
         categories = ["ec", "robot"]
         await async_register_device_services_for_categories(mock_hass, categories)
@@ -144,16 +141,12 @@ class TestServicesCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_service_unregistration_with_coordinator_categories(self, mock_hass):
         """Test service unregistration based on coordinator categories."""
-        from custom_components.hass_dyson.services import (
-            async_unregister_device_services_for_categories,
-        )
+        from custom_components.hass_dyson.services import async_unregister_device_services_for_categories
 
         categories = ["ec", "robot"]
 
         # First register services to have something to unregister
-        from custom_components.hass_dyson.services import (
-            async_register_device_services_for_categories,
-        )
+        from custom_components.hass_dyson.services import async_register_device_services_for_categories
 
         await async_register_device_services_for_categories(mock_hass, categories)
 
@@ -168,9 +161,7 @@ class TestServicesCoverageEnhancement:
         self, mock_hass, mock_coordinator
     ):
         """Test device service registration for a specific coordinator."""
-        from custom_components.hass_dyson.services import (
-            async_register_device_services_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import async_register_device_services_for_coordinator
 
         # Set up coordinator with device categories
         mock_coordinator.device_category = ["ec"]
@@ -190,33 +181,26 @@ class TestServicesCoverageEnhancement:
         self, mock_hass, mock_coordinator
     ):
         """Test device service setup for a specific coordinator."""
-        from custom_components.hass_dyson.services import (
-            async_setup_device_services_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import async_setup_device_services_for_coordinator
 
         with patch(
-            "custom_components.hass_dyson.services.async_setup_cloud_services",
+            "custom_components.hass_dyson.services.async_register_device_services_for_coordinator",
             new_callable=AsyncMock,
-        ) as mock_setup_cloud:
-            with patch(
-                "custom_components.hass_dyson.services.async_register_device_services_for_coordinator",
-                new_callable=AsyncMock,
-            ) as mock_register:
-                await async_setup_device_services_for_coordinator(
-                    mock_hass, mock_coordinator
-                )
+        ) as mock_register:
+            await async_setup_device_services_for_coordinator(
+                mock_hass, mock_coordinator
+            )
 
-                mock_setup_cloud.assert_called_once_with(mock_hass)
-                mock_register.assert_called_once_with(mock_hass, mock_coordinator)
+            # async_setup_device_services_for_coordinator no longer calls async_setup_cloud_services
+            # Cloud services are only set up when cloud accounts are configured
+            mock_register.assert_called_once_with(mock_hass, mock_coordinator)
 
     @pytest.mark.asyncio
     async def test_device_service_removal_for_coordinator(
         self, mock_hass, mock_coordinator
     ):
         """Test device service removal for a specific coordinator."""
-        from custom_components.hass_dyson.services import (
-            async_remove_device_services_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import async_remove_device_services_for_coordinator
 
         # Set up coordinator with device categories
         mock_coordinator.device_category = ["ec"]
@@ -236,9 +220,7 @@ class TestServicesCoverageEnhancement:
 
     def test_get_device_categories_for_coordinator_string(self, mock_coordinator):
         """Test getting device categories when coordinator has string category."""
-        from custom_components.hass_dyson.services import (
-            _get_device_categories_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import _get_device_categories_for_coordinator
 
         mock_coordinator.device_category = "ec"
 
@@ -247,9 +229,7 @@ class TestServicesCoverageEnhancement:
 
     def test_get_device_categories_for_coordinator_list(self, mock_coordinator):
         """Test getting device categories when coordinator has list category."""
-        from custom_components.hass_dyson.services import (
-            _get_device_categories_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import _get_device_categories_for_coordinator
 
         mock_coordinator.device_category = ["ec", "robot"]
 
@@ -258,9 +238,7 @@ class TestServicesCoverageEnhancement:
 
     def test_get_device_categories_for_coordinator_none(self, mock_coordinator):
         """Test getting device categories when coordinator has no category."""
-        from custom_components.hass_dyson.services import (
-            _get_device_categories_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import _get_device_categories_for_coordinator
 
         # Remove device_category attribute
         if hasattr(mock_coordinator, "device_category"):
@@ -271,9 +249,7 @@ class TestServicesCoverageEnhancement:
 
     def test_get_device_categories_for_coordinator_empty(self, mock_coordinator):
         """Test getting device categories when coordinator has empty category."""
-        from custom_components.hass_dyson.services import (
-            _get_device_categories_for_coordinator,
-        )
+        from custom_components.hass_dyson.services import _get_device_categories_for_coordinator
 
         mock_coordinator.device_category = []
 
@@ -293,9 +269,7 @@ class TestServicesCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_find_cloud_coordinators_with_cloud_account(self, mock_hass):
         """Test finding cloud coordinators with cloud account coordinator."""
-        from custom_components.hass_dyson.coordinator import (
-            DysonCloudAccountCoordinator,
-        )
+        from custom_components.hass_dyson.coordinator import DysonCloudAccountCoordinator
         from custom_components.hass_dyson.services import _find_cloud_coordinators
 
         mock_cloud_coordinator = MagicMock(spec=DysonCloudAccountCoordinator)
@@ -313,10 +287,7 @@ class TestServicesCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_find_cloud_coordinators_with_device_coordinator(self, mock_hass):
         """Test finding cloud coordinators with device coordinator using cloud discovery."""
-        from custom_components.hass_dyson.const import (
-            CONF_DISCOVERY_METHOD,
-            DISCOVERY_CLOUD,
-        )
+        from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
         from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
         from custom_components.hass_dyson.services import _find_cloud_coordinators
 

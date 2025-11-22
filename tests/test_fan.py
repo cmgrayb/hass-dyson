@@ -151,7 +151,9 @@ class TestDysonFan:
         assert fan._attr_preset_mode is None
         assert fan._attr_oscillating is False
 
-    def test_init_sets_attributes_correctly_no_direction_support(self, mock_coordinator_no_direction):
+    def test_init_sets_attributes_correctly_no_direction_support(
+        self, mock_coordinator_no_direction
+    ):
         """Test that __init__ sets attributes correctly when direction is not supported."""
         # Act
         fan = DysonFan(mock_coordinator_no_direction)
@@ -482,7 +484,9 @@ class TestDysonFan:
         mock_coordinator.device.send_command.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_async_set_direction_forward_no_support(self, mock_coordinator_no_direction):
+    async def test_async_set_direction_forward_no_support(
+        self, mock_coordinator_no_direction
+    ):
         """Test async_set_direction with forward direction when direction is not supported."""
         # Arrange
         fan = DysonFan(mock_coordinator_no_direction)
@@ -552,7 +556,9 @@ class TestFanIntegration:
         )
         assert fan._attr_supported_features == expected_features
 
-    def test_fan_features_without_direction_support(self, mock_coordinator_no_direction):
+    def test_fan_features_without_direction_support(
+        self, mock_coordinator_no_direction
+    ):
         """Test that fan entity does not include direction feature when not supported."""
         # Arrange & Act
         fan = DysonFan(mock_coordinator_no_direction)

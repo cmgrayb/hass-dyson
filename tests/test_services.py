@@ -647,15 +647,10 @@ class TestServiceManagement:
         await async_setup_services(mock_hass)
 
         # Assert
-        # Should register 2 cloud services when no devices are configured
-        assert mock_hass.services.async_register.call_count == 2
+        # Should not register any services (cloud services are registered separately)
+        assert mock_hass.services.async_register.call_count == 0
 
-        # Verify cloud services are registered
-        registered_services = [
-            call[0][1] for call in mock_hass.services.async_register.call_args_list
-        ]
-        assert "get_cloud_devices" in registered_services
-        assert "refresh_account_data" in registered_services
+        # Verify the function completes without error (it's now a pass-through)
 
     @pytest.mark.asyncio
     async def test_async_remove_services(self, mock_hass):

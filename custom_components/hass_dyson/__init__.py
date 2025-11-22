@@ -27,6 +27,7 @@ from .const import (
 )
 from .coordinator import DysonCloudAccountCoordinator, DysonDataUpdateCoordinator
 from .services import (
+    async_remove_cloud_services,
     async_remove_device_services_for_coordinator,
     async_remove_services,
     async_setup_device_services_for_coordinator,
@@ -331,6 +332,11 @@ async def _handle_new_device(
 
 async def _setup_cloud_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Set up cloud account coordinator for device polling if enabled."""
+    # Set up cloud services for this account (regardless of polling setting)
+    from .services import async_setup_cloud_services
+
+    await async_setup_cloud_services(hass)
+
     poll_for_devices = entry.data.get(CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES)
 
     if poll_for_devices:
@@ -447,6 +453,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await cloud_coordinator.async_shutdown()
             hass.data[DOMAIN].pop(cloud_coordinator_key)
             _LOGGER.info("Cloud coordinator cleaned up for account entry")
+
+        # Check if this is the last cloud account and remove cloud services if so
+        remaining_cloud_accounts = [
+            config_entry
+            for config_entry in hass.config_entries.async_entries(DOMAIN)
+            if (
+                config_entry.entry_id != entry.entry_id
+                and "devices" in config_entry.data
+                and config_entry.data.get("devices")
+            )
+        ]
+
+        if not remaining_cloud_accounts:
+            await async_remove_cloud_services(hass)
+            _LOGGER.info("Removed cloud services - no more cloud accounts configured")
 
         # Find and remove all child device entries
         device_entries_to_remove = [
