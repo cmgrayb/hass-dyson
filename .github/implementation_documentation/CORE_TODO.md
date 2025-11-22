@@ -52,9 +52,11 @@
 
 ## 🎯 **IMMEDIATE ACTION ITEMS (Next 30 Days)**
 
-### **Service Separation**
-- **Get Cloud Devices** - Being registered when a manually added device is added
-- **Refresh Account Data** - Being registered when a manually added device is added
+### ✅ **Service Separation - COMPLETED**
+- ✅ **Get Cloud Devices** - Now only registered for cloud account entries
+- ✅ **Refresh Account Data** - Now only registered for cloud account entries
+- ✅ **Device Services** - Now only registered for individual device entries based on capabilities
+- ✅ **Separation Logic** - Proper flow separation between account-level and device-level service registration
 
 ### ✅ **Coverage Enhancement to 75% - COMPLETED** (Phase 2a - Achieved 80%)
 - 🎯 **sensor.py** (87% → 95%): Error handling in value conversion, missing sensor states
@@ -63,7 +65,7 @@
 - 🎯 **device_utils.py** (89% → 98%): Cloud device config creation error paths
 
 ### **Home Assistant Standards Compliance**
-- 🎯 **Entity Categories**: Implement proper entity categorization for all platforms
+- ✅ **Entity Categories**: Implemented proper entity categorization - primary controls in main UI, configuration entities in config section, diagnostics appropriately categorized
 - 🎯 **Device Class Standardization**: Ensure all sensors use standard device classes
 - 🎯 **Icon Consistency**: Audit and standardize all entity icons to mdi: format
 - 🎯 **Translation Framework**: Add basic i18n structure for core compatibility
