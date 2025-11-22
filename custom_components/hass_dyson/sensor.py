@@ -4,11 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
@@ -20,12 +16,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    CAPABILITY_EXTENDED_AQ,
-    CAPABILITY_FORMALDEHYDE,
-    CAPABILITY_VOC,
-    DOMAIN,
-)
+from .const import CAPABILITY_EXTENDED_AQ, CAPABILITY_FORMALDEHYDE, CAPABILITY_VOC, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -43,6 +34,7 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
 
         self._attr_unique_id = f"{coordinator.serial_number}_p25r"
         self._attr_translation_key = "p25r"
+        self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
@@ -1136,7 +1128,7 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
-        self._attr_icon = "mdi:chemical-weapon"
+        self._attr_icon = "mdi:molecule"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1248,9 +1240,10 @@ class DysonHEPAFilterLifeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_life"
         self._attr_translation_key = "hepa_filter_life"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_icon = "mdi:air-filter"
+        # No device class - filter life sensors don't have a specific Home Assistant device class
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1318,9 +1311,10 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_life"
         self._attr_translation_key = "carbon_filter_life"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        # No device class - filter life sensors don't have a specific Home Assistant device class
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_icon = "mdi:air-filter"
+        # No device class - filter life sensors don't have a specific Home Assistant device class
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1411,8 +1405,8 @@ class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
 
         self._attr_unique_id = f"{coordinator.serial_number}_hepa_filter_type"
         self._attr_translation_key = "hepa_filter_type"
-        self._attr_icon = "mdi:air-filter"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1449,8 +1443,8 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
 
         self._attr_unique_id = f"{coordinator.serial_number}_carbon_filter_type"
         self._attr_translation_key = "carbon_filter_type"
-        self._attr_icon = "mdi:air-filter"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

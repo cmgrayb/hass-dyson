@@ -3,11 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
@@ -721,7 +717,7 @@ class TestDysonFormaldehydeSensor:
         assert sensor._attr_unique_id == "TEST-SERIAL-123_hcho"
         assert sensor._attr_translation_key == "hcho"
         assert sensor._attr_native_unit_of_measurement == "mg/m³"
-        assert sensor._attr_icon == "mdi:chemical-weapon"
+        assert sensor._attr_icon == "mdi:molecule"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
         """Test native value calculation with valid formaldehyde data."""
