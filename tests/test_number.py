@@ -277,22 +277,20 @@ class TestDysonOscillationLowerAngleNumber:
         entity = DysonOscillationLowerAngleNumber(mock_coordinator)
         mock_coordinator.device.get_state_value.return_value = "0045"
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
+        with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 45
-        mock_safe.assert_called_once()
 
     def test_handle_coordinator_update_zero_value(self, mock_coordinator):
         """Test handling coordinator update with zero value."""
         entity = DysonOscillationLowerAngleNumber(mock_coordinator)
         mock_coordinator.device.get_state_value.return_value = "0000"
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
+        with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 0
-        mock_safe.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_success(self, mock_coordinator):
@@ -363,7 +361,7 @@ class TestDysonOscillationCenterAngleNumber:
         entity = DysonOscillationCenterAngleNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_center_angle"
-        assert entity._attr_name == "Oscillation Center Angle"
+        assert entity._attr_translation_key == "oscillation_center_angle"
         assert entity._attr_icon == "mdi:crosshairs"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
@@ -372,11 +370,10 @@ class TestDysonOscillationCenterAngleNumber:
         # Mock lower and upper angles: 45° and 315°, center should be 180°
         mock_coordinator.device.get_state_value.side_effect = ["0045", "0315"]
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
+        with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 180  # (45 + 315) // 2
-        mock_safe.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_success(self, mock_coordinator):
@@ -424,7 +421,7 @@ class TestDysonOscillationAngleSpanNumber:
         entity = DysonOscillationAngleSpanNumber(mock_coordinator)
 
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_angle_span"
-        assert entity._attr_name == "Oscillation Angle"
+        assert entity._attr_translation_key == "oscillation_angle_span"
         assert entity._attr_icon == "mdi:angle-acute"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
@@ -433,11 +430,10 @@ class TestDysonOscillationAngleSpanNumber:
         # Mock lower and upper angles: 45° and 315°, span should be 270°
         mock_coordinator.device.get_state_value.side_effect = ["0045", "0315"]
 
-        with patch.object(entity, "_handle_coordinator_update_safe") as mock_safe:
+        with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 270  # 315 - 45
-        mock_safe.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_success(self, mock_coordinator):
