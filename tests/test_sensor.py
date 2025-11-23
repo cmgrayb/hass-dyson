@@ -673,7 +673,7 @@ class TestDysonNO2Sensor:
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_no2"
         assert sensor._attr_translation_key == "no2"
-        assert sensor._attr_native_unit_of_measurement == "ppb"
+        assert sensor._attr_native_unit_of_measurement == "μg/m³"
         assert sensor._attr_icon == "mdi:molecule"
 
     def test_native_value_with_valid_data(self, mock_coordinator):

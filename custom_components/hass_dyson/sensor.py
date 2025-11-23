@@ -397,6 +397,7 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
 
         self._attr_unique_id = f"{coordinator.serial_number}_voc"
         self._attr_translation_key = "voc"
+        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
@@ -1278,7 +1279,7 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "no2"
         self._attr_device_class = SensorDeviceClass.NITROGEN_DIOXIDE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = "ppb"
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:molecule"
 
     def _handle_coordinator_update(self) -> None:
