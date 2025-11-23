@@ -1572,7 +1572,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         TODO: Implement MQTT status monitoring once the JSON key is identified.
         Expected topic: {mqtt_root}/{serial_number}/status/software
-        Example: 438M/9RJ-US-UAA8845A/status/software
+        Example: PREF/SER-IA-L0001/status/software
         """
         # Only cloud-discovered devices support firmware updates
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
