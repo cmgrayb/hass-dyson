@@ -627,8 +627,11 @@ async def async_setup_entry(  # noqa: C901
         )
         carbon_filter_type = device_data.get("cflt")
 
-        # Add carbon filter sensors if filter data exists and is not "NONE"
-        if carbon_filter_type is not None and str(carbon_filter_type).upper() != "NONE":
+        # Add carbon filter sensors if filter data exists and is not "NONE" or "SCOG"
+        if carbon_filter_type is not None and str(carbon_filter_type).upper() not in [
+            "NONE",
+            "SCOG",
+        ]:
             _LOGGER.debug(
                 "Adding carbon filter sensors for device %s - filter type: %s",
                 device_serial,
@@ -1751,8 +1754,8 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
 
             # Handle filter type conversion with validation
             if filter_type is not None:
-                # Convert "NONE" to "Not Installed", otherwise return the actual type
-                if str(filter_type).upper() == "NONE":
+                # Convert "NONE" or "SCOG" to "Not Installed", otherwise return the actual type
+                if str(filter_type).upper() in ["NONE", "SCOG"]:
                     self._attr_native_value = "Not Installed"
                     _LOGGER.debug(
                         "Carbon filter not installed on device %s", device_serial

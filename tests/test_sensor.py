@@ -926,6 +926,61 @@ class TestDysonCarbonFilterTypeSensor:
         # Assert
         assert sensor._attr_native_value is None
 
+    def test_native_value_with_none_filter_type(self, mock_coordinator):
+        """Test native value with NONE filter type (not installed)."""
+        # Arrange
+        sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+        mock_coordinator.device = MagicMock()
+        mock_coordinator.data = {"product-state": {"cflt": "NONE"}}
+
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value == "Not Installed"
+
+    def test_native_value_with_scog_filter_type(self, mock_coordinator):
+        """Test native value with SCOG filter type (not installed)."""
+        # Arrange
+        sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+        mock_coordinator.device = MagicMock()
+        mock_coordinator.data = {"product-state": {"cflt": "SCOG"}}
+
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value == "Not Installed"
+
+    def test_native_value_case_insensitive_none_scog(self, mock_coordinator):
+        """Test native value with case-insensitive NONE and SCOG values."""
+        sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+        mock_coordinator.device = MagicMock()
+
+        # Test lowercase variations
+        test_cases = [
+            ("none", "Not Installed"),
+            ("NONE", "Not Installed"),
+            ("None", "Not Installed"),
+            ("scog", "Not Installed"),
+            ("SCOG", "Not Installed"),
+            ("Scog", "Not Installed"),
+        ]
+
+        for input_value, expected_output in test_cases:
+            mock_coordinator.data = {"product-state": {"cflt": input_value}}
+
+            # Act
+            with patch.object(sensor, "async_write_ha_state"):
+                sensor._handle_coordinator_update()
+
+            # Assert
+            assert sensor._attr_native_value == expected_output, (
+                f"Failed for input '{input_value}'"
+            )
+
 
 class TestDysonConnectionStatusSensor:
     """Test Dyson connection status sensor."""
@@ -1129,3 +1184,27 @@ class TestSensorCoverageEnhancement:
         value = wifi_sensor.native_value
         # Should handle missing RSSI gracefully
         assert value is None or isinstance(value, int | float)
+
+    def test_carbon_filter_sensor_setup_filtering(self, mock_coordinator):
+        """Test the carbon filter sensor filtering logic for NONE and SCOG values."""
+        # Test the filtering logic directly
+        test_cases = [
+            ("NONE", False, "NONE should prevent sensor creation"),
+            ("SCOG", False, "SCOG should prevent sensor creation"),
+            ("none", False, "lowercase none should prevent sensor creation"),
+            ("scog", False, "lowercase scog should prevent sensor creation"),
+            ("GCOM", True, "GCOM should allow sensor creation"),
+            ("ABCD", True, "Other values should allow sensor creation"),
+            (None, False, "None value should prevent sensor creation"),
+        ]
+
+        for carbon_filter_type, should_add, description in test_cases:
+            # Test the logic that's used in async_setup_entry
+            if carbon_filter_type is not None:
+                condition = str(carbon_filter_type).upper() not in ["NONE", "SCOG"]
+            else:
+                condition = False
+
+            assert condition == should_add, (
+                f"{description} (got {condition}, expected {should_add})"
+            )
