@@ -122,7 +122,7 @@ def test_fan_entity_creation(mock_coordinator):
 
     # Test entity properties
     assert fan.unique_id == "MOCK-SERIAL-TEST123_fan"
-    assert fan.name == "Dyson MOCK-SERIAL-TEST123"  # From entity base class
+    assert fan.name is None  # Uses device name from device_info
 
     # Mock async_write_ha_state to prevent Home Assistant framework calls
     with patch.object(fan, "async_write_ha_state"):

@@ -98,7 +98,6 @@ class TestFanSceneSupport:
         assert attributes["fan_power"] is True
         assert attributes["fan_state"] == "FAN"
         assert attributes["fan_speed_setting"] == "0005"
-        assert attributes["auto_mode"] is False
         assert attributes["night_mode"] is True
 
         # Verify oscillation properties
@@ -120,26 +119,25 @@ class TestClimateSceneSupport:
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
-                "auto": "OFF",
-                "fnsp": "0005",
-                "fnst": "FAN",
+                "hsta": "OFF",
             }.get(key, default)
         )
 
         climate = DysonClimateEntity(mock_coordinator)
         climate._attr_target_temperature = 22.5
-        climate._attr_hvac_mode = "auto"
+        from homeassistant.components.climate.const import HVACMode
+
+        climate._attr_hvac_mode = HVACMode.HEAT
 
         attributes = climate.extra_state_attributes
 
         # Verify core climate properties
         assert attributes["target_temperature"] == 22.5
-        assert attributes["hvac_mode"] == "auto"
+        assert attributes["hvac_mode"] == HVACMode.HEAT
 
         # Verify device state properties
         assert attributes["heating_mode"] == "HEAT"
-        assert attributes["auto_mode"] is False
-        assert attributes["fan_power"] is True
+        assert attributes["heating_status"] == "OFF"
 
         # Verify temperature in Kelvin for device commands
         assert attributes["target_temperature_kelvin"] == "2956"
@@ -339,7 +337,6 @@ class TestSceneIntegrationSupport:
         essential_properties = {
             "fan_power",
             "fan_speed",
-            "auto_mode",
             "night_mode",
             "oscillation_enabled",
             "oscillation_angle_low",

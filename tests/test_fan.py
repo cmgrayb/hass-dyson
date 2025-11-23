@@ -134,7 +134,7 @@ class TestDysonFan:
         # Assert
         assert fan.coordinator == mock_coordinator
         assert fan._attr_unique_id == "TEST-SERIAL-123_fan"
-        assert fan._attr_name == "Test Device"
+        assert fan._attr_name is None  # Uses device name from device_info
         assert fan._attr_supported_features == (
             FanEntityFeature.SET_SPEED
             | FanEntityFeature.DIRECTION

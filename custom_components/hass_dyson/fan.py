@@ -197,7 +197,7 @@ class DysonFan(DysonEntity, FanEntity):
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_fan"
-        self._attr_name = f"{coordinator.device_name}"
+        self._attr_name = None  # Use device name from device_info
         # Base features for all fans
         self._attr_supported_features = (
             FanEntityFeature.SET_SPEED
@@ -586,7 +586,7 @@ class DysonFan(DysonEntity, FanEntity):
             elif preset_mode == "Heat" and self._has_heating:
                 # Enable heating mode
                 await self.coordinator.async_send_command(
-                    "set_climate_mode", {"fnst": "FAN", "hmod": "HEAT", "auto": "OFF"}
+                    "set_climate_mode", {"hmod": "HEAT"}
                 )
             else:
                 _LOGGER.warning("Unknown preset mode: %s", preset_mode)
@@ -843,7 +843,7 @@ class DysonFan(DysonEntity, FanEntity):
     # Climate functionality for heating-enabled devices
     def _update_heating_data(self, device_data: dict[str, Any]) -> None:
         """Update temperature and heating mode data."""
-        if not self._has_heating:
+        if not self._has_heating or not self.coordinator.device:
             return
 
         # Current temperature
@@ -897,9 +897,9 @@ class DysonFan(DysonEntity, FanEntity):
             # Call the device method directly
             await self.coordinator.device.set_target_temperature(temperature)
 
-            # Request updated state after command
-            await asyncio.sleep(1)  # Give device time to process
-            await self.coordinator.async_request_refresh()
+            # Update state immediately for responsive UI
+            self._attr_target_temperature = temperature
+            self.async_write_ha_state()
 
             _LOGGER.debug(
                 "Set target temperature to %s°C for %s",
@@ -935,23 +935,19 @@ class DysonFan(DysonEntity, FanEntity):
 
         try:
             if hvac_mode == HVACMode.OFF:
-                await self.coordinator.async_send_command("set_power", {"fnst": "OFF"})
+                await self.coordinator.device.send_command("STATE-SET", {"fnst": "OFF"})
             elif hvac_mode == HVACMode.HEAT:
-                await self.coordinator.async_send_command(
-                    "set_climate_mode", {"fnst": "FAN", "hmod": "HEAT", "auto": "OFF"}
+                await self.coordinator.device.send_command(
+                    "STATE-SET", {"hmod": "HEAT"}
                 )
             elif hvac_mode == HVACMode.FAN_ONLY:
-                await self.coordinator.async_send_command(
-                    "set_climate_mode", {"fnst": "FAN", "hmod": "OFF", "auto": "OFF"}
-                )
+                await self.coordinator.device.send_command("STATE-SET", {"fnst": "FAN"})
             elif hvac_mode == HVACMode.AUTO:
-                await self.coordinator.async_send_command(
-                    "set_climate_mode", {"fnst": "FAN", "hmod": "OFF", "auto": "ON"}
-                )
+                await self.coordinator.device.send_command("STATE-SET", {"auto": "ON"})
 
-            # Request updated state after command
-            await asyncio.sleep(1)
-            await self.coordinator.async_request_refresh()
+            # Update state immediately for responsive UI
+            self._attr_hvac_mode = hvac_mode
+            self.async_write_ha_state()
 
             _LOGGER.debug(
                 "Set HVAC mode to %s for %s",
