@@ -96,7 +96,7 @@ class TestDysonClimateEntity:
         # Assert
         assert entity.coordinator == mock_coordinator
         assert entity._attr_unique_id == "TEST-SERIAL-123_climate"
-        assert entity._attr_translation_key == "heating_controls"
+        assert entity._attr_name is None  # Uses device name from device_info
         assert entity._attr_icon == "mdi:thermostat"
 
         # Climate features
@@ -117,8 +117,6 @@ class TestDysonClimateEntity:
         expected_hvac_modes = [
             HVACMode.OFF,
             HVACMode.HEAT,
-            HVACMode.FAN_ONLY,
-            HVACMode.AUTO,
         ]
         assert entity._attr_hvac_modes == expected_hvac_modes
 
@@ -205,15 +203,13 @@ class TestDysonClimateEntity:
         assert entity._attr_target_temperature == 20  # Default value
 
     def test_update_hvac_mode_off(self, mock_coordinator):
-        """Test HVAC mode update when fan is off."""
+        """Test HVAC mode update when heating is off."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "fnst": "OFF",
-                "hmod": "HEAT",
-                "auto": "OFF",
+                "hmod": "OFF",
             }.get(key, default)
         )
 
@@ -242,56 +238,80 @@ class TestDysonClimateEntity:
         # Assert
         assert entity._attr_hvac_mode == HVACMode.HEAT
 
-    def test_update_hvac_mode_auto(self, mock_coordinator):
-        """Test HVAC mode update when auto mode is on."""
+    def test_update_hvac_action_heating(self, mock_coordinator):
+        """Test HVAC action update when device is actively heating."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "fnst": "FAN",
-                "hmod": "OFF",
-                "auto": "ON",
+                "hsta": "HEAT",
             }.get(key, default)
         )
 
         # Act
-        entity._update_hvac_mode(device_data)
+        entity._update_hvac_action(device_data)
 
         # Assert
-        assert entity._attr_hvac_mode == HVACMode.AUTO
+        from homeassistant.components.climate.const import HVACAction
 
-    def test_update_hvac_mode_fan_only(self, mock_coordinator):
-        """Test HVAC mode update when only fan is running."""
+        assert entity._attr_hvac_action == HVACAction.HEATING
+
+    def test_update_hvac_action_idle(self, mock_coordinator):
+        """Test HVAC action update when device is idle (heating mode on but not heating)."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_hvac_mode = HVACMode.HEAT  # Set heating mode
         device_data = {"product-state": {}}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "fnst": "FAN",
-                "hmod": "OFF",
-                "auto": "OFF",
+                "hsta": "OFF",
             }.get(key, default)
         )
 
         # Act
-        entity._update_hvac_mode(device_data)
+        entity._update_hvac_action(device_data)
 
         # Assert
-        assert entity._attr_hvac_mode == HVACMode.FAN_ONLY
+        from homeassistant.components.climate.const import HVACAction
+
+        assert entity._attr_hvac_action == HVACAction.IDLE
+
+    def test_update_hvac_action_off(self, mock_coordinator):
+        """Test HVAC action update when HVAC mode is off."""
+        # Arrange
+        entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_hvac_mode = HVACMode.OFF  # Set mode to off
+        device_data = {"product-state": {}}
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "hsta": "OFF",
+            }.get(key, default)
+        )
+
+        # Act
+        entity._update_hvac_action(device_data)
+
+        # Assert
+        from homeassistant.components.climate.const import HVACAction
+
+        assert entity._attr_hvac_action == HVACAction.OFF
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_off(self, mock_coordinator):
         """Test setting HVAC mode to OFF."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        entity.hass = MagicMock()  # Mock hass for async_write_ha_state
+        entity.async_write_ha_state = MagicMock()
+        mock_coordinator.device.send_command = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.OFF)
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_power", {"fnst": "OFF"}
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"hmod": "OFF"}
         )
 
     @pytest.mark.asyncio
@@ -299,42 +319,30 @@ class TestDysonClimateEntity:
         """Test setting HVAC mode to HEAT."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        entity.hass = MagicMock()  # Mock hass for async_write_ha_state
+        entity.async_write_ha_state = MagicMock()
+        mock_coordinator.device.send_command = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.HEAT)
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_climate_mode", {"fnst": "FAN", "hmod": "HEAT", "auto": "OFF"}
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"hmod": "HEAT"}
         )
 
     @pytest.mark.asyncio
-    async def test_async_set_hvac_mode_fan_only(self, mock_coordinator):
-        """Test setting HVAC mode to FAN_ONLY."""
+    async def test_async_set_hvac_mode_unsupported(self, mock_coordinator):
+        """Test setting unsupported HVAC mode logs warning and doesn't call device."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        mock_coordinator.device.send_command = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.FAN_ONLY)
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_climate_mode", {"fnst": "FAN", "hmod": "OFF", "auto": "OFF"}
-        )
-
-    @pytest.mark.asyncio
-    async def test_async_set_hvac_mode_auto(self, mock_coordinator):
-        """Test setting HVAC mode to AUTO."""
-        # Arrange
-        entity = DysonClimateEntity(mock_coordinator)
-
-        # Act
-        await entity.async_set_hvac_mode(HVACMode.AUTO)
-
-        # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_climate_mode", {"fnst": "FAN", "auto": "ON"}
-        )
+        mock_coordinator.device.send_command.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_no_device(self, mock_coordinator):
@@ -354,6 +362,9 @@ class TestDysonClimateEntity:
         """Test setting target temperature with valid value."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        # Mock hass for async_write_ha_state
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
 
         # Act
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 22.5})
@@ -361,7 +372,9 @@ class TestDysonClimateEntity:
         # Assert
         # Should call the device's set_target_temperature method with temperature in Celsius
         mock_coordinator.device.set_target_temperature.assert_called_once_with(22.5)
-        mock_coordinator.async_request_refresh.assert_called_once()
+        # Should update local state immediately
+        assert entity._attr_target_temperature == 22.5
+        entity.async_write_ha_state.assert_called()
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_no_temperature(self, mock_coordinator):
@@ -393,13 +406,16 @@ class TestDysonClimateEntity:
         """Test turning the climate entity on."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        entity.hass = MagicMock()  # Mock hass for async_write_ha_state
+        entity.async_write_ha_state = MagicMock()
+        mock_coordinator.device.send_command = AsyncMock()
 
         # Act
         await entity.async_turn_on()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_climate_mode", {"fnst": "FAN", "auto": "ON"}
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"hmod": "HEAT"}
         )
 
     @pytest.mark.asyncio
@@ -407,13 +423,16 @@ class TestDysonClimateEntity:
         """Test turning the climate entity off."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+        entity.hass = MagicMock()  # Mock hass for async_write_ha_state
+        entity.async_write_ha_state = MagicMock()
+        mock_coordinator.device.send_command = AsyncMock()
 
         # Act
         await entity.async_turn_off()
 
         # Assert
-        mock_coordinator.async_send_command.assert_called_once_with(
-            "set_power", {"fnst": "OFF"}
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"hmod": "OFF"}
         )
 
     def test_extra_state_attributes_with_device(self, mock_coordinator):
@@ -426,9 +445,7 @@ class TestDysonClimateEntity:
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hmod": "HEAT",
-                "auto": "OFF",
-                "fnsp": "0005",
-                "fnst": "FAN",
+                "hsta": "OFF",
             }.get(key, default)
         )
 
@@ -440,8 +457,7 @@ class TestDysonClimateEntity:
         assert attributes["target_temperature"] == 21.5
         assert attributes["hvac_mode"] == HVACMode.HEAT
         assert attributes["heating_mode"] == "HEAT"
-        assert attributes["auto_mode"] is False
-        assert attributes["fan_power"] is True
+        assert attributes["heating_status"] == "OFF"
         # 21.5°C = 294.65K = 2946.5 -> 2946 (int conversion)
         assert attributes["target_temperature_kelvin"] == "2946"
 
@@ -494,11 +510,9 @@ class TestClimateIntegration:
         )
 
         # Act & Assert - should not raise exception
-        await entity.async_set_hvac_mode(HVACMode.HEAT)
-        await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
+        mock_coordinator.device.send_command = AsyncMock(
+            side_effect=Exception("Command test error")
+        )
 
-        # Should have attempted to call the commands despite errors
-        # Only HVAC mode goes through async_send_command (fan mode removed)
-        assert mock_coordinator.async_send_command.call_count == 1
-        # Temperature setting goes through device.set_target_temperature
+        await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
         mock_coordinator.device.set_target_temperature.assert_called_once_with(20.0)
