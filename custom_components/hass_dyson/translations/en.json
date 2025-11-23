@@ -241,6 +241,11 @@
         "name": "Oscillation Angle"
       }
     },
+    "binary_sensor": {
+      "filter_replacement": {
+        "name": "Filter Replacement"
+      }
+    },
     "update": {
       "firmware_update": {
         "name": "Firmware Update"
