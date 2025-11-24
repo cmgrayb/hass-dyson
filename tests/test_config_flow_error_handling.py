@@ -21,11 +21,7 @@ from custom_components.hass_dyson.config_flow import (
     _get_management_actions,
     _get_setup_method_options,
 )
-from custom_components.hass_dyson.const import (
-    CONF_CREDENTIAL,
-    CONF_MQTT_PREFIX,
-    CONF_SERIAL_NUMBER,
-)
+from custom_components.hass_dyson.const import CONF_CREDENTIAL, CONF_MQTT_PREFIX, CONF_SERIAL_NUMBER
 
 
 class TestConfigFlowErrorHandling:
@@ -56,42 +52,19 @@ class TestConfigFlowErrorHandling:
             with pytest.raises(Exception, match="Schema error"):
                 await mock_flow.async_step_user(None)
 
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_missing_challenge_id(self, mock_flow):
-        """Test authentication when challenge is missing challenge_id."""
-        mock_cloud_client = AsyncMock()
-        mock_challenge = MagicMock()
-        mock_challenge.challenge_id = None
-        mock_cloud_client.request_login_code = AsyncMock(return_value=mock_challenge)
+    # @pytest.mark.asyncio
+    # async def test_authenticate_with_dyson_api_missing_challenge_id(self, mock_flow):
+    #     """Test authentication when challenge is missing challenge_id."""
+    #     # NOTE: This test is disabled because _authenticate_with_dyson_api has been
+    #     # replaced with _initiate_otp_with_dyson_api in the new OAuth/2FA flow
+    #     pass
 
-        with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
-                "test@test.com", "password123"
-            )
-
-        assert challenge_id is None
-        assert errors["base"] == "auth_failed"
-
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_none_challenge(self, mock_flow):
-        """Test authentication when challenge itself is None."""
-        mock_cloud_client = AsyncMock()
-        mock_cloud_client.provision = AsyncMock()
-        mock_cloud_client.get_user_status = AsyncMock()
-        mock_cloud_client.begin_login = AsyncMock(return_value=None)
-
-        # Mock hass.async_add_executor_job to return our mock client
-        mock_flow.hass.async_add_executor_job = AsyncMock(
-            return_value=mock_cloud_client
-        )
-
-        with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
-                "test@test.com", "password"
-            )
-
-        assert challenge_id is None
-        assert errors["base"] == "connection_failed"
+    # @pytest.mark.asyncio
+    # async def test_authenticate_with_dyson_api_none_challenge(self, mock_flow):
+    #     """Test authentication when challenge itself is None."""
+    #     # NOTE: This test is disabled because _authenticate_with_dyson_api has been
+    #     # replaced with _initiate_otp_with_dyson_api in the new OAuth/2FA flow
+    #     pass
 
     @pytest.mark.asyncio
     async def test_create_cloud_account_form_exception(self, mock_flow):
@@ -101,24 +74,21 @@ class TestConfigFlowErrorHandling:
                 mock_flow._create_cloud_account_form({})
 
     @pytest.mark.asyncio
-    async def test_async_step_cloud_account_missing_credentials(self, mock_flow):
-        """Test cloud account step with missing credentials."""
-        user_input = {"email": "", "password": "password"}
+    async def test_async_step_cloud_account_missing_email(self, mock_flow):
+        """Test cloud account step with missing email."""
+        user_input = {"email": ""}  # No password field in new flow
 
         result = await mock_flow.async_step_cloud_account(user_input)
 
         assert result["type"] == FlowResultType.FORM
         assert result["errors"]["base"] == "auth_failed"
 
-    @pytest.mark.asyncio
-    async def test_async_step_cloud_account_empty_password(self, mock_flow):
-        """Test cloud account step with empty password."""
-        user_input = {"email": "test@test.com", "password": ""}
-
-        result = await mock_flow.async_step_cloud_account(user_input)
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["errors"]["base"] == "auth_failed"
+    # @pytest.mark.asyncio
+    # async def test_async_step_cloud_account_empty_password(self, mock_flow):
+    #     """Test cloud account step with empty password."""
+    #     # NOTE: This test is no longer applicable because password is collected
+    #     # in the verification step, not the cloud account step
+    #     pass
 
     @pytest.mark.asyncio
     async def test_process_manual_device_input_missing_fields(self, mock_flow):
@@ -201,18 +171,18 @@ class TestConfigFlowErrorHandling:
         assert result["errors"]["base"] == "verification_failed"
 
     @pytest.mark.asyncio
-    async def test_async_step_verify_missing_email_or_password(self, mock_flow):
-        """Test verify step with missing email or password."""
+    async def test_async_step_verify_missing_verification_code_or_password(self, mock_flow):
+        """Test verify step with missing verification code or password."""
         mock_flow._cloud_client = MagicMock()
         mock_flow._challenge_id = "challenge123"
-        mock_flow._email = ""  # Missing email
-        mock_flow._password = "password"
+        mock_flow._email = "test@example.com"
 
-        user_input = {"verification_code": "123456"}
+        # Test missing verification code
+        user_input = {"verification_code": "", "password": "password123"}
         result = await mock_flow.async_step_verify(user_input)
 
         assert result["type"] == FlowResultType.FORM
-        assert result["errors"]["base"] == "verification_failed"
+        assert result["errors"]["base"] == "auth_failed"
 
     @pytest.mark.asyncio
     async def test_async_step_verify_401_error(self, mock_flow):
@@ -497,101 +467,30 @@ class TestConfigFlowAuthenticationScenarios:
         flow.context = {"title_placeholders": {}}
         return flow
 
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_auth_error(self, mock_flow):
-        """Test authentication with DysonAuthError."""
-        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
-            mock_cloud_client = AsyncMock()
-            mock_client_class.return_value = mock_cloud_client
+    # @pytest.mark.asyncio
+    # async def test_authenticate_with_dyson_api_auth_error(self, mock_flow):
+    #     """Test authentication with DysonAuthError."""
+    #     # NOTE: This test is disabled because _authenticate_with_dyson_api has been
+    #     # replaced with _initiate_otp_with_dyson_api in the new OAuth/2FA flow
+    #     pass
 
-            # Create a mock exception for DysonAuthError
-            class DysonAuthError(Exception):
-                pass
+    # @pytest.mark.asyncio
+    # async def test_authenticate_with_dyson_api_connection_error(self, mock_flow):
+    #     """Test authentication with DysonConnectionError."""
+    #     # NOTE: This test is disabled because _authenticate_with_dyson_api has been
+    #     # replaced with _initiate_otp_with_dyson_api in the new OAuth/2FA flow
+    #     pass
 
-            mock_cloud_client.request_login_code = AsyncMock(
-                side_effect=DysonAuthError("Auth failed")
-            )
+    # @pytest.mark.asyncio
+    # async def test_authenticate_with_dyson_api_api_error(self, mock_flow):
+    #     """Test authentication with DysonAPIError."""
+    #     # NOTE: This test is disabled because _authenticate_with_dyson_api has been
+    #     # replaced with _initiate_otp_with_dyson_api in the new OAuth/2FA flow
+    #     pass
 
-            # Mock the exception in the config flow
-            with patch("libdyson_rest.exceptions.DysonAuthError", DysonAuthError):
-                challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
-                    "test@test.com", "password"
-                )
-
-        assert challenge_id is None
-        assert errors["base"] == "auth_failed"
-
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_connection_error(self, mock_flow):
-        """Test authentication with DysonConnectionError."""
-        mock_cloud_client = AsyncMock()
-        mock_cloud_client.provision = AsyncMock(
-            side_effect=Exception("Connection failed")
-        )
-
-        # Mock hass.async_add_executor_job to return our mock client
-        mock_flow.hass.async_add_executor_job = AsyncMock(
-            return_value=mock_cloud_client
-        )
-
-        # Import and use real exceptions
-        from libdyson_rest.exceptions import DysonConnectionError
-
-        with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            with patch.object(
-                mock_cloud_client,
-                "provision",
-                side_effect=DysonConnectionError("Connection failed"),
-            ):
-                challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
-                    "test@test.com", "password"
-                )
-
-        assert challenge_id is None
-        assert errors["base"] == "connection_failed"
-
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_api_error(self, mock_flow):
-        """Test authentication with DysonAPIError."""
-        mock_cloud_client = AsyncMock()
-        mock_cloud_client.provision = AsyncMock()
-        mock_cloud_client.get_user_status = AsyncMock()
-        mock_cloud_client.begin_login = AsyncMock()
-
-        # Mock hass.async_add_executor_job to return our mock client
-        mock_flow.hass.async_add_executor_job = AsyncMock(
-            return_value=mock_cloud_client
-        )
-
-        # Import and use real exceptions
-        from libdyson_rest.exceptions import DysonAPIError
-
-        with patch("libdyson_rest.AsyncDysonClient", return_value=mock_cloud_client):
-            with patch.object(
-                mock_cloud_client,
-                "begin_login",
-                side_effect=DysonAPIError("API failed"),
-            ):
-                challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
-                    "test@test.com", "password"
-                )
-
-        assert challenge_id is None
-        assert errors["base"] == "cloud_api_error"
-
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_generic_exception(self, mock_flow):
-        """Test authentication with generic exception."""
-        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
-            mock_cloud_client = AsyncMock()
-            mock_client_class.return_value = mock_cloud_client
-            mock_cloud_client.request_login_code = AsyncMock(
-                side_effect=Exception("Generic error")
-            )
-
-            challenge_id, errors = await mock_flow._authenticate_with_dyson_api(
-                "test@test.com", "password"
-            )
-
-        assert challenge_id is None
-        assert errors["base"] == "auth_failed"
+    # @pytest.mark.asyncio
+    # async def test_authenticate_with_dyson_api_generic_exception(self, mock_flow):
+    #     """Test authentication with generic exception."""
+    #     # NOTE: This test is disabled because _authenticate_with_dyson_api has been
+    #     # replaced with _initiate_otp_with_dyson_api in the new OAuth/2FA flow
+    #     pass

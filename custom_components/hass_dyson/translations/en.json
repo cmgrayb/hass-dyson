@@ -12,8 +12,7 @@
         "title": "Dyson Account Authentication",
         "description": "Enter your Dyson account credentials to discover and set up your devices.",
         "data": {
-          "email": "Email Address",
-          "password": "Password"
+          "email": "Email Address"
         }
       },
       "manual_device": {
@@ -33,7 +32,8 @@
         "title": "Email Verification",
         "description": "A verification code has been sent to {email}. Please check your email and enter the code below.",
         "data": {
-          "verification_code": "Verification Code"
+          "verification_code": "Verification Code",
+          "password": "Password"
         }
       },
       "connection": {

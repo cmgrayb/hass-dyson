@@ -33,47 +33,32 @@ class TestDysonConfigFlowComprehensiveAuth:
         flow.context = {"title_placeholders": {}}
         return flow
 
+
+
     @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_network_error(self, mock_flow):
-        """Test authentication with network error."""
-        # Mock async_add_executor_job to return a mock client that raises ConnectionError
+    async def test_initiate_otp_with_dyson_api_network_error(self, mock_flow):
+        """Test OTP initiation with network error."""
+        # Import the actual exception to test proper exception handling
+        from libdyson_rest.exceptions import DysonConnectionError
+
+        # Mock async_add_executor_job to return a mock client that raises connection error
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(
-            side_effect=ConnectionError("Network unreachable")
-        )
+        mock_client.provision = AsyncMock(side_effect=DysonConnectionError())
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api(
-            "test@example.com", "password123"
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
         )
 
         assert token is None
         assert "base" in errors
         assert (
-            errors["base"] == "auth_failed"
-        )  # All exceptions map to auth_failed in the catch-all
+            errors["base"] == "connection_failed"
+        )  # DysonConnectionError maps to connection_failed
 
     @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_timeout_error(self, mock_flow):
-        """Test authentication with timeout error."""
-        # Mock async_add_executor_job to return a mock client that raises TimeoutError
-        mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=TimeoutError())
-        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
-
-        token, errors = await mock_flow._authenticate_with_dyson_api(
-            "test@example.com", "password123"
-        )
-
-        assert token is None
-        assert "base" in errors
-        assert (
-            errors["base"] == "auth_failed"
-        )  # All exceptions map to auth_failed in the catch-all
-
-    @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_api_error(self, mock_flow):
-        """Test authentication with API error."""
+    async def test_initiate_otp_with_dyson_api_api_error(self, mock_flow):
+        """Test OTP initiation with API error."""
         # Import the actual exception to test proper exception handling
         from libdyson_rest.exceptions import DysonAuthError
 
@@ -84,8 +69,8 @@ class TestDysonConfigFlowComprehensiveAuth:
         )
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api(
-            "test@example.com", "password123"
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
         )
 
         assert token is None
@@ -93,15 +78,15 @@ class TestDysonConfigFlowComprehensiveAuth:
         assert errors["base"] == "auth_failed"  # DysonAuthError maps to auth_failed
 
     @pytest.mark.asyncio
-    async def test_authenticate_with_dyson_api_generic_exception(self, mock_flow):
-        """Test authentication with generic exception."""
+    async def test_initiate_otp_with_dyson_api_generic_exception(self, mock_flow):
+        """Test OTP initiation with generic exception."""
         # Mock async_add_executor_job to return a mock client that raises generic Exception
         mock_client = MagicMock()
         mock_client.provision = AsyncMock(side_effect=Exception("Generic error"))
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
-        token, errors = await mock_flow._authenticate_with_dyson_api(
-            "test@example.com", "password123"
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
         )
 
         assert token is None
@@ -371,36 +356,29 @@ class TestDysonConfigFlowComprehensiveVerify:
     @pytest.mark.asyncio
     async def test_async_step_verify_empty_otp_submission(self, mock_flow):
         """Test verify step with empty verification code submission."""
-        user_input = {"verification_code": ""}
+        user_input = {"verification_code": "", "password": "password123"}
 
         # Set up flow state to simulate being in verification step
         mock_flow._cloud_client = MagicMock()
         mock_flow._challenge_id = "test-challenge-id"
         mock_flow._email = "test@example.com"
-        mock_flow._password = "password123"
-
-        # Mock complete_login to fail for empty verification code
-        mock_flow._cloud_client.complete_login = AsyncMock(
-            side_effect=Exception("Empty verification code")
-        )
 
         result = await mock_flow.async_step_verify(user_input)
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "verify"
         assert "base" in result["errors"]
-        assert result["errors"]["base"] == "verification_failed"
+        assert result["errors"]["base"] == "auth_failed"
 
     @pytest.mark.asyncio
     async def test_async_step_verify_invalid_otp_format(self, mock_flow):
         """Test verify step with invalid verification code format."""
-        user_input = {"verification_code": "12345"}  # Too short
+        user_input = {"verification_code": "12345", "password": "password123"}  # Too short
 
         # Set up flow state to simulate being in verification step
         mock_flow._cloud_client = MagicMock()
         mock_flow._challenge_id = "test-challenge-id"
         mock_flow._email = "test@example.com"
-        mock_flow._password = "password123"
 
         # Mock the challenge verification to fail
         mock_flow._cloud_client.complete_login = AsyncMock(
@@ -417,13 +395,12 @@ class TestDysonConfigFlowComprehensiveVerify:
     @pytest.mark.asyncio
     async def test_async_step_verify_network_error_during_challenge(self, mock_flow):
         """Test verify step with network error during challenge."""
-        user_input = {"verification_code": "123456"}
+        user_input = {"verification_code": "123456", "password": "password123"}
 
         # Set up flow state to simulate being in verification step
         mock_flow._cloud_client = MagicMock()
         mock_flow._challenge_id = "test-challenge-id"
         mock_flow._email = "test@example.com"
-        mock_flow._password = "password123"
 
         # Mock network error during complete_login
         mock_flow._cloud_client.complete_login = AsyncMock(
