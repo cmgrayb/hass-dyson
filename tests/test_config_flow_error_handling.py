@@ -21,7 +21,11 @@ from custom_components.hass_dyson.config_flow import (
     _get_management_actions,
     _get_setup_method_options,
 )
-from custom_components.hass_dyson.const import CONF_CREDENTIAL, CONF_MQTT_PREFIX, CONF_SERIAL_NUMBER
+from custom_components.hass_dyson.const import (
+    CONF_CREDENTIAL,
+    CONF_MQTT_PREFIX,
+    CONF_SERIAL_NUMBER,
+)
 
 
 class TestConfigFlowErrorHandling:
@@ -171,7 +175,9 @@ class TestConfigFlowErrorHandling:
         assert result["errors"]["base"] == "verification_failed"
 
     @pytest.mark.asyncio
-    async def test_async_step_verify_missing_verification_code_or_password(self, mock_flow):
+    async def test_async_step_verify_missing_verification_code_or_password(
+        self, mock_flow
+    ):
         """Test verify step with missing verification code or password."""
         mock_flow._cloud_client = MagicMock()
         mock_flow._challenge_id = "challenge123"

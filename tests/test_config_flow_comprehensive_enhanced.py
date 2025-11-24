@@ -33,8 +33,6 @@ class TestDysonConfigFlowComprehensiveAuth:
         flow.context = {"title_placeholders": {}}
         return flow
 
-
-
     @pytest.mark.asyncio
     async def test_initiate_otp_with_dyson_api_network_error(self, mock_flow):
         """Test OTP initiation with network error."""
@@ -373,7 +371,10 @@ class TestDysonConfigFlowComprehensiveVerify:
     @pytest.mark.asyncio
     async def test_async_step_verify_invalid_otp_format(self, mock_flow):
         """Test verify step with invalid verification code format."""
-        user_input = {"verification_code": "12345", "password": "password123"}  # Too short
+        user_input = {
+            "verification_code": "12345",
+            "password": "password123",
+        }  # Too short
 
         # Set up flow state to simulate being in verification step
         mock_flow._cloud_client = MagicMock()
