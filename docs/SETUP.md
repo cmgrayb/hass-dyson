@@ -2,7 +2,7 @@
 
 Complete setup instructions for integrating your Dyson devices with Home Assistant.
 
-## 🎯 Prerequisites
+## Prerequisites
 
 ### **Home Assistant Requirements**
 - Home Assistant Core 2025.8 or newer
@@ -14,11 +14,11 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 - Dyson account credentials (for cloud discovery)
 - OR Device sticker information available (for manual setup) on some older devices
 
-## 📥 Installation Methods
+## Installation Methods
 
 ### **Method 1: HACS (Recommended)**
 1. Open HACS in Home Assistant
-2. Go to "Integrations" 
+2. Go to "Integrations"
 3. Click "Custom Repositories"
 4. Add URL: `https://github.com/cmgrayb/ha-dyson-alt`
 5. Category: "Integration"
@@ -45,12 +45,12 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 3. Place in `/config/custom_components/hass_dyson`
 4. Restart Home Assistant
 
-## ⚙️ Configuration Options
+## Configuration Options
 
 ### **Option 1: Cloud Discovery (Easy)**
 
-**When to use**: 
-- You have a Dyson account 
+**When to use**:
+- You have a Dyson account
    - You want automatic or semi-automatic device discovery
    - You need to query the API for device information for manual device configuration
    - You need to query the API for device information for a feature request or bug report
@@ -80,10 +80,26 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
    - You want local-only control of your devices
    - You do NOT want Home Assistant to support firmware version or update functions
 
-**Required information** (from device sticker if your device has one):
+**Required information**:
 - **Serial Number** (e.g., `MOCK-SERIAL-TEST123`)
 - **Device Password** (8-character string on sticker)
-- **Product Type** (e.g., 438 for Pure Cool)
+- **Device MQTT Prefix** (e.g., 438, 438K, 527E, 358M)
+
+**How to retrieve the required information**
+- Option 1: Home Assistant Action
+  - Follow the instructions above for setting up a Cloud connection
+  - Uncheck all discovery boxes
+  - Run Get Cloud Devices Action in Home Assistant with Sanitize OFF
+
+- Option 2: Sticker
+  - Older Dyson devices may have a sticker on them with the connection information
+
+- Option 3: Third Party Tools
+  - There are several third party tools which can retrieve the information such as option 1 for those uncomfortable with cloud account creation
+    - libdyson-rest
+      - Use the troubleshoot_account.py script in [cmgrayb/libdyson-rest](https://github.com/cmgrayb/libdyson-rest) to perform the action outside of Home Assistant
+    - opendyson
+      - Use [opendyson](https://github.com/libdyson-wg/opendyson) to retrieve the connection information
 
 **Setup steps**:
 1. Locate device sticker (usually on bottom or back)
@@ -111,7 +127,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
       - `VOC` for chemical detection (VOC and NO2 sensors)
       - `Formaldehyde` for formaldehyde sensor and carbon filter monitoring
       - `Humidifier` for humidity control and humidity sensor
-      - `ChangeWifi` for WiFi management and signal strength monitoring 
+      - `ChangeWifi` for WiFi management and signal strength monitoring
    ```
 6. Click **Submit**
 
@@ -134,7 +150,7 @@ hass-dyson:
       capabilities: ["AdvanceOscillationDay1", "ExtendedAQ", "Heating"]
 
     - serial_number: "475-US-JEN0000B"
-      discovery_method: "sticker"  
+      discovery_method: "sticker"
       hostname: "192.168.1.101"
       credential: "CCCCDDDD"
       device_type: "475"
@@ -161,13 +177,13 @@ hass-dyson:
       capabilities: ["Scheduling", "ChangeWifi"]
 ```
 
-## 🏷️ Device Information Guide
+## Device Information Guide
 
 ### **Finding Device Information**
 
 **Device Sticker Location**:
 - **Tower models**: Bottom of device
-- **Desk models**: Back/bottom of device  
+- **Desk models**: Back/bottom of device
 - **Wall models**: Behind mounting bracket
 
 **Sticker Information**:
@@ -209,28 +225,30 @@ Model: 438                      ← Use this for device_type and MQTT prefix
   - Filter replacement tracking
   - Enables: PM2.5/PM10 sensors, HEPA filter sensors
 
-- **`Heating`** (Heat Mode & Temperature)
+- **`Heating`** (Heat Mode)
+  - VIRTUAL CAPABILITY - This capability is not returned by the Dyson API and is made avaialable for manual device setup only
   - Hot air output functionality
   - Target temperature control (1-37°C)
   - Current temperature sensing
   - Heat mode selection
-  - Enables: Climate entity, temperature sensor, heating controls
+  - Enables: Climate entity, heating controls
 
 - **`VOC`** (Chemical Detection)
+  - VIRTUAL CAPABILITY - This capability is not returned by the Dyson API and is made avaialable for manual device setup only
   - Volatile Organic Compounds sensing
-  - Nitrogen Dioxide (NO2) detection
+  - Nitrogen Dioxide (NO2/NOx) detection
+  - Carbon Dioxide (CO2) detection
   - Chemical air quality monitoring
   - Real-time gas detection
   - Enables: VOC sensor, NO2 sensor
 
 - **`Formaldehyde`** (Formaldehyde Detection)
-  - Formaldehyde concentration monitoring
-  - Carbon filter life tracking
-  - Advanced chemical filtering
-  - Specialized air treatment
-  - Enables: Formaldehyde sensor, carbon filter sensors
+  - VIRTUAL CAPABILITY - This capability is not returned by the Dyson API and is made avaialable for manual device setup only
+  - Formaldehyde (HCHO) concentration monitoring
+  - Enables: Formaldehyde sensor
 
 - **`Humidifier`** (Humidity Control)
+  - VIRTUAL CAPABILITY - This capability is not returned by the Dyson API and is made avaialable for manual device setup only
   - Air humidification functionality
   - Relative humidity sensing
   - Moisture level control
@@ -271,7 +289,7 @@ Model: 438                      ← Use this for device_type and MQTT prefix
   - Examples: 360 Eye, 360 Heurist
   - Note: Basic functionality only, help needed for full implementation
 
-- **`vacuum` (Vacuum Cleaner)** - Limited support  
+- **`vacuum` (Vacuum Cleaner)** - Limited support
   - Traditional handheld/stick vacuum cleaners
   - Cordless vacuum models
   - Examples: V6, V7, V8, V10, V11, V15 series
@@ -300,7 +318,7 @@ Model: 438                      ← Use this for device_type and MQTT prefix
 # Linux/Mac
 nmap -sn 192.168.1.0/24 | grep -i dyson
 
-# Windows  
+# Windows
 ping 192.168.1.100  # Try common IPs
 ```
 
@@ -329,7 +347,7 @@ ping 192.168.1.100
 ### **3. Entity Verification**
 **Expected entities varies by device category and capabilities**:
 - 1 Fan (primary control with preset modes)
-- 2-4 Sensors (PM2.5, PM10, RSSI, Filter)  
+- 2-4 Sensors (PM2.5, PM10, RSSI, Filter)
 - 2-3 Binary Sensors (connectivity, filter, faults)
 - 1 Button (identify device)
 - 3-5 Number controls (sleep timer, oscillation angles)
@@ -360,7 +378,7 @@ ping 192.168.1.100
 - Try setup during off-peak hours
 
 ### **Manual Setup Issues**
-**Problem**: "Device not found"  
+**Problem**: "Device not found"
 **Solutions**:
 - Verify device IP address
 - Check device is on same network
@@ -394,7 +412,7 @@ ping 192.168.1.100
 - Enable debug logging to see discovery process
 - Restart Home Assistant after setup
 
-### **Network Issues**  
+### **Network Issues**
 **Problem**: Intermittent disconnection
 **Solutions**:
 - Check WiFi signal strength to device
@@ -432,11 +450,11 @@ ping 192.168.1.100
 
 ### **Information to Include**
 - Home Assistant version
-- Integration version  
+- Integration version
 - **Output from Get Cloud Devices in Sanitize mode**
 - Setup method used
 - Error messages from logs
-- Network configuration details 
+- Network configuration details
 
 ---
 

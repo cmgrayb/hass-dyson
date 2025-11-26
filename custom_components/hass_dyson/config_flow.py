@@ -259,10 +259,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Top-level exception in async_step_user: %s", e)
             raise
 
-    async def _authenticate_with_dyson_api(
-        self, email: str, password: str, country: str = "US", culture: str = "en-US"
+    async def _initiate_otp_with_dyson_api(
+        self, email: str, country: str = "US", culture: str = "en-US"
     ) -> tuple[str | None, dict[str, str]]:
-        """Authenticate with Dyson API and return challenge ID and any errors."""
+        """Initiate OTP with Dyson API using only email and return challenge ID and any errors."""
         # Import here to avoid scoping issues
         from libdyson_rest import AsyncDysonClient
         from libdyson_rest.exceptions import (
@@ -275,18 +275,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         try:
             _LOGGER.info(
-                "Attempting to authenticate with Dyson API using email: %s, country: %s, culture: %s",
+                "Initiating OTP with Dyson API using email: %s, country: %s, culture: %s",
                 email,
                 country,
                 culture,
             )
 
-            # Initialize libdyson-rest client with full credentials (matching working script pattern)
-            # Include password, country, and culture parameters as required by the API
+            # Initialize libdyson-rest client with only email for OTP initiation
+            # Following proper OAuth/2FA pattern: Step 1 only requires email
             self._cloud_client = await self.hass.async_add_executor_job(
-                lambda: AsyncDysonClient(
-                    email=email, password=password, country=country, culture=culture
-                )
+                lambda: AsyncDysonClient(email=email, country=country, culture=culture)
             )  # type: ignore[func-returns-value]
 
             if self._cloud_client is None:
@@ -307,8 +305,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
             # Step 3: Begin the login process to get challenge_id - this triggers the OTP email
-            _LOGGER.debug("Beginning login process...")
-            challenge = await self._cloud_client.begin_login()
+            # According to libdyson-rest developers, begin_login only requires email
+            _LOGGER.debug("Beginning login process (OTP initiation)...")
+            challenge = await self._cloud_client.begin_login(email)
 
             # Validate and store challenge ID for verification step
             if challenge is None or challenge.challenge_id is None:
@@ -318,12 +317,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 challenge_id = str(challenge.challenge_id)
                 _LOGGER.info(
-                    "Successfully initiated login process, challenge ID received"
+                    "Successfully initiated OTP process, challenge ID received"
                 )
                 return challenge_id, errors
 
         except DysonAuthError as e:
-            _LOGGER.exception("Dyson authentication failed: %s", e)
+            _LOGGER.exception("Dyson OTP initiation failed: %s", e)
             await self._cleanup_cloud_client()
             errors["base"] = "auth_failed"
         except DysonConnectionError as e:
@@ -335,15 +334,15 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self._cleanup_cloud_client()
             errors["base"] = "cloud_api_error"
         except Exception as e:
-            _LOGGER.exception("Error during Dyson authentication: %s", e)
+            _LOGGER.exception("Error during Dyson OTP initiation: %s", e)
             await self._cleanup_cloud_client()
             errors["base"] = "auth_failed"
 
         return None, errors
 
     def _create_cloud_account_form(self, errors: dict[str, str]) -> ConfigFlowResult:
-        """Create the cloud account authentication form."""
-        _LOGGER.info("Showing Dyson account authentication form")
+        """Create the cloud account email collection form."""
+        _LOGGER.info("Showing Dyson account email collection form")
         try:
             # Get default country and culture from Home Assistant config
             default_country, default_culture = _get_default_country_culture(self.hass)
@@ -351,12 +350,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema = vol.Schema(
                 {
                     vol.Required("email"): str,
-                    vol.Required("password"): str,
                     vol.Optional(CONF_COUNTRY, default=default_country): str,
                     vol.Optional(CONF_CULTURE, default=default_culture): str,
                 }
             )
-            _LOGGER.info("Authentication form schema created successfully")
+            _LOGGER.info("Email collection form schema created successfully")
 
             return self.async_show_form(
                 step_id="cloud_account",
@@ -369,24 +367,23 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
         except Exception as e:
-            _LOGGER.exception("Error creating authentication form: %s", e)
+            _LOGGER.exception("Error creating email collection form: %s", e)
             raise
 
     async def async_step_cloud_account(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the cloud account authentication step."""
+        """Handle the cloud account email collection step."""
         try:
             _LOGGER.info(
-                "Starting async_step_cloud_account - Dyson account authentication with user_input: %s",
+                "Starting async_step_cloud_account - Dyson account email collection with user_input: %s",
                 user_input,
             )
             errors: dict[str, str] = {}
 
             if user_input is not None:
-                # Store email and password for verification step
+                # Store email for verification step
                 self._email = user_input.get("email", "")
-                self._password = user_input.get("password", "")
 
                 # Get country and culture from user input with fallback to HA defaults
                 country = user_input.get(CONF_COUNTRY)
@@ -400,11 +397,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     country = country or default_country
                     culture = culture or default_culture
 
-                # Ensure we have valid strings before calling authentication
-                if self._email and self._password:
-                    # Attempt authentication with Dyson API
-                    challenge_id, errors = await self._authenticate_with_dyson_api(
-                        self._email, self._password, country, culture
+                # Ensure we have valid email before initiating OTP
+                if self._email:
+                    # Initiate OTP with Dyson API (Step 1: email only)
+                    challenge_id, errors = await self._initiate_otp_with_dyson_api(
+                        self._email, country, culture
                     )
 
                     if challenge_id is not None:
@@ -413,7 +410,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     errors["base"] = "auth_failed"
 
-            # Show the Dyson account authentication form
+            # Show the Dyson account email collection form
             return self._create_cloud_account_form(errors)
 
         except Exception as e:
@@ -573,7 +570,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_verify(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:  # noqa: C901
-        """Handle the verification code step."""
+        """Handle the verification code and password step."""
         try:
             _LOGGER.info("Starting async_step_verify with user_input: %s", user_input)
             errors = {}
@@ -581,15 +578,22 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if user_input is not None:
                 try:
                     verification_code = user_input.get("verification_code", "")
-                    _LOGGER.info("Received verification code: %s", verification_code)
+                    password = user_input.get("password", "")
+                    _LOGGER.info(
+                        "Received verification code and password for authentication"
+                    )
 
                     if not self._cloud_client or not self._challenge_id:
                         _LOGGER.error(
                             "Missing cloud client or challenge ID for verification"
                         )
                         errors["base"] = "verification_failed"
+                    elif not verification_code or not password:
+                        _LOGGER.error("Missing verification code or password")
+                        errors["base"] = "auth_failed"
                     else:
-                        # Complete authentication with libdyson-rest using challenge_id and verification code
+                        # Complete authentication with libdyson-rest using challenge_id, verification code, and password
+                        # This follows the proper OAuth/2FA pattern: Step 2 requires OTP + password together
                         _LOGGER.debug(
                             "Attempting complete_login with challenge_id=%s, verification_code=%s",
                             self._challenge_id,
@@ -600,7 +604,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             # Ensure we have all required values
                             if (
                                 not self._email
-                                or not self._password
+                                or not password
                                 or not self._challenge_id
                             ):
                                 raise ValueError(
@@ -611,11 +615,13 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 self._challenge_id,
                                 verification_code,
                                 self._email,
-                                self._password,
+                                password,
                             )
                             _LOGGER.info(
                                 "Successfully authenticated with Dyson API, got auth token"
                             )
+                            # Store password for later use in device setup
+                            self._password = password
                             return await self.async_step_connection()
                         except Exception as complete_error:
                             _LOGGER.error(
@@ -638,11 +644,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Error during verification: %s", e)
                     errors["base"] = "verification_failed"
 
-            # Show the verification code form
-            _LOGGER.info("Showing verification code form")
+            # Show the verification code and password form
+            _LOGGER.info("Showing verification code and password form")
             try:
                 data_schema = vol.Schema(
                     {
+                        vol.Required("password"): str,
                         vol.Required("verification_code"): str,
                     }
                 )
@@ -1094,6 +1101,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "serial_number": device_serial,
             "name": device_name,
             "product_type": discovery_info.get("product_type", "unknown"),
+            "category": discovery_info.get("category", "unknown"),
         }
 
         config_data = create_cloud_device_config(

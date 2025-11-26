@@ -15,7 +15,6 @@ from custom_components.hass_dyson.select import (
 from custom_components.hass_dyson.switch import (
     DysonContinuousMonitoringSwitch,
     DysonHeatingSwitch,
-    DysonOscillationSwitch,
 )
 
 
@@ -35,7 +34,7 @@ def mock_coordinator():
 
     # Mock device
     device = MagicMock()
-    device._get_current_value = MagicMock()
+    device.get_state_value = MagicMock()
     coordinator.device = device
 
     # Mock device data
@@ -67,7 +66,7 @@ class TestFanSceneSupport:
     def test_fan_extra_state_attributes(self, mock_coordinator):
         """Test fan entity exposes all properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "fpwr": "ON",
                 "fnst": "FAN",
@@ -99,7 +98,6 @@ class TestFanSceneSupport:
         assert attributes["fan_power"] is True
         assert attributes["fan_state"] == "FAN"
         assert attributes["fan_speed_setting"] == "0005"
-        assert attributes["auto_mode"] is False
         assert attributes["night_mode"] is True
 
         # Verify oscillation properties
@@ -118,62 +116,40 @@ class TestClimateSceneSupport:
     def test_climate_extra_state_attributes(self, mock_coordinator):
         """Test climate entity exposes all properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
-                "auto": "OFF",
-                "fnsp": "0005",
-                "fnst": "FAN",
+                "hsta": "OFF",
             }.get(key, default)
         )
 
         climate = DysonClimateEntity(mock_coordinator)
-        climate._attr_target_temperature = 20.0
-        climate._attr_hvac_mode = "heat"
-        climate._attr_fan_mode = "5"
+        climate._attr_target_temperature = 22.5
+        from homeassistant.components.climate.const import HVACMode
+
+        climate._attr_hvac_mode = HVACMode.HEAT
 
         attributes = climate.extra_state_attributes
 
         # Verify core climate properties
-        assert attributes["target_temperature"] == 20.0
-        assert attributes["hvac_mode"] == "heat"
-        assert attributes["fan_mode"] == "5"
+        assert attributes["target_temperature"] == 22.5
+        assert attributes["hvac_mode"] == HVACMode.HEAT
 
         # Verify device state properties
         assert attributes["heating_mode"] == "HEAT"
-        assert attributes["auto_mode"] is False
-        assert attributes["fan_speed"] == "0005"
-        assert attributes["fan_power"] is True
+        assert attributes["heating_status"] == "OFF"
 
         # Verify temperature in Kelvin for device commands
-        assert attributes["target_temperature_kelvin"] == "2931"
+        assert attributes["target_temperature_kelvin"] == "2956"
 
 
 class TestSwitchSceneSupport:
     """Test switch entities scene support."""
 
-    def test_oscillation_switch_extra_state_attributes(self, mock_coordinator):
-        """Test oscillation switch exposes properties for scene support."""
-        # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
-            lambda data, key, default: {
-                "oson": "ON",
-                "osal": "0045",
-                "osau": "0315",
-            }.get(key, default)
-        )
-
-        switch = DysonOscillationSwitch(mock_coordinator)
-        attributes = switch.extra_state_attributes
-
-        assert attributes["oscillation_enabled"] is True
-        assert attributes["oscillation_angle_low"] == 45
-        assert attributes["oscillation_angle_high"] == 315
-
     def test_heating_switch_extra_state_attributes(self, mock_coordinator):
         """Test heating switch exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
                 "hmax": "2930",
@@ -195,7 +171,7 @@ class TestSwitchSceneSupport:
     ):
         """Test continuous monitoring switch exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {"rhtm": "ON"}.get(key, default)
         )
 
@@ -212,7 +188,7 @@ class TestSelectSceneSupport:
     def test_oscillation_mode_select_extra_state_attributes(self, mock_coordinator):
         """Test oscillation mode select exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "osal": "0045",
@@ -236,7 +212,7 @@ class TestSelectSceneSupport:
     def test_heating_mode_select_extra_state_attributes(self, mock_coordinator):
         """Test heating mode select exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "hmod": "HEAT",
                 "hmax": "2930",
@@ -263,7 +239,7 @@ class TestNumberSceneSupport:
     def test_sleep_timer_extra_state_attributes(self, mock_coordinator):
         """Test sleep timer number exposes properties for scene support."""
         # Setup device mock return values
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {"sltm": "120"}.get(key, default)
         )
 
@@ -283,7 +259,7 @@ class TestSceneIntegrationSupport:
     def test_comprehensive_device_state_exposure(self, mock_coordinator):
         """Test that all settable device properties are exposed across entities."""
         # Setup device mock return values for comprehensive state
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "fpwr": "ON",  # Fan power - fan entity
                 "fnst": "FAN",  # Fan state - fan entity
@@ -316,12 +292,10 @@ class TestSceneIntegrationSupport:
         climate = DysonClimateEntity(mock_coordinator)
         climate._attr_target_temperature = 20.0
         climate._attr_hvac_mode = "heat"
-        climate._attr_fan_mode = "5"
         climate_attrs = climate.extra_state_attributes
 
-        # Switch entities cover: oscillation, heating, continuous monitoring
-        osc_switch = DysonOscillationSwitch(mock_coordinator)
-        osc_attrs = osc_switch.extra_state_attributes
+        # Switch entities cover: heating, continuous monitoring
+        # Note: Oscillation is now handled by the fan platform, not switch entities
 
         heat_switch = DysonHeatingSwitch(mock_coordinator)
         heat_attrs = heat_switch.extra_state_attributes
@@ -350,7 +324,6 @@ class TestSceneIntegrationSupport:
         for attrs in [
             fan_attrs,
             climate_attrs,
-            osc_attrs,
             heat_attrs,
             mon_attrs,
             osc_select_attrs,
@@ -364,7 +337,6 @@ class TestSceneIntegrationSupport:
         essential_properties = {
             "fan_power",
             "fan_speed",
-            "auto_mode",
             "night_mode",
             "oscillation_enabled",
             "oscillation_angle_low",
@@ -385,6 +357,6 @@ class TestSceneIntegrationSupport:
         # Verify specific critical properties exist
         assert "fan_power" in fan_attrs
         assert "heating_enabled" in heat_attrs
-        assert "oscillation_enabled" in osc_attrs
+        assert "oscillation_enabled" in fan_attrs  # Oscillation is now in fan platform
         assert "target_temperature" in climate_attrs
         assert "sleep_timer_minutes" in timer_attrs

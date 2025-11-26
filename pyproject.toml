@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.18.1"
+version = "0.19.0-beta.18"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -33,7 +33,7 @@ dependencies = [
     "aiohttp>=3.12.15",
     "cryptography>=45.0.3",
     "requests>=2.32.4",
-    "libdyson-rest==0.8.0b7",
+    "libdyson-rest==0.9.0b1",
     "paho-mqtt>=2.1.0",
 ]
 
@@ -96,7 +96,7 @@ skip-magic-trailing-comma = false
 select = [
     # Pycodestyle
     "E", "W",
-    # Pyflakes  
+    # Pyflakes
     "F",
     # Import sorting (isort)
     "I",
@@ -218,7 +218,7 @@ filterwarnings = [
     "ignore::ResourceWarning",
     "ignore:Event loop is closed:RuntimeWarning",
     "ignore:coroutine.*was never awaited:RuntimeWarning",
-    "ignore:.*shutdown_default_executor.*was never awaited:RuntimeWarning", 
+    "ignore:.*shutdown_default_executor.*was never awaited:RuntimeWarning",
     "ignore:.*BaseEventLoop.shutdown_default_executor.*:RuntimeWarning",
     "ignore:.*unawaited coroutine.*:RuntimeWarning",
     "ignore:.*was never awaited.*:RuntimeWarning",
@@ -233,7 +233,7 @@ filterwarnings = [
 ]
 markers = [
     "asyncio: marks tests as async",
-    "integration: marks tests as integration tests", 
+    "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
 ]
 
@@ -258,10 +258,3 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B601"]
-
-
-
-
-
-
-

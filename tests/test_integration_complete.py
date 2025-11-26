@@ -97,6 +97,18 @@ def mock_coordinator(mock_hass, mock_config_entry):
         mock_device.set_direction = AsyncMock()
         mock_device.set_oscillation = AsyncMock()
 
+        # Set up get_state_value method for device state access
+        mock_device.get_state_value = MagicMock(
+            side_effect=lambda data, key, default: {
+                "fdir": "ON",  # Forward direction (ON = forward, OFF = reverse)
+                "auto": "OFF",
+                "hmod": "OFF",
+                "fpwr": "ON",
+                "fnsp": "0005",
+                "fnst": "FAN",
+            }.get(key, default)
+        )
+
         coordinator.device = mock_device
 
         return coordinator
@@ -110,7 +122,7 @@ def test_fan_entity_creation(mock_coordinator):
 
     # Test entity properties
     assert fan.unique_id == "MOCK-SERIAL-TEST123_fan"
-    assert fan.name == "Dyson MOCK-SERIAL-TEST123"  # From entity base class
+    assert fan.name is None  # Uses device name from device_info
 
     # Mock async_write_ha_state to prevent Home Assistant framework calls
     with patch.object(fan, "async_write_ha_state"):

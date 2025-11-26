@@ -36,8 +36,8 @@ async def async_setup_entry(
     if "AdvanceOscillationDay1" in device_capabilities:
         entities.append(DysonOscillationModeSelect(coordinator))
 
-    if "Heating" in device_capabilities:
-        entities.append(DysonHeatingModeSelect(coordinator))
+    # Note: Heating mode control is now integrated into the fan entity's preset modes
+    # No separate heating mode select needed
 
     async_add_entities(entities, True)
 
@@ -69,10 +69,10 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
             product_state = self.coordinator.data.get("product-state", {})
 
             # Get air quality mode from device state (auto mode)
-            auto_mode = self.coordinator.device._get_current_value(
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
-            night_mode = self.coordinator.device._get_current_value(
+            night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
 
@@ -118,9 +118,24 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
                 option,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting air quality mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid air quality mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set air quality mode for %s: %s",
+                "Unexpected error setting air quality mode to '%s' for %s: %s",
+                option,
                 self.coordinator.serial_number,
                 err,
             )
@@ -161,10 +176,10 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         try:
             # Try to get lower/upper angles first
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             lower_angle = int(lower_data.lstrip("0") or "0")
@@ -173,7 +188,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         except (ValueError, TypeError):
             # Fallback to ancp if available
             try:
-                angle_data = self.coordinator.device._get_current_value(
+                angle_data = self.coordinator.device.get_state_value(
                     product_state, "ancp", "0175"
                 )
                 return int(angle_data.lstrip("0") or "175")
@@ -186,16 +201,16 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             return "Off"
 
         product_state = self.coordinator.data.get("product-state", {})
-        oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
+        oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
 
         if oson == "OFF":
             return "Off"
 
         try:
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             lower_angle = int(lower_data.lstrip("0") or "0")
@@ -470,9 +485,24 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid oscillation mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation mode for %s: %s",
+                "Unexpected error setting oscillation mode to '%s' for %s: %s",
+                option,
                 self.coordinator.serial_number,
                 err,
             )
@@ -490,19 +520,19 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         attributes["oscillation_mode"] = self._attr_current_option
 
         # Oscillation state details
-        oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
+        oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
         oscillation_enabled: bool = oson == "ON"
         attributes["oscillation_enabled"] = oscillation_enabled  # type: ignore[assignment]
 
         # Current angle configuration
         try:
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
-            center_data = self.coordinator.device._get_current_value(
+            center_data = self.coordinator.device.get_state_value(
                 product_state, "ancp", "0175"
             )
 
@@ -539,9 +569,7 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
         if self.coordinator.device:
             # Get heating mode from device state (hmod)
             product_state = self.coordinator.data.get("product-state", {})
-            hmod = self.coordinator.device._get_current_value(
-                product_state, "hmod", "OFF"
-            )
+            hmod = self.coordinator.device.get_state_value(product_state, "hmod", "OFF")
             if hmod == "OFF":
                 self._attr_current_option = "Off"
             elif hmod == "HEAT":
@@ -569,9 +597,24 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
             _LOGGER.debug(
                 "Set heating mode to %s for %s", option, self.coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting heating mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid heating mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set heating mode for %s: %s",
+                "Unexpected error setting heating mode to '%s' for %s: %s",
+                option,
                 self.coordinator.serial_number,
                 err,
             )
@@ -589,14 +632,14 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
         attributes["heating_mode"] = self._attr_current_option
 
         # Device heating state details
-        hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+        hmod = self.coordinator.device.get_state_value(product_state, "hmod", "OFF")
         attributes["heating_mode_raw"] = hmod
         heating_enabled: bool = hmod != "OFF"
         attributes["heating_enabled"] = heating_enabled  # type: ignore[assignment]
 
         # Include target temperature if available
         try:
-            hmax = self.coordinator.device._get_current_value(
+            hmax = self.coordinator.device.get_state_value(
                 product_state, "hmax", "2980"
             )
             temp_kelvin: float = int(hmax) / 10  # Device reports in 0.1K increments

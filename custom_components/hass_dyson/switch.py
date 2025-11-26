@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CAPABILITY_ENVIRONMENTAL_DATA, CAPABILITY_HEATING, DOMAIN
+from .const import CAPABILITY_ENVIRONMENTAL_DATA, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -45,12 +45,11 @@ async def async_setup_entry(
     # Add additional switches based on capabilities
     device_capabilities = coordinator.device_capabilities
 
-    # Oscillation switch disabled - use "Oscillation Mode" select entity instead
-    # if "AdvanceOscillationDay1" in device_capabilities:
-    #     entities.append(DysonOscillationSwitch(coordinator))
+    # Note: Oscillation is now handled natively by the fan platform via FanEntityFeature.OSCILLATE
+    # Advanced oscillation modes are available through the oscillation mode select entity
 
-    if CAPABILITY_HEATING in device_capabilities:
-        entities.append(DysonHeatingSwitch(coordinator))
+    # Note: Heating functionality is now integrated into the fan entity's HVAC modes
+    # No separate heating switch needed
 
     if CAPABILITY_ENVIRONMENTAL_DATA in device_capabilities:
         entities.append(DysonContinuousMonitoringSwitch(coordinator))
@@ -76,7 +75,7 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get auto mode from device state (auto)
             product_state = self.coordinator.data.get("product-state", {})
-            auto_mode = self.coordinator.device._get_current_value(
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
             self._attr_is_on = auto_mode == "ON"
@@ -93,9 +92,21 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
             await self.coordinator.device.set_auto_mode(True)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on auto mode for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling auto mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for auto mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on auto mode for %s: %s",
+                "Unexpected error enabling auto mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -109,9 +120,21 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
             await self.coordinator.device.set_auto_mode(False)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned off auto mode for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling auto mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for auto mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off auto mode for %s: %s",
+                "Unexpected error disabling auto mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -134,7 +157,7 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get night mode from device state (nmod)
             product_state = self.coordinator.data.get("product-state", {})
-            night_mode = self.coordinator.device._get_current_value(
+            night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
             self._attr_is_on = night_mode == "ON"
@@ -151,9 +174,21 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             await self.coordinator.device.set_night_mode(True)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug("Turned on night mode for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling night mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for night mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on night mode for %s: %s",
+                "Unexpected error enabling night mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -169,105 +204,28 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
             _LOGGER.debug(
                 "Turned off night mode for %s", self.coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling night mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for night mode on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off night mode for %s: %s",
+                "Unexpected error disabling night mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
 
 
-class DysonOscillationSwitch(DysonEntity, SwitchEntity):
-    """Switch for oscillation."""
-
-    coordinator: DysonDataUpdateCoordinator
-
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the oscillation switch."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_oscillation"
-        self._attr_translation_key = "oscillation"
-        self._attr_icon = "mdi:rotate-3d-variant"
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self.coordinator.device:
-            # Get oscillation from device state (oson)
-            product_state = self.coordinator.data.get("product-state", {})
-            oson = self.coordinator.device._get_current_value(
-                product_state, "oson", "OFF"
-            )
-            self._attr_is_on = oson == "ON"
-        else:
-            self._attr_is_on = None
-        super()._handle_coordinator_update()
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Turn on oscillation."""
-        if not self.coordinator.device:
-            return
-
-        try:
-            await self.coordinator.device.set_oscillation(True)
-            # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug(
-                "Turned on oscillation for %s", self.coordinator.serial_number
-            )
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to turn on oscillation for %s: %s",
-                self.coordinator.serial_number,
-                err,
-            )
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Turn off oscillation."""
-        if not self.coordinator.device:
-            return
-
-        try:
-            await self.coordinator.device.set_oscillation(False)
-            # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug(
-                "Turned off oscillation for %s", self.coordinator.serial_number
-            )
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to turn off oscillation for %s: %s",
-                self.coordinator.serial_number,
-                err,
-            )
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return oscillation-specific state attributes for scene support."""
-        if not self.coordinator.device:
-            return None
-
-        attributes: dict[str, Any] = {}
-        product_state = self.coordinator.data.get("product-state", {})
-
-        # Oscillation state for scene support
-        oson = self.coordinator.device._get_current_value(product_state, "oson", "OFF")
-        attributes["oscillation_enabled"] = oson == "ON"
-
-        # Include oscillation angles if available
-        try:
-            lower_data = self.coordinator.device._get_current_value(
-                product_state, "osal", "0000"
-            )
-            upper_data = self.coordinator.device._get_current_value(
-                product_state, "osau", "0350"
-            )
-            lower_angle: int = int(lower_data.lstrip("0") or "0")
-            upper_angle: int = int(upper_data.lstrip("0") or "350")
-
-            attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
-            attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
-        except (ValueError, TypeError):
-            pass
-
-        return attributes
+# DysonOscillationSwitch class removed - oscillation is now handled natively by the fan platform
+# via FanEntityFeature.OSCILLATE and the fan.oscillate service
 
 
 class DysonHeatingSwitch(DysonEntity, SwitchEntity):
@@ -287,9 +245,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get heating from device state (hmod)
             product_state = self.coordinator.data.get("product-state", {})
-            hmod = self.coordinator.device._get_current_value(
-                product_state, "hmod", "OFF"
-            )
+            hmod = self.coordinator.device.get_state_value(product_state, "hmod", "OFF")
             self._attr_is_on = hmod != "OFF"
         else:
             self._attr_is_on = None
@@ -303,9 +259,21 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_heating_mode("HEAT")
             _LOGGER.debug("Turned on heating for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling heating for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for heating on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on heating for %s: %s",
+                "Unexpected error enabling heating for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -318,9 +286,21 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_heating_mode("OFF")
             _LOGGER.debug("Turned off heating for %s", self.coordinator.serial_number)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling heating for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for heating on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off heating for %s: %s",
+                "Unexpected error disabling heating for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -335,7 +315,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         product_state = self.coordinator.data.get("product-state", {})
 
         # Heating mode state for scene support
-        hmod = self.coordinator.device._get_current_value(product_state, "hmod", "OFF")
+        hmod = self.coordinator.device.get_state_value(product_state, "hmod", "OFF")
         attributes["heating_mode"] = hmod
         heating_enabled: bool = hmod != "OFF"
         attributes["heating_enabled"] = heating_enabled  # type: ignore[assignment]
@@ -343,7 +323,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         # Include related heating properties if available
         try:
             # Target temperature in Kelvin
-            hmax = self.coordinator.device._get_current_value(
+            hmax = self.coordinator.device.get_state_value(
                 product_state, "hmax", "2980"
             )
             temp_kelvin: float = int(hmax) / 10  # Device reports in 0.1K increments
@@ -376,9 +356,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         if self.coordinator.device:
             # Get monitoring from device state (rhtm)
             product_state = self.coordinator.data.get("product-state", {})
-            rhtm = self.coordinator.device._get_current_value(
-                product_state, "rhtm", "OFF"
-            )
+            rhtm = self.coordinator.device.get_state_value(product_state, "rhtm", "OFF")
             self._attr_is_on = rhtm == "ON"
         else:
             self._attr_is_on = None
@@ -394,9 +372,21 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
             _LOGGER.debug(
                 "Turned on continuous monitoring for %s", self.coordinator.serial_number
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling continuous monitoring for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for continuous monitoring on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn on continuous monitoring for %s: %s",
+                "Unexpected error enabling continuous monitoring for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -412,9 +402,21 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
                 "Turned off continuous monitoring for %s",
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling continuous monitoring for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for continuous monitoring on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to turn off continuous monitoring for %s: %s",
+                "Unexpected error disabling continuous monitoring for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
@@ -429,7 +431,7 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         product_state = self.coordinator.data.get("product-state", {})
 
         # Continuous monitoring state for scene support
-        rhtm = self.coordinator.device._get_current_value(product_state, "rhtm", "OFF")
+        rhtm = self.coordinator.device.get_state_value(product_state, "rhtm", "OFF")
         continuous_monitoring: bool = rhtm == "ON"
         attributes["continuous_monitoring"] = continuous_monitoring  # type: ignore[assignment]
         attributes["monitoring_mode"] = rhtm
