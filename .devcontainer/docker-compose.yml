@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # Development container with all tools
@@ -20,9 +20,9 @@ services:
     networks:
       - ha-dyson-network
 
-  # Home Assistant test instance  
+  # Home Assistant test instance
   homeassistant:
-    image: homeassistant/home-assistant:stable
+    image: homeassistant/home-assistant:2025.12.0b3
     container_name: ha-dyson-homeassistant-dev
     restart: unless-stopped
     privileged: true
@@ -38,7 +38,7 @@ services:
       - mosquitto
     networks:
       - ha-dyson-network
-    
+
   # MQTT broker for testing
   mosquitto:
     image: eclipse-mosquitto:2.0
