@@ -1603,7 +1603,13 @@ async def _register_services(
     for service_name, handler in service_handlers.items():
         if not hass.services.has_service(DOMAIN, service_name):
             hass.services.async_register(
-                DOMAIN, service_name, handler, schema=service_schemas[service_name]
+                DOMAIN,
+                service_name,
+                handler,
+                schema=service_schemas[service_name],
+                description_placeholders={
+                    "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/ACTIONS.md"
+                },
             )
             registered_services.append(service_name)
 
@@ -1741,10 +1747,19 @@ async def async_setup_cloud_services(hass: HomeAssistant) -> None:
                     handler,
                     schema=cloud_schemas[service_name],
                     supports_response=SupportsResponse.OPTIONAL,
+                    description_placeholders={
+                        "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/ACTIONS.md"
+                    },
                 )
             else:
                 hass.services.async_register(
-                    DOMAIN, service_name, handler, schema=cloud_schemas[service_name]
+                    DOMAIN,
+                    service_name,
+                    handler,
+                    schema=cloud_schemas[service_name],
+                    description_placeholders={
+                        "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/ACTIONS.md"
+                    },
                 )
             registered_services.append(service_name)
 

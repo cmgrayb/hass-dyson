@@ -762,6 +762,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     step_id="connection",
                     data_schema=data_schema,
                     errors=errors,
+                    description_placeholders={
+                        "libdyson_rest_url": "https://github.com/cmgrayb/libdyson-rest/blob/main/examples/dyson_api_device_scan.py",
+                        "opendyson_url": "https://github.com/libdyson-wg/opendyson",
+                    },
                 )
             except Exception as e:
                 _LOGGER.exception("Error creating connection preferences form: %s", e)
