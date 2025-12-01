@@ -600,7 +600,7 @@ class TestDysonOptionsFlowComprehensive:
         user_input = {"device_serial": "nonexistent-device-serial"}
 
         # Mock config entry data with no matching device
-        mock_options_flow.config_entry.data = {"devices": []}
+        mock_options_flow._config_entry.data = {"devices": []}
 
         result = await mock_options_flow.async_step_delete_device(user_input)
 
@@ -615,7 +615,7 @@ class TestDysonOptionsFlowComprehensive:
         user_input = {"device_serial": device_serial, "confirm": True}
 
         # Mock config entry data with a device
-        mock_options_flow.config_entry.data = {
+        mock_options_flow._config_entry.data = {
             "devices": [{"serial_number": device_serial, "name": "Test Device"}]
         }
 
@@ -623,7 +623,7 @@ class TestDysonOptionsFlowComprehensive:
         mock_device_entry = MagicMock()
         mock_device_entry.entry_id = "device-entry-id"
         mock_device_entry.data = {
-            "parent_entry_id": mock_options_flow.config_entry.entry_id,
+            "parent_entry_id": mock_options_flow._config_entry.entry_id,
             "serial_number": device_serial,
         }
 

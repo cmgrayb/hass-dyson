@@ -1158,18 +1158,23 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return DysonOptionsFlow()
+        return DysonOptionsFlow(config_entry)
 
 
 class DysonOptionsFlow(config_entries.OptionsFlow):
     """Dyson config flow options handler."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        super().__init__()
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the Dyson devices or individual device."""
         # Check if this is an account entry (has multiple devices) or individual device entry
-        if "devices" in self.config_entry.data and self.config_entry.data.get(
+        if "devices" in self._config_entry.data and self._config_entry.data.get(
             "devices"
         ):
             # This is an account-level entry - show account management
@@ -1192,13 +1197,13 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_manage_cloud_preferences()
 
         # Get current devices from config entry
-        devices = self.config_entry.data.get("devices", [])
+        devices = self._config_entry.data.get("devices", [])
 
         # Get child device entries
         child_entries = [
             entry
             for entry in self.hass.config_entries.async_entries(DOMAIN)
-            if entry.data.get("parent_entry_id") == self.config_entry.entry_id
+            if entry.data.get("parent_entry_id") == self._config_entry.entry_id
         ]
 
         # Build actions for account-level operations only
@@ -1228,7 +1233,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "device_count": str(len(devices)),
                 "active_count": str(len(child_entries)),
-                "account_email": self.config_entry.data.get("email", "Unknown"),
+                "account_email": self._config_entry.data.get("email", "Unknown"),
                 "device_status": status_summary,
             },
         )
@@ -1243,7 +1248,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 child_entries = [
                     entry
                     for entry in self.hass.config_entries.async_entries(DOMAIN)
-                    if entry.data.get("parent_entry_id") == self.config_entry.entry_id
+                    if entry.data.get("parent_entry_id") == self._config_entry.entry_id
                 ]
 
                 for child_entry in child_entries:
@@ -1257,7 +1262,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             [
                 entry
                 for entry in self.hass.config_entries.async_entries(DOMAIN)
-                if entry.data.get("parent_entry_id") == self.config_entry.entry_id
+                if entry.data.get("parent_entry_id") == self._config_entry.entry_id
             ]
         )
 
@@ -1265,7 +1270,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             step_id="reload_all",
             data_schema=vol.Schema({vol.Required("confirm", default=False): bool}),
             description_placeholders={
-                "device_count": str(len(self.config_entry.data.get("devices", []))),
+                "device_count": str(len(self._config_entry.data.get("devices", []))),
                 "active_count": str(child_count),
             },
         )
@@ -1281,7 +1286,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         if not device_serial:
             return await self.async_step_manage_devices()
 
-        devices = self.config_entry.data.get("devices", [])
+        devices = self._config_entry.data.get("devices", [])
         device = next((d for d in devices if d["serial_number"] == device_serial), None)
 
         if not device:
@@ -1299,7 +1304,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                     entry
                     for entry in self.hass.config_entries.async_entries(DOMAIN)
                     if (
-                        entry.data.get("parent_entry_id") == self.config_entry.entry_id
+                        entry.data.get("parent_entry_id") == self._config_entry.entry_id
                         and entry.data.get(CONF_SERIAL_NUMBER) == device_serial
                     )
                 ),
@@ -1311,15 +1316,15 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
 
             if not updated_devices:
                 # If no devices left, delete the entire account entry
-                await self.hass.config_entries.async_remove(self.config_entry.entry_id)
+                await self.hass.config_entries.async_remove(self._config_entry.entry_id)
                 return self.async_create_entry(title="", data={})
             else:
                 # Update the account entry with remaining devices
-                updated_data = dict(self.config_entry.data)
+                updated_data = dict(self._config_entry.data)
                 updated_data["devices"] = updated_devices
 
                 self.hass.config_entries.async_update_entry(
-                    self.config_entry,
+                    self._config_entry,
                     data=updated_data,
                     title=f"Dyson Account ({len(updated_devices)} devices)",
                 )
@@ -1333,7 +1338,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                     entry
                     for entry in self.hass.config_entries.async_entries(DOMAIN)
                     if (
-                        entry.data.get("parent_entry_id") == self.config_entry.entry_id
+                        entry.data.get("parent_entry_id") == self._config_entry.entry_id
                         and entry.data.get(CONF_SERIAL_NUMBER) == device_serial
                     )
                 ),
@@ -1364,18 +1369,18 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         """Handle reconfiguring connection settings."""
         if user_input is not None:
             # Update connection type
-            updated_data = dict(self.config_entry.data)
+            updated_data = dict(self._config_entry.data)
             updated_data["connection_type"] = user_input.get("connection_type")
 
             self.hass.config_entries.async_update_entry(
-                self.config_entry, data=updated_data
+                self._config_entry, data=updated_data
             )
 
             # Reload to apply changes
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            await self.hass.config_entries.async_reload(self._config_entry.entry_id)
             return self.async_create_entry(title="", data={})
 
-        current_connection_type = self.config_entry.data.get(
+        current_connection_type = self._config_entry.data.get(
             "connection_type", "local_cloud_fallback"
         )
 
@@ -1410,7 +1415,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             connection_type = user_input.get("connection_type")
 
             # Update this device's connection type
-            updated_data = dict(self.config_entry.data)
+            updated_data = dict(self._config_entry.data)
 
             if connection_type == "use_account_default":
                 # Remove device-specific override to use account default
@@ -1420,16 +1425,16 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 updated_data["connection_type"] = connection_type
 
             self.hass.config_entries.async_update_entry(
-                self.config_entry, data=updated_data
+                self._config_entry, data=updated_data
             )
 
             # Reload to apply changes
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            await self.hass.config_entries.async_reload(self._config_entry.entry_id)
             return self.async_create_entry(title="", data={})
 
         # Get current settings
-        device_connection_type = self.config_entry.data.get("connection_type")
-        parent_entry_id = self.config_entry.data.get("parent_entry_id")
+        device_connection_type = self._config_entry.data.get("connection_type")
+        parent_entry_id = self._config_entry.data.get("parent_entry_id")
 
         # Get account-level connection type
         account_connection_type = "local_cloud_fallback"  # Default fallback
@@ -1452,7 +1457,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
 
         connection_options = _get_device_connection_options(account_connection_type)
 
-        device_name = self.config_entry.data.get("device_name", "This Device")
+        device_name = self._config_entry.data.get("device_name", "This Device")
 
         return self.async_show_form(
             step_id="device_reconfigure_connection",
@@ -1480,7 +1485,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         """Handle cloud account preferences management."""
         if user_input is not None:
             # Update cloud preferences
-            updated_data = dict(self.config_entry.data)
+            updated_data = dict(self._config_entry.data)
             updated_data[CONF_POLL_FOR_DEVICES] = user_input.get(
                 CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
             )
@@ -1489,18 +1494,18 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             )
 
             self.hass.config_entries.async_update_entry(
-                self.config_entry, data=updated_data
+                self._config_entry, data=updated_data
             )
 
             # Reload to apply changes
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            await self.hass.config_entries.async_reload(self._config_entry.entry_id)
             return self.async_create_entry(title="", data={})
 
         # Get current settings with backward-compatible defaults
-        current_poll_for_devices = self.config_entry.data.get(
+        current_poll_for_devices = self._config_entry.data.get(
             CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
         )
-        current_auto_add_devices = self.config_entry.data.get(
+        current_auto_add_devices = self._config_entry.data.get(
             CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES
         )
 
@@ -1517,7 +1522,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 }
             ),
             description_placeholders={
-                "email": self.config_entry.data.get("email", "your account"),
-                "device_count": str(len(self.config_entry.data.get("devices", []))),
+                "email": self._config_entry.data.get("email", "your account"),
+                "device_count": str(len(self._config_entry.data.get("devices", []))),
             },
         )
