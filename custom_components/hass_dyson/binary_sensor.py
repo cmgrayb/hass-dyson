@@ -171,7 +171,8 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         """Initialize the filter replacement sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_filter_replacement"
-        self._attr_name = f"{coordinator.device_name} Filter Replacement"
+        self._attr_name = "Filter Replacement"
+        self._attr_translation_key = "filter_replacement"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
 
@@ -228,24 +229,6 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                             e,
                         )
 
-                # Only check carbon filter if device has formaldehyde capability and is installed
-                # TODO: Update this when we identify the exact formaldehyde capability name
-                # For now, since we don't have formaldehyde devices, carbon filter won't be checked
-                # capabilities = self.coordinator.device_capabilities or []
-                # capabilities_str = [cap.lower() if isinstance(cap, str) else str(cap).lower() for cap in capabilities]
-                # if "formaldehyde" in capabilities_str:
-                #     carbon_filter_type = device_data.get("cflt", "NONE")
-                #     if carbon_filter_type != "NONE":  # Carbon filter is installed
-                #         try:
-                #             carbon_life = getattr(self.coordinator.device, "carbon_filter_life", None)
-                #             if carbon_life is not None and isinstance(carbon_life, (int, float)):
-                #                 filters_to_check.append(carbon_life)
-                #                 _LOGGER.debug("Carbon filter life for device %s: %s%%", device_serial, carbon_life)
-                #             else:
-                #                 _LOGGER.warning("Invalid carbon filter life data for device %s: %s", device_serial, carbon_life)
-                #         except Exception as e:
-                #             _LOGGER.error("Error getting carbon filter life for device %s: %s", device_serial, e)
-
                 # Filter needs replacement if any of the installed filters is below 10%
                 if filters_to_check:
                     self._attr_is_on = any(
@@ -296,9 +279,7 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
         self._fault_code = fault_code
         self._fault_info = fault_info
         self._attr_unique_id = f"{coordinator.serial_number}_fault_{fault_code}"
-        self._attr_name = (
-            f"{coordinator.device_name} Fault {self._get_fault_friendly_name()}"
-        )
+        self._attr_name = f"Fault {self._get_fault_friendly_name()}"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 

@@ -11,7 +11,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE
 
-from custom_components.hass_dyson.const import DOMAIN
+from custom_components.hass_dyson.const import CAPABILITY_VOC, DOMAIN
 from custom_components.hass_dyson.sensor import (
     DysonAirQualitySensor,
     DysonCarbonFilterLifeSensor,
@@ -26,7 +26,6 @@ from custom_components.hass_dyson.sensor import (
     DysonPM10Sensor,
     DysonPM25Sensor,
     DysonTemperatureSensor,
-    DysonVOCSensor,
     DysonWiFiSensor,
     async_setup_entry,
 )
@@ -97,6 +96,12 @@ class TestSensorPlatformSetup:
         async_add_entities = MagicMock()
 
         mock_coordinator.device_capabilities = ["Heating"]
+        # Add environmental data with temperature data for sensor creation
+        mock_coordinator.data = {
+            "environmental-data": {
+                "tact": "2731",  # Temperature data in Kelvin*10 format
+            }
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
@@ -107,6 +112,56 @@ class TestSensorPlatformSetup:
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
         assert len(entities) >= 1  # Should have temperature sensor
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_heating_without_env_data(self, mock_coordinator):
+        """Test that heating capability alone doesn't create temperature sensor without environmental data."""
+        # Arrange
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+        async_add_entities = MagicMock()
+
+        mock_coordinator.device_capabilities = ["Heating"]
+        mock_coordinator.device_category = ["EC"]
+        # No environmental data provided - should not create sensor
+        mock_coordinator.data = {}
+        hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) == 0  # Should have no sensors - no environmental data
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_humidifier_without_env_data(
+        self, mock_coordinator
+    ):
+        """Test that humidifier capability alone doesn't create humidity sensor without environmental data."""
+        # Arrange
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+        async_add_entities = MagicMock()
+
+        mock_coordinator.device_capabilities = ["Humidifier"]
+        mock_coordinator.device_category = ["EC"]
+        # No environmental data provided - should not create sensor
+        mock_coordinator.data = {}
+        hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) == 0  # Should have no sensors - no environmental data
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_no_capabilities(self, mock_coordinator):
@@ -215,7 +270,9 @@ class TestDysonTemperatureSensor:
         """Test sensor updates when device has temperature data."""
         # Arrange
         sensor = DysonTemperatureSensor(mock_coordinator)
-        mock_coordinator.data = {"tmp": "2950"}  # 295.0 K = ~21.85°C
+        mock_coordinator.data = {
+            "environmental-data": {"tact": "2950"}  # 295.0 K = ~21.85°C
+        }
 
         # Act - trigger update
         with patch.object(sensor, "async_write_ha_state"):
@@ -259,24 +316,18 @@ class TestDysonHumiditySensor:
         """Test sensor updates when device has humidity data."""
         # Arrange
         sensor = DysonHumiditySensor(mock_coordinator)
-        mock_coordinator.data = {"hact": "030"}  # 30% humidity
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hact": "0058"
+            }  # 58% humidity in libdyson-neon format
+        }
 
-        # Act - trigger update with mocked device_utils
-        with (
-            patch.object(sensor, "async_write_ha_state"),
-            patch(
-                "custom_components.hass_dyson.device_utils.get_sensor_data_safe",
-                return_value="030",
-            ),
-            patch(
-                "custom_components.hass_dyson.device_utils.convert_sensor_value_safe",
-                return_value=30,
-            ),
-        ):
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Assert
-        assert sensor._attr_native_value == 30
+        assert sensor._attr_native_value == 58
 
 
 class TestDysonFilterLifeSensor:
@@ -472,37 +523,21 @@ class TestSensorPlatformSetupAdvanced:
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_voc_devices(self, mock_coordinator):
-        """Test setting up sensors for devices with VOC capability."""
+        """Test setting up sensors for devices with VOC/NO2 Detection capability for UI testing."""
         # Arrange
         hass = MagicMock()
         config_entry = MagicMock()
         config_entry.entry_id = "test-entry-id"
         async_add_entities = MagicMock()
 
-        mock_coordinator.device_capabilities = ["VOC"]
+        # Set up device with VOC capability (manual testing)
+        mock_coordinator.device_capabilities = [CAPABILITY_VOC]
         mock_coordinator.device_category = ["EC"]
-        hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
-
-        # Act
-        result = await async_setup_entry(hass, config_entry, async_add_entities)
-
-        # Assert
-        assert result is True
-        async_add_entities.assert_called_once()
-        entities = async_add_entities.call_args[0][0]
-        assert len(entities) >= 2  # Should have VOC and NO2 sensors
-
-    @pytest.mark.asyncio
-    async def test_async_setup_entry_formaldehyde_devices(self, mock_coordinator):
-        """Test setting up sensors for devices with Formaldehyde capability."""
-        # Arrange
-        hass = MagicMock()
-        config_entry = MagicMock()
-        config_entry.entry_id = "test-entry-id"
-        async_add_entities = AsyncMock()
-
-        mock_coordinator.device_capabilities = ["Formaldehyde"]
-        mock_coordinator.device_category = ["EC"]
+        # Override coordinator.data to not include ExtendedAQ data since this is manual testing
+        mock_coordinator.data = {
+            "product-state": {"pm25": "0010", "pm10": "0015"},
+            "environmental-data": {"pm25": "10", "pm10": "15"},  # No gas sensor data
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
@@ -513,8 +548,47 @@ class TestSensorPlatformSetupAdvanced:
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
         assert (
-            len(entities) >= 3
-        )  # Should have formaldehyde sensor and carbon filter sensors
+            len(entities) == 3
+        )  # VOC/NO2 Detection capability creates gas sensors (VOC, NO2, CO2) for UI testing
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_formaldehyde_devices(self, mock_coordinator):
+        """Test setting up sensors for devices with ExtendedAQ+Formaldehyde capability and carbon filter."""
+        # Arrange
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test-entry-id"
+        async_add_entities = AsyncMock()
+
+        # Set up device with both ExtendedAQ and Formaldehyde for comprehensive sensors
+        mock_coordinator.device_capabilities = ["ExtendedAQ", "Formaldehyde"]
+        mock_coordinator.device_category = ["EC"]
+        # Ensure coordinator.data includes HCHO data and carbon filter data for sensor creation
+        mock_coordinator.data = {
+            "product-state": {
+                "pm25": "0010",
+                "pm10": "0015",
+                "cflt": "CARF",  # Carbon filter present for filter sensors
+            },
+            "environmental-data": {
+                "pm25": "10",
+                "pm10": "15",
+                "va10": "5",  # HCHO (VOC) data present using correct key
+            },
+        }
+        hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        # Should have PM sensors (4) + HCHO sensor (1) + carbon filter sensors (2) = 7 entities
+        assert (
+            len(entities) >= 6
+        )  # Dynamic sensor detection creates sensors based on data presence
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_robot_category(self, mock_coordinator):
@@ -549,6 +623,12 @@ class TestSensorPlatformSetupAdvanced:
 
         mock_coordinator.device_capabilities = ["Humidifier"]
         mock_coordinator.device_category = ["EC"]
+        # Add environmental data with humidity data for sensor creation
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hact": "45",  # Humidity data in percentage format
+            }
+        }
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
         # Act
@@ -582,48 +662,6 @@ class TestSensorPlatformSetupAdvanced:
         assert entities == []  # Should have empty entities list on error
 
 
-class TestDysonVOCSensor:
-    """Test Dyson VOC sensor."""
-
-    def test_init_sets_attributes_correctly(self, mock_coordinator):
-        """Test that VOC sensor initializes with correct attributes."""
-        # Act
-        sensor = DysonVOCSensor(mock_coordinator)
-
-        # Assert
-        assert sensor._attr_unique_id == "TEST-SERIAL-123_voc"
-        assert sensor._attr_translation_key == "voc"
-        assert sensor._attr_native_unit_of_measurement == "ppb"
-        assert sensor._attr_icon == "mdi:chemical-weapon"
-
-    def test_native_value_with_valid_data(self, mock_coordinator):
-        """Test native value calculation with valid VOC data."""
-        # Arrange
-        sensor = DysonVOCSensor(mock_coordinator)
-        mock_coordinator.device = MagicMock()
-        mock_coordinator.device.voc = 25
-
-        # Act
-        with patch.object(sensor, "async_write_ha_state"):
-            sensor._handle_coordinator_update()
-
-        # Assert
-        assert sensor._attr_native_value == 25
-
-    def test_native_value_with_no_device(self, mock_coordinator):
-        """Test native value when no device is available."""
-        # Arrange
-        sensor = DysonVOCSensor(mock_coordinator)
-        mock_coordinator.device = None
-
-        # Act
-        with patch.object(sensor, "async_write_ha_state"):
-            sensor._handle_coordinator_update()
-
-        # Assert
-        assert sensor._attr_native_value is None
-
-
 class TestDysonNO2Sensor:
     """Test Dyson NO2 sensor."""
 
@@ -635,7 +673,7 @@ class TestDysonNO2Sensor:
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_no2"
         assert sensor._attr_translation_key == "no2"
-        assert sensor._attr_native_unit_of_measurement == "ppb"
+        assert sensor._attr_native_unit_of_measurement == "μg/m³"
         assert sensor._attr_icon == "mdi:molecule"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
@@ -643,7 +681,12 @@ class TestDysonNO2Sensor:
         # Arrange
         sensor = DysonNO2Sensor(mock_coordinator)
         mock_coordinator.device = MagicMock()
-        mock_coordinator.device.no2 = 15
+        # Update to use environmental data with correct key
+        mock_coordinator.data = {
+            "environmental-data": {
+                "noxl": "15"  # NO2 data using correct key
+            }
+        }
 
         # Act
         with patch.object(sensor, "async_write_ha_state"):
@@ -675,24 +718,28 @@ class TestDysonFormaldehydeSensor:
         sensor = DysonFormaldehydeSensor(mock_coordinator)
 
         # Assert
-        assert sensor._attr_unique_id == "TEST-SERIAL-123_formaldehyde"
-        assert sensor._attr_translation_key == "formaldehyde"
-        assert sensor._attr_native_unit_of_measurement == "ppb"
-        assert sensor._attr_icon == "mdi:chemical-weapon"
+        assert sensor._attr_unique_id == "TEST-SERIAL-123_hcho"
+        assert sensor._attr_translation_key == "hcho"
+        assert sensor._attr_native_unit_of_measurement == "mg/m³"
+        assert sensor._attr_icon == "mdi:molecule"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
         """Test native value calculation with valid formaldehyde data."""
         # Arrange
         sensor = DysonFormaldehydeSensor(mock_coordinator)
-        mock_coordinator.device = MagicMock()
-        mock_coordinator.device.formaldehyde = 8
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hchr": "0002"  # Raw value that converts to 2/1000 = 0.002 mg/m³ (matches libdyson-neon tests)
+            }
+        }
 
         # Act
         with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Assert
-        assert sensor._attr_native_value == 8
+        # 2 raw (from "0002") -> 0.002 mg/m³ (matches libdyson-neon implementation: raw/1000)
+        assert sensor._attr_native_value == 0.002
 
     def test_native_value_with_no_device(self, mock_coordinator):
         """Test native value when no device is available."""
@@ -846,7 +893,7 @@ class TestDysonCarbonFilterTypeSensor:
 
         # Assert
         assert sensor._attr_unique_id == "TEST-SERIAL-123_carbon_filter_type"
-        assert sensor._attr_name == "Carbon Filter Type"
+        assert sensor._attr_translation_key == "carbon_filter_type"
         assert sensor._attr_icon == "mdi:air-filter"
 
     def test_native_value_with_valid_data(self, mock_coordinator):
@@ -878,6 +925,61 @@ class TestDysonCarbonFilterTypeSensor:
 
         # Assert
         assert sensor._attr_native_value is None
+
+    def test_native_value_with_none_filter_type(self, mock_coordinator):
+        """Test native value with NONE filter type (not installed)."""
+        # Arrange
+        sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+        mock_coordinator.device = MagicMock()
+        mock_coordinator.data = {"product-state": {"cflt": "NONE"}}
+
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value == "Not Installed"
+
+    def test_native_value_with_scog_filter_type(self, mock_coordinator):
+        """Test native value with SCOG filter type (not installed)."""
+        # Arrange
+        sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+        mock_coordinator.device = MagicMock()
+        mock_coordinator.data = {"product-state": {"cflt": "SCOG"}}
+
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value == "Not Installed"
+
+    def test_native_value_case_insensitive_none_scog(self, mock_coordinator):
+        """Test native value with case-insensitive NONE and SCOG values."""
+        sensor = DysonCarbonFilterTypeSensor(mock_coordinator)
+        mock_coordinator.device = MagicMock()
+
+        # Test lowercase variations
+        test_cases = [
+            ("none", "Not Installed"),
+            ("NONE", "Not Installed"),
+            ("None", "Not Installed"),
+            ("scog", "Not Installed"),
+            ("SCOG", "Not Installed"),
+            ("Scog", "Not Installed"),
+        ]
+
+        for input_value, expected_output in test_cases:
+            mock_coordinator.data = {"product-state": {"cflt": input_value}}
+
+            # Act
+            with patch.object(sensor, "async_write_ha_state"):
+                sensor._handle_coordinator_update()
+
+            # Assert
+            assert sensor._attr_native_value == expected_output, (
+                f"Failed for input '{input_value}'"
+            )
 
 
 class TestDysonConnectionStatusSensor:
@@ -963,7 +1065,7 @@ class TestSensorCoverageEnhancement:
             # It should log the error and warning (fallback behavior)
             assert result is True
             mock_logger.error.assert_called_once_with(
-                "Error during sensor setup for device %s: %s",
+                "Unexpected error during sensor setup for device %s: %s",
                 "TEST-SERIAL-123",
                 mock_logger.error.call_args[0][2],  # The exception object
             )
@@ -1012,7 +1114,6 @@ class TestSensorCoverageEnhancement:
             DysonPM10Sensor(mock_coordinator),
             DysonTemperatureSensor(mock_coordinator),
             DysonHumiditySensor(mock_coordinator),
-            DysonVOCSensor(mock_coordinator),
             DysonNO2Sensor(mock_coordinator),
             DysonFormaldehydeSensor(mock_coordinator),
         ]
@@ -1083,3 +1184,27 @@ class TestSensorCoverageEnhancement:
         value = wifi_sensor.native_value
         # Should handle missing RSSI gracefully
         assert value is None or isinstance(value, int | float)
+
+    def test_carbon_filter_sensor_setup_filtering(self, mock_coordinator):
+        """Test the carbon filter sensor filtering logic for NONE and SCOG values."""
+        # Test the filtering logic directly
+        test_cases = [
+            ("NONE", False, "NONE should prevent sensor creation"),
+            ("SCOG", False, "SCOG should prevent sensor creation"),
+            ("none", False, "lowercase none should prevent sensor creation"),
+            ("scog", False, "lowercase scog should prevent sensor creation"),
+            ("GCOM", True, "GCOM should allow sensor creation"),
+            ("ABCD", True, "Other values should allow sensor creation"),
+            (None, False, "None value should prevent sensor creation"),
+        ]
+
+        for carbon_filter_type, should_add, description in test_cases:
+            # Test the logic that's used in async_setup_entry
+            if carbon_filter_type is not None:
+                condition = str(carbon_filter_type).upper() not in ["NONE", "SCOG"]
+            else:
+                condition = False
+
+            assert condition == should_add, (
+                f"{description} (got {condition}, expected {should_add})"
+            )

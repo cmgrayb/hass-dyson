@@ -41,7 +41,7 @@ class TestSelectCoverageImprovements:
     ):
         """Test sleep mode detection for cloud devices."""
         mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "auto": "OFF",
                 "nmod": "ON",  # Night mode ON = Sleep mode
@@ -59,7 +59,7 @@ class TestSelectCoverageImprovements:
 
     def test_oscillation_mode_detect_mode_exception_handling(self, mock_coordinator):
         """Test oscillation mode detection with invalid angle data."""
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "oson": "ON",
                 "osal": "invalid",  # Invalid data should trigger exception
@@ -152,7 +152,7 @@ class TestSelectCoverageImprovements:
         self, mock_coordinator
     ):
         """Test extra state attributes with invalid angle data."""
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "oson": "OFF",
                 "osal": "invalid",  # Invalid data
@@ -176,7 +176,7 @@ class TestSelectCoverageImprovements:
 
     def test_heating_mode_coordinator_update_unknown_mode(self, mock_coordinator):
         """Test heating mode with unknown heating state."""
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hmod": "UNKNOWN",  # Unknown heating mode
                 "hsta": "OFF",
@@ -239,7 +239,7 @@ class TestSelectCoverageImprovements:
         self, mock_coordinator
     ):
         """Test heating mode extra state attributes with temperature data."""
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hmod": "HEAT",
                 "hsta": "HEAT",
@@ -263,7 +263,7 @@ class TestSelectCoverageImprovements:
         self, mock_coordinator
     ):
         """Test heating mode extra state attributes with invalid temperature data."""
-        mock_coordinator.device._get_current_value.side_effect = (
+        mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hmod": "HEAT",
                 "hsta": "OFF",
@@ -290,7 +290,7 @@ def mock_coordinator():
     """Create a mock coordinator for testing."""
     coordinator = Mock(spec=DysonDataUpdateCoordinator)
     coordinator.device = Mock()
-    coordinator.device._get_current_value = Mock()
+    coordinator.device.get_state_value = Mock()
     coordinator.device.set_oscillation = Mock()
     coordinator.device.set_heating_mode = Mock()
     coordinator.serial_number = "TEST123"

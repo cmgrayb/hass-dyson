@@ -215,12 +215,12 @@ class TestSelectCoverageEnhancement:
 
         # Test with OFF mode - using proper device method pattern
         coordinator.data = {"product-state": {"oson": {"value": "OFF"}}}
-        coordinator.device._get_current_value = MagicMock(return_value="OFF")
+        coordinator.device.get_state_value = MagicMock(return_value="OFF")
         mode = select._detect_mode_from_angles()
         # Don't assert specific return value as it depends on internal logic
 
         # Test with ON mode and angle span calculation
-        coordinator.device._get_current_value = MagicMock(
+        coordinator.device.get_state_value = MagicMock(
             side_effect=lambda state, key, default: {
                 "oson": "ON",
                 "osal": "0005",
@@ -240,13 +240,13 @@ class TestSelectCoverageEnhancement:
 
         # Test with proper device method pattern
         coordinator.data = {"product-state": {}}
-        coordinator.device._get_current_value = MagicMock(return_value="OFF")
+        coordinator.device.get_state_value = MagicMock(return_value="OFF")
 
         current = select.current_option
         # Don't assert specific value as it depends on internal implementation
         assert current is not None or current is None  # Either is valid
 
         # Test with HEAT mode
-        coordinator.device._get_current_value = MagicMock(return_value="HEAT")
+        coordinator.device.get_state_value = MagicMock(return_value="HEAT")
         current = select.current_option
         assert current is not None or current is None  # Either is valid
