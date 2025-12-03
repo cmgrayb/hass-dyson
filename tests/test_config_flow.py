@@ -543,7 +543,7 @@ class TestDysonOptionsFlow:
         options_flow.hass.config_entries.async_get_entry.return_value = mock_entry
 
         # Mock devices in the config entry
-        options_flow.config_entry.data = {
+        options_flow._config_entry.data = {
             "devices": [{"serial_number": "DEV001", "name": "Test Device"}]
         }
 

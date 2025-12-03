@@ -67,7 +67,7 @@
       "manual_setup_failed": "Manual setup failed. Please check your device information.",
       "invalid_setup_method": "Invalid setup method selected.",
       "preferences_failed": "Failed to save cloud preferences. Please try again.",
-      "device_data_invalid": "Some devices in your Dyson account have invalid or missing data. Please run https://github.com/cmgrayb/libdyson-rest/blob/main/examples/dyson_api_device_scan.py or https://github.com/libdyson-wg/opendyson to retrieve a list of devices on the account before posting an issue, or try removing and re-adding the problematic devices in the Dyson app.",
+      "device_data_invalid": "Some devices in your Dyson account have invalid or missing data. Please run {libdyson_rest_url} or {opendyson_url} to retrieve a list of devices on the account before posting an issue, or try removing and re-adding the problematic devices in the Dyson app.",
       "api_format_changed": "Dyson cloud API format has changed. Cloud device discovery is temporarily unavailable. Please use manual device setup instead.",
       "api_validation_failed": "Dyson cloud API response validation failed. Please try again or use manual device setup.",
       "cloud_api_error": "Error communicating with Dyson cloud API. Please try again later.",
@@ -255,7 +255,7 @@
   "services": {
     "set_sleep_timer": {
       "name": "Set Sleep Timer",
-      "description": "Set a sleep timer for the device. The device will turn off after the specified time.",
+      "description": "Set a sleep timer for the device. The device will turn off after the specified time. [Learn more]({docs_url}).",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -269,7 +269,7 @@
     },
     "cancel_sleep_timer": {
       "name": "Cancel Sleep Timer",
-      "description": "Cancel the currently active sleep timer for the device.",
+      "description": "Cancel the currently active sleep timer for the device. [Learn more]({docs_url}).",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -279,7 +279,7 @@
     },
     "schedule_operation": {
       "name": "Schedule Operation",
-      "description": "Schedule a future operation for the device.",
+      "description": "Schedule a future operation for the device. [Learn more]({docs_url}).",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -297,7 +297,7 @@
     },
     "set_oscillation_angles": {
       "name": "Set Oscillation Angles",
-      "description": "Set custom oscillation angles for the device.",
+      "description": "Set custom oscillation angles for the device. [Learn more]({docs_url}).",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -325,7 +325,7 @@
     },
     "reset_filter": {
       "name": "Reset Filter Life",
-      "description": "Reset the filter life counter for the device.",
+      "description": "Reset the filter life counter for the device. [Learn more]({docs_url}).",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -337,9 +337,19 @@
         }
       }
     },
+    "refresh_account_data": {
+      "name": "Refresh Account Data",
+      "description": "Refresh device information from Dyson cloud account (updates entity states in background). [Learn more]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The Dyson device to refresh data for (optional - refreshes all if not specified)."
+        }
+      }
+    },
     "get_cloud_devices": {
       "name": "Get Cloud Devices",
-      "description": "Retrieve device information from Dyson cloud accounts for manual setup and troubleshooting.",
+      "description": "Retrieve device information from Dyson cloud accounts for manual setup and troubleshooting. [Learn more]({docs_url}).",
       "fields": {
         "account_email": {
           "name": "Account Email",
