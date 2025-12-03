@@ -4,7 +4,7 @@ bandit==1.9.2
 pytest==8.4.2
 pytest-cov>=7.0.0
 pytest-asyncio==1.2.0
-pytest-homeassistant-custom-component==0.13.296
+pytest-homeassistant-custom-component==0.13.297
 mypy==1.18.2
 types-requests==2.32.4.20250913
 types-cryptography==3.3.23.2
