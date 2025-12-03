@@ -25,7 +25,7 @@ The Dyson integration uses a two-phase approach for firmware updates:
 {mqtt_root}/{serial_number}/status/software
 ```
 
-**Example**: `438M/9RJ-US-UAA8845A/status/software`
+**Example**: `438M/9RJ-US-UAANNNNA/status/software`
 
 ### Known Status Values
 From observed firmware update process:
