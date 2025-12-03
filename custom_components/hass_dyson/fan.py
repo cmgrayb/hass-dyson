@@ -1,4 +1,40 @@
-"""Fan platform for Dyson integration."""
+"""Fan platform for Dyson integration.
+
+This module implements the Home Assistant fan platform for Dyson devices,
+providing comprehensive fan control including speed, oscillation, direction,
+and preset modes. It also integrates climate functionality for heating-capable
+devices like the Hot+Cool series.
+
+Key Features:
+    - 10-level speed control (1-10) mapped to percentage
+    - Oscillation control with angle specification support
+    - Direction control (forward/reverse airflow)
+    - Preset modes: Auto, Manual, Heat (device-dependent)
+    - Night mode integration for quiet operation
+    - Climate integration for heating-enabled devices
+    - Real-time state updates via MQTT coordinator
+    - Command pending system to prevent UI flickering
+
+Supported Device Features (capability-dependent):
+    - SET_SPEED: All devices (1-10 speed levels)
+    - PRESET_MODE: All devices (Auto, Manual, Heat if available)
+    - TURN_ON/TURN_OFF: All devices
+    - OSCILLATE: Devices with oscillation capability (oson state)
+    - DIRECTION: Devices with direction control (fdir state)
+
+Device Compatibility:
+    - Pure series: Basic fan control, air quality automation
+    - Hot+Cool series: Full fan + heating climate control
+    - Humidify series: Fan control + humidity management
+    - All models: Speed, oscillation, night mode (if supported)
+
+Climate Integration:
+    Heating-capable devices (Hot+Cool series) provide additional attributes:
+    - current_temperature: Ambient temperature reading
+    - target_temperature: Heating target temperature
+    - hvac_mode: Heat/Fan/Off modes
+    - temperature_unit: Celsius
+"""
 
 from __future__ import annotations
 
@@ -8,8 +44,10 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.components.climate.const import HVACMode
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -25,7 +63,34 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Dyson fan platform."""
+    """Set up Dyson fan platform entities.
+
+    Creates fan entities for devices that support fan functionality,
+    specifically devices in the "ec" (Environment Cleaner) category.
+
+    Args:
+        hass: Home Assistant instance
+        config_entry: Configuration entry for the Dyson integration
+        async_add_entities: Callback to add entities to Home Assistant
+
+    Note:
+        Only creates fan entities for devices with "ec" in device_category,
+        which includes most Dyson air purifiers and fans. Other device
+        types (like lighting) are handled by their respective platforms.
+
+        The fan entity provides the primary control interface for:
+        - Air circulation and filtration
+        - Speed control and automation
+        - Oscillation and airflow direction
+        - Climate control (for heating-capable models)
+
+    Example:
+        Entity created for Environment Cleaner devices:
+
+        >>> # Device with device_category = ["ec"]
+        >>> # Creates: fan.living_room_dyson
+        >>> # Features: speed, oscillation, preset modes
+    """
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities = []
@@ -38,28 +103,143 @@ async def async_setup_entry(
 
 
 class DysonFan(DysonEntity, FanEntity):
-    """Representation of a Dyson fan."""
+    """Home Assistant fan entity for Dyson air purifiers and fans.
+
+    This entity provides comprehensive fan control for Dyson devices including
+    speed management, oscillation control, preset modes, and integrated climate
+    functionality for heating-capable models.
+
+    Supported Features (device-dependent):
+        - SET_SPEED: 10-level speed control (mapped to 0-100% range)
+        - PRESET_MODE: Auto, Manual, Heat modes
+        - TURN_ON/TURN_OFF: Power control
+        - OSCILLATE: On/off oscillation (if device supports oson)
+        - DIRECTION: Forward/reverse airflow (if device supports fdir)
+
+    Attributes:
+        _attr_speed_count: Always 10 (Dyson's native speed levels)
+        _attr_percentage_step: 10% (10% per speed level)
+        _attr_preset_modes: ["Auto", "Manual"] or ["Auto", "Manual", "Heat"]
+        _has_heating: True for Hot+Cool series devices
+        _direction_supported: True if device reports fdir state
+        _oscillation_supported: True if device reports oson state
+
+    Climate Integration (Hot+Cool models):
+        When heating capability is detected, the fan entity provides:
+        - current_temperature: Real-time temperature reading
+        - target_temperature: Heating target (1-37°C)
+        - HVAC modes: Heat, Fan Only, Off
+        - Automatic heating control based on target temperature
+
+    State Management:
+        Uses command pending system to prevent UI flickering:
+        - Commands trigger immediate state updates
+        - Coordinator updates ignored for 7 seconds after commands
+        - Ensures responsive UI during device communication delays
+
+    Example:
+        Basic fan operations:
+
+        >>> # Set speed to 70% (level 7)
+        >>> await fan.async_set_percentage(70)
+        >>>
+        >>> # Enable oscillation for wider coverage
+        >>> await fan.async_oscillate(True)
+        >>>
+        >>> # Use auto mode for air quality response
+        >>> await fan.async_set_preset_mode("Auto")
+        >>>
+        >>> # For Hot+Cool models - set heating
+        >>> if fan._has_heating:
+        >>>     await fan.async_set_temperature(temperature=22.0)
+
+    Note:
+        The entity automatically detects device capabilities during initialization
+        and enables corresponding features. Unsupported operations are handled
+        gracefully with appropriate logging.
+    """
 
     coordinator: DysonDataUpdateCoordinator
+    _attr_current_temperature: float | None
+    _attr_target_temperature: float
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the fan."""
+        """Initialize the Dyson fan entity with capability detection.
+
+        Sets up the fan entity with appropriate features based on device
+        capabilities detected from device state and coordinator information.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+
+        Initialization Process:
+        1. Configure base fan features (speed, preset modes, power control)
+        2. Detect oscillation support via device state (oson key presence)
+        3. Detect direction support via device state (fdir key presence)
+        4. Configure heating integration for Hot+Cool series devices
+        5. Set up preset modes based on heating capability
+        6. Configure entity attributes and identifiers
+
+        Feature Detection:
+        - Oscillation: Enabled if device reports 'oson' in product state
+        - Direction: Enabled if device reports 'fdir' in product state
+        - Heating: Enabled if 'Heating' in coordinator.device_capabilities
+
+        Preset Modes:
+        - Standard devices: ["Auto", "Manual"]
+        - Heating devices: ["Auto", "Manual", "Heat"]
+
+        Note:
+            Feature detection is dynamic and based on actual device capabilities
+            rather than device model assumptions, ensuring accuracy across
+            different firmware versions and device configurations.
+        """
         super().__init__(coordinator)
 
         self._attr_unique_id = f"{coordinator.serial_number}_fan"
-        self._attr_name = f"{coordinator.device_name}"
+        self._attr_name = None  # Use device name from device_info
+        # Base features for all fans
         self._attr_supported_features = (
             FanEntityFeature.SET_SPEED
-            | FanEntityFeature.DIRECTION
             | FanEntityFeature.PRESET_MODE
             | FanEntityFeature.TURN_ON
             | FanEntityFeature.TURN_OFF
         )
+
+        # Add direction support if device reports direction state (fdir)
+        self._direction_supported = self._check_direction_support()
+        if self._direction_supported:
+            self._attr_supported_features |= FanEntityFeature.DIRECTION
+
+        # Add oscillation support if device reports oscillation state (oson)
+        self._oscillation_supported = self._check_oscillation_support()
+        if self._oscillation_supported:
+            self._attr_supported_features |= FanEntityFeature.OSCILLATE
         self._attr_speed_count = 10  # Dyson supports 10 speed levels
         self._attr_percentage_step = 10  # Step size of 10%
 
-        # Set up preset modes - Auto and Manual for all device types
-        self._attr_preset_modes = ["Auto", "Manual"]
+        # Check if device has heating capability for integrated climate features
+        self._has_heating = "Heating" in coordinator.device_capabilities
+
+        # Set up preset modes based on heating capability
+        if self._has_heating:
+            self._attr_preset_modes = ["Auto", "Manual", "Heat"]
+            # Add climate-specific attributes for heating devices
+            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+            self._attr_min_temp = 1
+            self._attr_max_temp = 37
+            self._attr_target_temperature_step = 1
+            self._attr_target_temperature = 20  # Default target temperature
+            self._attr_current_temperature = None
+            self._attr_hvac_modes = [
+                HVACMode.OFF,
+                HVACMode.FAN_ONLY,
+                HVACMode.HEAT,
+                HVACMode.AUTO,
+            ]
+            self._attr_hvac_mode = HVACMode.OFF
+        else:
+            self._attr_preset_modes = ["Auto", "Manual"]
 
         # Initialize state attributes to ensure clean state
         self._attr_is_on = None  # Will be set properly in first coordinator update
@@ -67,6 +247,10 @@ class DysonFan(DysonEntity, FanEntity):
         self._attr_current_direction = "forward"
         self._attr_preset_mode = None
         self._attr_oscillating = False
+
+        # Initialize command pending attributes to prevent linting errors
+        self._command_pending = False
+        self._command_end_time: float | None = None
 
         # Note: Oscillation control removed - will be handled by custom advanced oscillation entities
         # Standard Home Assistant oscillation (on/off) doesn't support Dyson's advanced oscillation features
@@ -106,21 +290,62 @@ class DysonFan(DysonEntity, FanEntity):
             except (ValueError, TypeError):
                 self._attr_percentage = 0
 
-        # For now, we'll use forward direction (can be enhanced later)
-        self._attr_current_direction = "forward"
-
-        # Update preset mode based on auto mode state
+        # Update preset mode and heating data if applicable
         if self.coordinator.device and self.coordinator.data:
             product_state = self.coordinator.data.get("product-state", {})
-            auto_mode = self.coordinator.device._get_current_value(
+
+            # Update fan direction based on device state (fdir) if supported
+            if self._direction_supported:
+                # fdir="ON" means front airflow is on (forward direction in HA terms)
+                # fdir="OFF" means front airflow is off (reverse direction in HA terms)
+                fdir_value = self.coordinator.device.get_state_value(
+                    product_state,
+                    "fdir",
+                    "ON",  # Default to ON (forward) if not available
+                )
+                self._attr_current_direction = (
+                    "forward" if fdir_value == "ON" else "reverse"
+                )
+            else:
+                # Device doesn't support direction control
+                self._attr_current_direction = "forward"  # Default fallback
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
-            self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
+
+            # Update heating information if device has heating capability
+            if self._has_heating:
+                self._update_heating_data(product_state)
+                # For heating devices, preset mode includes heating state
+                heating_mode = self.coordinator.device.get_state_value(
+                    product_state, "hmod", "OFF"
+                )
+                if heating_mode == "HEAT":
+                    self._attr_preset_mode = "Heat"
+                elif auto_mode == "ON":
+                    self._attr_preset_mode = "Auto"
+                else:
+                    self._attr_preset_mode = "Manual"
+            else:
+                # Non-heating devices use simple Auto/Manual logic
+                self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
+
+            # Update oscillation state from device data if supported
+            if self._oscillation_supported:
+                oson = self.coordinator.device.get_state_value(
+                    product_state, "oson", "OFF"
+                )
+                self._attr_oscillating = oson == "ON"
+            else:
+                # Device doesn't support oscillation
+                self._attr_oscillating = False
         else:
             self._attr_preset_mode = None
-
-        # Oscillation not available in our current data, set to False
-        self._attr_oscillating = False
+            self._attr_oscillating = False
+            if not self._direction_supported:
+                self._attr_current_direction = (
+                    "forward"  # Default fallback when no device data
+                )
 
         _LOGGER.debug(
             "Fan %s final state - is_on: %s, percentage: %s",
@@ -171,6 +396,24 @@ class DysonFan(DysonEntity, FanEntity):
             "Fan %s stopped command pending period", self.coordinator.serial_number
         )
 
+    def turn_on(
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Turn on the fan (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            percentage: Fan speed percentage (0-100)
+            preset_mode: Preset mode to set ("Auto", "Manual", "Heat")
+            **kwargs: Additional arguments
+        """
+        self.hass.create_task(self.async_turn_on(percentage, preset_mode, **kwargs))
+
     async def async_turn_on(
         self,
         percentage: int | None = None,
@@ -203,6 +446,17 @@ class DysonFan(DysonEntity, FanEntity):
         # Let the coordinator update naturally from MQTT messages
         # No forced refresh or immediate state writing to prevent race conditions
 
+    def turn_off(self, **kwargs: Any) -> None:
+        """Turn off the fan (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            **kwargs: Additional arguments
+        """
+        self.hass.create_task(self.async_turn_off(**kwargs))
+
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
         if not self.coordinator.device:
@@ -216,6 +470,17 @@ class DysonFan(DysonEntity, FanEntity):
         self.async_write_ha_state()
 
         # Let the coordinator update naturally from MQTT messages for final state
+
+    def set_percentage(self, percentage: int) -> None:
+        """Set the fan speed percentage (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            percentage: Fan speed percentage (0-100)
+        """
+        self.hass.create_task(self.async_set_percentage(percentage))
 
     async def async_set_percentage(self, percentage: int) -> None:
         """Set the fan speed percentage."""
@@ -232,15 +497,34 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Let the coordinator update naturally from MQTT messages for final state
 
+    def set_direction(self, direction: str) -> None:
+        """Set the fan direction (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            direction: Direction to set ("forward" or "reverse")
+        """
+        self.hass.create_task(self.async_set_direction(direction))
+
     async def async_set_direction(self, direction: str) -> None:
         """Set the fan direction."""
         if not self.coordinator.device:
             return
 
+        # Only allow direction control if device supports it
+        if not self._direction_supported:
+            _LOGGER.warning(
+                "Device %s does not support direction control",
+                self.coordinator.serial_number,
+            )
+            return
+
         # Map Home Assistant direction to Dyson direction values
-        direction_value = (
-            "ON" if direction == "reverse" else "OFF"
-        )  # Adjust based on actual Dyson values
+        # Based on libdyson-neon: fdir="ON" = front airflow = forward direction
+        #                         fdir="OFF" = no front airflow = reverse direction
+        direction_value = "ON" if direction == "forward" else "OFF"
 
         try:
             # Use device method directly instead of coordinator
@@ -259,12 +543,35 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Force Home Assistant to update with confirmed device state
             self.async_write_ha_state()
-        except Exception as err:
+        except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
-                "Failed to set fan direction for %s: %s",
+                "Communication error setting fan direction for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )
+        except (ValueError, KeyError) as err:
+            _LOGGER.error(
+                "Invalid direction value for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting fan direction for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+
+    def set_preset_mode(self, preset_mode: str) -> None:
+        """Set the fan preset mode (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            preset_mode: Preset mode to set ("Auto", "Manual", "Heat")
+        """
+        self.hass.create_task(self.async_set_preset_mode(preset_mode))
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set the fan preset mode."""
@@ -276,6 +583,11 @@ class DysonFan(DysonEntity, FanEntity):
                 await self.coordinator.device.set_auto_mode(True)
             elif preset_mode == "Manual":
                 await self.coordinator.device.set_auto_mode(False)
+            elif preset_mode == "Heat" and self._has_heating:
+                # Enable heating mode
+                await self.coordinator.async_send_command(
+                    "set_climate_mode", {"hmod": "HEAT"}
+                )
             else:
                 _LOGGER.warning("Unknown preset mode: %s", preset_mode)
                 return
@@ -296,9 +608,24 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Force Home Assistant to update with confirmed device state
             self.async_write_ha_state()
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting preset mode '%s' for %s: %s",
+                preset_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, KeyError) as err:
+            _LOGGER.error(
+                "Invalid preset mode '%s' for %s: %s",
+                preset_mode,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set fan preset mode for %s: %s",
+                "Unexpected error setting preset mode '%s' for %s: %s",
+                preset_mode,
                 self.coordinator.serial_number,
                 err,
             )
@@ -323,19 +650,19 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["is_on"] = is_on  # type: ignore[assignment]
 
             # Device state properties
-            fan_power = self.coordinator.device._get_current_value(
+            fan_power = self.coordinator.device.get_state_value(
                 product_state, "fpwr", "OFF"
             )
-            fan_state = self.coordinator.device._get_current_value(
+            fan_state = self.coordinator.device.get_state_value(
                 product_state, "fnst", "OFF"
             )
-            fan_speed_setting = self.coordinator.device._get_current_value(
+            fan_speed_setting = self.coordinator.device.get_state_value(
                 product_state, "fnsp", "0001"
             )
-            auto_mode = self.coordinator.device._get_current_value(
+            auto_mode = self.coordinator.device.get_state_value(
                 product_state, "auto", "OFF"
             )
-            night_mode = self.coordinator.device._get_current_value(
+            night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
 
@@ -346,15 +673,13 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["night_mode"] = night_mode == "ON"
 
             # Oscillation information
-            oson = self.coordinator.device._get_current_value(
-                product_state, "oson", "OFF"
-            )
+            oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
             attributes["oscillation_enabled"] = oson == "ON"
 
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
 
@@ -370,7 +695,7 @@ class DysonFan(DysonEntity, FanEntity):
 
             # Sleep timer if available
             try:
-                sltm = self.coordinator.device._get_current_value(
+                sltm = self.coordinator.device.get_state_value(
                     product_state, "sltm", "OFF"
                 )
                 if sltm != "OFF":
@@ -380,7 +705,102 @@ class DysonFan(DysonEntity, FanEntity):
             except (ValueError, TypeError):
                 attributes["sleep_timer"] = 0
 
+            # Heating information if device has heating capability
+            if self._has_heating:
+                # Current and target temperatures
+                attributes["current_temperature"] = self._attr_current_temperature  # type: ignore[assignment]
+                attributes["target_temperature"] = self._attr_target_temperature  # type: ignore[assignment]
+                attributes["hvac_mode"] = self._attr_hvac_mode  # type: ignore[assignment]
+                attributes["temperature_unit"] = self._attr_temperature_unit  # type: ignore[assignment]
+
+                # Raw device heating state for scene support
+                hmod = self.coordinator.device.get_state_value(
+                    product_state, "hmod", "OFF"
+                )
+                attributes["heating_mode"] = hmod  # type: ignore[assignment]
+                attributes["heating_enabled"] = hmod != "OFF"  # type: ignore[assignment]
+
+                # Target temperature in Kelvin format for device commands
+                if self._attr_target_temperature is not None:
+                    temp_kelvin = int((self._attr_target_temperature + 273.15) * 10)
+                    attributes["target_temperature_kelvin"] = f"{temp_kelvin:04d}"  # type: ignore[assignment]
+
         return attributes if attributes else None
+
+    def _check_oscillation_support(self) -> bool:
+        """Check if device supports oscillation by looking for 'oson' in device state."""
+        if not self.coordinator.device or not self.coordinator.data:
+            return False
+
+        product_state = self.coordinator.data.get("product-state", {})
+        # Check if device reports oscillation state (oson key exists)
+        return "oson" in product_state
+
+    def _check_direction_support(self) -> bool:
+        """Check if device supports direction control by looking for 'fdir' in device state."""
+        if not self.coordinator.device or not self.coordinator.data:
+            return False
+
+        product_state = self.coordinator.data.get("product-state", {})
+        # Check if device reports fan direction state (fdir key exists)
+        return "fdir" in product_state
+
+    def oscillate(self, oscillating: bool) -> None:
+        """Set oscillation on/off (sync wrapper).
+
+        This method provides the required synchronous interface for Home Assistant's
+        FanEntity abstract method. It delegates to the async implementation.
+
+        Args:
+            oscillating: True to enable oscillation, False to disable
+        """
+        self.hass.create_task(self.async_oscillate(oscillating))
+
+    async def async_oscillate(self, oscillating: bool) -> None:
+        """Set oscillation on/off via Home Assistant's native fan.oscillate service."""
+        if not self.coordinator.device:
+            return
+
+        # Only allow oscillation control if device supports it
+        if not self._oscillation_supported:
+            _LOGGER.warning(
+                "Device %s does not support oscillation control",
+                self.coordinator.serial_number,
+            )
+            return
+
+        try:
+            await self.coordinator.device.set_oscillation(oscillating)
+
+            # Update state immediately for responsive UI
+            self._attr_oscillating = oscillating
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set oscillation to %s for %s via native fan service",
+                oscillating,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation to %s for %s: %s",
+                oscillating,
+                self.coordinator.serial_number,
+                err,
+            )
+        except AttributeError as err:
+            _LOGGER.error(
+                "Device method not available for oscillation on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting oscillation to %s for %s: %s",
+                oscillating,
+                self.coordinator.serial_number,
+                err,
+            )
 
     async def async_set_angle(self, angle_low: int, angle_high: int) -> None:
         """Set oscillation angle via service call."""
@@ -395,9 +815,163 @@ class DysonFan(DysonEntity, FanEntity):
                 self.coordinator.serial_number,
             )
             await self.coordinator.device.set_oscillation_angles(angle_low, angle_high)
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation angles (%s°-%s°) for %s: %s",
+                angle_low,
+                angle_high,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid angle values (%s°-%s°) for %s: %s",
+                angle_low,
+                angle_high,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation angles for %s: %s",
+                "Unexpected error setting oscillation angles (%s°-%s°) for %s: %s",
+                angle_low,
+                angle_high,
+                self.coordinator.serial_number,
+                err,
+            )
+
+    # Climate functionality for heating-enabled devices
+    def _update_heating_data(self, device_data: dict[str, Any]) -> None:
+        """Update temperature and heating mode data."""
+        if not self._has_heating or not self.coordinator.device:
+            return
+
+        # Current temperature
+        current_temp = self.coordinator.device.get_state_value(
+            device_data, "tmp", "0000"
+        )
+        try:
+            temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
+            self._attr_current_temperature = float(
+                temp_kelvin - 273.15
+            )  # Convert to Celsius
+        except (ValueError, TypeError):
+            self._attr_current_temperature = None
+
+        # Target temperature
+        target_temp = self.coordinator.device.get_state_value(
+            device_data, "hmax", "0000"
+        )
+        try:
+            temp_kelvin = int(target_temp) / 10
+            self._attr_target_temperature = float(temp_kelvin - 273.15)
+        except (ValueError, TypeError):
+            self._attr_target_temperature = 20.0  # Default to 20°C
+
+        # HVAC mode based on device state
+        heating_mode = self.coordinator.device.get_state_value(
+            device_data, "hmod", "OFF"
+        )
+        fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
+        auto_mode = self.coordinator.device.get_state_value(device_data, "auto", "OFF")
+
+        if fan_power == "OFF":
+            self._attr_hvac_mode = HVACMode.OFF
+        elif heating_mode == "HEAT":
+            self._attr_hvac_mode = HVACMode.HEAT
+        elif auto_mode == "ON":
+            self._attr_hvac_mode = HVACMode.AUTO
+        else:
+            self._attr_hvac_mode = HVACMode.FAN_ONLY
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
+        """Set new target temperature."""
+        if not self._has_heating or not self.coordinator.device:
+            return
+
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is None:
+            return
+
+        try:
+            # Call the device method directly
+            await self.coordinator.device.set_target_temperature(temperature)
+
+            # Update state immediately for responsive UI
+            self._attr_target_temperature = temperature
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set target temperature to %s°C for %s",
+                temperature,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting temperature to %s°C for %s: %s",
+                temperature,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid temperature value %s°C for %s: %s",
+                temperature,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting temperature to %s°C for %s: %s",
+                temperature,
+                self.coordinator.serial_number,
+                err,
+            )
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set new target HVAC mode."""
+        if not self._has_heating or not self.coordinator.device:
+            return
+
+        try:
+            if hvac_mode == HVACMode.OFF:
+                await self.coordinator.device.send_command("STATE-SET", {"fnst": "OFF"})
+            elif hvac_mode == HVACMode.HEAT:
+                await self.coordinator.device.send_command(
+                    "STATE-SET", {"hmod": "HEAT"}
+                )
+            elif hvac_mode == HVACMode.FAN_ONLY:
+                await self.coordinator.device.send_command("STATE-SET", {"fnst": "FAN"})
+            elif hvac_mode == HVACMode.AUTO:
+                await self.coordinator.device.send_command("STATE-SET", {"auto": "ON"})
+
+            # Update state immediately for responsive UI
+            self._attr_hvac_mode = hvac_mode
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set HVAC mode to %s for %s",
+                hvac_mode,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting HVAC mode to %s for %s: %s",
+                hvac_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, KeyError) as err:
+            _LOGGER.error(
+                "Invalid HVAC mode '%s' for %s: %s",
+                hvac_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting HVAC mode to %s for %s: %s",
+                hvac_mode,
                 self.coordinator.serial_number,
                 err,
             )

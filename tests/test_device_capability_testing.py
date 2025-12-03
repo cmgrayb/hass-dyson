@@ -75,11 +75,11 @@ class TestDeviceCapabilityMapping:
         assert "Heating" not in coordinator.device_capabilities
 
     def test_heater_capabilities(self, mock_hass, base_config_entry):
-        """Test capability mapping for heater devices."""
+        """Test capability mapping for heating devices (Environment Cleaners with Heating capability)."""
         base_config_entry.data.update(
             {
                 "capabilities": ["EnvironmentalData", "Heating", "FanControl"],
-                "device_category": "heater",
+                "device_category": "ec",  # Heating devices are Environment Cleaners
             }
         )
 
@@ -464,7 +464,10 @@ class TestCapabilityBasedEntityCreation:
     def test_heating_enables_temperature_sensor(self, mock_hass, base_config_entry):
         """Test that Heating capability enables temperature sensor."""
         base_config_entry.data.update(
-            {"capabilities": ["Heating"], "device_category": "heater"}
+            {
+                "capabilities": ["Heating"],
+                "device_category": "ec",
+            }  # Heating devices are Environment Cleaners
         )
 
         with patch(
@@ -649,7 +652,7 @@ class TestRealDeviceScenarios:
             "mqtt_password": "heater_password",
             "mqtt_hostname": "192.168.1.51",
             "capabilities": ["EnvironmentalData", "Heating", "FanControl"],
-            "device_category": "heater",
+            "device_category": "ec",  # Heating devices are Environment Cleaners
         }
 
         with patch(
@@ -673,8 +676,8 @@ class TestRealDeviceScenarios:
         # No air quality sensors
         assert not coordinator.has_capability("ExtendedAQ")
 
-        # Should be heater category
-        assert coordinator.device_category == "heater"
+        # Should be Environment Cleaner category
+        assert coordinator.device_category == "ec"
 
     def test_dyson_v15_robot_vacuum(self, mock_hass):
         """Test configuration for a Dyson V15 robot vacuum."""

@@ -1,4 +1,21 @@
-"""Data update coordinator for Dyson devices."""
+"""Data update coordinator for Dyson devices and cloud accounts.
+
+This module provides coordinators for managing Dyson device state and cloud account
+operations. The coordinators handle MQTT communication, data synchronization,
+service registration, and device lifecycle management.
+
+Classes:
+    DysonDataUpdateCoordinator: Manages individual device state and communication
+    DysonCloudAccountCoordinator: Manages cloud account and device discovery
+
+Key Features:
+    - Real-time MQTT communication with devices
+    - Automatic device capability detection and service registration
+    - Connection failover (local → cloud → reconnection attempts)
+    - Environmental data streaming and caching
+    - Firmware update coordination
+    - Service lifecycle management based on device categories
+"""
 
 from __future__ import annotations
 
@@ -73,7 +90,51 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
 
 
 class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator to manage data updates for a Dyson device."""
+    """Coordinator for managing individual Dyson device state and communication.
+
+    This coordinator handles all aspects of device communication including MQTT
+    connection management, data synchronization, service registration, and
+    device lifecycle management.
+
+    Attributes:
+        device: DysonDevice wrapper for MQTT communication
+        serial_number: Unique device identifier
+        device_capabilities: List of device capabilities (WiFi, ExtendedAQ, etc.)
+        device_category: List of device categories (FAN, SENSOR, etc.)
+        device_type: Device type identifier from product info
+        firmware_version: Current device firmware version
+        firmware_auto_update_enabled: Whether auto-updates are enabled
+        firmware_latest_version: Latest available firmware version
+        firmware_update_in_progress: Whether update is currently running
+
+    Example:
+        Creating and using a device coordinator:
+
+        >>> coordinator = DysonDataUpdateCoordinator(
+        >>>     hass=hass,
+        >>>     config_entry=config_entry
+        >>> )
+        >>> await coordinator.async_config_entry_first_refresh()
+        >>>
+        >>> # Access device state
+        >>> if coordinator.device:
+        >>>     pm25 = coordinator.device.pm25
+        >>>     fan_speed = coordinator.device.fan_speed
+        >>>
+        >>> # Check capabilities
+        >>> if "ExtendedAQ" in coordinator.device_capabilities:
+        >>>     voc_level = coordinator.device.voc
+
+    Note:
+        The coordinator automatically manages connection failover, attempting
+        local connection first, then cloud fallback if configured.
+
+        Service registration is capability-driven and happens automatically
+        when device capabilities are detected.
+
+        Environmental data is streamed in real-time via MQTT callbacks,
+        providing immediate updates to sensor entities.
+    """
 
     def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
         """Initialize the coordinator."""
@@ -87,8 +148,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._services_registered: bool = False
         self._firmware_latest_version: str | None = None
         self._firmware_update_in_progress: bool = False
-        # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-        # self._firmware_update_available: bool = False
 
         super().__init__(
             hass,
@@ -99,47 +158,210 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def device_capabilities(self) -> list[str]:
-        """Return device capabilities."""
+        """Return detected device capabilities.
+
+        Returns:
+            List of capability strings that determine available features:
+            - "WiFi": Device supports wireless connectivity
+            - "ExtendedAQ": Advanced air quality sensors (VOC, FORMALDEHYDE)
+            - "AirQuality": Basic air quality sensors (PM2.5, PM10)
+            - "Night": Night mode functionality
+            - "Oscillation": Fan oscillation control
+            - "Heat": Heating functionality
+            - "Cool": Cooling functionality
+            - "Humidify": Humidification capability
+            - "WakeupFunnel": Advanced wake-up air delivery
+
+        Example:
+            Check for extended air quality features:
+
+            >>> if "ExtendedAQ" in coordinator.device_capabilities:
+            >>>     # VOC and formaldehyde sensors available
+            >>>     voc_level = coordinator.device.voc
+            >>>     formaldehyde = coordinator.device.formaldehyde
+        """
         return self._device_capabilities
 
     @property
     def device_category(self) -> list[str]:
-        """Return device category list."""
+        """Return device category classifications.
+
+        Returns:
+            List of category strings that define device type and services:
+            - "FAN": Air circulation and filtration device
+            - "HEATER": Heating functionality available
+            - "COOLER": Cooling functionality available
+            - "PURIFIER": Air purification capability
+            - "HUMIDIFIER": Humidity control
+            - "SENSOR": Environmental monitoring
+            - "LIGHTING": Built-in lighting controls
+
+        Note:
+            Categories determine which Home Assistant services are registered.
+            Multiple categories indicate multi-functional devices.
+
+        Example:
+            Check device capabilities:
+
+            >>> if "FAN" in coordinator.device_category:
+            >>>     # Fan controls available
+            >>>     await coordinator.device.set_fan_speed(5)
+            >>> if "SENSOR" in coordinator.device_category:
+            >>>     # Environmental data available
+            >>>     temperature = coordinator.device.temperature
+        """
         return self._device_category
 
     @property
     def device_type(self) -> str:
-        """Return device type."""
+        """Return device type identifier.
+
+        Returns:
+            Device type string extracted from product information, such as:
+            - "438": Pure Cool (Tower fan with purification)
+            - "455": Pure Cool Link (Connected tower fan)
+            - "358": Pure Hot+Cool (Heater/cooler/purifier)
+            - "527": Pure Cool Me (Personal air purifier)
+            - "520": Pure Humidity+Cool (Humidifier with cooling)
+
+        Note:
+            Used for device identification and capability inference.
+            Different device types support different feature sets.
+
+        Example:
+            Check device type for features:
+
+            >>> if coordinator.device_type in ["358", "455"]:
+            >>>     # Hot+Cool models support heating
+            >>>     heating_available = True
+        """
         return self._device_type
 
     @property
     def firmware_version(self) -> str:
-        """Return device firmware version."""
+        """Return current device firmware version.
+
+        Returns:
+            Firmware version string in format "XX.YY.ZZ" or "Unknown" if
+            version cannot be determined from device state.
+
+        Example:
+            Check firmware version:
+
+            >>> current_fw = coordinator.firmware_version
+            >>> if current_fw != "Unknown":
+            >>>     _LOGGER.info(f"Device firmware: {current_fw}")
+        """
         return self._firmware_version
 
     @property
     def firmware_auto_update_enabled(self) -> bool:
-        """Return whether firmware auto-update is enabled."""
+        """Return whether automatic firmware updates are enabled.
+
+        Returns:
+            True if device is configured to automatically download and install
+            firmware updates, False otherwise.
+
+        Note:
+            This setting is managed through the Dyson Link app and affects
+            whether the device will automatically update its firmware when
+            new versions are available.
+
+        Example:
+            Check auto-update status:
+
+            >>> if coordinator.firmware_auto_update_enabled:
+            >>>     _LOGGER.info("Device will auto-update firmware")
+            >>> else:
+            >>>     _LOGGER.info("Manual firmware updates required")
+        """
         return self._firmware_auto_update_enabled
 
     @property
     def firmware_latest_version(self) -> str | None:
-        """Return the latest available firmware version."""
+        """Return the latest available firmware version from Dyson servers.
+
+        Returns:
+            Latest firmware version string if available from cloud API,
+            None if version information is not available or cannot be retrieved.
+
+        Note:
+            This information is fetched from Dyson's cloud service during
+            coordinator updates. May be None if cloud connectivity is unavailable
+            or if the device doesn't support cloud-based update checking.
+
+        Example:
+            Compare current vs latest firmware:
+
+            >>> current = coordinator.firmware_version
+            >>> latest = coordinator.firmware_latest_version
+            >>> if latest and latest != current:
+            >>>     _LOGGER.info(f"Firmware update available: {current} -> {latest}")
+        """
         return self._firmware_latest_version
 
     @property
     def firmware_update_in_progress(self) -> bool:
-        """Return whether a firmware update is in progress."""
+        """Return whether a firmware update is currently in progress.
+
+        Returns:
+            True if a firmware update is currently being downloaded or installed,
+            False if no update is active.
+
+        Note:
+            Status is managed through multiple channels:
+            1. Set to True when cloud API firmware update is triggered
+            2. Updated via MQTT messages on /status/software topic (when available)
+            3. Set to False when update completes successfully or fails
+
+            During updates, device functionality may be limited and the device
+            may temporarily disconnect from network or MQTT.
+
+        Example:
+            Check for active firmware update:
+
+            >>> if coordinator.firmware_update_in_progress:
+            >>>     _LOGGER.info("Firmware update in progress - device may be unavailable")
+            >>>     # Avoid sending commands during update
+            >>> else:
+            >>>     # Safe to send device commands
+            >>>     await coordinator.device.set_fan_speed(5)
+        """
         return self._firmware_update_in_progress
 
-    # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-    # @property
-    # def firmware_update_available(self) -> bool:
-    #     """Return whether a firmware update is available."""
-    #     return self._firmware_update_available
-
     async def ensure_device_services_registered(self) -> None:
-        """Ensure device services are registered when capabilities become available."""
+        """Ensure device services are registered when capabilities become available.
+
+        This method dynamically registers Home Assistant services based on detected
+        device capabilities and categories. Services are registered only once when
+        capabilities are first detected to avoid duplicate registrations.
+
+        Registered services include:
+            - Fan control (speed, oscillation, night mode)
+            - Temperature control (heating/cooling targets)
+            - Timer operations (sleep timer, auto-off)
+            - Maintenance (filter reset, device reset)
+            - Air quality (auto mode, sensitivity settings)
+
+        Note:
+            Called automatically during device initialization and capability updates.
+            Services are capability-driven - only relevant services are registered
+            based on what the device actually supports.
+
+        Raises:
+            Exception: If service registration fails (logged but not propagated)
+
+        Example:
+            Services are registered automatically, but can be triggered manually:
+
+            >>> # Usually not needed - called automatically
+            >>> await coordinator.ensure_device_services_registered()
+            >>>
+            >>> # Check if services are registered
+            >>> if coordinator._services_registered:
+            >>>     # Services available for use
+            >>>     pass
+        """
         if not self._services_registered and (
             self._device_capabilities
             or (self.device and getattr(self.device, "capabilities", []))
@@ -171,7 +393,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Log current environmental data state for debugging
         if self.device and hasattr(self.device, "_environmental_data"):
-            env_data = self.device._environmental_data
+            env_data = self.device.get_environmental_data()
             _LOGGER.debug(
                 "Environmental data at callback time for %s: pm25=%s, pm10=%s",
                 self.serial_number,
@@ -201,6 +423,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug(
             "Received message update for %s on topic %s", self.serial_number, topic
         )
+
+        # Handle firmware update progress messages on /status/software topic
+        if topic.endswith("/status/software"):
+            _LOGGER.debug("Received firmware update status message: %s", data)
+            self._handle_firmware_update_status(topic, data)
+            return
 
         # Update entity states for STATE-CHANGE, CURRENT-STATE, ENVIRONMENTAL-CURRENT-SENSOR-DATA, and CURRENT-FAULTS messages
         message_type = data.get("msg", "")
@@ -261,6 +489,54 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         except Exception as e:
             _LOGGER.warning("Error handling environmental message: %s", e)
+
+    def _handle_firmware_update_status(self, topic: str, data: dict[str, Any]) -> None:
+        """Handle firmware update status messages from /status/software topic.
+
+        TODO: Implement once the JSON key for status values is identified.
+
+        Known status values to handle:
+        - "acknowledged": Download started - keep _firmware_update_in_progress = True
+        - "downloaded": Installation started - keep _firmware_update_in_progress = True
+        - Unknown completion/success value - set _firmware_update_in_progress = False
+        - Unknown failure value - set _firmware_update_in_progress = False
+
+        Expected message structure (key unknown):
+        {
+            "unknown_key": "acknowledged"|"downloaded"|"completed"|"failed"|...,
+            ... other fields ...
+        }
+        """
+        try:
+            _LOGGER.info(
+                "Firmware update status received for %s: %s", self.serial_number, data
+            )
+
+            # TODO: Extract status value once key is identified
+            # status_value = data.get("unknown_key")
+            #
+            # if status_value in ["acknowledged", "downloaded"]:
+            #     # Update is in progress (downloading or installing)
+            #     self._firmware_update_in_progress = True
+            #     _LOGGER.info("Firmware update in progress: %s", status_value)
+            # elif status_value in ["completed", "success"]:  # TBD actual values
+            #     # Update completed successfully
+            #     self._firmware_update_in_progress = False
+            #     _LOGGER.info("Firmware update completed successfully")
+            # elif status_value in ["failed", "error"]:  # TBD actual values
+            #     # Update failed
+            #     self._firmware_update_in_progress = False
+            #     _LOGGER.error("Firmware update failed: %s", status_value)
+            #
+            # # Notify entities of status change
+            # self.async_update_listeners()
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error handling firmware update status for %s: %s",
+                self.serial_number,
+                e,
+            )
 
     def _handle_state_change_message(self) -> None:
         """Handle STATE-CHANGE message updates."""
@@ -579,6 +855,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         len(value) if value else 0,
                     )
 
+            # Check for MQTT root topic level (the actual MQTT prefix field)
+            mqtt_root_topic = getattr(mqtt_obj, "mqtt_root_topic_level", None)
+            if mqtt_root_topic:
+                _LOGGER.debug("Found MQTT root topic level: %s", mqtt_root_topic)
+
             # Check for decoded password attributes
             for attr_name in [
                 "password",
@@ -638,7 +919,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_capabilities = self.config_entry.data.get("capabilities")
 
             if config_capabilities and len(config_capabilities) > 0:
-                # Use capabilities from config entry if non-empty
+                # Use capabilities from config entry if non-empty (prioritize config entry for cloud devices)
                 self._device_capabilities = normalize_capabilities(config_capabilities)
                 _LOGGER.debug(
                     "Using capabilities from config entry for %s: %s",
@@ -653,31 +934,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.serial_number,
                         config_capabilities,
                     )
+                    # Fall back to API extraction if config normalization failed
+                    self._extract_from_api_fallback(device_info)
             else:
-                # Extract capabilities from API response
-                try:
-                    api_capabilities = self._extract_capabilities(device_info)
-                    self._device_capabilities = normalize_capabilities(api_capabilities)
-                    _LOGGER.debug(
-                        "Extracted capabilities from API for %s: %s",
-                        self.serial_number,
-                        self._device_capabilities,
-                    )
-
-                    # Validate that we got meaningful capabilities from API
-                    if not self._device_capabilities:
-                        _LOGGER.warning(
-                            "API capabilities for %s resulted in empty list after normalization: %s",
-                            self.serial_number,
-                            api_capabilities,
-                        )
-                except Exception as api_error:
-                    _LOGGER.error(
-                        "Failed to extract capabilities from API for %s: %s",
-                        self.serial_number,
-                        api_error,
-                    )
-                    self._device_capabilities = []
+                # Extract capabilities from API response (fallback for older entries or missing data)
+                self._extract_from_api_fallback(device_info)
 
         except Exception as e:
             _LOGGER.error(
@@ -695,12 +956,38 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._device_capabilities,
         )
 
+    def _extract_from_api_fallback(self, device_info) -> None:
+        """Extract capabilities from API response as fallback."""
+        try:
+            api_capabilities = self._extract_capabilities(device_info)
+            from .device_utils import normalize_capabilities
+
+            self._device_capabilities = normalize_capabilities(api_capabilities)
+            _LOGGER.debug(
+                "Extracted capabilities from API for %s: %s",
+                self.serial_number,
+                self._device_capabilities,
+            )
+
+            # Validate that we got meaningful capabilities from API
+            if not self._device_capabilities:
+                _LOGGER.warning(
+                    "API capabilities for %s resulted in empty list after normalization: %s",
+                    self.serial_number,
+                    api_capabilities,
+                )
+        except Exception as api_error:
+            _LOGGER.error(
+                "Failed to extract capabilities from API for %s: %s",
+                self.serial_number,
+                api_error,
+            )
+            self._device_capabilities = []
+
     def _extract_firmware_version(self, device_info) -> None:
         """Extract firmware version and update information from device info."""
         self._firmware_version = "Unknown"
         self._firmware_auto_update_enabled = False
-        # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-        # self._firmware_update_available = False
 
         connected_config = getattr(device_info, "connected_configuration", None)
         if connected_config:
@@ -730,28 +1017,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "Found firmware auto-update enabled: %s",
                         self._firmware_auto_update_enabled,
                     )
-
-                # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
-                # Extract update availability - try multiple possible field names
-                # update_available = None
-                # possible_update_fields = [
-                #     "new_version_available",
-                #     "update_available",
-                #     "upgrade_available",
-                #     "pending_update",
-                #     "has_update",
-                #     "available_update"
-                # ]
-                #
-                # for field_name in possible_update_fields:
-                #     update_available = getattr(firmware_obj, field_name, None)
-                #     if update_available is not None:
-                #         _LOGGER.debug("Found firmware update field '%s' with value: %s", field_name, update_available)
-                #         self._firmware_update_available = bool(update_available)
-                #         break
-                # else:
-                #     _LOGGER.debug("No firmware update availability field found in: %s",
-                #                   [attr for attr in dir(firmware_obj) if not attr.startswith("_")])
             else:
                 _LOGGER.debug("No firmware object found in connected configuration")
         else:
@@ -971,6 +1236,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not connected:
             raise UpdateFailed(f"Failed to connect to device {self.serial_number}")
 
+        # Now that device is connected, refine capabilities based on actual device state
+        await self._refine_capabilities_from_device_state()
+
         # Register for environmental update notifications
         self.device.add_environmental_callback(self._on_environmental_update)
         # Register for message updates to get real-time state changes
@@ -1040,6 +1308,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"Failed to connect to manual device {self.serial_number}"
                 )
 
+            # For manual devices, trust user's capability selection - no refinement needed
+            _LOGGER.debug(
+                "Manual device %s connected - using user-selected capabilities: %s",
+                self.serial_number,
+                self._device_capabilities,
+            )
+
             # Register for environmental update notifications
             self.device.add_environmental_callback(self._on_environmental_update)
 
@@ -1104,15 +1379,15 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Add environmental data to the state following Home Assistant best practices
             if (
                 hasattr(self.device, "_environmental_data")
-                and self.device._environmental_data
+                and self.device.get_environmental_data()
             ):
                 device_state["environmental-data"] = dict(
-                    self.device._environmental_data
+                    self.device.get_environmental_data()
                 )
                 _LOGGER.debug(
                     "Added environmental data to coordinator state for %s: %s",
                     self.serial_number,
-                    list(self.device._environmental_data.keys()),
+                    list(self.device.get_environmental_data().keys()),
                 )
 
             _LOGGER.debug(
@@ -1220,7 +1495,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return True
 
     async def async_check_firmware_update(self) -> bool:
-        """Check for available firmware updates using libdyson-rest 0.7.0b1."""
+        """Check for available firmware updates using libdyson-rest >=0.7.0"""
         from libdyson_rest.exceptions import (
             DysonAPIError,
             DysonAuthError,
@@ -1284,52 +1559,64 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
 
     async def async_install_firmware_update(self, version: str) -> bool:
-        """Install firmware update via MQTT command."""
-        if not self.device:
-            _LOGGER.error("No device connection available for firmware update")
+        """Install firmware update via cloud API.
+
+        The firmware update process works as follows:
+        1. Trigger update via cloud API (trigger_firmware_update)
+        2. Device responds with progress updates via MQTT on topic ending with /status/software
+
+        Known MQTT Progress Values (key TBD):
+        - "acknowledged": Download started
+        - "downloaded": Installation started
+        - Additional status values may exist for completion/failure
+
+        TODO: Implement MQTT status monitoring once the JSON key is identified.
+        Expected topic: {mqtt_root}/{serial_number}/status/software
+        Example: PREF/SER-IA-L0001/status/software
+        """
+        # Only cloud-discovered devices support firmware updates
+        if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
+            _LOGGER.error(
+                "Firmware updates are only supported for cloud-discovered devices"
+            )
             return False
 
         try:
-            # Use the extracted device type for the firmware URL
-            device_type = self._device_type
-
-            # Construct firmware URL following the pattern from MQTT trace
-            firmware_url = f"http://ota-firmware.cp.dyson.com/{device_type}/M__SC04.WF02/{version}/manifest.bin"
-
-            _LOGGER.info(
-                "Using device type %s for firmware URL: %s", device_type, firmware_url
-            )
-
-            # Prepare MQTT command with current timestamp
-            from datetime import datetime
-
-            command_data = {
-                "msg": "SOFTWARE-UPGRADE",
-                "time": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",
-                "version": version,
-                "url": firmware_url,
-            }
-
             _LOGGER.info(
                 "Initiating firmware update for %s to version %s",
                 self.serial_number,
                 version,
             )
 
-            # Mark update as in progress
+            # Mark update as in progress before attempting
             self._firmware_update_in_progress = True
             self.async_update_listeners()
 
-            # Send the command using device's send_command method
-            # send_command returns None on success and raises on failure
-            await self.device.send_command("SOFTWARE-UPGRADE", command_data)
+            # Authenticate cloud client
+            cloud_client = await self._authenticate_cloud_client()
 
-            _LOGGER.info(
-                "Firmware update command sent successfully for %s", self.serial_number
-            )
-            # Note: Update progress tracking would require monitoring device state
-            # but MQTT doesn't provide progress updates based on the trace
-            return True
+            try:
+                # Trigger firmware update using the new cloud API method
+                success = await cloud_client.trigger_firmware_update(self.serial_number)
+
+                if success:
+                    _LOGGER.info(
+                        "Firmware update initiated successfully for %s",
+                        self.serial_number,
+                    )
+                    return True
+                else:
+                    _LOGGER.error(
+                        "Cloud API returned failure for firmware update on %s",
+                        self.serial_number,
+                    )
+                    self._firmware_update_in_progress = False
+                    self.async_update_listeners()
+                    return False
+
+            finally:
+                # Always close the cloud client
+                await cloud_client.close()
 
         except Exception as e:
             _LOGGER.error(
@@ -1366,8 +1653,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if firmware and hasattr(firmware, "capabilities"):
                     capabilities = firmware.capabilities or []
 
-        # Capabilities should come from the API response, not from static product type mapping
-        # If the API doesn't provide capabilities, they should be configured by the user
+        # Add virtual capabilities based on product type as per discovery.md
+        # PH models should have humidifier capability
+        # Note: Heating capability is now determined dynamically after connection
+        # by checking for 'hmod' state key presence in _refine_capabilities_from_device_state()
+        product_type = getattr(
+            device_info, "product_type", getattr(device_info, "type", "")
+        )
+
+        if product_type:
+            # PH model (Purifier/Humidifier) should have virtual Humidifier capability
+            if product_type.startswith("PH"):
+                if "Humidifier" not in capabilities:
+                    capabilities.append("Humidifier")
+                    _LOGGER.debug(
+                        "Added virtual Humidifier capability for PH model %s",
+                        product_type,
+                    )
 
         _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
         _LOGGER.debug(
@@ -1379,6 +1681,93 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("Final capabilities after deduplication: %s", final_capabilities)
         return final_capabilities
 
+    async def _refine_capabilities_from_device_state(self) -> None:
+        """Refine device capabilities based on actual device state keys after connection.
+
+        This method checks for specific state keys in the device's current state
+        to determine if certain capabilities should be added or removed.
+        For example, the presence of 'hmod' key indicates heating capability.
+
+        Note: Manual devices skip this refinement to trust user's explicit capability selection.
+        """
+        # Skip capability refinement for manual devices - trust user's selection
+        discovery_method = self.config_entry.data.get(
+            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+        )
+        if discovery_method == DISCOVERY_MANUAL:
+            _LOGGER.debug(
+                "Skipping capability refinement for manual device %s - trusting user selection",
+                self.serial_number,
+            )
+            return
+
+        if not self.device or not self.device.is_connected:
+            _LOGGER.debug("Device not connected, skipping capability refinement")
+            return
+
+        try:
+            # Request current state to ensure we have fresh data for capability detection
+            try:
+                await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+                _LOGGER.debug("Requested current state for capability refinement")
+
+                # Give device a moment to respond with current state
+                import asyncio
+
+                await asyncio.sleep(2)
+            except Exception as cmd_err:
+                _LOGGER.warning(
+                    "Failed to request current state for capability refinement: %s",
+                    cmd_err,
+                )
+
+            # Get current device state to check for capability-indicating keys
+            device_state = await self.device.get_state()
+            _LOGGER.debug("Device state for capability refinement: %s", device_state)
+
+            # Check for heating capability based on 'hmod' state key presence
+            product_state = device_state.get("product-state", {})
+            original_capabilities = list(self._device_capabilities)  # Make a copy
+
+            if "hmod" in product_state:
+                # Device has heating mode state key, so it supports heating
+                if "Heating" not in self._device_capabilities:
+                    self._device_capabilities.append("Heating")
+                    _LOGGER.debug(
+                        "Device %s supports heating ('hmod' key found) - capability added for internal consistency",
+                        self.serial_number,
+                    )
+            else:
+                # Device doesn't have heating mode state key, remove heating capability if present
+                if "Heating" in self._device_capabilities:
+                    self._device_capabilities.remove("Heating")
+                    _LOGGER.debug(
+                        "Device %s does not support heating ('hmod' key not found) - capability removed",
+                        self.serial_number,
+                    )
+
+            # Log capability changes at debug level to avoid confusion
+            if original_capabilities != self._device_capabilities:
+                _LOGGER.debug(
+                    "Capabilities refined for %s based on device state: %s -> %s",
+                    self.serial_number,
+                    original_capabilities,
+                    self._device_capabilities,
+                )
+            else:
+                _LOGGER.debug(
+                    "Device capabilities match detected state for %s",
+                    self.serial_number,
+                )
+
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to refine capabilities from device state for %s: %s",
+                self.serial_number,
+                err,
+            )
+            # Don't raise - capability refinement is optional
+
     def _get_device_host(self, device_info: Any) -> str:
         """Get device host/IP address from device info."""
         # For cloud devices, try to get the local IP if available
@@ -1386,22 +1775,93 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return getattr(device_info, "hostname", f"{self.serial_number}.local")
 
     def _get_mqtt_prefix(self, device_info: Any) -> str:
-        """Get MQTT prefix from device info."""
-        # The MQTT prefix is typically the product type + model suffix
+        """Get MQTT prefix from device info using API-first approach.
+
+        This method prioritizes API-provided MQTT prefix information over hardcoded
+        mappings to ensure accurate discovery and prevent masking of connection issues.
+        Only falls back to product type construction when API data is unavailable.
+        """
+        # First, try to get MQTT prefix directly from the API
+        mqtt_prefix = self._extract_mqtt_prefix_from_api(device_info)
+        if mqtt_prefix:
+            _LOGGER.debug("Using MQTT prefix from API: %s", mqtt_prefix)
+            return mqtt_prefix
+
+        # If no API prefix available, construct from device info
+        constructed_prefix = self._construct_mqtt_prefix_fallback_from_device_info(
+            device_info
+        )
+
+        # Extract product info for logging
+        product_type = getattr(
+            device_info, "product_type", getattr(device_info, "type", "unknown")
+        )
+        variant = getattr(device_info, "variant", None)
+
+        _LOGGER.warning(
+            "No MQTT prefix found in API for device %s, constructed from product_type=%s variant=%s: %s",
+            self.serial_number,
+            product_type,
+            variant,
+            constructed_prefix,
+        )
+        return constructed_prefix
+
+    def _extract_mqtt_prefix_from_api(self, device_info: Any) -> str | None:
+        """Extract MQTT prefix from API device info."""
+        # Try to get MQTT prefix from connected configuration
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if not connected_config:
+            return None
+
+        mqtt_obj = getattr(connected_config, "mqtt", None)
+        if not mqtt_obj:
+            return None
+        # Check for the actual MQTT prefix field from the API
+        mqtt_root_topic = getattr(mqtt_obj, "mqtt_root_topic_level", None)
+        if mqtt_root_topic:
+            _LOGGER.debug(
+                "Found MQTT prefix from API mqtt_root_topic_level: %s", mqtt_root_topic
+            )
+            return str(mqtt_root_topic)
+
+        return None
+
+    def _construct_mqtt_prefix_fallback_from_device_info(self, device_info: Any) -> str:
+        """Construct MQTT prefix from device info using Dyson's naming conventions.
+
+        Extracts product_type and variant from device_info and applies the fallback rules:
+        - If product_type ends in a letter OR variant is empty/None: use product_type
+        - If product_type does not end in a letter AND variant exists: use product_type + variant
+        """
+        # Extract product type and variant from device info
         product_type = getattr(
             device_info, "product_type", getattr(device_info, "type", "438")
         )
+        variant = getattr(device_info, "variant", None)
 
-        # Map known product types to MQTT prefixes
-        prefix_map = {
-            "438": "438M",  # Pure Cool
-            "475": "475",  # Hot+Cool
-            "455": "455",  # Pure Hot+Cool
-            "469": "469",  # Pure Cool Desk
-            "527": "527",  # V10/V11
-        }
+        return self._construct_mqtt_prefix_fallback(product_type, variant)
 
-        return prefix_map.get(product_type, f"{product_type}M")
+    def _construct_mqtt_prefix_fallback(
+        self, product_type: str, variant: str | None
+    ) -> str:
+        """Construct MQTT prefix from product type and variant using Dyson's naming conventions.
+
+        Rules:
+        - If product_type ends in a letter OR variant is empty/None: use product_type
+        - If product_type does not end in a letter AND variant exists: use product_type + variant
+        """
+        product_type = str(product_type)
+        # Check if product type ends in a letter
+        ends_in_letter = product_type and product_type[-1].isalpha()
+        # Check if variant is meaningful
+        has_variant = variant and str(variant).strip()
+        if ends_in_letter or not has_variant:
+            # Use product type as-is
+            return product_type
+        else:
+            # Combine product type with variant
+            return product_type + str(variant)
 
 
 class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -1585,17 +2045,11 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
 
-        device_info = {
-            "serial_number": device_serial,
-            "name": device_name,
-            "product_type": getattr(device, "product_type", "unknown"),
-            "category": getattr(device, "category", "unknown"),
-        }
-
+        # Pass the actual device object to extract capabilities properly
         device_data = create_cloud_device_config(
             serial_number=device_serial,
             username=self._email,
-            device_info=device_info,
+            device_info=device,  # Pass the actual device object, not a dict
             auth_token=self._auth_token,
             parent_entry_id=self.config_entry.entry_id,
         )
@@ -1666,6 +2120,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "serial_number": device_serial,
                         "name": device_name,
                         "product_type": getattr(device, "product_type", "unknown"),
+                        "category": getattr(device, "category", "unknown"),
                         "auth_token": self._auth_token,
                         "email": self._email,
                         "parent_entry_id": self.config_entry.entry_id,

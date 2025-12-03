@@ -1,4 +1,31 @@
-"""Dyson device wrapper using paho-mqtt directly."""
+"""Dyson device wrapper providing direct MQTT communication and control.
+
+This module implements the core DysonDevice class that handles all communication
+with Dyson devices using the paho-mqtt library. It provides a comprehensive API
+for device connection management, state monitoring, environmental data collection,
+and device control operations.
+
+Key Features:
+    - Direct MQTT communication with local and cloud connections
+    - Real-time environmental data streaming (PM2.5, PM10, VOC, temperature, etc.)
+    - Complete device control API (fan speed, oscillation, heating, etc.)
+    - Automatic connection failover (local → cloud → reconnection)
+    - Heartbeat monitoring and automatic reconnection
+    - Filter life tracking and maintenance operations
+    - Advanced oscillation with custom angle control
+    - Sleep timer and scheduling functionality
+
+Connection Types:
+    - local_only: Direct local network connection only
+    - cloud_only: Dyson cloud service connection only
+    - local_cloud_fallback: Local preferred with cloud fallback (default)
+
+Supported Device Categories:
+    - Pure series (air purifiers): PM monitoring, filter management
+    - Hot+Cool series (heater/fan): Temperature control, heating modes
+    - Humidify series: Humidity control and water tank monitoring
+    - Lightcycle series: Lighting control and circadian rhythm
+"""
 
 from __future__ import annotations
 
@@ -27,7 +54,89 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DysonDevice:
-    """Wrapper for Dyson device communication using paho-mqtt directly."""
+    """Primary interface for Dyson device communication and control.
+
+    This class provides comprehensive access to Dyson device functionality through
+    direct MQTT communication. It handles connection management, real-time data
+    streaming, device control, and environmental monitoring.
+
+    The device wrapper automatically manages:
+    - MQTT connection establishment and maintenance
+    - Heartbeat monitoring for connection health
+    - Environmental data collection and caching
+    - Command execution with proper formatting
+    - Connection failover between local and cloud endpoints
+    - Filter life tracking and maintenance scheduling
+
+    Attributes:
+        serial_number: Unique device identifier
+        host: Local network address for direct connection
+        credential: Authentication credential for MQTT
+        capabilities: List of device capability strings
+        connection_type: Connection strategy (local_only, cloud_only, local_cloud_fallback)
+        is_connected: Current connection status
+        connection_status: Detailed connection state (LOCAL/CLOUD/DISCONNECTED)
+
+    Environmental Properties:
+        pm25: PM2.5 particulate matter (μg/m³)
+        pm10: PM10 particulate matter (μg/m³)
+        voc: Volatile organic compounds index
+        nox: Nitrogen dioxide index
+        temperature: Current temperature (°C)
+        humidity: Relative humidity (%)
+
+    Device State Properties:
+        fan_power: Fan power state (on/off)
+        fan_speed: Current fan speed (1-10)
+        night_mode: Night mode status
+        auto_mode: Automatic speed adjustment status
+        oscillation_enabled: Oscillation state
+        heating_mode: Heating mode (OFF/HEAT/AUTO)
+        target_temperature: Target temperature for heating
+
+    Filter Properties:
+        hepa_filter_life: HEPA filter remaining life (0-100%)
+        carbon_filter_life: Carbon filter remaining life (0-100%)
+
+    Example:
+        Basic device setup and control:
+
+        >>> device = DysonDevice(
+        >>>     hass=hass,
+        >>>     serial_number="VS6-EU-HJA1234A",
+        >>>     host="192.168.1.100",
+        >>>     credential="device_credential",
+        >>>     capabilities=["WiFi", "ExtendedAQ", "Heat"]
+        >>> )
+        >>>
+        >>> # Connect and get initial state
+        >>> await device.connect()
+        >>> state = await device.get_state()
+        >>>
+        >>> # Control fan speed and oscillation
+        >>> await device.set_fan_speed(7)
+        >>> await device.set_oscillation(True)
+        >>>
+        >>> # Monitor environmental data
+        >>> pm25_level = device.pm25
+        >>> temperature = device.temperature
+        >>>
+        >>> # Set up heating (if supported)
+        >>> if "Heat" in device.capabilities:
+        >>>     await device.set_target_temperature(22.0)
+        >>>     await device.set_heating_mode("HEAT")
+
+    Note:
+        The device automatically handles connection management including
+        heartbeat monitoring, reconnection attempts, and failover between
+        local and cloud connections based on the configured connection_type.
+
+        Environmental data is streamed in real-time via MQTT callbacks,
+        providing immediate updates when air quality changes.
+
+        All control methods are asynchronous and may raise RuntimeError
+        if the device is not connected when commands are sent.
+    """
 
     def __init__(
         self,
@@ -67,6 +176,7 @@ class DysonDevice:
         self._preferred_retry_interval = (
             300.0  # Retry preferred connection every 5 minutes
         )
+        self._intentional_disconnect = False  # Track intentional disconnections
 
         # Heartbeat mechanism to keep device active and get regular updates
         self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
@@ -99,7 +209,52 @@ class DysonDevice:
             return "local"
 
     async def connect(self) -> bool:
-        """Connect to the device using paho-mqtt with intelligent fallback support."""
+        """Establish MQTT connection to the Dyson device.
+
+        Attempts to connect using the configured connection strategy:
+        - local_only: Direct local network connection only
+        - cloud_only: Dyson cloud service connection only
+        - local_cloud_fallback: Local first, cloud fallback if local fails
+
+        The connection process includes:
+        1. MQTT client initialization with proper credentials
+        2. SSL/TLS setup for secure communication
+        3. Topic subscription for device state and environmental data
+        4. Heartbeat task initialization for connection monitoring
+        5. Initial state and environmental data requests
+
+        Returns:
+            True if connection successful, False if all connection attempts failed
+
+        Raises:
+            Exception: If MQTT client setup fails or connection parameters invalid
+
+        Example:
+            Connect with automatic failover:
+
+            >>> device = DysonDevice(
+            >>>     hass=hass,
+            >>>     serial_number="VS6-EU-HJA1234A",
+            >>>     host="192.168.1.100",
+            >>>     credential="local_credential",
+            >>>     connection_type="local_cloud_fallback",
+            >>>     cloud_host="cloud.dyson.com",
+            >>>     cloud_credential="cloud_credential"
+            >>> )
+            >>>
+            >>> success = await device.connect()
+            >>> if success:
+            >>>     print(f"Connected: {device.connection_status}")
+            >>>     # Device ready for commands and data collection
+            >>> else:
+            >>>     print("Failed to connect to device")
+
+        Note:
+            Connection is performed asynchronously and includes automatic
+            retry logic. The heartbeat task is started upon successful
+            connection to monitor connection health and trigger reconnection
+            if the connection is lost.
+        """
         # Check reconnection backoff to prevent rapid reconnection attempts
         if not self._check_reconnect_backoff():
             return False
@@ -495,6 +650,9 @@ class DysonDevice:
         # Stop heartbeat before disconnecting
         await self._stop_heartbeat()
 
+        # Mark this as an intentional disconnect
+        self._intentional_disconnect = True
+
         if self._mqtt_client and self._connected:
             try:
                 _LOGGER.debug("Disconnecting from device %s", self.serial_number)
@@ -573,6 +731,8 @@ class DysonDevice:
                 if current_time - self._last_heartbeat >= self._heartbeat_interval:
                     _LOGGER.debug("Sending heartbeat to device %s", self.serial_number)
                     await self._request_current_state()
+                    # Check for faults on each heartbeat per discovery.md requirements
+                    await self._request_current_faults()
                     self._last_heartbeat = current_time
 
             except asyncio.CancelledError:
@@ -644,9 +804,19 @@ class DysonDevice:
         self, client: mqtt.Client, userdata: Any, rc, properties=None, *args
     ) -> None:
         """Handle MQTT disconnection callback."""
-        _LOGGER.warning(
-            "MQTT client disconnected for %s, code: %s", self.serial_number, rc
-        )
+        # Use appropriate log level based on whether disconnect was intentional
+        if self._intentional_disconnect:
+            _LOGGER.debug(
+                "MQTT client disconnected for %s (intentional), code: %s",
+                self.serial_number,
+                rc,
+            )
+            # Reset the flag after logging
+            self._intentional_disconnect = False
+        else:
+            _LOGGER.warning(
+                "MQTT client disconnected for %s, code: %s", self.serial_number, rc
+            )
         self._connected = False
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
 
@@ -779,7 +949,7 @@ class DysonDevice:
             pm10_in_message,
         )
 
-        # Log PM2.5 and PM10 updates specifically
+        # Log PM2.5, PM10, and level updates specifically
         if "pm25" in env_data:
             _LOGGER.debug(
                 "PM2.5 updated for %s: %s", self.serial_number, env_data["pm25"]
@@ -792,6 +962,18 @@ class DysonDevice:
             _LOGGER.debug("P25R value for %s: %s", self.serial_number, env_data["p25r"])
         if "p10r" in env_data:
             _LOGGER.debug("P10R value for %s: %s", self.serial_number, env_data["p10r"])
+
+        # Log gaseous sensor updates (ExtendedAQ capability)
+        if "co2" in env_data:
+            _LOGGER.debug("CO2 updated for %s: %s", self.serial_number, env_data["co2"])
+        if "no2" in env_data:
+            _LOGGER.debug("NO2 updated for %s: %s", self.serial_number, env_data["no2"])
+        if "hcho" in env_data:
+            _LOGGER.debug(
+                "HCHO (Formaldehyde) updated for %s: %s",
+                self.serial_number,
+                env_data["hcho"],
+            )
 
         # Store previous environmental data for comparison
         previous_pm25 = self._environmental_data.get("pm25")
@@ -863,9 +1045,40 @@ class DysonDevice:
             self._message_callbacks.remove(callback)
 
     def _handle_faults_data(self, data: dict[str, Any]) -> None:
-        """Handle faults data message."""
+        """Handle faults data message and create Home Assistant events for device faults."""
+        fault_data = data.get("data", {})
+
+        # Check if there are any faults reported
+        if fault_data:
+            _LOGGER.warning(
+                "Device faults detected for %s: %s", self.serial_number, fault_data
+            )
+
+            # Create Home Assistant event for device fault detection
+            # Per discovery.md: event should have description "Device Fault Detected"
+            self.hass.bus.async_fire(
+                "dyson_device_fault_detected",
+                {
+                    "device_serial": self.serial_number,
+                    "description": "Device Fault Detected",
+                    "fault_data": fault_data,
+                    "timestamp": self._get_timestamp(),
+                },
+            )
+
+            # Log each individual fault for debugging
+            for fault_key, fault_value in fault_data.items():
+                _LOGGER.warning(
+                    "Fault detected on %s - %s: %s",
+                    self.serial_number,
+                    fault_key,
+                    fault_value,
+                )
+        else:
+            _LOGGER.debug("No faults reported for %s", self.serial_number)
+
         self._faults_data.update(data)
-        _LOGGER.debug("Updated faults for %s", self.serial_number)
+        _LOGGER.debug("Updated faults data for %s", self.serial_number)
 
     def _handle_state_change(self, data: dict[str, Any]) -> None:
         """Handle state change message."""
@@ -1040,7 +1253,65 @@ class DysonDevice:
     async def send_command(
         self, command: str, data: dict[str, Any] | None = None
     ) -> None:
-        """Send a command to the device."""
+        """Send a command to the Dyson device via MQTT.
+
+        Executes device commands using Dyson's MQTT protocol. Commands are
+        formatted with proper timestamps and published to device-specific topics.
+
+        Args:
+            command: Command type to execute. Common commands:
+                - "STATE-SET": Set device state parameters
+                - "REQUEST-CURRENT-STATE": Request full device state
+                - "REQUEST-CURRENT-FAULTS": Request device fault status
+                - "REQUEST-PRODUCT-ENVIRONMENT-CURRENT-SENSOR-DATA": Environmental data
+            data: Command parameters as key-value pairs. Common parameters:
+                - "fnsp": Fan speed ("0001" to "0010")
+                - "fpwr": Fan power ("ON"/"OFF")
+                - "oson": Oscillation ("ON"/"OFF")
+                - "nmod": Night mode ("ON"/"OFF")
+                - "auto": Auto mode ("ON"/"OFF")
+                - "hmod": Heating mode ("OFF"/"HEAT"/"AUTO")
+                - "hmax": Target temperature ("2731" + temp in Kelvin)
+
+        Raises:
+            RuntimeError: If device is not connected or MQTT client unavailable
+            Exception: If command publishing fails or data formatting invalid
+
+        Example:
+            Execute common device commands:
+
+            >>> # Set fan to speed 5 with oscillation
+            >>> await device.send_command("STATE-SET", {
+            >>>     "fnsp": "0005",
+            >>>     "fpwr": "ON",
+            >>>     "oson": "ON"
+            >>> })
+            >>>
+            >>> # Enable night mode with auto speed
+            >>> await device.send_command("STATE-SET", {
+            >>>     "nmod": "ON",
+            >>>     "auto": "ON"
+            >>> })
+            >>>
+            >>> # Set heating to 22°C
+            >>> await device.send_command("STATE-SET", {
+            >>>     "hmod": "HEAT",
+            >>>     "hmax": "2953"  # 22°C = 295.15K = 2951.5 ≈ 2953
+            >>> })
+            >>>
+            >>> # Request current state
+            >>> await device.send_command("REQUEST-CURRENT-STATE")
+
+        Note:
+            Commands are executed asynchronously and may take 1-3 seconds
+            for the device to process and reflect in state updates.
+
+            Temperature values are sent in Kelvin * 10 format. For example,
+            22°C = 295.15K = 2951.5 ≈ 2953.
+
+            The device will respond with updated state via MQTT callbacks,
+            triggering coordinator updates in Home Assistant.
+        """
         if not self._connected or not self._mqtt_client:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
@@ -1065,12 +1336,18 @@ class DysonDevice:
 
             if data:
                 # If data is provided, construct command with data
-                command_msg = {
+                command_msg: dict[str, Any] = {
                     "msg": command,
                     "time": self._get_timestamp(),
                     "mode-reason": "RAPP",
                 }
-                command_msg.update(data)
+
+                # STATE-SET commands need data wrapped in a "data" field
+                if command == "STATE-SET":
+                    command_msg["data"] = data
+                else:
+                    command_msg.update(data)
+
                 command_json = json.dumps(command_msg)
             else:
                 # Simple command without additional data
@@ -1254,14 +1531,14 @@ class DysonDevice:
     def night_mode(self) -> bool:
         """Return if night mode is enabled (nmod)."""
         product_state = self._state_data.get("product-state", {})
-        nmod = self._get_current_value(product_state, "nmod", "OFF")
+        nmod = self.get_state_value(product_state, "nmod", "OFF")
         return nmod == "ON"
 
     @property
     def auto_mode(self) -> bool:
         """Return if auto mode is enabled (wacd)."""
         product_state = self._state_data.get("product-state", {})
-        wacd = self._get_current_value(product_state, "wacd", "NONE")
+        wacd = self.get_state_value(product_state, "wacd", "NONE")
         return wacd != "NONE"
 
     @property
@@ -1269,7 +1546,7 @@ class DysonDevice:
         """Return fan speed (nmdv)."""
         try:
             product_state = self._state_data.get("product-state", {})
-            nmdv = self._get_current_value(product_state, "nmdv", "0000")
+            nmdv = self.get_state_value(product_state, "nmdv", "0000")
             return int(nmdv)
         except (ValueError, TypeError):
             return 0
@@ -1278,21 +1555,21 @@ class DysonDevice:
     def fan_power(self) -> bool:
         """Return if fan power is on (fpwr)."""
         product_state = self._state_data.get("product-state", {})
-        fpwr = self._get_current_value(product_state, "fpwr", "OFF")
+        fpwr = self.get_state_value(product_state, "fpwr", "OFF")
         return fpwr == "ON"
 
     @property
     def fan_speed_setting(self) -> str:
         """Return fan speed setting (fnsp) - controllable setting."""
         product_state = self._state_data.get("product-state", {})
-        fnsp = self._get_current_value(product_state, "fnsp", "0001")
+        fnsp = self.get_state_value(product_state, "fnsp", "0001")
         return fnsp
 
     @property
     def fan_state(self) -> str:
         """Return fan state (fnst) - OFF/FAN."""
         product_state = self._state_data.get("product-state", {})
-        fnst = self._get_current_value(product_state, "fnst", "OFF")
+        fnst = self.get_state_value(product_state, "fnst", "OFF")
         return fnst
 
     @property
@@ -1300,7 +1577,7 @@ class DysonDevice:
         """Return display brightness (bril)."""
         try:
             product_state = self._state_data.get("product-state", {})
-            bril = self._get_current_value(product_state, "bril", "0002")
+            bril = self.get_state_value(product_state, "bril", "0002")
             return int(bril)
         except (ValueError, TypeError):
             return 2
@@ -1541,7 +1818,7 @@ class DysonDevice:
         """Return carbon filter life percentage."""
         try:
             product_state = self._state_data.get("product-state", {})
-            cflr = self._get_current_value(product_state, "cflr", "0000")
+            cflr = self.get_state_value(product_state, "cflr", "0000")
             if cflr == "INV":  # Invalid/no filter installed
                 return 0
             return int(cflr)
@@ -1552,7 +1829,7 @@ class DysonDevice:
     def hepa_filter_type(self) -> str:
         """Return HEPA filter type."""
         product_state = self._state_data.get("product-state", {})
-        filter_type = self._get_current_value(product_state, "hflt", "NONE")
+        filter_type = self.get_state_value(product_state, "hflt", "NONE")
         _LOGGER.debug("HEPA filter type for %s: %s", self.serial_number, filter_type)
         return filter_type
 
@@ -1560,7 +1837,7 @@ class DysonDevice:
     def carbon_filter_type(self) -> str:
         """Return carbon filter type."""
         product_state = self._state_data.get("product-state", {})
-        filter_type = self._get_current_value(product_state, "cflt", "NONE")
+        filter_type = self.get_state_value(product_state, "cflt", "NONE")
         _LOGGER.debug("Carbon filter type for %s: %s", self.serial_number, filter_type)
         return filter_type
 
@@ -1570,23 +1847,92 @@ class DysonDevice:
 
         return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def _get_current_value(
+    def get_state_value(
         self, data: dict[str, Any], key: str, default: str = "OFF"
     ) -> str:
         """Get current value from device data.
 
-        Values are normalized at message processing time:
-        - CURRENT-STATE messages: already strings
-        - STATE-CHANGE messages: [previous, current] arrays converted to current string
-        - ENVIRONMENTAL-CURRENT-SENSOR-DATA messages: already strings
-        - Fault messages: already strings
+        Public interface for retrieving device state values from formatted data.
+
+        Args:
+            data: Device state data dictionary
+            key: The state key to retrieve
+            default: Default value if key is not found
+
+        Returns:
+            String representation of the state value
+
+        Note:
+            Values are normalized at message processing time:
+            - CURRENT-STATE messages: already strings
+            - STATE-CHANGE messages: [previous, current] arrays converted to current string
+            - ENVIRONMENTAL-CURRENT-SENSOR-DATA messages: already strings
+            - Fault messages: already strings
         """
         value = data.get(key, default)
         return str(value)
 
+    def get_environmental_data(self) -> dict[str, Any]:
+        """Get environmental data from the device.
+
+        Public interface for accessing environmental sensor data such as PM2.5,
+        PM10, humidity, temperature, and other air quality measurements.
+
+        Returns:
+            Dictionary containing environmental data with keys like:
+            - pm25: PM2.5 particle concentration
+            - pm10: PM10 particle concentration
+            - va10: Volatile organic compounds
+            - noxl: Nitrogen dioxide levels
+            - hchr: Formaldehyde concentration
+            - hact: Humidity percentage
+            - tact: Temperature readings
+
+        Note:
+            Returns a copy of the internal environmental data to prevent
+            external modifications. Use specific properties like pm25,
+            pm10, etc. for type-safe access to individual values.
+        """
+        return dict(self._environmental_data)
+
     # Command methods for device control
     async def set_night_mode(self, enabled: bool) -> None:
-        """Set night mode on/off."""
+        """Enable or disable night mode for quiet operation.
+
+        Args:
+            enabled: True to enable night mode, False to disable
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+
+        Note:
+            Night mode reduces fan speed, dims display brightness, and
+            minimizes operational noise for bedroom use. When enabled:
+            - Fan speed is limited to lower levels (typically 1-4)
+            - Display brightness is significantly reduced
+            - Operational sounds are minimized
+            - Air quality monitoring continues normally
+
+            Night mode automatically overrides manual speed settings
+            while active, returning to previous settings when disabled.
+
+        Example:
+            Activate night mode for bedroom use:
+
+            >>> # Enable quiet night operation
+            >>> await device.set_night_mode(True)
+            >>> print(f"Night mode: {device.night_mode}")
+            >>>
+            >>> # Morning routine - disable night mode
+            >>> await device.set_night_mode(False)
+            >>>
+            >>> # Check current night mode status
+            >>> if device.night_mode:
+            >>>     print("Device in quiet night mode")
+            >>> else:
+            >>>     print("Device in normal operation mode")
+        """
         _LOGGER.debug(
             "=== DEBUG set_night_mode called for %s: enabled=%s ===",
             self.serial_number,
@@ -1598,47 +1944,57 @@ class DysonDevice:
             self._connected,
         )
 
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         nmod_value = "ON" if enabled else "OFF"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"nmod": nmod_value},
-                "mode-reason": "RAPP",
-            }
-        )
+        _LOGGER.debug("=== Sending night mode command: nmod=%s ===", nmod_value)
 
-        _LOGGER.debug(
-            "=== Sending night mode command to topic %s: %s ===", command_topic, command
-        )
-
-        if self._mqtt_client:
-            try:
-                _LOGGER.debug("=== About to publish MQTT command ===")
-                await self.hass.async_add_executor_job(
-                    self._mqtt_client.publish, command_topic, command
-                )
-                _LOGGER.debug(
-                    "=== Successfully sent night mode command to %s ===",
-                    self.serial_number,
-                )
-            except Exception as err:
-                _LOGGER.error(
-                    "=== Failed to publish night mode command to %s: %s ===",
-                    self.serial_number,
-                    err,
-                )
-        else:
-            _LOGGER.warning(
-                "=== No MQTT client available for device %s ===", self.serial_number
+        try:
+            await self.send_command("STATE-SET", {"nmod": nmod_value})
+            _LOGGER.debug(
+                "=== Successfully sent night mode command to %s ===",
+                self.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "=== Failed to publish night mode command to %s: %s ===",
+                self.serial_number,
+                err,
             )
 
     async def set_fan_speed(self, speed: int) -> None:
-        """Set fan speed (1-10) using fnsp."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+        """Set fan speed using Dyson's 10-level speed control.
+
+        Args:
+            speed: Fan speed level from 0-10 where:
+                - 0: Turn off fan (equivalent to set_fan_power(False))
+                - 1: Minimum speed (quiet operation)
+                - 5: Medium speed (balanced performance/noise)
+                - 10: Maximum speed (maximum air circulation)
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+
+        Note:
+            Speed levels are automatically clamped to valid range (1-10).
+            Setting speed 0 will turn off the fan entirely.
+
+            The device will respond with updated fnsp state via MQTT,
+            typically within 1-2 seconds of command execution.
+
+        Example:
+            Control fan speed based on air quality:
+
+            >>> pm25 = device.pm25
+            >>> if pm25 > 100:  # Very unhealthy air
+            >>>     await device.set_fan_speed(10)  # Maximum filtration
+            >>> elif pm25 > 50:   # Moderate pollution
+            >>>     await device.set_fan_speed(7)   # High speed
+            >>> elif pm25 > 25:   # Light pollution
+            >>>     await device.set_fan_speed(4)   # Medium speed
+            >>> else:  # Good air quality
+            >>>     await device.set_fan_speed(2)   # Low speed
+        """
         if speed == 0:
             # Speed 0 means turn off the fan
             await self.set_fan_power(False)
@@ -1648,79 +2004,23 @@ class DysonDevice:
         speed = max(1, min(10, speed))
         speed_str = f"{speed:04d}"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"fnsp": speed_str},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"fnsp": speed_str})
 
     async def set_fan_power(self, enabled: bool) -> None:
         """Set fan power on/off using fpwr."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         fpwr_value = "ON" if enabled else "OFF"
-
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"fpwr": fpwr_value},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"fpwr": fpwr_value})
 
     async def reset_hepa_filter_life(self) -> None:
         """Reset HEPA filter life to 100%."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"hflr": "0100"},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"hflr": "0100"})
 
     async def reset_carbon_filter_life(self) -> None:
         """Reset carbon filter life to 100%."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"cflr": "0100"},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"cflr": "0100"})
 
     async def set_sleep_timer(self, minutes: int) -> None:
         """Set sleep timer in minutes (0 to cancel, 15-540 for active timer)."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-
         # Convert minutes to the format expected by the device
         # Dyson uses a specific encoding for sleep timer values
         if minutes == 0:
@@ -1731,24 +2031,10 @@ class DysonDevice:
             # Convert to 4-digit string format (e.g., 15 minutes = "0015", 240 minutes = "0240")
             timer_value = f"{minutes:04d}"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"sltm": timer_value},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"sltm": timer_value})
 
     async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
         """Set custom oscillation angles."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
 
         # Ensure angles are within valid range (0-350 degrees)
         lower_angle = max(0, min(350, lower_angle))
@@ -1762,50 +2048,59 @@ class DysonDevice:
         lower_str = f"{lower_angle:04d}"
         upper_str = f"{upper_angle:04d}"
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
+        await self.send_command(
+            "STATE-SET",
             {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {
-                    "osal": lower_str,  # Oscillation angle lower
-                    "osau": upper_str,  # Oscillation angle upper
-                    "oson": "ON",  # Enable oscillation
-                    "ancp": "CUST",  # Custom angles
-                },
-                "mode-reason": "RAPP",
-            }
+                "osal": lower_str,  # Oscillation angle lower
+                "osau": upper_str,  # Oscillation angle upper
+                "oson": "ON",  # Enable oscillation
+                "ancp": "CUST",  # Custom angles
+            },
         )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
 
     async def set_auto_mode(self, enabled: bool) -> None:
         """Set auto mode on/off."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
         auto_value = "ON" if enabled else "OFF"
-
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"auto": auto_value},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"auto": auto_value})
 
     async def set_oscillation(self, enabled: bool, angle: int | None = None) -> None:
-        """Set oscillation on/off with optional angle."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+        """Control fan oscillation with optional angle specification.
 
+        Args:
+            enabled: True to enable oscillation, False to disable
+            angle: Optional specific oscillation angle in degrees (0-350).
+                  If provided, enables oscillation at the specified angle.
+                  If None, uses device default oscillation pattern.
+
+        Raises:
+            RuntimeError: If device is not connected
+            ValueError: If angle is outside valid range (0-350)
+            Exception: If command transmission fails
+
+        Note:
+            Oscillation distributes airflow across a wider area for more
+            effective room coverage. Different Dyson models support different
+            oscillation patterns and angle ranges.
+
+            When angle is specified, oscillation is automatically enabled
+            regardless of the enabled parameter value.
+
+        Example:
+            Control oscillation for optimal air distribution:
+
+            >>> # Enable default oscillation pattern
+            >>> await device.set_oscillation(True)
+            >>>
+            >>> # Set specific oscillation angle (if supported)
+            >>> await device.set_oscillation(True, angle=90)  # 90-degree sweep
+            >>>
+            >>> # Disable oscillation for focused airflow
+            >>> await device.set_oscillation(False)
+            >>>
+            >>> # Check if oscillation is currently active
+            >>> if device.oscillation_enabled:
+            >>>     print("Device is oscillating")
+        """
         data = {"oson": "ON" if enabled else "OFF"}
 
         if enabled and angle is not None:
@@ -1813,51 +2108,35 @@ class DysonDevice:
             angle_str = f"{angle:04d}"
             data["ancp"] = angle_str
 
-        # Include required headers: time and mode-reason
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": data,
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", data)
 
     async def set_heating_mode(self, mode: str) -> None:
         """Set heating mode (OFF, HEAT, AUTO)."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"hmod": mode},
-                "mode-reason": "RAPP",
-            }
-        )
+        await self.send_command("STATE-SET", {"hmod": mode})
 
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+    async def set_target_temperature(self, temperature: float) -> None:
+        """Set target temperature in Celsius.
+
+        Args:
+            temperature: Target temperature in Celsius (1-37°C)
+        """
+        # Validate temperature range (convert to Kelvin for validation)
+        temp_kelvin = temperature + 273.15
+        if not 274 <= temp_kelvin <= 310:
+            raise ValueError("Target temperature must be between 1°C and 37°C")
+
+        # Convert Celsius to Kelvin × 10 format for device
+        temp_value = int(temp_kelvin * 10)
+        temp_str = f"{temp_value:04d}"
+
+        await self.send_command(
+            "STATE-SET",
+            {
+                "hmod": "HEAT",  # Enable heating mode when setting temperature
+                "hmax": temp_str,
+            },
+        )
 
     async def set_continuous_monitoring(self, enabled: bool) -> None:
         """Set continuous monitoring on/off."""
-        command_topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
-        command = json.dumps(
-            {
-                "msg": "STATE-SET",
-                "time": self._get_command_timestamp(),
-                "data": {"rhtm": "ON" if enabled else "OFF"},
-                "mode-reason": "RAPP",
-            }
-        )
-
-        if self._mqtt_client:
-            await self.hass.async_add_executor_job(
-                self._mqtt_client.publish, command_topic, command
-            )
+        await self.send_command("STATE-SET", {"rhtm": "ON" if enabled else "OFF"})

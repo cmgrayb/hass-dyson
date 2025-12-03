@@ -447,3 +447,277 @@ class TestDeviceUtilsCoverageEnhancement:
         assert result["extra_field2"] == "value2"
         assert result["serial_number"] == "SERIAL123"
         assert result["discovery_method"] == "manual"
+
+
+# ========== Consolidated from test_error_handling.py ==========
+
+
+class TestCapabilityErrorHandling:
+    """Test capability detection error handling."""
+
+    def test_normalize_capabilities_with_none(self):
+        """Test capability normalization with None input."""
+        result = normalize_capabilities(None)
+        assert result == []
+
+    def test_normalize_capabilities_with_empty_list(self):
+        """Test capability normalization with empty list."""
+        result = normalize_capabilities([])
+        assert result == []
+
+    def test_normalize_capabilities_with_mixed_valid_invalid(self):
+        """Test capability normalization with mix of valid and invalid entries."""
+        capabilities = ["ValidCap", None, "", 0, "AnotherValidCap", 123]
+        result = normalize_capabilities(capabilities)
+        # Should only include valid string capabilities and convert numbers to strings
+        assert "ValidCap" in result
+        assert "AnotherValidCap" in result
+        assert "123" in result
+        assert None not in result
+        assert "" not in result
+        assert "0" not in result  # Zero should be filtered out
+
+    def test_normalize_capabilities_with_enum_like_objects(self):
+        """Test capability normalization with enum-like objects."""
+
+        class MockEnum:
+            def __init__(self, value):
+                self.value = value
+
+        capabilities = [MockEnum("EnumCap1"), "StringCap", MockEnum("EnumCap2")]
+        result = normalize_capabilities(capabilities)
+        assert "EnumCap1" in result
+        assert "StringCap" in result
+        assert "EnumCap2" in result
+
+    def test_has_capability_safe_with_none_capabilities(self):
+        """Test has_capability_safe with None capabilities."""
+        result = has_capability_safe(None, "TestCap")
+        assert result is False
+
+    def test_has_capability_safe_with_empty_list(self):
+        """Test has_capability_safe with empty capabilities list."""
+        result = has_capability_safe([], "TestCap")
+        assert result is False
+
+    def test_has_capability_safe_with_invalid_capabilities_type(self):
+        """Test has_capability_safe with invalid capabilities type."""
+        result = has_capability_safe("not_a_list", "TestCap")
+        assert result is False
+
+    def test_has_capability_safe_with_empty_capability_name(self):
+        """Test has_capability_safe with empty capability name."""
+        result = has_capability_safe(["ValidCap"], "")
+        assert result is False
+
+        result = has_capability_safe(["ValidCap"], None)
+        assert result is False
+
+    def test_has_capability_safe_with_exception_during_processing(self):
+        """Test has_capability_safe handles exceptions during processing."""
+        # Create a capability that will cause an exception when processed
+        bad_capability = MagicMock()
+        bad_capability.__str__.side_effect = Exception("Processing error")
+
+        result = has_capability_safe([bad_capability, "ValidCap"], "TestCap")
+        assert result is False
+
+    def test_has_any_capability_safe_with_none_capabilities(self):
+        """Test has_any_capability_safe with None capabilities."""
+        result = has_any_capability_safe(None, ["TestCap1", "TestCap2"])
+        assert result is False
+
+    def test_has_any_capability_safe_with_empty_capability_names(self):
+        """Test has_any_capability_safe with empty capability names."""
+        result = has_any_capability_safe(["ValidCap"], [])
+        assert result is False
+
+    def test_has_any_capability_safe_with_none_capability_names(self):
+        """Test has_any_capability_safe with None capability names."""
+        result = has_any_capability_safe(["ValidCap"], None)
+        assert result is False
+
+    def test_has_any_capability_safe_finds_matching_capability(self):
+        """Test has_any_capability_safe finds matching capability."""
+        capabilities = ["Cap1", "Cap2", "Cap3"]
+        names_to_check = ["UnknownCap", "Cap2", "AnotherUnknownCap"]
+        result = has_any_capability_safe(capabilities, names_to_check)
+        assert result is True
+
+    def test_has_any_capability_safe_no_matching_capabilities(self):
+        """Test has_any_capability_safe with no matching capabilities."""
+        capabilities = ["Cap1", "Cap2", "Cap3"]
+        names_to_check = ["UnknownCap1", "UnknownCap2"]
+        result = has_any_capability_safe(capabilities, names_to_check)
+        assert result is False
+
+
+class TestSensorDataErrorHandling:
+    """Test sensor data retrieval error handling."""
+
+    def test_get_sensor_data_safe_with_none_data(self):
+        """Test get_sensor_data_safe with None data."""
+        result = get_sensor_data_safe(None, "temperature", "DEVICE123")
+        assert result is None
+
+    def test_get_sensor_data_safe_with_invalid_data_type(self):
+        """Test get_sensor_data_safe with invalid data type."""
+        result = get_sensor_data_safe("not_a_dict", "temperature", "DEVICE123")
+        assert result is None
+
+    def test_get_sensor_data_safe_with_missing_key(self):
+        """Test get_sensor_data_safe with missing key."""
+        data = {"humidity": 50, "pressure": 1013}
+        result = get_sensor_data_safe(data, "temperature", "DEVICE123")
+        assert result is None
+
+    def test_get_sensor_data_safe_with_valid_data(self):
+        """Test get_sensor_data_safe with valid data."""
+        data = {"temperature": 22.5, "humidity": 45}
+        result = get_sensor_data_safe(data, "temperature", "DEVICE123")
+        assert result == 22.5
+
+    def test_get_sensor_data_safe_with_exception_during_access(self):
+        """Test get_sensor_data_safe handles exceptions during data access."""
+        # Create a dict-like object that raises exception on access
+        bad_data = MagicMock()
+        bad_data.get.side_effect = Exception("Data access error")
+
+        result = get_sensor_data_safe(bad_data, "temperature", "DEVICE123")
+        assert result is None
+
+    def test_convert_sensor_value_safe_with_none_value(self):
+        """Test convert_sensor_value_safe with None value."""
+        result = convert_sensor_value_safe(None, int, "DEVICE123", "temperature")
+        assert result is None
+
+    def test_convert_sensor_value_safe_with_unsupported_target_type(self):
+        """Test convert_sensor_value_safe with unsupported target type."""
+        result = convert_sensor_value_safe("25", list, "DEVICE123", "temperature")
+        assert result is None
+
+    def test_convert_sensor_value_safe_with_conversion_error(self):
+        """Test convert_sensor_value_safe with conversion error."""
+        result = convert_sensor_value_safe(
+            "invalid_number", int, "DEVICE123", "temperature"
+        )
+        assert result is None
+
+    def test_convert_sensor_value_safe_with_valid_conversion(self):
+        """Test convert_sensor_value_safe with valid conversion."""
+        result = convert_sensor_value_safe("25", int, "DEVICE123", "temperature")
+        assert result == 25
+
+        result = convert_sensor_value_safe("22.5", float, "DEVICE123", "temperature")
+        assert result == 22.5
+
+        result = convert_sensor_value_safe(123, str, "DEVICE123", "temperature")
+        assert result == "123"
+
+    def test_convert_sensor_value_safe_with_exception_during_conversion(self):
+        """Test convert_sensor_value_safe handles exceptions during conversion."""
+
+        # Mock the target type to raise an exception
+        def bad_converter(value):
+            raise Exception("Conversion error")
+
+        result = convert_sensor_value_safe(
+            "25", bad_converter, "DEVICE123", "temperature"
+        )
+        assert result is None
+
+
+class TestDeviceUtilsEdgeCases:
+    """Test edge cases in device utilities."""
+
+    def test_normalize_capabilities_preserves_order(self):
+        """Test that normalize_capabilities preserves order of valid capabilities."""
+        capabilities = ["Cap3", "Cap1", "Cap2"]
+        result = normalize_capabilities(capabilities)
+        assert result == ["Cap3", "Cap1", "Cap2"]
+
+    def test_normalize_capabilities_removes_duplicates(self):
+        """Test that normalize_capabilities preserves duplicates (doesn't remove them)."""
+        capabilities = ["Cap1", "Cap2", "Cap1", "Cap3", "Cap2"]
+        result = normalize_capabilities(capabilities)
+        # Should preserve all capabilities including duplicates
+        expected = ["Cap1", "Cap2", "Cap1", "Cap3", "Cap2"]
+        assert result == expected
+
+    def test_normalize_capabilities_handles_mixed_case(self):
+        """Test that normalize_capabilities handles mixed case correctly."""
+        capabilities = ["Cap1", "CAP1", "cap1"]
+        result = normalize_capabilities(capabilities)
+        # Should preserve exact case as provided
+        assert "Cap1" in result
+        assert "CAP1" in result
+        assert "cap1" in result
+
+    def test_has_capability_safe_case_insensitive_search(self):
+        """Test that has_capability_safe performs case-insensitive search."""
+        capabilities = ["FanControl", "HeatMode", "CoolMode"]
+        assert has_capability_safe(capabilities, "fancontrol") is True
+        assert has_capability_safe(capabilities, "FANCONTROL") is True
+        assert has_capability_safe(capabilities, "FanControl") is True
+        assert has_capability_safe(capabilities, "heatmode") is True
+        assert has_capability_safe(capabilities, "nonexistent") is False
+
+    def test_has_any_capability_safe_case_insensitive_search(self):
+        """Test that has_any_capability_safe performs case-insensitive search."""
+        capabilities = ["FanControl", "HeatMode", "CoolMode"]
+        search_caps = ["fancontrol", "unknowncap"]
+        assert has_any_capability_safe(capabilities, search_caps) is True
+
+        search_caps = ["HEATMODE", "unknowncap"]
+        assert has_any_capability_safe(capabilities, search_caps) is True
+
+        search_caps = ["unknowncap1", "unknowncap2"]
+        assert has_any_capability_safe(capabilities, search_caps) is False
+
+    def test_get_sensor_data_safe_with_nested_dict_access(self):
+        """Test get_sensor_data_safe with nested dictionary access."""
+        data = {
+            "sensors": {
+                "temperature": {"value": 22.5, "unit": "°C"},
+                "humidity": {"value": 45, "unit": "%"},
+            }
+        }
+        # Direct key access
+        result = get_sensor_data_safe(data, "sensors", "DEVICE123")
+        assert result is not None
+        assert "temperature" in result
+
+    def test_convert_sensor_value_safe_with_already_correct_type(self):
+        """Test convert_sensor_value_safe when value is already the correct type."""
+        result = convert_sensor_value_safe(25, int, "DEVICE123", "temperature")
+        assert result == 25
+
+        result = convert_sensor_value_safe(22.5, float, "DEVICE123", "temperature")
+        assert result == 22.5
+
+        result = convert_sensor_value_safe("test", str, "DEVICE123", "temperature")
+        assert result == "test"
+
+    def test_convert_sensor_value_safe_with_boolean_values(self):
+        """Test convert_sensor_value_safe with boolean values."""
+        result = convert_sensor_value_safe(True, str, "DEVICE123", "enabled")
+        assert result == "True"
+
+        # bool is not a supported target type, should return None and log warning
+        result = convert_sensor_value_safe("true", bool, "DEVICE123", "enabled")
+        assert result is None
+
+        result = convert_sensor_value_safe("", bool, "DEVICE123", "enabled")
+        assert result is None
+
+    def test_sensor_data_error_logging_device_identification(self):
+        """Test that error logging includes device identification."""
+        # This test verifies that the device serial number is used in logging
+        # The actual logging is tested through the behavior, not mocking
+        result = get_sensor_data_safe(None, "temperature", "SPECIAL_DEVICE_ID")
+        assert result is None  # Function should handle gracefully
+
+        result = convert_sensor_value_safe(
+            None, int, "SPECIAL_DEVICE_ID", "temperature"
+        )
+        assert result is None  # Function should handle gracefully

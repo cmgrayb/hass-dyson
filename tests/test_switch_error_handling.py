@@ -9,7 +9,6 @@ from custom_components.hass_dyson.switch import (
     DysonContinuousMonitoringSwitch,
     DysonHeatingSwitch,
     DysonNightModeSwitch,
-    DysonOscillationSwitch,
 )
 
 
@@ -75,41 +74,7 @@ class TestSwitchErrorHandling:
         # Verify device method was called
         mock_coordinator.device.set_night_mode.assert_called_once_with(False)
 
-    async def test_oscillation_switch_turn_on_exception_handling(
-        self, mock_coordinator
-    ):
-        """Test oscillation switch turn on with device exception."""
-        switch = DysonOscillationSwitch(mock_coordinator)
-
-        # Mock device to raise exception
-        mock_coordinator.device.set_oscillation = AsyncMock(
-            side_effect=Exception("Device error")
-        )
-
-        with patch.object(switch, "async_write_ha_state"):
-            # Should handle exception gracefully
-            await switch.async_turn_on()
-
-        # Verify device method was called
-        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
-
-    async def test_oscillation_switch_turn_off_exception_handling(
-        self, mock_coordinator
-    ):
-        """Test oscillation switch turn off with device exception."""
-        switch = DysonOscillationSwitch(mock_coordinator)
-
-        # Mock device to raise exception
-        mock_coordinator.device.set_oscillation = AsyncMock(
-            side_effect=Exception("Device error")
-        )
-
-        with patch.object(switch, "async_write_ha_state"):
-            # Should handle exception gracefully
-            await switch.async_turn_off()
-
-        # Verify device method was called
-        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
+    # Oscillation switch tests removed - oscillation is now handled natively by the fan platform
 
     async def test_heating_switch_turn_on_exception_handling(self, mock_coordinator):
         """Test heating switch turn on with device exception."""
@@ -187,7 +152,7 @@ class TestSwitchErrorHandling:
         switches = [
             DysonAutoModeSwitch(mock_coordinator),
             DysonNightModeSwitch(mock_coordinator),
-            DysonOscillationSwitch(mock_coordinator),
+            # DysonOscillationSwitch removed - oscillation handled by fan platform
             DysonHeatingSwitch(mock_coordinator),
             DysonContinuousMonitoringSwitch(mock_coordinator),
         ]
@@ -198,18 +163,7 @@ class TestSwitchErrorHandling:
                 await switch.async_turn_on()
                 await switch.async_turn_off()
 
-    def test_oscillation_switch_extra_state_attributes_detailed(self, mock_coordinator):
-        """Test oscillation switch extra state attributes with detailed data."""
-        switch = DysonOscillationSwitch(mock_coordinator)
-
-        # Test with device having oscillation angle data
-        mock_coordinator.device.oscillation_angle_low = 15
-        mock_coordinator.device.oscillation_angle_high = 75
-
-        # Test that extra_state_attributes returns without error
-        attributes = switch.extra_state_attributes
-        # The actual attributes depend on internal device data structure
-        assert attributes is not None or attributes is None
+    # Oscillation switch extra state attributes test removed - oscillation handled by fan platform
 
     def test_heating_switch_extra_state_attributes_detailed(self, mock_coordinator):
         """Test heating switch extra state attributes with detailed data."""

@@ -223,8 +223,9 @@ class TestCoordinatorFirmwareMethods:
         coord._firmware_latest_version = None
         coord._firmware_update_in_progress = False
         coord.device = Mock()
-        coord.device.send_command = AsyncMock(return_value=True)
         coord.async_update_listeners = Mock()
+        # Mock the cloud authentication method
+        coord._authenticate_cloud_client = AsyncMock()
         return coord
 
     @pytest.mark.asyncio
@@ -298,36 +299,31 @@ class TestCoordinatorFirmwareMethods:
         """Test successful firmware update installation."""
         version = "1.0.1"
 
+        # Mock cloud client to return success
+        mock_cloud_client = AsyncMock()
+        mock_cloud_client.trigger_firmware_update = AsyncMock(return_value=True)
+        mock_cloud_client.close = AsyncMock()
+        coordinator._authenticate_cloud_client.return_value = mock_cloud_client
+
         result = await coordinator.async_install_firmware_update(version)
 
         assert result is True
 
-        # Verify MQTT command was sent
-        call_args = coordinator.device.send_command.call_args
-        assert call_args[0][0] == "SOFTWARE-UPGRADE"
-
-        command_data = call_args[0][1]
-        assert command_data["msg"] == "SOFTWARE-UPGRADE"
-        assert command_data["version"] == version
-        assert (
-            command_data["url"]
-            == f"http://ota-firmware.cp.dyson.com/438/M__SC04.WF02/{version}/manifest.bin"
+        # Verify cloud client was authenticated and used
+        coordinator._authenticate_cloud_client.assert_called_once()
+        mock_cloud_client.trigger_firmware_update.assert_called_once_with(
+            "TEST-SERIAL-123"
         )
+        mock_cloud_client.close.assert_called_once()
 
-        # Verify time format (should be ISO format with Z suffix)
-        assert "time" in command_data
-        import re
-
-        time_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$"
-        assert re.match(time_pattern, command_data["time"])  # Verify progress tracking
-        assert (
-            coordinator._firmware_update_in_progress is True
-        )  # Remains True until device reports completion
+        # Verify progress tracking
+        assert coordinator._firmware_update_in_progress is True
 
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_no_device(self, coordinator):
-        """Test firmware update installation with no device connection."""
-        coordinator.device = None
+        """Test firmware update for non-cloud device."""
+        # Change to manual device discovery method (not cloud)
+        coordinator.config_entry.data["discovery_method"] = "manual"
 
         result = await coordinator.async_install_firmware_update("1.0.1")
 
@@ -335,10 +331,12 @@ class TestCoordinatorFirmwareMethods:
 
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_command_failure(self, coordinator):
-        """Test firmware update installation when MQTT command fails."""
-        coordinator.device.send_command = AsyncMock(
-            side_effect=Exception("MQTT send failed")
-        )
+        """Test firmware update when cloud API returns failure."""
+        # Mock cloud client to return failure
+        mock_cloud_client = AsyncMock()
+        mock_cloud_client.trigger_firmware_update = AsyncMock(return_value=False)
+        mock_cloud_client.close = AsyncMock()
+        coordinator._authenticate_cloud_client.return_value = mock_cloud_client
 
         result = await coordinator.async_install_firmware_update("1.0.1")
 
@@ -347,8 +345,11 @@ class TestCoordinatorFirmwareMethods:
 
     @pytest.mark.asyncio
     async def test_async_install_firmware_update_exception(self, coordinator):
-        """Test firmware update installation with exception."""
-        coordinator.device.send_command = AsyncMock(side_effect=Exception("MQTT Error"))
+        """Test firmware update when an exception occurs during cloud authentication."""
+        # Mock authentication to raise an exception
+        coordinator._authenticate_cloud_client = AsyncMock(
+            side_effect=Exception("Auth failed")
+        )
 
         result = await coordinator.async_install_firmware_update("1.0.1")
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.18.1"
+version = "0.20.0"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -29,26 +29,27 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "homeassistant>=2025.8.0",
+    "aiohttp>=3.13.2",
+    "homeassistant>=2025.12.0",
     "aiohttp>=3.12.15",
     "cryptography>=45.0.7",
-    "requests>=2.32.4",
-    "libdyson-rest==0.8.0b7",
+    "requests>=2.32.5",
+    "libdyson-rest==0.9.0",
     "paho-mqtt>=2.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.14.3",
+    "ruff==0.14.7",
     "pytest==8.4.2",
     "pytest-cov>=7.0.0",
-    "pytest-asyncio==1.2.0",
-    "pytest-homeassistant-custom-component==0.13.282",
-    "mypy==1.18.2",
+    "pytest-asyncio==1.3.0",
+    "pytest-homeassistant-custom-component==0.13.297",
+    "mypy==1.19.0",
     "types-requests==2.32.4.20250913",
     "types-cryptography==3.3.23.2",
-    "bandit==1.8.6",
-    "safety==3.6.2",
+    "bandit==1.9.2",
+    "safety==3.7.0",
     "responses==0.25.8",
     "aioresponses==0.7.8",
     "pytest-mock==3.15.1",
@@ -96,7 +97,7 @@ skip-magic-trailing-comma = false
 select = [
     # Pycodestyle
     "E", "W",
-    # Pyflakes  
+    # Pyflakes
     "F",
     # Import sorting (isort)
     "I",
@@ -218,7 +219,7 @@ filterwarnings = [
     "ignore::ResourceWarning",
     "ignore:Event loop is closed:RuntimeWarning",
     "ignore:coroutine.*was never awaited:RuntimeWarning",
-    "ignore:.*shutdown_default_executor.*was never awaited:RuntimeWarning", 
+    "ignore:.*shutdown_default_executor.*was never awaited:RuntimeWarning",
     "ignore:.*BaseEventLoop.shutdown_default_executor.*:RuntimeWarning",
     "ignore:.*unawaited coroutine.*:RuntimeWarning",
     "ignore:.*was never awaited.*:RuntimeWarning",
@@ -233,7 +234,7 @@ filterwarnings = [
 ]
 markers = [
     "asyncio: marks tests as async",
-    "integration: marks tests as integration tests", 
+    "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
 ]
 
@@ -258,10 +259,3 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B601"]
-
-
-
-
-
-
-

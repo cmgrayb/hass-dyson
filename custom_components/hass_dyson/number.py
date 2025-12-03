@@ -62,6 +62,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_sleep_timer"
         self._attr_translation_key = "sleep_timer"
         self._attr_icon = "mdi:timer"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.BOX
         self._attr_native_min_value = 0
         self._attr_native_max_value = 540  # 9 hours in minutes
@@ -89,7 +90,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         # Check if timer is currently active
         if self.coordinator.device:
             product_state = self.coordinator.data.get("product-state", {})
-            timer_data = self.coordinator.device._get_current_value(
+            timer_data = self.coordinator.device.get_state_value(
                 product_state, "sltm", "OFF"
             )
             if timer_data != "OFF":
@@ -120,9 +121,21 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             _LOGGER.debug(
                 "Timer polling cancelled for %s", self.coordinator.serial_number
             )
-        except Exception as e:
+        except asyncio.CancelledError:
+            _LOGGER.debug(
+                "Timer polling task cancelled for %s", self.coordinator.serial_number
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.warning(
+                "Communication error during timer polling for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
             _LOGGER.error(
-                "Error in timer polling for %s: %s", self.coordinator.serial_number, e
+                "Unexpected error in timer polling for %s: %s",
+                self.coordinator.serial_number,
+                err,
             )
 
     async def _do_frequent_initial_polling(self) -> None:
@@ -148,7 +161,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             return False
 
         product_state = self.coordinator.data.get("product-state", {})
-        timer_data = self.coordinator.device._get_current_value(
+        timer_data = self.coordinator.device.get_state_value(
             product_state, "sltm", "OFF"
         )
 
@@ -186,7 +199,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             # Get sleep timer from device state (sltm)
             product_state = self.coordinator.data.get("product-state", {})
             try:
-                timer_data = self.coordinator.device._get_current_value(
+                timer_data = self.coordinator.device.get_state_value(
                     product_state, "sltm", "OFF"
                 )
                 if timer_data == "OFF":
@@ -212,9 +225,23 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                 else:
                     self._stop_timer_polling()
 
+            except (KeyError, AttributeError) as err:
+                _LOGGER.debug(
+                    "Sleep timer data not available for %s: %s",
+                    self.coordinator.serial_number,
+                    err,
+                )
+                self._attr_native_value = 0
+            except (ValueError, TypeError) as err:
+                _LOGGER.warning(
+                    "Invalid sleep timer data format for %s: %s",
+                    self.coordinator.serial_number,
+                    err,
+                )
+                self._attr_native_value = 0
             except Exception as err:
                 _LOGGER.error(
-                    "Error processing sleep timer update for %s: %s",
+                    "Unexpected error processing sleep timer update for %s: %s",
                     self.coordinator.serial_number,
                     err,
                 )
@@ -258,9 +285,24 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 0
                 self.async_write_ha_state()
 
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting sleep timer to %s minutes for %s: %s",
+                int(value),
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid sleep timer value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set sleep timer for %s: %s",
+                "Unexpected error setting sleep timer to %s minutes for %s: %s",
+                int(value),
                 self.coordinator.serial_number,
                 err,
             )
@@ -279,7 +321,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         attributes["sleep_timer_minutes"] = native_value  # type: ignore[assignment]
 
         # Raw device state
-        sltm = self.coordinator.device._get_current_value(product_state, "sltm", "OFF")
+        sltm = self.coordinator.device.get_state_value(product_state, "sltm", "OFF")
         attributes["sleep_timer_raw"] = sltm  # type: ignore[assignment]
         attributes["sleep_timer_enabled"] = sltm != "OFF"
 
@@ -297,6 +339,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_lower_angle"
         self._attr_translation_key = "oscillation_low_angle"
         self._attr_icon = "mdi:rotate-left"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -308,7 +351,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Get lower oscillation angle from device state (osal)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device._get_current_value(
+            angle_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
             try:
@@ -318,7 +361,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 0
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation lower angle."""
@@ -345,9 +388,30 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
                 lower_angle,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation lower angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for oscillation lower angle on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid oscillation lower angle value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation lower angle for %s: %s",
+                "Unexpected error setting oscillation lower angle to %s for %s: %s",
+                value,
                 self.coordinator.serial_number,
                 err,
             )
@@ -364,6 +428,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_upper_angle"
         self._attr_translation_key = "oscillation_high_angle"
         self._attr_icon = "mdi:rotate-right"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -375,7 +440,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Get upper oscillation angle from device state (osau)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device._get_current_value(
+            angle_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             try:
@@ -385,7 +450,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 350
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation upper angle."""
@@ -412,9 +477,30 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
                 upper_angle,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation upper angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for oscillation upper angle on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid oscillation upper angle value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation upper angle for %s: %s",
+                "Unexpected error setting oscillation upper angle to %s for %s: %s",
+                value,
                 self.coordinator.serial_number,
                 err,
             )
@@ -429,8 +515,9 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation center angle number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_center_angle"
-        self._attr_name = f"{coordinator.device_name} Oscillation Center Angle"
+        self._attr_translation_key = "oscillation_center_angle"
         self._attr_icon = "mdi:crosshairs"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -442,10 +529,10 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Calculate center angle from lower and upper angles
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             try:
@@ -457,7 +544,7 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 175  # Default center
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation center angle - adjusts lower and upper to maintain current span."""
@@ -467,10 +554,10 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         try:
             # Get current span (upper - lower)
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             lower_angle = int(lower_data.lstrip("0") or "0")
@@ -499,9 +586,30 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
                 new_upper,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation center angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for oscillation center angle on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid oscillation center angle value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation center angle for %s: %s",
+                "Unexpected error setting oscillation center angle to %s for %s: %s",
+                value,
                 self.coordinator.serial_number,
                 err,
             )
@@ -516,8 +624,9 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         """Initialize the oscillation angle span number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle_span"
-        self._attr_name = f"{coordinator.device_name} Oscillation Angle"
+        self._attr_translation_key = "oscillation_angle_span"
         self._attr_icon = "mdi:angle-acute"
+        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 10
         self._attr_native_max_value = 350
@@ -529,10 +638,10 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         if self.coordinator.device:
             # Calculate span from lower and upper angles
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             try:
@@ -544,7 +653,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
                 self._attr_native_value = 350  # Default full span
         else:
             self._attr_native_value = None
-        self._handle_coordinator_update_safe()
+        super()._handle_coordinator_update()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the oscillation angle span - adjusts lower and upper to maintain current center."""
@@ -554,10 +663,10 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         try:
             # Get current center angle
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device._get_current_value(
+            lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device._get_current_value(
+            upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
             lower_angle = int(lower_data.lstrip("0") or "0")
@@ -586,9 +695,30 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
                 new_upper,
                 self.coordinator.serial_number,
             )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting oscillation angle span to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for oscillation angle span on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid oscillation angle span value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
         except Exception as err:
             _LOGGER.error(
-                "Failed to set oscillation angle span for %s: %s",
+                "Unexpected error setting oscillation angle span to %s for %s: %s",
+                value,
                 self.coordinator.serial_number,
                 err,
             )
