@@ -5,7 +5,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 ## Prerequisites
 
 ### **Home Assistant Requirements**
-- Home Assistant Core 2025.8 or newer
+- Home Assistant Core 2025.12 or newer
 - Custom components support enabled
 - Network access to Dyson devices
 
