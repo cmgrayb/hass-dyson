@@ -3,5 +3,5 @@
   "hacs": "0.24.0",
   "zip_release": true,
   "filename": "hass_dyson.zip",
-  "homeassistant": "2025.8.0"
+  "homeassistant": "2025.12.0"
 }
