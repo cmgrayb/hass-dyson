@@ -14,10 +14,10 @@ This is a Python 3 Home Assistant integration for interacting with the Dyson RES
 
 ## Appearance
 
-All entities should use an appropriate icon from the material design icon (mdi:) set.  
+All entities should use an appropriate icon from the material design icon (mdi:) set.
 
 The integration should use the logo found in the root of the repository titled dyson-logo.svg.  If the location would be more appropriate in a subfolder for cleanliness or security reasons, it should be moved.
 
 ## Target Version
 
-This integration must be compatible with Home Assistant 2025.8 and above.
+This integration must be compatible with Home Assistant 2025.12 and above.

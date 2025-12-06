@@ -227,7 +227,7 @@ hass_dyson:
 
 ## Requirements
 
-- **Home Assistant** 2025.8+
+- **Home Assistant** 2025.12+
 - **Python** 3.11+
 - **Dependencies** (auto-installed):
   - `libdyson-rest>=0.8.2`
