@@ -41,7 +41,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff==0.14.7",
-    "pytest==8.4.2",
+    "pytest==9.0.0",
     "pytest-cov>=7.0.0",
     "pytest-asyncio==1.3.0",
     "pytest-homeassistant-custom-component==0.13.299",
@@ -259,4 +259,5 @@ exclude_lines = [
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B601"]
+
 
