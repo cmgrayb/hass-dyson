@@ -113,6 +113,36 @@ Devices with advanced oscillation capability provide additional precise controls
 | **350°** | Nearly full circle | 5° gap for motor positioning |
 | **Custom** | User-defined range | Manual lower/upper angles |
 
+### Advanced Oscillation Day0 (AdvanceOscillationDay0 Capability)
+
+Devices with the AdvanceOscillationDay0 capability provide a simplified oscillation control with a fixed center point:
+
+#### Oscillation Mode Select
+
+1. Entity ID: `select.{device_name}_oscillation_mode_day0`
+2. Options: Off, 15°, 40°, 70°, Custom
+3. Purpose: Quick selection of common oscillation patterns with fixed 177° center
+
+#### Angle Range Controls
+
+1. **Lower Angle**: `number.{device_name}_oscillation_day0_lower_angle` (142-212°)
+2. **Upper Angle**: `number.{device_name}_oscillation_day0_upper_angle` (142-212°)
+3. **Center Angle**: `number.{device_name}_oscillation_day0_center_angle` (147-207°)
+4. **Oscillation Span**: `number.{device_name}_oscillation_day0_angle_span` (10-70°)
+
+Note: Day0 capability allows flexible custom ranges within 142°-212° physical limits. The center angle control lets you position preset modes (15°, 40°, 70°) anywhere within the valid range, while custom mode allows complete manual control.
+
+#### Day0 Preset Patterns
+
+| Pattern | Description | Angle Range | Center Point |
+|---------|-------------|-------------|--------------|
+| **15°** | Very narrow focused area | ±7.5° from center | Current center angle (adjustable) |
+| **40°** | Narrow coverage | ±20° from center | Current center angle (adjustable) |
+| **70°** | Medium coverage | ±35° from center | Current center angle (adjustable) |
+| **Custom** | User-defined range | Any range within 142°-212° | Flexible manual control |
+
+**Example**: With center set to 160°, the 40° preset creates 140°-180° range. With center at 200°, it creates 180°-212° range (clamped to physical limits).
+
 ## Night Mode Control
 
 ### Description

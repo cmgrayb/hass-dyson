@@ -2058,6 +2058,79 @@ class DysonDevice:
             },
         )
 
+    async def set_oscillation_angles_day0(
+        self, lower_angle: int, upper_angle: int
+    ) -> None:
+        """Set oscillation angles for AdvanceOscillationDay0 capability.
+
+        Unlike AdvanceOscillationDay1, this does not send the ancp (angle center point)
+        parameter as the device uses a fixed center point of 177 degrees.
+        Day0 devices are constrained to 142°-212° range (177° ± 35°).
+
+        Special behavior:
+        - If angles are equal: Sets center point and turns off oscillation
+        - If angles differ by < 5°: Raises ValueError (device requirement)
+        - If angles differ by >= 5°: Normal oscillation
+        """
+        # Ensure angles are within valid Day0 range (142-212 degrees)
+        lower_angle = max(142, min(212, lower_angle))
+        upper_angle = max(142, min(212, upper_angle))
+
+        if lower_angle == upper_angle:
+            # Same angle: Set center point and turn off oscillation
+            center_angle = lower_angle
+            await self.set_oscillation(False)
+
+            # Set both angles to the center point (device stores this as center)
+            lower_str = f"{center_angle:04d}"
+            upper_str = f"{center_angle:04d}"
+
+            _LOGGER.debug(
+                "Setting Day0 center point to %s° (oscillation off) for %s",
+                center_angle,
+                self.serial_number,
+            )
+        elif (upper_angle - lower_angle) < 5:
+            # Less than 5° separation: Device requirement violation
+            raise ValueError(
+                f"Day0 devices require minimum 5° separation. "
+                f"Current span: {upper_angle - lower_angle}°"
+            )
+        else:
+            # Normal oscillation with >= 5° separation
+            lower_str = f"{lower_angle:04d}"
+            upper_str = f"{upper_angle:04d}"
+
+            _LOGGER.debug(
+                "Setting Day0 oscillation angles to %s°-%s° (span: %s°) for %s",
+                lower_angle,
+                upper_angle,
+                upper_angle - lower_angle,
+                self.serial_number,
+            )
+
+            # Send oscillation command with angles
+            await self.send_command(
+                "STATE-SET",
+                {
+                    "osal": lower_str,  # Oscillation angle lower
+                    "osau": upper_str,  # Oscillation angle upper
+                    "oson": "ON",  # Enable oscillation
+                },
+            )
+            return
+
+        # For center point setting (same angles), only set angles without oscillation
+        if lower_angle == upper_angle:
+            await self.send_command(
+                "STATE-SET",
+                {
+                    "osal": lower_str,  # Oscillation angle lower (center)
+                    "osau": upper_str,  # Oscillation angle upper (center)
+                    # Note: oson already set to OFF by set_oscillation call above
+                },
+            )
+
     async def set_auto_mode(self, enabled: bool) -> None:
         """Set auto mode on/off."""
         auto_value = "ON" if enabled else "OFF"

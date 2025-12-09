@@ -206,6 +206,12 @@ Model: 438                      ← Use this for device_type and MQTT prefix
   - Upper and lower oscillation boundary settings
   - Enables: Advanced oscillation controls, angle sensors
 
+- **`AdvanceOscillationDay0`** (Simplified Advanced Oscillation)
+  - Fixed center point oscillation control (177° center)
+  - Preset angle patterns: 15°, 40°, 70°, Custom
+  - Simplified controls without center angle adjustment
+  - Enables: Day0 oscillation select, lower/upper angle controls, span control
+
 - **`Scheduling`** (Timer & Schedule Controls)
   - Sleep timer functionality (1-480 minutes)
   - Scheduled operation modes
