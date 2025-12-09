@@ -72,15 +72,15 @@ async def demonstrate_scenario_1():
         select_entity._saved_center_angle = None  # No saved angle initially
         select_entity._last_known_mode = "Custom"
 
-        print(f"Initial state: Mode='Custom', Angles=155°-195°, Center=175°")
-        print(f"User action: Switch to '70°' mode")
+        print("Initial state: Mode='Custom', Angles=155°-195°, Center=175°")
+        print("User action: Switch to '70°' mode")
 
         # User selects "70°" mode - this should save the current center point
         await select_entity.async_select_option("70°")
 
         print(f"✅ Center point saved: {select_entity._saved_center_angle}°")
-        print(f"✅ Mode switched to: 70°")
-        print(f"✅ Device called with: lower=142°, upper=212° (70° span)")
+        print("✅ Mode switched to: 70°")
+        print("✅ Device called with: lower=142°, upper=212° (70° span)")
 
         # Verify the device was called correctly
         coordinator.device.set_oscillation_angles_day0.assert_called_with(142, 212)
@@ -122,15 +122,15 @@ async def demonstrate_scenario_2():
             "upper_angle": 212,
         }
 
-        print(f"Initial state: Mode='70°', Saved center=175°")
-        print(f"User action: Switch to '40°' mode")
+        print("Initial state: Mode='70°', Saved center=175°")
+        print("User action: Switch to '40°' mode")
 
         # User selects "40°" mode - this should restore the saved center point
         await select_entity.async_select_option("40°")
 
-        print(f"✅ Center point restored: 175°")
-        print(f"✅ Mode switched to: 40°")
-        print(f"✅ 40° preset positioned around center 175°: 155°-195°")
+        print("✅ Center point restored: 175°")
+        print("✅ Mode switched to: 40°")
+        print("✅ 40° preset positioned around center 175°: 155°-195°")
 
         return select_entity
 
@@ -162,9 +162,9 @@ async def demonstrate_scenario_3():
         select_entity._saved_center_angle = None
         select_entity._last_known_mode = "Custom"
 
-        print(f"Initial state: Mode='Custom', Center=175°")
+        print("Initial state: Mode='Custom', Center=175°")
         print(
-            f"Device state update: Mode changes to '70°' (e.g., via physical controls)"
+            "Device state update: Mode changes to '70°' (e.g., via physical controls)"
         )
 
         # Simulate device state update to 70° mode
@@ -178,7 +178,7 @@ async def demonstrate_scenario_3():
         print(
             f"✅ Center point automatically saved: {select_entity._saved_center_angle}°"
         )
-        print(f"✅ Entity state updated to: 70°")
+        print("✅ Entity state updated to: 70°")
 
         return select_entity
 
@@ -217,9 +217,9 @@ async def demonstrate_scenario_4():
             "upper_angle": 212,
         }
 
-        print(f"Initial state: Mode='70°', Saved center=175°")
+        print("Initial state: Mode='70°', Saved center=175°")
         print(
-            f"Device state update: Mode changes to '40°' (e.g., via physical controls)"
+            "Device state update: Mode changes to '40°' (e.g., via physical controls)"
         )
 
         # Simulate device state update to 40° mode
@@ -231,9 +231,9 @@ async def demonstrate_scenario_4():
         # Trigger coordinator update (simulates device state change)
         select_entity._handle_coordinator_update()
 
-        print(f"✅ Center point automatically restored: 175°")
-        print(f"✅ Entity state updated to: 40°")
-        print(f"✅ Angles positioned around restored center: 155°-195°")
+        print("✅ Center point automatically restored: 175°")
+        print("✅ Entity state updated to: 40°")
+        print("✅ Angles positioned around restored center: 155°-195°")
 
         return select_entity
 
@@ -256,22 +256,22 @@ async def demonstrate_hardware_constraints():
     print("Testing hardware constraints (142°-212° boundaries, 5° minimum separation):")
 
     # Test 1: Normal oscillation (angles differ by ≥5°)
-    print(f"\nTest 1: Normal oscillation - 150° to 160° (10° separation)")
+    print("\nTest 1: Normal oscillation - 150° to 160° (10° separation)")
     await device.set_oscillation_angles_day0(150, 160)
-    print(f"✅ Normal oscillation allowed")
+    print("✅ Normal oscillation allowed")
     device.set_oscillation_angles.assert_called_with(150, 160)
 
     # Test 2: Center point setting (angles match)
-    print(f"\nTest 2: Center point setting - 175° to 175° (matching angles)")
+    print("\nTest 2: Center point setting - 175° to 175° (matching angles)")
     await device.set_oscillation_angles_day0(175, 175)
-    print(f"✅ Center point set, oscillation disabled")
+    print("✅ Center point set, oscillation disabled")
     device.set_oscillation_angles.assert_called_with(175, 175)
 
     # Test 3: Constraint violation (less than 5° separation)
-    print(f"\nTest 3: Constraint violation - 150° to 152° (2° separation)")
+    print("\nTest 3: Constraint violation - 150° to 152° (2° separation)")
     try:
         await device.set_oscillation_angles_day0(150, 152)
-        print(f"❌ Should have raised ValueError")
+        print("❌ Should have raised ValueError")
     except ValueError as e:
         print(f"✅ Constraint enforced: {e}")
 
