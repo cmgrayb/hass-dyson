@@ -1,8 +1,6 @@
 """Test sensor.py missing coverage areas."""
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from custom_components.hass_dyson.sensor import (
     DysonP10RSensor,
