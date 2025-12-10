@@ -927,7 +927,7 @@ class DysonOscillationDay0AngleSpanNumber(DysonEntity, NumberEntity):
         """Initialize the Day0 oscillation angle span number."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle"
-        self._attr_translation_key = "oscillation_angle"
+        self._attr_translation_key = "oscillation_angle_span"
         self._attr_icon = "mdi:angle-acute"
         # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
