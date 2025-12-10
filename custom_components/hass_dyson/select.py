@@ -597,13 +597,26 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
 
             # Check for preset matches with tolerance for Day0 angles
             if abs(angle_span - 70) <= 5:
-                return "70°"
+                detected_mode = "70°"
             elif abs(angle_span - 40) <= 5:
-                return "40°"
+                detected_mode = "40°"
             elif abs(angle_span - 15) <= 5:
-                return "15°"
+                detected_mode = "15°"
             else:
-                return "Custom"
+                detected_mode = "Custom"
+
+            # Debug logging for 15° detection issues
+            if angle_span >= 10 and angle_span <= 20:
+                _LOGGER.debug(
+                    "Day0 15° Debug: Detected mode from angles %s°-%s° (span: %s°) -> '%s' for %s",
+                    lower_angle,
+                    upper_angle,
+                    angle_span,
+                    detected_mode,
+                    self.coordinator.serial_number,
+                )
+
+            return detected_mode
         except (ValueError, TypeError):
             return "Custom"
 
@@ -622,8 +635,8 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             )
             lower_angle = int(lower_data.lstrip("0") or "142")
             upper_angle = int(upper_data.lstrip("0") or "212")
-            # Center is the midpoint of current range
-            return (lower_angle + upper_angle) // 2
+            # Center is the midpoint of current range - use proper rounding for consistency
+            return round((lower_angle + upper_angle) / 2)
         except (ValueError, TypeError, KeyError):
             return self._default_center_angle
 
@@ -780,16 +793,24 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
                 preset_angle, center_to_use
             )
 
+            _LOGGER.debug(
+                "Day0 15° Debug: Selecting %s° mode for %s with center %s° -> angles %s°-%s° (span: %s°)",
+                preset_angle,
+                self.coordinator.serial_number,
+                center_to_use,
+                lower_angle,
+                upper_angle,
+                upper_angle - lower_angle,
+            )
+
             # Apply the calculated angles using Day0-specific method
             await self.coordinator.device.set_oscillation_angles_day0(
                 lower_angle, upper_angle
             )
 
             _LOGGER.debug(
-                "Set Day0 oscillation mode to %s (lower: %s, upper: %s) for %s",
-                option,
-                lower_angle,
-                upper_angle,
+                "Day0 15° Debug: Successfully sent command for %s° mode to %s",
+                preset_angle,
                 self.coordinator.serial_number,
             )
 
