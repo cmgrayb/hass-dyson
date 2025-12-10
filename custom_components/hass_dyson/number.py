@@ -740,10 +740,8 @@ class DysonOscillationDay0LowerAngleNumber(DysonEntity, NumberEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Day0 oscillation lower angle number."""
         super().__init__(coordinator)
-        self._attr_unique_id = (
-            f"{coordinator.serial_number}_oscillation_day0_lower_angle"
-        )
-        self._attr_translation_key = "oscillation_day0_low_angle"
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_low_angle"
+        self._attr_translation_key = "oscillation_low_angle"
         self._attr_icon = "mdi:rotate-left"
         # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
@@ -835,10 +833,8 @@ class DysonOscillationDay0UpperAngleNumber(DysonEntity, NumberEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Day0 oscillation upper angle number."""
         super().__init__(coordinator)
-        self._attr_unique_id = (
-            f"{coordinator.serial_number}_oscillation_day0_upper_angle"
-        )
-        self._attr_translation_key = "oscillation_day0_high_angle"
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_high_angle"
+        self._attr_translation_key = "oscillation_high_angle"
         self._attr_icon = "mdi:rotate-right"
         # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
@@ -930,10 +926,8 @@ class DysonOscillationDay0AngleSpanNumber(DysonEntity, NumberEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Day0 oscillation angle span number."""
         super().__init__(coordinator)
-        self._attr_unique_id = (
-            f"{coordinator.serial_number}_oscillation_day0_angle_span"
-        )
-        self._attr_translation_key = "oscillation_day0_angle_span"
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle"
+        self._attr_translation_key = "oscillation_angle"
         self._attr_icon = "mdi:angle-acute"
         # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
@@ -1041,10 +1035,8 @@ class DysonOscillationDay0CenterAngleNumber(DysonEntity, NumberEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Day0 oscillation center angle number."""
         super().__init__(coordinator)
-        self._attr_unique_id = (
-            f"{coordinator.serial_number}_oscillation_day0_center_angle"
-        )
-        self._attr_translation_key = "oscillation_day0_center_angle"
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_center_angle"
+        self._attr_translation_key = "oscillation_center_angle"
         self._attr_icon = "mdi:crosshairs"
         # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
