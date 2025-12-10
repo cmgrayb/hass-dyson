@@ -1328,8 +1328,8 @@ class TestDysonOscillationModeDay0Select:
         """Test Day0 oscillation mode select initialization."""
         select = DysonOscillationModeDay0Select(mock_coordinator)
 
-        assert select._attr_unique_id == "NK6-EU-MHA0000A_oscillation_mode_day0"
-        assert select._attr_translation_key == "oscillation_mode_day0"
+        assert select._attr_unique_id == "NK6-EU-MHA0000A_oscillation_mode"
+        assert select._attr_translation_key == "oscillation"
         assert select._attr_icon == "mdi:rotate-3d-variant"
         assert select._attr_options == ["Off", "15°", "40°", "70°", "Custom"]
         assert select._default_center_angle == 177
