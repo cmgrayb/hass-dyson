@@ -561,8 +561,8 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation mode select for Day0."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode_day0"
-        self._attr_translation_key = "oscillation_mode_day0"
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode"
+        self._attr_translation_key = "oscillation"
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "15°", "40°", "70°", "Custom"]
         # Default center angle for Day0 calculations
@@ -676,37 +676,21 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             upper = 212
             lower = max(142, lower - adjustment)
 
-        # Ensure the span is exactly the preset angle
+        # Ensure the span is exactly the preset angle after boundary adjustments
         actual_span = upper - lower
         if actual_span != preset_angle:
-            upper = lower + preset_angle
+            # If we can't maintain exact span due to boundaries, prioritize the preset span
+            if upper > 212:
+                upper = 212
+                lower = max(142, upper - preset_angle)
+            elif lower < 142:
+                lower = 142
+                upper = min(212, lower + preset_angle)
+            else:
+                # Adjust to get exact span
+                upper = lower + preset_angle
 
-        # Apply Day0 boundary constraints (142° - 212° range)
-        if lower < 142:
-            lower = 142
-            upper = min(212, lower + preset_angle)
-        elif upper > 212:
-            upper = 212
-            lower = max(142, upper - preset_angle)
-
-        return lower, upper
-
-        # Ensure angles stay within Day0 bounds (142°-212°)
-        if lower < 142:
-            adjustment = 142 - lower
-            lower = 142
-            upper = min(212, upper + adjustment)
-        elif upper > 212:
-            adjustment = upper - 212
-            upper = 212
-            lower = max(142, lower - adjustment)
-
-        # Ensure the span is exactly the preset angle
-        actual_span = upper - lower
-        if actual_span != preset_angle:
-            upper = lower + preset_angle
-
-        # Apply Day0 boundary constraints (142° - 212° range)
+        # Final boundary check to ensure we stay within limits
         if lower < 142:
             lower = 142
             upper = min(212, lower + preset_angle)
