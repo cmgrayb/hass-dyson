@@ -781,12 +781,28 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
                 and self._saved_center_angle is not None
                 and preset_angle != 70
             ):
-                center_to_use = self._saved_center_angle
-                _LOGGER.info(
-                    "Day0: RESTORING saved center angle %s when leaving 70° mode (target: %s°)",
-                    center_to_use,
-                    preset_angle,
+                # Validate that restored center can produce valid angles for the target preset
+                test_lower, test_upper = self._calculate_angles_for_preset_with_center(
+                    preset_angle, self._saved_center_angle
                 )
+                test_span = test_upper - test_lower
+
+                # Only use saved center if it produces the exact target span
+                if test_span == preset_angle:
+                    center_to_use = self._saved_center_angle
+                    _LOGGER.info(
+                        "Day0: RESTORING saved center angle %s when leaving 70° mode (target: %s°)",
+                        center_to_use,
+                        preset_angle,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Day0: Saved center %s° would create %s° span for %s° target, using current center instead",
+                        self._saved_center_angle,
+                        test_span,
+                        preset_angle,
+                    )
+
                 self._saved_center_angle = None  # Clear after use
 
             lower_angle, upper_angle = self._calculate_angles_for_preset_with_center(
