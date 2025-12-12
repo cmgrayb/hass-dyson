@@ -117,6 +117,7 @@ class TestDysonClimateEntity:
         expected_hvac_modes = [
             HVACMode.OFF,
             HVACMode.HEAT,
+            HVACMode.COOL,
         ]
         assert entity._attr_hvac_modes == expected_hvac_modes
 
@@ -128,8 +129,9 @@ class TestDysonClimateEntity:
             lambda state, key, default: {
                 "tmp": "2730",  # 0°C in 0.1K (273.0K)
                 "hmax": "2930",  # 20°C in 0.1K (293.0K)
-                "fnst": "FAN",
+                "fpwr": "ON",
                 "hmod": "HEAT",
+                "fnst": "FAN",
                 "auto": "OFF",
                 "fnsp": "0005",
             }.get(key, default)
@@ -203,12 +205,13 @@ class TestDysonClimateEntity:
         assert entity._attr_target_temperature == 20  # Default value
 
     def test_update_hvac_mode_off(self, mock_coordinator):
-        """Test HVAC mode update when heating is off."""
+        """Test HVAC mode update when device is off."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
+                "fpwr": "OFF",
                 "hmod": "OFF",
             }.get(key, default)
         )
@@ -226,9 +229,8 @@ class TestDysonClimateEntity:
         device_data = {"product-state": {}}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "fnst": "FAN",
+                "fpwr": "ON",
                 "hmod": "HEAT",
-                "auto": "OFF",
             }.get(key, default)
         )
 
@@ -238,14 +240,34 @@ class TestDysonClimateEntity:
         # Assert
         assert entity._attr_hvac_mode == HVACMode.HEAT
 
-    def test_update_hvac_action_heating(self, mock_coordinator):
-        """Test HVAC action update when device is actively heating."""
+    def test_update_hvac_mode_cool(self, mock_coordinator):
+        """Test HVAC mode update when cooling is on."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
+                "fpwr": "ON",
+                "hmod": "OFF",
+            }.get(key, default)
+        )
+
+        # Act
+        entity._update_hvac_mode(device_data)
+
+        # Assert
+        assert entity._attr_hvac_mode == HVACMode.COOL
+
+    def test_update_hvac_action_heating(self, mock_coordinator):
+        """Test HVAC action update when device is actively heating."""
+        # Arrange
+        entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_hvac_mode = HVACMode.HEAT  # Set heating mode
+        device_data = {"product-state": {}}
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
                 "hsta": "HEAT",
+                "fpwr": "ON",
             }.get(key, default)
         )
 
@@ -266,6 +288,7 @@ class TestDysonClimateEntity:
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hsta": "OFF",
+                "fpwr": "ON",
             }.get(key, default)
         )
 
@@ -277,6 +300,27 @@ class TestDysonClimateEntity:
 
         assert entity._attr_hvac_action == HVACAction.IDLE
 
+    def test_update_hvac_action_cooling(self, mock_coordinator):
+        """Test HVAC action update when device is actively cooling."""
+        # Arrange
+        entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_hvac_mode = HVACMode.COOL  # Set cooling mode
+        device_data = {"product-state": {}}
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "hsta": "OFF",
+                "fpwr": "ON",
+            }.get(key, default)
+        )
+
+        # Act
+        entity._update_hvac_action(device_data)
+
+        # Assert
+        from homeassistant.components.climate.const import HVACAction
+
+        assert entity._attr_hvac_action == HVACAction.COOLING
+
     def test_update_hvac_action_off(self, mock_coordinator):
         """Test HVAC action update when HVAC mode is off."""
         # Arrange
@@ -286,6 +330,7 @@ class TestDysonClimateEntity:
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
                 "hsta": "OFF",
+                "fpwr": "OFF",
             }.get(key, default)
         )
 
@@ -311,7 +356,7 @@ class TestDysonClimateEntity:
 
         # Assert
         mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"hmod": "OFF"}
+            "STATE-SET", {"fpwr": "OFF"}
         )
 
     @pytest.mark.asyncio
@@ -328,7 +373,24 @@ class TestDysonClimateEntity:
 
         # Assert
         mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"hmod": "HEAT"}
+            "STATE-SET", {"fpwr": "ON", "hmod": "HEAT"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_set_hvac_mode_cool(self, mock_coordinator):
+        """Test setting HVAC mode to COOL."""
+        # Arrange
+        entity = DysonClimateEntity(mock_coordinator)
+        entity.hass = MagicMock()  # Mock hass for async_write_ha_state
+        entity.async_write_ha_state = MagicMock()
+        mock_coordinator.device.send_command = AsyncMock()
+
+        # Act
+        await entity.async_set_hvac_mode(HVACMode.COOL)
+
+        # Assert
+        mock_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"fpwr": "ON", "hmod": "OFF"}
         )
 
     @pytest.mark.asyncio
@@ -415,7 +477,7 @@ class TestDysonClimateEntity:
 
         # Assert
         mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"hmod": "HEAT"}
+            "STATE-SET", {"fpwr": "ON", "hmod": "HEAT"}
         )
 
     @pytest.mark.asyncio
@@ -432,7 +494,7 @@ class TestDysonClimateEntity:
 
         # Assert
         mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"hmod": "OFF"}
+            "STATE-SET", {"fpwr": "OFF"}
         )
 
     def test_extra_state_attributes_with_device(self, mock_coordinator):
@@ -444,6 +506,7 @@ class TestDysonClimateEntity:
 
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
+                "fpwr": "ON",
                 "hmod": "HEAT",
                 "hsta": "OFF",
             }.get(key, default)
@@ -456,6 +519,7 @@ class TestDysonClimateEntity:
         assert attributes is not None
         assert attributes["target_temperature"] == 21.5
         assert attributes["hvac_mode"] == HVACMode.HEAT
+        assert attributes["fan_power"] == "ON"
         assert attributes["heating_mode"] == "HEAT"
         assert attributes["heating_status"] == "OFF"
         # 21.5°C = 294.65K = 2946.5 -> 2946 (int conversion)

@@ -35,6 +35,8 @@ async def async_setup_entry(
     # Only show oscillation mode select for devices with advanced oscillation capability
     if "AdvanceOscillationDay1" in device_capabilities:
         entities.append(DysonOscillationModeSelect(coordinator))
+    elif "AdvanceOscillationDay0" in device_capabilities:
+        entities.append(DysonOscillationModeDay0Select(coordinator))
 
     # Note: Heating mode control is now integrated into the fan entity's preset modes
     # No separate heating mode select needed
@@ -545,6 +547,208 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
             attributes["oscillation_center"] = center_angle  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
+        except (ValueError, TypeError):
+            pass
+
+        return attributes
+
+
+class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
+    """Select entity for oscillation mode (AdvanceOscillationDay0 capability)."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the oscillation mode select for Day0."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode"
+        self._attr_translation_key = "oscillation"
+        self._attr_icon = "mdi:rotate-3d-variant"
+        # Simplified to just the three working preset options
+        self._attr_options = ["Off", "15°", "40°", "70°"]
+        # Fixed center angle for Day0 - middle of allowed range (142°-212°)
+        self._center_angle = 177
+
+    def _detect_mode_from_angles(self) -> str:
+        """Detect current oscillation mode from device angles."""
+        if not self.coordinator.device:
+            return "Off"
+
+        product_state = self.coordinator.data.get("product-state", {})
+        oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
+
+        if oson == "OFF":
+            return "Off"
+
+        try:
+            lower_data = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+            lower_angle = int(lower_data.lstrip("0") or "0")
+            upper_angle = int(upper_data.lstrip("0") or "350")
+            angle_span = upper_angle - lower_angle
+
+            # Check for preset matches with tolerance
+            if abs(angle_span - 15) <= 2:
+                detected_mode = "15°"
+            elif abs(angle_span - 40) <= 2:
+                detected_mode = "40°"
+            elif abs(angle_span - 70) <= 2:
+                detected_mode = "70°"
+            else:
+                # If it doesn't match our presets, return the closest one
+                if angle_span < 27:
+                    detected_mode = "15°"
+                elif angle_span < 55:
+                    detected_mode = "40°"
+                else:
+                    detected_mode = "70°"
+
+            _LOGGER.debug(
+                "Day0: Detected mode from angles %s°-%s° (span: %s°) -> '%s' for %s",
+                lower_angle,
+                upper_angle,
+                angle_span,
+                detected_mode,
+                self.coordinator.serial_number,
+            )
+
+            return detected_mode
+        except (ValueError, TypeError):
+            return "Off"
+
+    def _calculate_angles_for_preset(self, preset_angle: int) -> tuple[int, int]:
+        """Calculate lower and upper angles for a preset mode centered on fixed point."""
+        # Calculate half the span
+        half_span = preset_angle / 2
+
+        # Calculate angles centered on fixed point
+        lower_angle = self._center_angle - half_span
+        upper_angle = self._center_angle + half_span
+
+        # Round to integers
+        lower = int(round(lower_angle))
+        upper = int(round(upper_angle))
+
+        _LOGGER.debug(
+            "Day0: Calculated angles for %s° preset: center=%s°, half_span=%.1f -> %s°-%s°",
+            preset_angle,
+            self._center_angle,
+            half_span,
+            lower,
+            upper,
+        )
+
+        return lower, upper
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            detected_mode = self._detect_mode_from_angles()
+            self._attr_current_option = detected_mode
+        else:
+            self._attr_current_option = None
+
+        super()._handle_coordinator_update()
+
+    async def async_select_option(self, option: str) -> None:
+        """Select the oscillation mode for Day0."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            if option == "Off":
+                await self.coordinator.device.set_oscillation(False)
+                _LOGGER.debug(
+                    "Day0: Turned off oscillation for %s",
+                    self.coordinator.serial_number,
+                )
+                return
+
+            # Calculate angles for the selected preset
+            preset_angle = int(option.replace("°", ""))
+            lower_angle, upper_angle = self._calculate_angles_for_preset(preset_angle)
+
+            _LOGGER.debug(
+                "Day0: Setting %s° mode for %s -> angles %s°-%s° (center: %s°)",
+                preset_angle,
+                self.coordinator.serial_number,
+                lower_angle,
+                upper_angle,
+                self._center_angle,
+            )
+
+            # Apply the calculated angles using Day0-specific method
+            await self.coordinator.device.set_oscillation_angles_day0(
+                lower_angle, upper_angle
+            )
+
+            _LOGGER.debug(
+                "Day0: Successfully set %s° oscillation mode for %s",
+                preset_angle,
+                self.coordinator.serial_number,
+            )
+
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting Day0 oscillation mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid Day0 oscillation mode '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting Day0 oscillation mode to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return oscillation mode state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Current oscillation mode for scene support
+        attributes["oscillation_mode"] = self._attr_current_option
+
+        # Oscillation state details
+        oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
+        oscillation_enabled: bool = oson == "ON"
+        attributes["oscillation_enabled"] = oscillation_enabled  # type: ignore[assignment]
+
+        # Current angle configuration
+        try:
+            lower_data = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+
+            lower_angle: int = int(lower_data.lstrip("0") or "0")
+            upper_angle: int = int(upper_data.lstrip("0") or "350")
+            span: int = upper_angle - lower_angle
+
+            attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
+            attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
+            attributes["oscillation_center"] = self._center_angle  # type: ignore[assignment]
+            attributes["oscillation_span"] = span  # type: ignore[assignment]
+            attributes["oscillation_day0_mode"] = True  # type: ignore[assignment]
         except (ValueError, TypeError):
             pass
 

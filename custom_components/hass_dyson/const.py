@@ -68,6 +68,7 @@ AVAILABLE_DEVICE_CATEGORIES: Final = {
 }
 
 # Device capabilities
+CAPABILITY_ADVANCE_OSCILLATION_DAY0: Final = "AdvanceOscillationDay0"
 CAPABILITY_ADVANCE_OSCILLATION: Final = "AdvanceOscillationDay1"
 CAPABILITY_SCHEDULING: Final = "Scheduling"
 CAPABILITY_ENVIRONMENTAL_DATA: Final = "EnvironmentalData"
@@ -80,7 +81,8 @@ CAPABILITY_HUMIDIFIER: Final = "Humidifier"
 
 # Available capabilities for manual device setup
 AVAILABLE_CAPABILITIES: Final = {
-    CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation (wide angle control)",
+    CAPABILITY_ADVANCE_OSCILLATION_DAY0: "Advanced Oscillation Day 0 (specific oscillation pattern)",
+    CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation Day 1 (wide angle control)",
     CAPABILITY_SCHEDULING: "Scheduling (timer and schedule controls)",
     CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (Continuous Monitoring controls)",
     CAPABILITY_EXTENDED_AQ: "Extended Air Quality (PM2.5, PM10 sensors)",

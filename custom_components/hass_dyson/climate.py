@@ -66,10 +66,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         self._attr_max_temp = 37
         self._attr_target_temperature_step = 1
 
-        # HVAC modes - simple toggle between OFF and HEAT
+        # HVAC modes - Heat, Cool, and Off
         self._attr_hvac_modes = [
             HVACMode.OFF,
             HVACMode.HEAT,
+            HVACMode.COOL,
         ]
 
         # Initialize HVAC mode to OFF (will be updated in _handle_coordinator_update)
@@ -131,50 +132,63 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if not self.coordinator.device:
             return
 
+        fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
         heating_mode = self.coordinator.device.get_state_value(
             device_data, "hmod", "OFF"
         )
 
-        if heating_mode == "HEAT":
+        if fan_power == "OFF":
+            self._attr_hvac_mode = HVACMode.OFF
+        elif heating_mode == "HEAT":
             self._attr_hvac_mode = HVACMode.HEAT
-        elif heating_mode == "OFF":
+        elif heating_mode == "OFF" and fan_power == "ON":
+            self._attr_hvac_mode = HVACMode.COOL
+        else:
+            # Default to OFF if state is unclear
             self._attr_hvac_mode = HVACMode.OFF
 
     def _update_hvac_action(self, device_data: dict[str, Any]) -> None:
-        """Update HVAC action based on current heating status."""
+        """Update HVAC action based on current heating/cooling status."""
         if not self.coordinator.device:
             return
 
-        # Check if device is currently heating using hsta status
+        # Check device status
         heating_status = self.coordinator.device.get_state_value(
             device_data, "hsta", "OFF"
         )
+        fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
+        hvac_mode = getattr(self, "_attr_hvac_mode", HVACMode.OFF)
 
-        if heating_status == "HEAT":
+        if hvac_mode == HVACMode.OFF:
+            self._attr_hvac_action = HVACAction.OFF
+        elif heating_status == "HEAT":
             self._attr_hvac_action = HVACAction.HEATING
+        elif hvac_mode == HVACMode.COOL and fan_power == "ON":
+            # Device is in cool mode with fan running
+            self._attr_hvac_action = HVACAction.COOLING
         else:
-            # Device is not heating - determine appropriate idle state
-            hvac_mode = getattr(self, "_attr_hvac_mode", HVACMode.OFF)
-            if hvac_mode == HVACMode.OFF:
-                self._attr_hvac_action = HVACAction.OFF
-            else:
-                self._attr_hvac_action = HVACAction.IDLE
+            # Device is on but not actively heating or cooling
+            self._attr_hvac_action = HVACAction.IDLE
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set new target hvac mode - toggle between HEAT and OFF."""
+        """Set new target hvac mode - Heat, Cool, or Off."""
         if not self.coordinator.device:
             return
 
         try:
             if hvac_mode == HVACMode.OFF:
-                await self.coordinator.device.send_command("STATE-SET", {"hmod": "OFF"})
+                await self.coordinator.device.send_command("STATE-SET", {"fpwr": "OFF"})
             elif hvac_mode == HVACMode.HEAT:
                 await self.coordinator.device.send_command(
-                    "STATE-SET", {"hmod": "HEAT"}
+                    "STATE-SET", {"fpwr": "ON", "hmod": "HEAT"}
+                )
+            elif hvac_mode == HVACMode.COOL:
+                await self.coordinator.device.send_command(
+                    "STATE-SET", {"fpwr": "ON", "hmod": "OFF"}
                 )
             else:
                 _LOGGER.warning(
-                    "Unsupported HVAC mode '%s' for %s. Only HEAT and OFF are supported.",
+                    "Unsupported HVAC mode '%s' for %s. Supported modes: HEAT, COOL, OFF.",
                     hvac_mode,
                     self.coordinator.serial_number,
                 )
@@ -254,7 +268,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             )
 
     async def async_turn_on(self) -> None:
-        """Turn the entity on - enable heating."""
+        """Turn the entity on - defaults to heating mode."""
         await self.async_set_hvac_mode(HVACMode.HEAT)
 
     async def async_turn_off(self) -> None:
@@ -277,7 +291,10 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         attributes["target_temperature"] = target_temp  # type: ignore[assignment]
         attributes["hvac_mode"] = hvac_mode  # type: ignore[assignment]
 
-        # Device state properties for heating control
+        # Device state properties for climate control
+        fan_power = self.coordinator.device.get_state_value(
+            product_state, "fpwr", "OFF"
+        )
         heating_mode = self.coordinator.device.get_state_value(
             product_state, "hmod", "OFF"
         )
@@ -285,6 +302,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             product_state, "hsta", "OFF"
         )
 
+        attributes["fan_power"] = fan_power  # type: ignore[assignment]
         attributes["heating_mode"] = heating_mode  # type: ignore[assignment]
         attributes["heating_status"] = heating_status  # type: ignore[assignment]
 

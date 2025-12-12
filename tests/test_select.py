@@ -9,6 +9,7 @@ from custom_components.hass_dyson.const import CONF_HOSTNAME
 from custom_components.hass_dyson.select import (
     DysonFanControlModeSelect,
     DysonHeatingModeSelect,
+    DysonOscillationModeDay0Select,
     DysonOscillationModeSelect,
     async_setup_entry,
 )
@@ -75,6 +76,24 @@ class TestSelectPlatformSetup:
         entities = mock_add_entities.call_args[0][0]
         assert len(entities) == 1
         assert isinstance(entities[0], DysonOscillationModeSelect)
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_with_oscillation_day0_capability(
+        self, mock_hass, mock_config_entry
+    ):
+        """Test setting up entry with AdvanceOscillationDay0 capability."""
+        coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
+        coordinator.device_capabilities = ["AdvanceOscillationDay0"]
+
+        mock_add_entities = MagicMock()
+
+        await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+
+        # Should add Day0 oscillation select entity
+        mock_add_entities.assert_called_once()
+        entities = mock_add_entities.call_args[0][0]
+        assert len(entities) == 1
+        assert isinstance(entities[0], DysonOscillationModeDay0Select)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_heating_capability(
@@ -1300,6 +1319,239 @@ class TestDysonHeatingModeSelectCoverage:
         with patch("custom_components.hass_dyson.select._LOGGER") as mock_logger:
             await select.async_select_option("Heating")
             mock_logger.error.assert_called_once()
+
+
+class TestDysonOscillationModeDay0Select:
+    """Test Day0 oscillation mode select entity."""
+
+    def test_initialization(self, mock_coordinator):
+        """Test Day0 oscillation mode select initialization."""
+        select = DysonOscillationModeDay0Select(mock_coordinator)
+
+        assert select._attr_unique_id == "NK6-EU-MHA0000A_oscillation_mode"
+        assert select._attr_translation_key == "oscillation"
+        assert select._attr_icon == "mdi:rotate-3d-variant"
+        assert select._attr_options == ["Off", "15°", "40°", "70°"]
+        assert select._center_angle == 177
+
+    def test_detect_mode_70_degrees(self, mock_coordinator):
+        """Test detecting 70° mode for Day0."""
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0142",  # 142°
+                "osau": "0212",  # 212° (span of 70°)
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+        mode = entity._detect_mode_from_angles()
+
+        assert mode == "70°"
+
+    def test_detect_mode_40_degrees(self, mock_coordinator):
+        """Test detecting 40° mode for Day0."""
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0157",  # 157°
+                "osau": "0197",  # 197° (span of 40°)
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+        mode = entity._detect_mode_from_angles()
+
+        assert mode == "40°"
+
+    def test_detect_mode_15_degrees(self, mock_coordinator):
+        """Test detecting 15° mode for Day0."""
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0170",  # 170°
+                "osau": "0185",  # 185° (span of 15°)
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+        mode = entity._detect_mode_from_angles()
+
+        assert mode == "15°"
+
+    def test_calculate_angles_for_preset_with_fixed_center(self, mock_coordinator):
+        """Test angle calculation with fixed 177° center."""
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        # Test 70° preset
+        lower, upper = entity._calculate_angles_for_preset(70)
+        assert lower == 142  # 177 - 35
+        assert upper == 212  # 177 + 35
+
+        # Test 40° preset
+        lower, upper = entity._calculate_angles_for_preset(40)
+        assert lower == 157  # 177 - 20
+        assert upper == 197  # 177 + 20
+
+        # Test 15° preset
+        lower, upper = entity._calculate_angles_for_preset(15)
+        assert lower == 170  # 177 - 7.5 = 169.5 rounds to 170
+        assert upper == 184  # 177 + 7.5 = 184.5 rounds to 184
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_70_degrees(self, mock_coordinator):
+        """Test selecting 70° mode."""
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        await entity.async_select_option("70°")
+
+        # Should call Day0-specific method
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            142, 212
+        )
+
+    def test_extra_state_attributes_day0_mode(self, mock_coordinator):
+        """Test that Day0 select indicates it's in Day0 mode."""
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "osal": "0157",
+                "osau": "0197",
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+        entity._attr_current_option = "40°"
+
+        attributes = entity.extra_state_attributes
+
+        assert attributes["oscillation_day0_mode"] is True
+        assert (
+            attributes["oscillation_center"] == 177
+        )  # Calculated from current angles (157+197)/2
+        assert attributes["oscillation_angle_low"] == 157
+        assert attributes["oscillation_angle_high"] == 197
+
+    def test_fixed_center_angle_property(self, mock_coordinator):
+        """Test Day0 uses fixed center angle."""
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+        assert entity._center_angle == 177
+
+    def test_calculate_angles_for_preset_all_options(self, mock_coordinator):
+        """Test Day0 preset calculation with fixed center."""
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        # Test all presets with fixed 177° center
+        # 15° preset: 177 ± 7.5 = (169.5, 184.5) → (170, 184)
+        lower, upper = entity._calculate_angles_for_preset(15)
+        assert lower == 170
+        assert upper == 184
+
+        # 40° preset: 177 ± 20 = (157, 197)
+        lower, upper = entity._calculate_angles_for_preset(40)
+        assert lower == 157
+        assert upper == 197
+
+        # 70° preset: 177 ± 35 = (142, 212) - exactly fits bounds
+        lower, upper = entity._calculate_angles_for_preset(70)
+        assert lower == 142
+        assert upper == 212
+
+    def test_simplified_preset_system(self, mock_coordinator):
+        """Test that Day0 uses simplified preset system without boundary adjustments."""
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        # All presets should work with fixed center at 177°
+        # No dynamic center calculation or complex boundary handling
+        assert entity._center_angle == 177
+
+        # Verify all three presets produce expected angles
+        presets = {15: (170, 184), 40: (157, 197), 70: (142, 212)}
+        for angle, (expected_low, expected_high) in presets.items():
+            lower, upper = entity._calculate_angles_for_preset(angle)
+            assert lower == expected_low
+            assert upper == expected_high
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_15_degrees_fixed_center(self, mock_coordinator):
+        """Test 15° preset with fixed center positioning."""
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock()
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        await entity.async_select_option("15°")
+
+        # Should always use fixed center 177°: 177° ± 7.5° = 170° - 184°
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            170, 184
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_40_degrees_fixed_center(self, mock_coordinator):
+        """Test 40° preset with fixed center positioning."""
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock()
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        await entity.async_select_option("40°")
+
+        # Should always use fixed center 177°: 177° ± 20° = 157° - 197°
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            157, 197
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_70_degrees_fixed_center(self, mock_coordinator):
+        """Test 70° preset with fixed center positioning."""
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock()
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        await entity.async_select_option("70°")
+
+        # Should always use fixed center 177°: 177° ± 35° = 142° - 212°
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            142, 212
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_off(self, mock_coordinator):
+        """Test turning off oscillation."""
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        await entity.async_select_option("Off")
+
+        # Should turn off oscillation
+        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
+
+    def test_simplified_mode_detection(self, mock_coordinator):
+        """Test simplified mode detection for Day0."""
+        entity = DysonOscillationModeDay0Select(mock_coordinator)
+
+        # Test exact matches
+        test_cases = [
+            (15, "15°"),
+            (40, "40°"),
+            (70, "70°"),
+            (14, "15°"),  # Close to 15, rounds to 15°
+            (41, "40°"),  # Close to 40, rounds to 40°
+            (25, "15°"),  # Between 15 and 40, closer to 15
+            (55, "70°"),  # Between 40 and 70, closer to 70
+        ]
+
+        for span, expected_mode in test_cases:
+            mock_coordinator.device.get_state_value.side_effect = (
+                lambda data, key, default: {
+                    "oson": "ON",
+                    "osal": f"{142:04d}",  # Start angle
+                    "osau": f"{142 + span:04d}",  # End angle
+                }.get(key, default)
+            )
+
+            detected_mode = entity._detect_mode_from_angles()
+            assert detected_mode == expected_mode
 
 
 class TestSelectPlatformSetupCoverage:
