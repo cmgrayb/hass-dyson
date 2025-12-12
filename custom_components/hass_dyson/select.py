@@ -564,14 +564,10 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode"
         self._attr_translation_key = "oscillation"
         self._attr_icon = "mdi:rotate-3d-variant"
-        self._attr_options = ["Off", "15°", "40°", "70°", "Custom"]
-        # Default center angle for Day0 calculations
-        self._default_center_angle = 177  # Default for initial calculations
-
-        # Center point storage for 70° mode (similar to Day1's 350° mode)
-        self._saved_center_angle: int | None = None
-        # Track the last known non-70° mode for center restoration
-        self._last_known_mode: str | None = None
+        # Simplified to just the three working preset options
+        self._attr_options = ["Off", "15°", "40°", "70°"]
+        # Fixed center angle for Day0 - middle of allowed range (142°-212°)
+        self._center_angle = 177
 
     def _detect_mode_from_angles(self) -> str:
         """Detect current oscillation mode from device angles."""
@@ -595,153 +591,64 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             upper_angle = int(upper_data.lstrip("0") or "350")
             angle_span = upper_angle - lower_angle
 
-            # Check for preset matches with tolerance for Day0 angles
-            if abs(angle_span - 70) <= 5:
-                detected_mode = "70°"
-            elif abs(angle_span - 40) <= 5:
-                detected_mode = "40°"
-            elif abs(angle_span - 15) <= 5:
+            # Check for preset matches with tolerance
+            if abs(angle_span - 15) <= 2:
                 detected_mode = "15°"
+            elif abs(angle_span - 40) <= 2:
+                detected_mode = "40°"
+            elif abs(angle_span - 70) <= 2:
+                detected_mode = "70°"
             else:
-                detected_mode = "Custom"
+                # If it doesn't match our presets, return the closest one
+                if angle_span < 27:
+                    detected_mode = "15°"
+                elif angle_span < 55:
+                    detected_mode = "40°"
+                else:
+                    detected_mode = "70°"
 
-            # Debug logging for 15° detection issues
-            if angle_span >= 10 and angle_span <= 20:
-                _LOGGER.debug(
-                    "Day0 15° Debug: Detected mode from angles %s°-%s° (span: %s°) -> '%s' for %s",
-                    lower_angle,
-                    upper_angle,
-                    angle_span,
-                    detected_mode,
-                    self.coordinator.serial_number,
-                )
+            _LOGGER.debug(
+                "Day0: Detected mode from angles %s°-%s° (span: %s°) -> '%s' for %s",
+                lower_angle,
+                upper_angle,
+                angle_span,
+                detected_mode,
+                self.coordinator.serial_number,
+            )
 
             return detected_mode
         except (ValueError, TypeError):
-            return "Custom"
-
-    def _calculate_current_center_day0(self) -> int:
-        """Calculate current center angle from device state."""
-        if not self.coordinator.device:
-            return self._default_center_angle
-
-        try:
-            product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
-            )
-            upper_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            lower_angle = int(lower_data.lstrip("0") or "142")
-            upper_angle = int(upper_data.lstrip("0") or "212")
-            # Center is the midpoint of current range - use proper rounding for consistency
-            return round((lower_angle + upper_angle) / 2)
-        except (ValueError, TypeError, KeyError):
-            return self._default_center_angle
-
-    def _should_save_center_on_state_change(self, new_mode: str) -> bool:
-        """Check if we should save center due to external state change to 70° mode."""
-        return (
-            new_mode == "70°"
-            and self._last_known_mode != "70°"
-            and self._last_known_mode is not None
-            and self._saved_center_angle
-            is None  # Only save if we haven't already saved
-        )
-
-    def _should_restore_center_on_state_change(self, new_mode: str) -> bool:
-        """Check if we should restore center due to external state change from 70° mode."""
-        return (
-            self._last_known_mode == "70°"
-            and new_mode != "70°"
-            and new_mode != "Off"
-            and self._saved_center_angle is not None
-        )
+            return "Off"
 
     def _calculate_angles_for_preset(self, preset_angle: int) -> tuple[int, int]:
-        """Calculate lower and upper angles for a preset mode using current center angle."""
-        # Use current center angle from device state
-        center = self._calculate_current_center_day0()
-        return self._calculate_angles_for_preset_with_center(preset_angle, center)
+        """Calculate lower and upper angles for a preset mode centered on fixed point."""
+        # Calculate half the span
+        half_span = preset_angle / 2
 
-    def _calculate_angles_for_preset_with_center(
-        self, preset_angle: int, center: int
-    ) -> tuple[int, int]:
-        """Calculate lower and upper angles for a preset mode using specified center angle."""
-        half_span = preset_angle / 2.0
-
-        # Calculate ideal lower and upper angles
-        ideal_lower = center - half_span
-        ideal_upper = center + half_span
+        # Calculate angles centered on fixed point
+        lower_angle = self._center_angle - half_span
+        upper_angle = self._center_angle + half_span
 
         # Round to integers
-        lower = int(round(ideal_lower))
-        upper = int(round(ideal_upper))
+        lower = int(round(lower_angle))
+        upper = int(round(upper_angle))
 
-        # Ensure angles stay within Day0 bounds (142°-212°)
-        if lower < 142:
-            adjustment = 142 - lower
-            lower = 142
-            upper = min(212, upper + adjustment)
-        elif upper > 212:
-            adjustment = upper - 212
-            upper = 212
-            lower = max(142, lower - adjustment)
-
-        # Ensure the span is exactly the preset angle after boundary adjustments
-        actual_span = upper - lower
-        if actual_span != preset_angle:
-            # If we can't maintain exact span due to boundaries, prioritize the preset span
-            if upper > 212:
-                upper = 212
-                lower = max(142, upper - preset_angle)
-            elif lower < 142:
-                lower = 142
-                upper = min(212, lower + preset_angle)
-            else:
-                # Adjust to get exact span
-                upper = lower + preset_angle
-
-        # Final boundary check to ensure we stay within limits
-        if lower < 142:
-            lower = 142
-            upper = min(212, lower + preset_angle)
-        elif upper > 212:
-            upper = 212
-            lower = max(142, upper - preset_angle)
+        _LOGGER.debug(
+            "Day0: Calculated angles for %s° preset: center=%s°, half_span=%.1f -> %s°-%s°",
+            preset_angle,
+            self._center_angle,
+            half_span,
+            lower,
+            upper,
+        )
 
         return lower, upper
 
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator with Day0 center management."""
+        """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            new_mode = self._detect_mode_from_angles()
-
-            # STATE-BASED: Save center when external change to 70° mode
-            if self._should_save_center_on_state_change(new_mode):
-                # Calculate center from the previous non-70° state
-                current_center = self._calculate_current_center_day0()
-                self._saved_center_angle = current_center
-                _LOGGER.info(
-                    "Day0 STATE-BASED: SAVING center angle %s on external change to 70° mode (from %s)",
-                    current_center,
-                    self._last_known_mode,
-                )
-
-            # STATE-BASED: Restore center when external change from 70° mode
-            elif self._should_restore_center_on_state_change(new_mode):
-                _LOGGER.info(
-                    "Day0 STATE-BASED: External change detected from 70° mode to %s with saved center %s",
-                    new_mode,
-                    self._saved_center_angle,
-                )
-                # Note: We don't automatically restore here, just track the state change
-                # Restoration happens when user selects a new preset through the entity
-
-            # Track mode changes
-            self._last_known_mode = new_mode
-            self._attr_current_option = new_mode
+            detected_mode = self._detect_mode_from_angles()
+            self._attr_current_option = detected_mode
         else:
             self._attr_current_option = None
 
@@ -755,68 +662,23 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
         try:
             if option == "Off":
                 await self.coordinator.device.set_oscillation(False)
-                return
-
-            if option == "Custom":
-                # For Custom, just turn on oscillation with current angle settings
-                await self.coordinator.device.set_oscillation(True)
+                _LOGGER.debug(
+                    "Day0: Turned off oscillation for %s",
+                    self.coordinator.serial_number,
+                )
                 return
 
             # Calculate angles for the selected preset
             preset_angle = int(option.replace("°", ""))
-            current_mode = self._attr_current_option
-
-            # Save current center angle if switching to 70° mode
-            if preset_angle == 70 and current_mode != "70°":
-                self._saved_center_angle = self._calculate_current_center_day0()
-
-            # Determine center to use for angle calculation (Day0 restoration logic)
-            center_to_use = (
-                self._calculate_current_center_day0()
-            )  # Default: current center
-
-            # Restore center when leaving 70° mode via entity
-            if (
-                current_mode == "70°"
-                and self._saved_center_angle is not None
-                and preset_angle != 70
-            ):
-                # Validate that restored center can produce valid angles for the target preset
-                test_lower, test_upper = self._calculate_angles_for_preset_with_center(
-                    preset_angle, self._saved_center_angle
-                )
-                test_span = test_upper - test_lower
-
-                # Only use saved center if it produces the exact target span
-                if test_span == preset_angle:
-                    center_to_use = self._saved_center_angle
-                    _LOGGER.info(
-                        "Day0: RESTORING saved center angle %s when leaving 70° mode (target: %s°)",
-                        center_to_use,
-                        preset_angle,
-                    )
-                else:
-                    _LOGGER.debug(
-                        "Day0: Saved center %s° would create %s° span for %s° target, using current center instead",
-                        self._saved_center_angle,
-                        test_span,
-                        preset_angle,
-                    )
-
-                self._saved_center_angle = None  # Clear after use
-
-            lower_angle, upper_angle = self._calculate_angles_for_preset_with_center(
-                preset_angle, center_to_use
-            )
+            lower_angle, upper_angle = self._calculate_angles_for_preset(preset_angle)
 
             _LOGGER.debug(
-                "Day0 15° Debug: Selecting %s° mode for %s with center %s° -> angles %s°-%s° (span: %s°)",
+                "Day0: Setting %s° mode for %s -> angles %s°-%s° (center: %s°)",
                 preset_angle,
                 self.coordinator.serial_number,
-                center_to_use,
                 lower_angle,
                 upper_angle,
-                upper_angle - lower_angle,
+                self._center_angle,
             )
 
             # Apply the calculated angles using Day0-specific method
@@ -825,7 +687,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             )
 
             _LOGGER.debug(
-                "Day0 15° Debug: Successfully sent command for %s° mode to %s",
+                "Day0: Successfully set %s° oscillation mode for %s",
                 preset_angle,
                 self.coordinator.serial_number,
             )
@@ -877,8 +739,6 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
-            # For Day0, center is always 177 degrees
-            center_angle = self._calculate_current_center_day0()
 
             lower_angle: int = int(lower_data.lstrip("0") or "0")
             upper_angle: int = int(upper_data.lstrip("0") or "350")
@@ -886,7 +746,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
 
             attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
             attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
-            attributes["oscillation_center"] = center_angle  # type: ignore[assignment]
+            attributes["oscillation_center"] = self._center_angle  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
             attributes["oscillation_day0_mode"] = True  # type: ignore[assignment]
         except (ValueError, TypeError):

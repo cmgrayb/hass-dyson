@@ -48,13 +48,12 @@ async def async_setup_entry(
         entities.append(DysonOscillationCenterAngleNumber(coordinator))
         entities.append(DysonOscillationAngleSpanNumber(coordinator))
     elif "AdvanceOscillationDay0" in device_capabilities:
+        # Day0 devices use simplified preset-only oscillation control
+        # Custom angle controls are disabled due to firmware limitations
         _LOGGER.info(
-            "Adding Day0 oscillation angle controls for %s", coordinator.serial_number
+            "Day0 device detected for %s - using preset-only oscillation control",
+            coordinator.serial_number,
         )
-        entities.append(DysonOscillationDay0LowerAngleNumber(coordinator))
-        entities.append(DysonOscillationDay0UpperAngleNumber(coordinator))
-        entities.append(DysonOscillationDay0CenterAngleNumber(coordinator))
-        entities.append(DysonOscillationDay0AngleSpanNumber(coordinator))
 
     async_add_entities(entities, True)
 

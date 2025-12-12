@@ -130,21 +130,10 @@ class TestNumberPlatformSetup:
 
         await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
 
-        # Should add 4 Day0 oscillation entities including center angle control
+        # Day0 devices use preset-only control, no number entities are added
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        assert len(entities) == 4
-        from custom_components.hass_dyson.number import (
-            DysonOscillationDay0AngleSpanNumber,
-            DysonOscillationDay0CenterAngleNumber,
-            DysonOscillationDay0LowerAngleNumber,
-            DysonOscillationDay0UpperAngleNumber,
-        )
-
-        assert isinstance(entities[0], DysonOscillationDay0LowerAngleNumber)
-        assert isinstance(entities[1], DysonOscillationDay0UpperAngleNumber)
-        assert isinstance(entities[2], DysonOscillationDay0CenterAngleNumber)
-        assert isinstance(entities[3], DysonOscillationDay0AngleSpanNumber)
+        assert len(entities) == 0
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_with_both_capabilities(
