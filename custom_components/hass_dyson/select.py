@@ -570,7 +570,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
         self._center_angle = 177
 
     def _detect_mode_from_angles(self) -> str:
-        """Detect current oscillation mode from device angles."""
+        """Detect current oscillation mode from device ANCP value."""
         if not self.coordinator.device:
             return "Off"
 
@@ -581,37 +581,31 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             return "Off"
 
         try:
-            lower_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
+            # Day0 devices use ancp (angle center point) to indicate the preset mode
+            ancp_data = self.coordinator.device.get_state_value(
+                product_state, "ancp", "0040"
             )
-            upper_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            lower_angle = int(lower_data.lstrip("0") or "0")
-            upper_angle = int(upper_data.lstrip("0") or "350")
-            angle_span = upper_angle - lower_angle
+            ancp_value = int(ancp_data.lstrip("0") or "40")
 
-            # Check for preset matches with tolerance
-            if abs(angle_span - 15) <= 2:
+            # Map ancp values to preset modes
+            if ancp_value == 15:
                 detected_mode = "15°"
-            elif abs(angle_span - 40) <= 2:
+            elif ancp_value == 40:
                 detected_mode = "40°"
-            elif abs(angle_span - 70) <= 2:
+            elif ancp_value == 70:
                 detected_mode = "70°"
             else:
-                # If it doesn't match our presets, return the closest one
-                if angle_span < 27:
+                # Default to closest preset
+                if ancp_value < 27:
                     detected_mode = "15°"
-                elif angle_span < 55:
+                elif ancp_value < 55:
                     detected_mode = "40°"
                 else:
                     detected_mode = "70°"
 
             _LOGGER.debug(
-                "Day0: Detected mode from angles %s°-%s° (span: %s°) -> '%s' for %s",
-                lower_angle,
-                upper_angle,
-                angle_span,
+                "Day0: Detected mode from ancp=%s -> '%s' for %s",
+                ancp_value,
                 detected_mode,
                 self.coordinator.serial_number,
             )
@@ -620,29 +614,24 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
         except (ValueError, TypeError):
             return "Off"
 
-    def _calculate_angles_for_preset(self, preset_angle: int) -> tuple[int, int]:
-        """Calculate lower and upper angles for a preset mode centered on fixed point."""
-        # Calculate half the span
-        half_span = preset_angle / 2
-
-        # Calculate angles centered on fixed point
-        lower_angle = self._center_angle - half_span
-        upper_angle = self._center_angle + half_span
-
-        # Round to integers
-        lower = int(round(lower_angle))
-        upper = int(round(upper_angle))
+    def _get_day0_angles_and_ancp(self, preset_angle: int) -> tuple[int, int, int]:
+        """Get fixed angles and ancp value for Day0 preset mode."""
+        # Day0 devices use fixed physical angles but variable ancp
+        # Based on MQTT trace: osal=157, osau=197, ancp=preset_value
+        lower_angle = 157
+        upper_angle = 197
+        ancp_value = preset_angle
 
         _LOGGER.debug(
-            "Day0: Calculated angles for %s° preset: center=%s°, half_span=%.1f -> %s°-%s°",
+            "Day0: Fixed angles for %s° preset: %s°-%s° with ancp=%s for %s",
             preset_angle,
-            self._center_angle,
-            half_span,
-            lower,
-            upper,
+            lower_angle,
+            upper_angle,
+            ancp_value,
+            self.coordinator.serial_number,
         )
 
-        return lower, upper
+        return lower_angle, upper_angle, ancp_value
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -668,22 +657,24 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
                 )
                 return
 
-            # Calculate angles for the selected preset
+            # Get Day0 angles and ancp for the selected preset
             preset_angle = int(option.replace("°", ""))
-            lower_angle, upper_angle = self._calculate_angles_for_preset(preset_angle)
+            lower_angle, upper_angle, ancp_value = self._get_day0_angles_and_ancp(
+                preset_angle
+            )
 
             _LOGGER.debug(
-                "Day0: Setting %s° mode for %s -> angles %s°-%s° (center: %s°)",
+                "Day0: Setting %s° mode for %s -> fixed angles %s°-%s° with ancp=%s",
                 preset_angle,
                 self.coordinator.serial_number,
                 lower_angle,
                 upper_angle,
-                self._center_angle,
+                ancp_value,
             )
 
-            # Apply the calculated angles using Day0-specific method
+            # Apply the fixed angles and ancp using Day0-specific method
             await self.coordinator.device.set_oscillation_angles_day0(
-                lower_angle, upper_angle
+                lower_angle, upper_angle, ancp_value
             )
 
             _LOGGER.debug(
