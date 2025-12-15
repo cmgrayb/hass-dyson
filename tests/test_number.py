@@ -114,6 +114,28 @@ class TestNumberPlatformSetup:
         assert isinstance(entities[3], DysonOscillationAngleSpanNumber)
 
     @pytest.mark.asyncio
+    async def test_async_setup_entry_with_oscillation_day0_capability(
+        self, mock_hass, mock_config_entry
+    ):
+        """Test setting up entry with AdvanceOscillationDay0 capability."""
+        coordinator = mock_hass.data["hass_dyson"]["NK6-EU-MHA0000A"]
+        coordinator.device.device_info = {
+            "product_type": "469",
+            "capabilities": ["AdvanceOscillationDay0"],
+        }
+        # Mock the device_capabilities property to return a list
+        coordinator.device_capabilities = ["AdvanceOscillationDay0"]
+
+        mock_add_entities = MagicMock()
+
+        await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+
+        # Day0 devices use preset-only control, no number entities are added
+        mock_add_entities.assert_called_once()
+        entities = mock_add_entities.call_args[0][0]
+        assert len(entities) == 0
+
+    @pytest.mark.asyncio
     async def test_async_setup_entry_with_both_capabilities(
         self, mock_hass, mock_config_entry
     ):
@@ -635,3 +657,288 @@ class TestNumberCoverageEnhancement:
 
         # Should catch ValueError/TypeError and set value to 0 (line 80)
         assert sleep_timer._attr_native_value == 0
+
+
+class TestDysonOscillationDay0CenterAngleNumber:
+    """Test Day0 center angle number entity."""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator."""
+        coordinator = MagicMock()
+        coordinator.serial_number = "TEST-123"
+        coordinator.device = MagicMock()
+        coordinator.data = {"product-state": {}}
+
+        # Mock device state values
+        coordinator.device.get_state_value = MagicMock()
+
+        def mock_get_state_value(state, key, default):
+            if key == "osal":  # lower angle
+                return "0160"  # 160°
+            elif key == "osau":  # upper angle
+                return "0200"  # 200°
+            return default
+
+        coordinator.device.get_state_value.side_effect = mock_get_state_value
+
+        return coordinator
+
+    def test_initialization(self, mock_coordinator):
+        """Test Day0 center angle number entity initialization."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Check attributes
+        assert entity._attr_unique_id == "TEST-123_oscillation_center_angle"
+        assert entity._attr_translation_key == "oscillation_center_angle"
+        assert entity._attr_icon == "mdi:crosshairs"
+        assert entity._attr_native_min_value == 147  # 142 + 5 (min half-span)
+        assert entity._attr_native_max_value == 207  # 212 - 5 (min half-span)
+        assert entity._attr_native_step == 1
+        assert entity._attr_native_unit_of_measurement == "°"
+
+    def test_handle_coordinator_update_with_device(self, mock_coordinator):
+        """Test coordinator update with valid device data."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+        entity.hass = MagicMock()  # Mock hass for state updates
+
+        # Mock parent class method
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
+            entity._handle_coordinator_update()
+
+        # Should calculate center as (160 + 200) // 2 = 180
+        assert entity._attr_native_value == 180
+
+    def test_handle_coordinator_update_no_device(self, mock_coordinator):
+        """Test coordinator update with no device."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        mock_coordinator.device = None
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+        entity.hass = MagicMock()
+
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
+            entity._handle_coordinator_update()
+
+        # Should be None when no device
+        assert entity._attr_native_value is None
+
+    def test_handle_coordinator_update_invalid_data(self, mock_coordinator):
+        """Test coordinator update with invalid data."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        # Mock invalid data
+        def mock_invalid_state_value(state, key, default):
+            if key == "osal":
+                return "invalid"
+            elif key == "osau":
+                return "also_invalid"
+            return default
+
+        mock_coordinator.device.get_state_value.side_effect = mock_invalid_state_value
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+        entity.hass = MagicMock()
+
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
+            entity._handle_coordinator_update()
+
+        # Should default to 177° when data is invalid
+        assert entity._attr_native_value == 177
+
+    def test_handle_coordinator_update_boundary_values(self, mock_coordinator):
+        """Test coordinator update with boundary values."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        # Mock boundary values (142° - 212°)
+        def mock_boundary_state_value(state, key, default):
+            if key == "osal":
+                return "0142"  # 142°
+            elif key == "osau":
+                return "0212"  # 212°
+            return default
+
+        mock_coordinator.device.get_state_value.side_effect = mock_boundary_state_value
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+        entity.hass = MagicMock()
+
+        with patch(
+            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
+        ):
+            entity._handle_coordinator_update()
+
+        # Should calculate center as (142 + 212) // 2 = 177
+        assert entity._attr_native_value == 177
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_success(self, mock_coordinator):
+        """Test setting center angle successfully."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock()
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Set center to 180° with current span of 40° (160° - 200°)
+        await entity.async_set_native_value(180.0)
+
+        # Should maintain span and adjust to new center: 160° - 200°
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            160, 200
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_boundary_adjustment_lower(
+        self, mock_coordinator
+    ):
+        """Test setting center angle with lower boundary adjustment."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        # Mock current state: narrow span near lower boundary
+        def mock_lower_boundary_state_value(state, key, default):
+            if key == "osal":
+                return "0145"  # 145°
+            elif key == "osau":
+                return "0155"  # 155° (10° span)
+            return default
+
+        mock_coordinator.device.get_state_value.side_effect = (
+            mock_lower_boundary_state_value
+        )
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock()
+
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Try to set center to 145° (would result in 140°-150°, but 140° < 142°)
+        await entity.async_set_native_value(145.0)
+
+        # Should adjust: lower clamped to 142°, upper adjusted to 152°
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            142, 152
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_boundary_adjustment_upper(
+        self, mock_coordinator
+    ):
+        """Test setting center angle with upper boundary adjustment."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        # Mock current state: narrow span near upper boundary
+        def mock_upper_boundary_state_value(state, key, default):
+            if key == "osal":
+                return "0205"  # 205°
+            elif key == "osau":
+                return "0215"  # 215° (10° span) - but 215° > 212°
+            return default
+
+        mock_coordinator.device.get_state_value.side_effect = (
+            mock_upper_boundary_state_value
+        )
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock()
+
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Try to set center to 210° (would result in 205°-215°, but 215° > 212°)
+        await entity.async_set_native_value(210.0)
+
+        # Should adjust: upper clamped to 212°, lower adjusted to 202°
+        mock_coordinator.device.set_oscillation_angles_day0.assert_called_once_with(
+            202, 212
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_no_device(self, mock_coordinator):
+        """Test setting center angle with no device."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        mock_coordinator.device = None
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Should not raise an exception
+        await entity.async_set_native_value(180.0)
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_connection_error(self, mock_coordinator):
+        """Test setting center angle with connection error."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock(
+            side_effect=ConnectionError("Connection failed")
+        )
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Should not raise an exception
+        await entity.async_set_native_value(180.0)
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_key_error(self, mock_coordinator):
+        """Test setting center angle with KeyError."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        # Mock missing data
+        mock_coordinator.data = {}
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Should not raise an exception
+        await entity.async_set_native_value(180.0)
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_value_error(self, mock_coordinator):
+        """Test setting center angle with ValueError."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock(
+            side_effect=ValueError("Invalid value")
+        )
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Should not raise an exception
+        await entity.async_set_native_value(180.0)
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_generic_exception(self, mock_coordinator):
+        """Test setting center angle with generic exception."""
+        from custom_components.hass_dyson.number import (
+            DysonOscillationDay0CenterAngleNumber,
+        )
+
+        mock_coordinator.device.set_oscillation_angles_day0 = AsyncMock(
+            side_effect=Exception("Generic error")
+        )
+        entity = DysonOscillationDay0CenterAngleNumber(mock_coordinator)
+
+        # Should not raise an exception
+        await entity.async_set_native_value(180.0)

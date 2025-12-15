@@ -47,6 +47,13 @@ async def async_setup_entry(
         entities.append(DysonOscillationUpperAngleNumber(coordinator))
         entities.append(DysonOscillationCenterAngleNumber(coordinator))
         entities.append(DysonOscillationAngleSpanNumber(coordinator))
+    elif "AdvanceOscillationDay0" in device_capabilities:
+        # Day0 devices use simplified preset-only oscillation control
+        # Custom angle controls are disabled due to firmware limitations
+        _LOGGER.info(
+            "Day0 device detected for %s - using preset-only oscillation control",
+            coordinator.serial_number,
+        )
 
     async_add_entities(entities, True)
 
@@ -718,6 +725,419 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error setting oscillation angle span to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonOscillationDay0LowerAngleNumber(DysonEntity, NumberEntity):
+    """Number entity for AdvanceOscillationDay0 lower angle control."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Day0 oscillation lower angle number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_low_angle"
+        self._attr_translation_key = "oscillation_low_angle"
+        self._attr_icon = "mdi:rotate-left"
+        # No entity_category - intentionally in Controls section as primary operational control
+        self._attr_mode = NumberMode.SLIDER
+        # Day0 constraints: allow full 142°-212° range for flexible custom ranges
+        self._attr_native_min_value = 142
+        self._attr_native_max_value = (
+            212  # Allow full range, validation happens on device
+        )
+        self._attr_native_step = 5
+        self._attr_native_unit_of_measurement = "°"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            # Get lower oscillation angle from device state (osal)
+            product_state = self.coordinator.data.get("product-state", {})
+            angle_data = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            try:
+                # Convert angle data to number (e.g., "0150" -> 150)
+                angle_value = int(angle_data.lstrip("0") or "142")
+                # Constrain to Day0 valid range
+                self._attr_native_value = max(142, min(212, angle_value))
+            except (ValueError, TypeError):
+                self._attr_native_value = 142
+        else:
+            self._attr_native_value = None
+        super()._handle_coordinator_update()
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the Day0 oscillation lower angle."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            # Get current upper angle to ensure lower < upper
+            upper_angle_data = self.coordinator.data.get("product-state", {}).get(
+                "osau", "0212"
+            )
+            upper_angle = max(177, min(212, int(upper_angle_data.lstrip("0") or "212")))
+
+            # Constrain to Day0 range and ensure lower angle is less than upper angle
+            lower_angle = max(142, min(int(value), min(177, upper_angle - 5)))
+
+            # Use Day0-specific device method
+            await self.coordinator.device.set_oscillation_angles_day0(
+                lower_angle, upper_angle
+            )
+            _LOGGER.debug(
+                "Set Day0 oscillation lower angle to %s for %s",
+                lower_angle,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting Day0 oscillation lower angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for Day0 oscillation lower angle on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid Day0 oscillation lower angle value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting Day0 oscillation lower angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonOscillationDay0UpperAngleNumber(DysonEntity, NumberEntity):
+    """Number entity for AdvanceOscillationDay0 upper angle control."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Day0 oscillation upper angle number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_high_angle"
+        self._attr_translation_key = "oscillation_high_angle"
+        self._attr_icon = "mdi:rotate-right"
+        # No entity_category - intentionally in Controls section as primary operational control
+        self._attr_mode = NumberMode.SLIDER
+        # Day0 constraints: allow full 142°-212° range for flexible custom ranges
+        self._attr_native_min_value = (
+            142  # Allow full range, validation happens on device
+        )
+        self._attr_native_max_value = 212
+        self._attr_native_step = 5
+        self._attr_native_unit_of_measurement = "°"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            # Get upper oscillation angle from device state (osau)
+            product_state = self.coordinator.data.get("product-state", {})
+            angle_data = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+            try:
+                # Convert angle data to number (e.g., "0212" -> 212)
+                angle_value = int(angle_data.lstrip("0") or "212")
+                # Constrain to Day0 valid range
+                self._attr_native_value = max(142, min(212, angle_value))
+            except (ValueError, TypeError):
+                self._attr_native_value = 212
+        else:
+            self._attr_native_value = None
+        super()._handle_coordinator_update()
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the Day0 oscillation upper angle."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            # Get current lower angle to ensure lower < upper
+            lower_angle_data = self.coordinator.data.get("product-state", {}).get(
+                "osal", "0142"
+            )
+            lower_angle = max(142, min(177, int(lower_angle_data.lstrip("0") or "142")))
+
+            # Constrain to Day0 range and ensure upper angle is greater than lower angle
+            upper_angle = max(177, min(212, max(int(value), lower_angle + 5)))
+
+            # Use Day0-specific device method
+            await self.coordinator.device.set_oscillation_angles_day0(
+                lower_angle, upper_angle
+            )
+            _LOGGER.debug(
+                "Set Day0 oscillation upper angle to %s for %s",
+                upper_angle,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting Day0 oscillation upper angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for Day0 oscillation upper angle on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid Day0 oscillation upper angle value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting Day0 oscillation upper angle to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonOscillationDay0AngleSpanNumber(DysonEntity, NumberEntity):
+    """Number entity for AdvanceOscillationDay0 angle span control."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Day0 oscillation angle span number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle"
+        self._attr_translation_key = "oscillation_angle_span"
+        self._attr_icon = "mdi:angle-acute"
+        # No entity_category - intentionally in Controls section as primary operational control
+        self._attr_mode = NumberMode.SLIDER
+        # Day0 constraints: max 70° span (35° each side of 177° center)
+        self._attr_native_min_value = 10
+        self._attr_native_max_value = 70
+        self._attr_native_step = 5
+        self._attr_native_unit_of_measurement = "°"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            # Calculate span from lower and upper angles
+            product_state = self.coordinator.data.get("product-state", {})
+            lower_data = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+            try:
+                lower_angle = int(lower_data.lstrip("0") or "0")
+                upper_angle = int(upper_data.lstrip("0") or "350")
+                # Span is the difference between upper and lower
+                self._attr_native_value = upper_angle - lower_angle
+            except (ValueError, TypeError):
+                self._attr_native_value = 70  # Default to 70° span for Day0
+        else:
+            self._attr_native_value = None
+        super()._handle_coordinator_update()
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the Day0 oscillation angle span - adjusts lower and upper around fixed center of 177°."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            # For Day0, center is always 177 degrees
+            center_angle = 177
+            new_span = int(value)
+
+            # Calculate new lower and upper angles centered at 177°
+            half_span = new_span / 2.0
+            new_lower = int(center_angle - half_span)
+            new_upper = int(center_angle + half_span)
+
+            # Ensure angles are within valid range
+            if new_lower < 0:
+                new_lower = 0
+                new_upper = min(350, new_span)
+            elif new_upper > 350:
+                new_upper = 350
+                new_lower = max(0, 350 - new_span)
+
+            # Use Day0-specific device method
+            await self.coordinator.device.set_oscillation_angles_day0(
+                new_lower, new_upper
+            )
+            _LOGGER.debug(
+                "Set Day0 oscillation angle span to %s (lower: %s, upper: %s) for %s",
+                new_span,
+                new_lower,
+                new_upper,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting Day0 oscillation angle span to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for Day0 oscillation angle span on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid Day0 oscillation angle span value %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting Day0 oscillation angle span to %s for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonOscillationDay0CenterAngleNumber(DysonEntity, NumberEntity):
+    """Number entity for AdvanceOscillationDay0 center angle control.
+
+    This provides an intuitive interface for positioning oscillation ranges,
+    even though Day0 devices don't use ancp parameter. The center angle
+    is used to calculate lower/upper angles for preset modes.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Day0 oscillation center angle number."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_center_angle"
+        self._attr_translation_key = "oscillation_center_angle"
+        self._attr_icon = "mdi:crosshairs"
+        # No entity_category - intentionally in Controls section as primary operational control
+        self._attr_mode = NumberMode.SLIDER
+        # Day0 constraints: center can be anywhere in 142°-212° range
+        # but must allow for minimum span of 10° (±5°) and maximum span of 70° (±35°)
+        self._attr_native_min_value = 147  # 142° + 5° minimum half-span
+        self._attr_native_max_value = 207  # 212° - 5° minimum half-span
+        self._attr_native_step = 1
+        self._attr_native_unit_of_measurement = "°"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            # Calculate center from lower and upper angles
+            product_state = self.coordinator.data.get("product-state", {})
+            lower_data = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+            try:
+                lower_angle = int(lower_data.lstrip("0") or "142")
+                upper_angle = int(upper_data.lstrip("0") or "212")
+                # Center is the midpoint of lower and upper angles
+                calculated_center = (lower_angle + upper_angle) // 2
+                # Constrain to Day0 valid center range
+                self._attr_native_value = max(147, min(207, calculated_center))
+            except (ValueError, TypeError):
+                self._attr_native_value = 177  # Default Day0 center
+        else:
+            self._attr_native_value = None
+        super()._handle_coordinator_update()
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the Day0 oscillation center angle by adjusting lower/upper angles."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            # Get current span to maintain it when changing center
+            product_state = self.coordinator.data.get("product-state", {})
+            lower_data = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            upper_data = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+            lower_angle = int(lower_data.lstrip("0") or "142")
+            upper_angle = int(upper_data.lstrip("0") or "212")
+            current_span = upper_angle - lower_angle
+
+            # Calculate new lower and upper angles with the desired center
+            new_center = int(value)
+            half_span = current_span // 2
+            new_lower = new_center - half_span
+            new_upper = new_center + half_span
+
+            # Ensure angles stay within Day0 bounds (142°-212°)
+            if new_lower < 142:
+                adjustment = 142 - new_lower
+                new_lower = 142
+                new_upper = min(212, new_upper + adjustment)
+            elif new_upper > 212:
+                adjustment = new_upper - 212
+                new_upper = 212
+                new_lower = max(142, new_lower - adjustment)
+
+            # Use Day0-specific device method
+            await self.coordinator.device.set_oscillation_angles_day0(
+                new_lower, new_upper
+            )
+            _LOGGER.debug(
+                "Set Day0 oscillation center to %s° (lower: %s°, upper: %s°) for %s",
+                new_center,
+                new_lower,
+                new_upper,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting Day0 oscillation center to %s° for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Device data unavailable for Day0 oscillation center on %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid Day0 oscillation center value %s° for %s: %s",
+                value,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting Day0 oscillation center to %s° for %s: %s",
                 value,
                 self.coordinator.serial_number,
                 err,

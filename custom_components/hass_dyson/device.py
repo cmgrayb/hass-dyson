@@ -2058,6 +2058,56 @@ class DysonDevice:
             },
         )
 
+    async def set_oscillation_angles_day0(
+        self, lower_angle: int, upper_angle: int, ancp_value: int | None = None
+    ) -> None:
+        """Set oscillation angles for AdvanceOscillationDay0 capability.
+
+        Day0 devices use fixed physical angles (157°-197°) but variable ancp to
+        control the oscillation pattern within that range.
+        Based on MQTT trace analysis, ancp specifies the preset mode (15°, 40°, 70°).
+
+        Special behavior:
+        - ancp_value specifies the oscillation preset pattern
+        - Fixed lower/upper angles are always used (157°-197°)
+        - ancp determines how the device oscillates within that range
+        """
+        # Day0 devices use fixed physical angles and variable ancp for preset control
+        # Based on MQTT trace: osal=0157, osau=0197, ancp=preset_value
+        lower_str = f"{lower_angle:04d}"
+        upper_str = f"{upper_angle:04d}"
+
+        # Build the command data
+        command_data = {
+            "osal": lower_str,  # Oscillation angle lower (fixed 157°)
+            "osau": upper_str,  # Oscillation angle upper (fixed 197°)
+            "oson": "ON",  # Enable oscillation
+        }
+
+        # Add ancp parameter if provided (preset pattern control)
+        if ancp_value is not None:
+            ancp_str = f"{ancp_value:04d}"
+            command_data["ancp"] = ancp_str
+
+            _LOGGER.debug(
+                "Setting Day0 oscillation: angles %s°-%s°, ancp=%s (preset %s°) for %s",
+                lower_angle,
+                upper_angle,
+                ancp_value,
+                ancp_value,
+                self.serial_number,
+            )
+        else:
+            _LOGGER.debug(
+                "Setting Day0 oscillation: angles %s°-%s° (no ancp) for %s",
+                lower_angle,
+                upper_angle,
+                self.serial_number,
+            )
+
+        # Send the complete command
+        await self.send_command("STATE-SET", command_data)
+
     async def set_auto_mode(self, enabled: bool) -> None:
         """Set auto mode on/off."""
         auto_value = "ON" if enabled else "OFF"
