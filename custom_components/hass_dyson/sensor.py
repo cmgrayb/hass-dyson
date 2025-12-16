@@ -59,6 +59,7 @@ from homeassistant.const import (
     PERCENTAGE,
     EntityCategory,
     UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -760,6 +761,24 @@ async def async_setup_entry(  # noqa: C901
         else:
             _LOGGER.debug(
                 "Skipping gas sensors for device %s - no VOC capability",
+                device_serial,
+            )
+
+        # Add humidifier-specific sensors for devices with Humidifier capability
+        if has_any_capability_safe(capabilities, ["Humidifier", "humidifier"]):
+            _LOGGER.debug(
+                "Adding humidifier sensors for device %s - Humidifier capability detected",
+                device_serial,
+            )
+            entities.extend(
+                [
+                    DysonNextCleaningCycleSensor(coordinator),
+                    DysonCleaningTimeRemainingSensor(coordinator),
+                ]
+            )
+        else:
+            _LOGGER.debug(
+                "Skipping humidifier sensors for device %s - no Humidifier capability",
                 device_serial,
             )
 
@@ -1834,4 +1853,149 @@ class DysonConnectionStatusSensor(DysonEntity, SensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         # Connection status is updated directly from the device
+        super()._handle_coordinator_update()
+
+
+class DysonNextCleaningCycleSensor(DysonEntity, SensorEntity):
+    """Representation of a Dyson next cleaning cycle sensor for humidifier devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the next cleaning cycle sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_next_cleaning_cycle"
+        self._attr_translation_key = "next_cleaning_cycle"
+        self._attr_native_unit_of_measurement = UnitOfTime.HOURS
+        self._attr_device_class = SensorDeviceClass.DURATION
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:timer-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_native_value = None
+            super()._handle_coordinator_update()
+            return
+
+        device_serial = self.coordinator.serial_number
+
+        try:
+            product_state = self.coordinator.data.get("product-state", {})
+
+            # Get clean time remaining (cltr) - 4-digit response in hours
+            clean_time_remaining = self.coordinator.device.get_state_value(
+                product_state, "cltr", "0000"
+            )
+
+            # Convert to integer hours
+            if clean_time_remaining and clean_time_remaining != "0000":
+                hours_remaining = int(clean_time_remaining)
+                self._attr_native_value = hours_remaining
+                _LOGGER.debug(
+                    "Next cleaning cycle for device %s: %s hours",
+                    device_serial,
+                    hours_remaining,
+                )
+            else:
+                self._attr_native_value = None
+                _LOGGER.debug(
+                    "No cleaning cycle data available for device %s", device_serial
+                )
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Next cleaning cycle data not available for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid next cleaning cycle data format for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating next cleaning cycle sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonCleaningTimeRemainingSensor(DysonEntity, SensorEntity):
+    """Representation of a Dyson cleaning time remaining sensor for humidifier devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the cleaning time remaining sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_cleaning_time_remaining"
+        self._attr_translation_key = "cleaning_time_remaining"
+        self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
+        self._attr_device_class = SensorDeviceClass.DURATION
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:timer"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_native_value = None
+            super()._handle_coordinator_update()
+            return
+
+        device_serial = self.coordinator.serial_number
+
+        try:
+            product_state = self.coordinator.data.get("product-state", {})
+
+            # Get clean/descale removal remaining (cdrr) - 4-digit response in minutes
+            cleaning_time_remaining = self.coordinator.device.get_state_value(
+                product_state, "cdrr", "0000"
+            )
+
+            # Convert to integer minutes
+            if cleaning_time_remaining and cleaning_time_remaining != "0000":
+                minutes_remaining = int(cleaning_time_remaining)
+                self._attr_native_value = minutes_remaining
+                _LOGGER.debug(
+                    "Cleaning time remaining for device %s: %s minutes",
+                    device_serial,
+                    minutes_remaining,
+                )
+            else:
+                self._attr_native_value = None
+                _LOGGER.debug(
+                    "No cleaning time remaining data available for device %s",
+                    device_serial,
+                )
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Cleaning time remaining data not available for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid cleaning time remaining data format for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating cleaning time remaining sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
         super()._handle_coordinator_update()

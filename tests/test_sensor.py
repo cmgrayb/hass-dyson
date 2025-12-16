@@ -16,12 +16,14 @@ from custom_components.hass_dyson.sensor import (
     DysonAirQualitySensor,
     DysonCarbonFilterLifeSensor,
     DysonCarbonFilterTypeSensor,
+    DysonCleaningTimeRemainingSensor,
     DysonConnectionStatusSensor,
     DysonFilterLifeSensor,
     DysonFormaldehydeSensor,
     DysonHEPAFilterLifeSensor,
     DysonHEPAFilterTypeSensor,
     DysonHumiditySensor,
+    DysonNextCleaningCycleSensor,
     DysonNO2Sensor,
     DysonPM10Sensor,
     DysonPM25Sensor,
@@ -141,7 +143,7 @@ class TestSensorPlatformSetup:
     async def test_async_setup_entry_humidifier_without_env_data(
         self, mock_coordinator
     ):
-        """Test that humidifier capability alone doesn't create humidity sensor without environmental data."""
+        """Test that humidifier capability creates humidifier sensors even without environmental data."""
         # Arrange
         hass = MagicMock()
         config_entry = MagicMock()
@@ -150,7 +152,7 @@ class TestSensorPlatformSetup:
 
         mock_coordinator.device_capabilities = ["Humidifier"]
         mock_coordinator.device_category = ["EC"]
-        # No environmental data provided - should not create sensor
+        # No environmental data provided - should still create humidifier sensors
         mock_coordinator.data = {}
         hass.data = {DOMAIN: {config_entry.entry_id: mock_coordinator}}
 
@@ -161,7 +163,9 @@ class TestSensorPlatformSetup:
         assert result is True
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) == 0  # Should have no sensors - no environmental data
+        assert (
+            len(entities) == 2
+        )  # Should have humidifier sensors (cleaning cycle sensors)
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_no_capabilities(self, mock_coordinator):
@@ -1208,3 +1212,175 @@ class TestSensorCoverageEnhancement:
             assert condition == should_add, (
                 f"{description} (got {condition}, expected {should_add})"
             )
+
+
+class TestDysonHumidifierSensors:
+    """Test humidifier-specific sensors."""
+
+    @pytest.fixture
+    def mock_humidifier_coordinator(self):
+        """Create a mock coordinator for humidifier device."""
+        coordinator = MagicMock()
+        coordinator.serial_number = "PH01-EU-ABC1234A"
+        coordinator.device_name = "Test Humidifier"
+        coordinator.device = MagicMock()
+        coordinator.device_capabilities = ["Humidifier"]
+        coordinator.device_category = ["EC"]
+        coordinator.device.get_state_value = MagicMock()
+        coordinator.data = {
+            "product-state": {
+                "cltr": "0072",  # 72 hours until cleaning
+                "cdrr": "0015",  # 15 minutes cleaning remaining
+            },
+        }
+        return coordinator
+
+    def test_next_cleaning_cycle_sensor_init(self, mock_humidifier_coordinator):
+        """Test next cleaning cycle sensor initialization."""
+
+        sensor = DysonNextCleaningCycleSensor(mock_humidifier_coordinator)
+
+        assert sensor._attr_unique_id == "PH01-EU-ABC1234A_next_cleaning_cycle"
+        assert sensor._attr_translation_key == "next_cleaning_cycle"
+        assert sensor._attr_native_unit_of_measurement == "h"
+        assert sensor._attr_device_class == SensorDeviceClass.DURATION
+        assert sensor._attr_state_class == SensorStateClass.MEASUREMENT
+        assert sensor._attr_icon == "mdi:timer-outline"
+
+    def test_next_cleaning_cycle_sensor_update(self, mock_humidifier_coordinator):
+        """Test next cleaning cycle sensor coordinator update."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "0072"
+
+        sensor = DysonNextCleaningCycleSensor(mock_humidifier_coordinator)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value == 72
+
+    def test_next_cleaning_cycle_sensor_update_no_data(
+        self, mock_humidifier_coordinator
+    ):
+        """Test next cleaning cycle sensor with no data."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "0000"
+
+        sensor = DysonNextCleaningCycleSensor(mock_humidifier_coordinator)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+
+    def test_next_cleaning_cycle_sensor_invalid_data(self, mock_humidifier_coordinator):
+        """Test next cleaning cycle sensor with invalid data."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "invalid"
+
+        sensor = DysonNextCleaningCycleSensor(mock_humidifier_coordinator)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+
+        with patch("custom_components.hass_dyson.sensor._LOGGER") as mock_logger:
+            sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+        mock_logger.warning.assert_called_once()
+
+    def test_cleaning_time_remaining_sensor_init(self, mock_humidifier_coordinator):
+        """Test cleaning time remaining sensor initialization."""
+
+        sensor = DysonCleaningTimeRemainingSensor(mock_humidifier_coordinator)
+
+        assert sensor._attr_unique_id == "PH01-EU-ABC1234A_cleaning_time_remaining"
+        assert sensor._attr_translation_key == "cleaning_time_remaining"
+        assert sensor._attr_native_unit_of_measurement == "min"
+        assert sensor._attr_device_class == SensorDeviceClass.DURATION
+        assert sensor._attr_state_class == SensorStateClass.MEASUREMENT
+        assert sensor._attr_icon == "mdi:timer"
+
+    def test_cleaning_time_remaining_sensor_update(self, mock_humidifier_coordinator):
+        """Test cleaning time remaining sensor coordinator update."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "0015"
+
+        sensor = DysonCleaningTimeRemainingSensor(mock_humidifier_coordinator)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value == 15
+
+    def test_cleaning_time_remaining_sensor_update_no_data(
+        self, mock_humidifier_coordinator
+    ):
+        """Test cleaning time remaining sensor with no data."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "0000"
+
+        sensor = DysonCleaningTimeRemainingSensor(mock_humidifier_coordinator)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+
+    def test_cleaning_time_remaining_sensor_no_device(
+        self, mock_humidifier_coordinator
+    ):
+        """Test cleaning time remaining sensor with no device."""
+
+        mock_humidifier_coordinator.device = None
+
+        sensor = DysonCleaningTimeRemainingSensor(mock_humidifier_coordinator)
+        sensor.hass = MagicMock()
+        sensor.async_write_ha_state = MagicMock()
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_with_humidifier_capability(
+        self, mock_humidifier_coordinator
+    ):
+        """Test platform setup adds humidifier sensors for humidifier devices."""
+        mock_hass = MagicMock()
+        mock_config_entry = MagicMock()
+        mock_config_entry.entry_id = "test_entry"
+        mock_add_entities = MagicMock()
+
+        mock_hass.data = {DOMAIN: {"test_entry": mock_humidifier_coordinator}}
+
+        await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+
+        # Should include humidifier sensors
+        call_args = mock_add_entities.call_args[0][0]
+        sensor_names = [sensor.__class__.__name__ for sensor in call_args]
+
+        assert "DysonNextCleaningCycleSensor" in sensor_names
+        assert "DysonCleaningTimeRemainingSensor" in sensor_names
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_without_humidifier_capability(self):
+        """Test platform setup skips humidifier sensors for non-humidifier devices."""
+        mock_coordinator = MagicMock()
+        mock_coordinator.device_capabilities = ["Heating"]  # No humidifier
+        mock_coordinator.device_category = ["EC"]
+        mock_coordinator.data = {"product-state": {}, "environmental-data": {}}
+
+        mock_hass = MagicMock()
+        mock_config_entry = MagicMock()
+        mock_config_entry.entry_id = "test_entry"
+        mock_add_entities = MagicMock()
+
+        mock_hass.data = {DOMAIN: {"test_entry": mock_coordinator}}
+
+        await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+
+        # Should not include humidifier sensors
+        call_args = mock_add_entities.call_args[0][0]
+        sensor_names = [sensor.__class__.__name__ for sensor in call_args]
+
+        assert "DysonNextCleaningCycleSensor" not in sensor_names
+        assert "DysonCleaningTimeRemainingSensor" not in sensor_names

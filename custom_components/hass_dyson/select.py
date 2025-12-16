@@ -38,6 +38,10 @@ async def async_setup_entry(
     elif "AdvanceOscillationDay0" in device_capabilities:
         entities.append(DysonOscillationModeDay0Select(coordinator))
 
+    # Add water hardness select for humidifier devices
+    if "Humidifier" in device_capabilities:
+        entities.append(DysonWaterHardnessSelect(coordinator))
+
     # Note: Heating mode control is now integrated into the fan entity's preset modes
     # No separate heating mode select needed
 
@@ -843,5 +847,125 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
             attributes["target_temperature_kelvin"] = hmax
         except (ValueError, TypeError):
             pass
+
+        return attributes
+
+
+class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
+    """Select entity for water hardness setting on humidifier devices."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the water hardness select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_water_hardness"
+        self._attr_translation_key = "water_hardness"
+        self._attr_icon = "mdi:water-percent"
+        self._attr_options = ["Soft", "Medium", "Hard"]
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            product_state = self.coordinator.data.get("product-state", {})
+
+            # Get water hardness from device state
+            water_hardness = self.coordinator.device.get_state_value(
+                product_state,
+                "wath",
+                "1350",  # Default to Medium
+            )
+
+            # Map device values to display names
+            if water_hardness == "2025":
+                self._attr_current_option = "Soft"
+            elif water_hardness == "1350":
+                self._attr_current_option = "Medium"
+            elif water_hardness == "0675":
+                self._attr_current_option = "Hard"
+            else:
+                _LOGGER.warning(
+                    "Unknown water hardness value '%s' for %s, defaulting to Medium",
+                    water_hardness,
+                    self.coordinator.serial_number,
+                )
+                self._attr_current_option = "Medium"
+        else:
+            self._attr_current_option = None
+
+        super()._handle_coordinator_update()
+
+    async def async_select_option(self, option: str) -> None:
+        """Select new water hardness option."""
+        if not self.coordinator.device:
+            return
+
+        # Map display names to device values
+        value_map = {
+            "Soft": "2025",
+            "Medium": "1350",
+            "Hard": "0675",
+        }
+
+        if option not in value_map:
+            _LOGGER.error(
+                "Invalid water hardness option '%s' for %s. Valid options: %s",
+                option,
+                self.coordinator.serial_number,
+                list(value_map.keys()),
+            )
+            return
+
+        try:
+            await self.coordinator.device.send_command(
+                "STATE-SET", {"wath": value_map[option]}
+            )
+
+            # Update local state immediately for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set water hardness to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting water hardness to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid water hardness option '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting water hardness to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return water hardness state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Current water hardness for scene support
+        attributes["water_hardness"] = self._attr_current_option
+
+        # Raw device value
+        wath = self.coordinator.device.get_state_value(product_state, "wath", "1350")
+        attributes["water_hardness_raw"] = wath
 
         return attributes

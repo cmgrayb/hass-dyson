@@ -1399,6 +1399,21 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Ensure services are registered now that device capabilities are available
             await self.ensure_device_services_registered()
 
+            # Periodic fault polling for all devices
+            # This ensures fault sensors receive regular updates
+            try:
+                await self.device.send_command("REQUEST-CURRENT-FAULTS")
+                _LOGGER.debug(
+                    "Requested current faults for device %s",
+                    self.serial_number,
+                )
+            except Exception as fault_err:
+                _LOGGER.debug(
+                    "Failed to request faults for device %s: %s",
+                    self.serial_number,
+                    fault_err,
+                )
+
             return device_state
 
         except UpdateFailed:
@@ -1725,7 +1740,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device_state = await self.device.get_state()
             _LOGGER.debug("Device state for capability refinement: %s", device_state)
 
-            # Check for heating capability based on 'hmod' state key presence
+            # Check for heating and humidifier capabilities based on state key presence
             product_state = device_state.get("product-state", {})
             original_capabilities = list(self._device_capabilities)  # Make a copy
 
@@ -1743,6 +1758,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._device_capabilities.remove("Heating")
                     _LOGGER.debug(
                         "Device %s does not support heating ('hmod' key not found) - capability removed",
+                        self.serial_number,
+                    )
+
+            if "hume" in product_state:
+                # Device has humidity mode state key, so it supports humidification
+                if "Humidifier" not in self._device_capabilities:
+                    self._device_capabilities.append("Humidifier")
+                    _LOGGER.debug(
+                        "Device %s supports humidification ('hume' key found) - capability added for internal consistency",
+                        self.serial_number,
+                    )
+            else:
+                # Device doesn't have humidity mode state key, remove humidifier capability if present
+                if "Humidifier" in self._device_capabilities:
+                    self._device_capabilities.remove("Humidifier")
+                    _LOGGER.debug(
+                        "Device %s does not support humidification ('hume' key not found) - capability removed",
                         self.serial_number,
                     )
 

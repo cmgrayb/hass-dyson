@@ -1,6 +1,6 @@
 """Simple coordinator tests focusing on uncovered methods."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -440,10 +440,16 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
 
         result = await coordinator._async_update_data()
 
-        # Should reconnect, send current state command, and return state
+        # Should reconnect, send current state command and fault request, and return state
         assert result == {"fan": {"speed": 3}, "environmental-data": {}}
         mock_device.connect.assert_called_once()
-        mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
+        # Should call both current state and fault requests (new fault polling feature)
+        assert mock_device.send_command.call_count == 2
+        expected_calls = [
+            call(MQTT_CMD_REQUEST_CURRENT_STATE),
+            call("REQUEST-CURRENT-FAULTS"),
+        ]
+        mock_device.send_command.assert_has_calls(expected_calls, any_order=True)
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
@@ -511,5 +517,11 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
 
         assert result == {"fan": {"speed": 1}, "environmental-data": {}}
         mock_device.connect.assert_called_once()
-        mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
+        # Should call both current state and fault requests (new fault polling feature)
+        assert mock_device.send_command.call_count == 2
+        expected_calls = [
+            call(MQTT_CMD_REQUEST_CURRENT_STATE),
+            call("REQUEST-CURRENT-FAULTS"),
+        ]
+        mock_device.send_command.assert_has_calls(expected_calls, any_order=True)
         mock_device.get_state.assert_called_once()

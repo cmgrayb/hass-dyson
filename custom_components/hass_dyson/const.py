@@ -130,7 +130,16 @@ STATE_KEY_CONTINUOUS_MONITORING: Final = "rhtm"  # Continuous monitoring
 STATE_KEY_OSCILLATION_ON: Final = "oson"  # Oscillation on/off
 STATE_KEY_OSCILLATION_UPPER: Final = "osau"  # Upper oscillation angle
 STATE_KEY_OSCILLATION_LOWER: Final = "osal"  # Lower oscillation angle
-STATE_KEY_OSCILLATION_CENTER: Final = "ancp"  # Angle center point
+STATE_KEY_OSCILLATION_CENTER: Final = "ancp"  # Angle control preset
+
+# Humidifier state keys
+STATE_KEY_HUMIDITY_ENABLED: Final = "hume"  # Humidity mode (HUMD/OFF)
+STATE_KEY_HUMIDITY_AUTO: Final = "haut"  # Humidity auto mode (ON/OFF)
+STATE_KEY_HUMIDITY_TARGET: Final = "humt"  # Target humidity (0030-0050)
+STATE_KEY_HUMIDITY_CURRENT: Final = "humi"  # Current humidity sensor reading
+STATE_KEY_WATER_HARDNESS: Final = "wath"  # Water hardness (2025/1350/0675)
+STATE_KEY_CLEAN_TIME_REMAINING: Final = "cltr"  # Clean time remaining (hours)
+STATE_KEY_CLEANING_CYCLE_REMAINING: Final = "cdrr"  # Cleaning cycle remaining (minutes)
 
 # Environmental data keys
 STATE_KEY_PM25: Final = "pm25"  # PM2.5 particulate matter
@@ -240,6 +249,23 @@ FAULT_TRANSLATIONS: Final = {
         "HIGH": "Humidity too high",
         "LOW": "Humidity too low",
     },
+    # Humidifier-specific faults
+    "tnke": {
+        "FAIL": "Water tank empty - please refill",
+        "OK": "Water tank level normal",
+    },
+    "tnkp": {
+        "FAIL": "Water tank problem - check placement",
+        "OK": "Water tank status normal",
+    },
+    "cldu": {
+        "FAIL": "Humidifier cleaning required",
+        "OK": "Humidifier clean status normal",
+    },
+    "etwd": {
+        "FAIL": "Humidifier maintenance required",
+        "OK": "Humidifier maintenance status normal",
+    },
     # Power supply faults
     "pwr": {
         "FAIL": "Power supply failure",
@@ -329,8 +355,12 @@ CAPABILITY_FAULT_CODES: Final = {
         "cflr",  # Carbon filter
         "aqs",  # Air quality sensor
     ],
-    # TODO: Identify humidifier capability name when we have a humidifier device
-    # "Humidifier": [
-    #     "humi",  # Humidity sensor
-    # ],
+    "Humidifier": [
+        "humi",  # Humidity sensor
+        "fltr",  # General filter (covers humidifier filter)
+        "tnke",  # Tank empty
+        "tnkp",  # Tank problem
+        "cldu",  # Unknown humidifier fault
+        "etwd",  # Unknown humidifier fault
+    ],
 }

@@ -954,3 +954,141 @@ class TestDysonDataUpdateCoordinatorDeviceInfo:
 
             # Should not raise exception
             coordinator._debug_mqtt_object(mock_connected_config)
+
+
+class TestHumidifierCapabilityRefinement:
+    """Test humidifier capability detection in coordinator."""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator with device."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            coordinator.hass = MagicMock()
+            coordinator.config_entry = MagicMock()
+            coordinator.config_entry.data = {
+                CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+                CONF_SERIAL_NUMBER: "PH01-EU-ABC1234A",
+            }
+            coordinator.device = MagicMock()
+            coordinator.device.is_connected = True
+            coordinator.device.send_command = AsyncMock()
+            coordinator.device.get_state = AsyncMock()
+            coordinator._device_capabilities = []
+            return coordinator
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_adds_humidifier(self, mock_coordinator):
+        """Test that humidifier capability is added when 'hume' key is present."""
+        # Setup device state with humidifier key
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "hume": "OFF",  # Humidifier key present
+                "fpwr": "ON",
+            }
+        }
+
+        # Run capability refinement
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should have added Humidifier capability
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_removes_humidifier(self, mock_coordinator):
+        """Test that humidifier capability is removed when 'hume' key is absent."""
+        # Start with Humidifier capability
+        mock_coordinator._device_capabilities = ["Humidifier"]
+
+        # Setup device state without humidifier key
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "fpwr": "ON",
+                # No 'hume' key
+            }
+        }
+
+        # Run capability refinement
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should have removed Humidifier capability
+        assert "Humidifier" not in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_heating_and_humidifier(self, mock_coordinator):
+        """Test capability refinement with both heating and humidifier keys."""
+        # Setup device state with both keys
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "hmod": "OFF",  # Heating key
+                "hume": "HUMD",  # Humidifier key
+                "fpwr": "ON",
+            }
+        }
+
+        # Run capability refinement
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should have both capabilities
+        assert "Heating" in mock_coordinator._device_capabilities
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_skips_manual_devices(self, mock_coordinator):
+        """Test that manual devices skip capability refinement."""
+        # Set to manual discovery
+        mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL}
+        mock_coordinator._device_capabilities = ["Humidifier"]
+
+        # Setup device state without humidifier key (should be ignored for manual)
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "fpwr": "ON",
+                # No 'hume' key - but should be ignored for manual devices
+            }
+        }
+
+        # Run capability refinement
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should not have changed capabilities (manual devices trust user selection)
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_handles_errors_gracefully(
+        self, mock_coordinator
+    ):
+        """Test that capability refinement handles errors gracefully."""
+        # Make get_state raise an exception
+        mock_coordinator.device.get_state.side_effect = Exception("Connection error")
+        mock_coordinator._device_capabilities = ["Humidifier"]
+
+        # Run capability refinement - should not raise
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should preserve existing capabilities on error
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_no_device(self, mock_coordinator):
+        """Test capability refinement with no device."""
+        mock_coordinator.device = None
+
+        # Run capability refinement - should not raise
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should not modify capabilities list
+        assert mock_coordinator._device_capabilities == []
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_device_not_connected(self, mock_coordinator):
+        """Test capability refinement when device is not connected."""
+        mock_coordinator.device.is_connected = False
+
+        # Run capability refinement - should not raise
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        # Should not call get_state when not connected
+        mock_coordinator.device.get_state.assert_not_called()

@@ -11,6 +11,7 @@ from custom_components.hass_dyson.select import (
     DysonHeatingModeSelect,
     DysonOscillationModeDay0Select,
     DysonOscillationModeSelect,
+    DysonWaterHardnessSelect,
     async_setup_entry,
 )
 
@@ -1572,3 +1573,182 @@ class TestSelectPlatformSetupCoverage:
 
         with pytest.raises(KeyError):
             await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+
+
+class TestDysonWaterHardnessSelect:
+    """Test water hardness select entity for humidifier devices."""
+
+    @pytest.fixture
+    def mock_humidifier_coordinator(self):
+        """Create a mock coordinator for humidifier device."""
+        coordinator = Mock()
+        coordinator.serial_number = "PH01-EU-ABC1234A"
+        coordinator.device_name = "Test Humidifier"
+        coordinator.device = Mock()
+        coordinator.device_capabilities = ["Humidifier"]
+        coordinator.device.get_state_value = Mock()
+        coordinator.device.send_command = AsyncMock()
+        coordinator.data = {
+            "product-state": {
+                "wath": "1350",  # Medium water hardness
+            }
+        }
+        return coordinator
+
+    def test_water_hardness_init(self, mock_humidifier_coordinator):
+        """Test water hardness select initialization."""
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+
+        assert entity._attr_unique_id == "PH01-EU-ABC1234A_water_hardness"
+        assert entity._attr_translation_key == "water_hardness"
+        assert entity._attr_icon == "mdi:water-percent"
+        assert entity._attr_options == ["Soft", "Medium", "Hard"]
+
+    def test_water_hardness_coordinator_update_medium(
+        self, mock_humidifier_coordinator
+    ):
+        """Test coordinator update with medium water hardness."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "1350"
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+
+        assert entity._attr_current_option == "Medium"
+
+    def test_water_hardness_coordinator_update_soft(self, mock_humidifier_coordinator):
+        """Test coordinator update with soft water hardness."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "2025"
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+
+        assert entity._attr_current_option == "Soft"
+
+    def test_water_hardness_coordinator_update_hard(self, mock_humidifier_coordinator):
+        """Test coordinator update with hard water hardness."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "0675"
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        entity._handle_coordinator_update()
+
+        assert entity._attr_current_option == "Hard"
+
+    def test_water_hardness_coordinator_update_unknown(
+        self, mock_humidifier_coordinator
+    ):
+        """Test coordinator update with unknown water hardness value."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "9999"
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+
+        with patch("custom_components.hass_dyson.select._LOGGER") as mock_logger:
+            entity._handle_coordinator_update()
+
+        assert entity._attr_current_option == "Medium"  # Default fallback
+        mock_logger.warning.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_water_hardness_select_soft(self, mock_humidifier_coordinator):
+        """Test selecting soft water hardness."""
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.async_write_ha_state = Mock()
+
+        await entity.async_select_option("Soft")
+
+        mock_humidifier_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"wath": "2025"}
+        )
+        assert entity._attr_current_option == "Soft"
+
+    @pytest.mark.asyncio
+    async def test_water_hardness_select_medium(self, mock_humidifier_coordinator):
+        """Test selecting medium water hardness."""
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.async_write_ha_state = Mock()
+
+        await entity.async_select_option("Medium")
+
+        mock_humidifier_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"wath": "1350"}
+        )
+        assert entity._attr_current_option == "Medium"
+
+    @pytest.mark.asyncio
+    async def test_water_hardness_select_hard(self, mock_humidifier_coordinator):
+        """Test selecting hard water hardness."""
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity.async_write_ha_state = Mock()
+
+        await entity.async_select_option("Hard")
+
+        mock_humidifier_coordinator.device.send_command.assert_called_once_with(
+            "STATE-SET", {"wath": "0675"}
+        )
+        assert entity._attr_current_option == "Hard"
+
+    @pytest.mark.asyncio
+    async def test_water_hardness_select_invalid_option(
+        self, mock_humidifier_coordinator
+    ):
+        """Test selecting invalid water hardness option."""
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+
+        with patch("custom_components.hass_dyson.select._LOGGER") as mock_logger:
+            await entity.async_select_option("Invalid")
+
+        mock_humidifier_coordinator.device.send_command.assert_not_called()
+        mock_logger.error.assert_called_once()
+
+    def test_water_hardness_extra_state_attributes(self, mock_humidifier_coordinator):
+        """Test water hardness extra state attributes."""
+
+        mock_humidifier_coordinator.device.get_state_value.return_value = "1350"
+
+        entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
+        entity._attr_current_option = "Medium"
+
+        attributes = entity.extra_state_attributes
+
+        assert attributes["water_hardness"] == "Medium"
+        assert attributes["water_hardness_raw"] == "1350"
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_with_humidifier_capability(self):
+        """Test platform setup adds water hardness select for humidifier devices."""
+        mock_coordinator = Mock()
+        mock_coordinator.device_capabilities = ["Humidifier"]
+
+        mock_hass = Mock()
+        mock_config_entry = Mock()
+        mock_config_entry.entry_id = "test_entry"
+        mock_add_entities = MagicMock()
+
+        mock_hass.data = {"hass_dyson": {"test_entry": mock_coordinator}}
+
+        await async_setup_entry(mock_hass, mock_config_entry, mock_add_entities)
+
+        # Should include water hardness select for humidifier device
+        call_args = mock_add_entities.call_args[0][0]
+        water_hardness_entities = [
+            entity
+            for entity in call_args
+            if entity.__class__.__name__ == "DysonWaterHardnessSelect"
+        ]
+        assert len(water_hardness_entities) == 1
