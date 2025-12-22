@@ -188,7 +188,6 @@ class TestRobotVacuumCommandLogic:
         """Test timestamp generation for robot commands."""
         import time
 
-
         # Test the _get_command_timestamp logic
         timestamp = int(time.time())
         assert isinstance(timestamp, int)
