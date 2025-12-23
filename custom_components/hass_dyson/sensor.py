@@ -570,8 +570,10 @@ async def async_setup_entry(  # noqa: C901
                     device_serial,
                 )
 
-            # Add Formaldehyde sensor if HCHO data is present (hchr or hcho)
-            if "hchr" in env_data or "hcho" in env_data:
+            # Add Formaldehyde sensor if HCHO data is present and not 'NONE' (hchr or hcho)
+            hchr_val = env_data.get("hchr")
+            hcho_val = env_data.get("hcho")
+            if (hchr_val and hchr_val != "NONE") or (hcho_val and hcho_val != "NONE"):
                 _LOGGER.debug(
                     "Adding Formaldehyde sensor for device %s - HCHO data detected",
                     device_serial,
@@ -579,7 +581,7 @@ async def async_setup_entry(  # noqa: C901
                 entities.append(DysonFormaldehydeSensor(coordinator))
             else:
                 _LOGGER.debug(
-                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response",
+                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response or values are NONE",
                     device_serial,
                 )
         else:
@@ -1402,9 +1404,19 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                 else {}
             )
             # Try revised value first (hchr), fall back to legacy (hcho)
-            hcho_raw = env_data.get("hchr") or env_data.get("hcho")
+            # Handle 'NONE' values properly - they should not override valid fallback values
+            hchr_val = env_data.get("hchr")
+            hcho_val = env_data.get("hcho")
 
-            if hcho_raw is not None:
+            # Use hchr if it exists and is not 'NONE', otherwise use hcho
+            if hchr_val and hchr_val != "NONE":
+                hcho_raw = hchr_val
+            elif hcho_val and hcho_val != "NONE":
+                hcho_raw = hcho_val
+            else:
+                hcho_raw = hchr_val or hcho_val  # Will be None or 'NONE'
+
+            if hcho_raw is not None and hcho_raw != "NONE":
                 try:
                     # Convert and validate the HCHO value
                     # Legacy devices provide hchr as raw index value that needs /1000 to get ppb
@@ -1435,6 +1447,13 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                         hcho_raw,
                     )
                     new_value = None
+            elif hcho_raw == "NONE":
+                # Device explicitly reports HCHO sensor as unavailable
+                _LOGGER.debug(
+                    "HCHO sensor data unavailable for device %s: reported as NONE",
+                    device_serial,
+                )
+                new_value = None
 
             self._attr_native_value = new_value
 
