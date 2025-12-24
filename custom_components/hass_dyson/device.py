@@ -1841,6 +1841,114 @@ class DysonDevice:
         _LOGGER.debug("Carbon filter type for %s: %s", self.serial_number, filter_type)
         return filter_type
 
+    # Robot Vacuum Properties
+    # =======================
+
+    @property
+    def robot_state(self) -> str | None:
+        """Return current robot vacuum state.
+
+        Maps to Dyson robot vacuum operational states like:
+        FULL_CLEAN_RUNNING, INACTIVE_CHARGED, FAULT_LOST, etc.
+
+        Returns:
+            Robot state string or None if not available or not a robot device
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            # Robot state may be in 'state' or 'newstate' field depending on model
+            robot_state = product_state.get("state") or product_state.get("newstate")
+            if robot_state:
+                _LOGGER.debug("Robot state for %s: %s", self.serial_number, robot_state)
+            return robot_state
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug("Failed to get robot state for %s: %s", self.serial_number, e)
+            return None
+
+    @property
+    def robot_battery_level(self) -> int | None:
+        """Return robot vacuum battery level percentage.
+
+        Returns:
+            Battery level (0-100) or None if not available
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            battery = product_state.get("batteryChargeLevel")
+            if battery is not None:
+                battery_int = int(battery)
+                _LOGGER.debug(
+                    "Robot battery for %s: %d%%", self.serial_number, battery_int
+                )
+                return battery_int
+        except (ValueError, TypeError, KeyError) as e:
+            _LOGGER.debug(
+                "Failed to get robot battery for %s: %s", self.serial_number, e
+            )
+        return None
+
+    @property
+    def robot_global_position(self) -> list[int] | None:
+        """Return robot vacuum global position coordinates.
+
+        Returns:
+            List of [x, y] coordinates or None if not available
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            position = product_state.get("globalPosition")
+            if position and isinstance(position, list) and len(position) == 2:
+                pos_coords = [int(position[0]), int(position[1])]
+                _LOGGER.debug(
+                    "Robot position for %s: %s", self.serial_number, pos_coords
+                )
+                return pos_coords
+        except (ValueError, TypeError, KeyError, IndexError) as e:
+            _LOGGER.debug(
+                "Failed to get robot position for %s: %s", self.serial_number, e
+            )
+        return None
+
+    @property
+    def robot_full_clean_type(self) -> str | None:
+        """Return robot vacuum cleaning operation type.
+
+        Returns:
+            Clean type (immediate, scheduled, manual) or None if not available
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            clean_type = product_state.get("fullCleanType")
+            if clean_type:
+                _LOGGER.debug(
+                    "Robot clean type for %s: %s", self.serial_number, clean_type
+                )
+            return clean_type
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean type for %s: %s", self.serial_number, e
+            )
+            return None
+
+    @property
+    def robot_clean_id(self) -> str | None:
+        """Return robot vacuum current cleaning session ID.
+
+        Returns:
+            Unique clean session identifier or None if not available
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            clean_id = product_state.get("cleanId")
+            if clean_id:
+                _LOGGER.debug("Robot clean ID for %s: %s", self.serial_number, clean_id)
+            return clean_id
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean ID for %s: %s", self.serial_number, e
+            )
+            return None
+
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""
         from datetime import datetime
@@ -2190,3 +2298,150 @@ class DysonDevice:
     async def set_continuous_monitoring(self, enabled: bool) -> None:
         """Set continuous monitoring on/off."""
         await self.send_command("STATE-SET", {"rhtm": "ON" if enabled else "OFF"})
+
+    # Robot Vacuum Control Methods
+    # ============================
+
+    async def robot_pause(self) -> None:
+        """Pause robot vacuum cleaning operation.
+
+        Sends PAUSE command via MQTT to suspend current cleaning.
+        Robot will remain in place and can be resumed later.
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.info("Sending pause command to robot %s", self.serial_number)
+
+        from .const import ROBOT_CMD_PAUSE
+
+        command_data = {
+            "msg": ROBOT_CMD_PAUSE,
+            "time": self._get_command_timestamp(),
+        }
+
+        await self._send_robot_command(command_data)
+
+    async def robot_resume(self) -> None:
+        """Resume robot vacuum cleaning operation.
+
+        Sends RESUME command via MQTT to continue paused cleaning.
+        Robot will continue from where it was paused.
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.info("Sending resume command to robot %s", self.serial_number)
+
+        from .const import ROBOT_CMD_RESUME
+
+        command_data = {
+            "msg": ROBOT_CMD_RESUME,
+            "time": self._get_command_timestamp(),
+        }
+
+        await self._send_robot_command(command_data)
+
+    async def robot_abort(self) -> None:
+        """Abort robot vacuum cleaning and return to dock.
+
+        Sends ABORT command via MQTT to stop cleaning and return to dock.
+        This cancels the current cleaning session.
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.info("Sending abort command to robot %s", self.serial_number)
+
+        from .const import ROBOT_CMD_ABORT
+
+        command_data = {
+            "msg": ROBOT_CMD_ABORT,
+            "time": self._get_command_timestamp(),
+        }
+
+        await self._send_robot_command(command_data)
+
+    async def robot_request_state(self) -> None:
+        """Request current robot vacuum state.
+
+        Sends REQUEST-CURRENT-STATE command to get immediate status update.
+        Robot will respond with complete state information on status topic.
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.debug("Requesting current state from robot %s", self.serial_number)
+
+        from .const import ROBOT_CMD_REQUEST_STATE
+
+        command_data = {
+            "msg": ROBOT_CMD_REQUEST_STATE,
+            "time": self._get_command_timestamp(),
+        }
+
+        await self._send_robot_command(command_data)
+
+    async def _send_robot_command(self, command_data: dict[str, Any]) -> None:
+        """Send robot vacuum command via MQTT.
+
+        Sends command to robot vacuum using device-specific MQTT topic.
+        Uses existing MQTT client infrastructure with JSON message format.
+
+        Args:
+            command_data: Command dictionary with msg, time, and optional data
+
+        Raises:
+            RuntimeError: If device is not connected or MQTT client unavailable
+            Exception: If command transmission fails
+        """
+        if not self.is_connected or not self._mqtt_client:
+            raise RuntimeError(f"Device {self.serial_number} MQTT not available")
+
+        # Use existing command topic format for robot vacuums
+        topic = f"{self.mqtt_prefix}/{self.serial_number}/command"
+        message = json.dumps(command_data)
+
+        _LOGGER.debug(
+            "Sending robot command to %s on topic %s: %s",
+            self.serial_number,
+            topic,
+            command_data,
+        )
+
+        try:
+            # Use asyncio to make MQTT publish non-blocking
+            import asyncio
+
+            loop = asyncio.get_event_loop()
+
+            # Publish command using existing MQTT infrastructure
+            def _publish_command():
+                result = self._mqtt_client.publish(topic, message)
+                result.wait_for_publish(timeout=5.0)  # 5 second timeout
+
+            await loop.run_in_executor(None, _publish_command)
+
+            _LOGGER.debug("Robot command sent successfully to %s", self.serial_number)
+
+        except Exception as ex:
+            _LOGGER.error(
+                "Failed to send robot command to %s: %s", self.serial_number, ex
+            )
+            raise

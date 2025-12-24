@@ -6,11 +6,24 @@ This document describes the communication protocols, device capabilities, and co
 
 ## Supported Vacuum Models
 
-| Model | Device Type | Key Features |
-|-------|-------------|--------------|
-| **360 Eye** | `N223` | First-generation robot vacuum with 360° camera navigation |
-| **360 Heurist** | `276` | Advanced robot vacuum with improved navigation and zone control |
-| **360 Vis Nav** | `277` | Latest model with enhanced visual navigation and mapping |
+| Model | Device Type | Key Features | Device Category | Capabilities |
+|-------|-------------|--------------|-----------------|---------------|
+| **360 Eye** | `N223` | First-generation robot vacuum with 360° camera navigation | `robot` | Basic navigation |
+| **360 Heurist** | `276` | Advanced robot vacuum with improved navigation and zone control | `robot` | Heat, Advanced navigation |
+| **360 Vis Nav** | `277` | Latest model with enhanced visual navigation and mapping | `robot` | Mapping, Restrictions, DirectedCleaning, ChangeWifi, CleaningStrategies, ActiveFaults, DustDetection, OutOfBoxState |
+
+### Device Capabilities by Model
+
+#### 360 Vis Nav (Model 277) Confirmed Capabilities
+The 360 Vis Nav robot vacuum supports the following advanced features:
+- **Mapping**: Create and maintain floor plan maps
+- **Restrictions**: Define no-go zones and virtual barriers
+- **DirectedCleaning**: Target specific areas or rooms for cleaning
+- **ChangeWifi**: Modify WiFi network settings remotely
+- **CleaningStrategies**: Multiple cleaning patterns and methodologies
+- **ActiveFaults**: Real-time fault detection and reporting
+- **DustDetection**: Intelligent dust level sensing for adaptive cleaning
+- **OutOfBoxState**: Initial setup and first-time configuration support
 
 ## Device Network Architecture
 

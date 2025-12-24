@@ -2,6 +2,8 @@
 
 from typing import Final
 
+from homeassistant.components.vacuum import VacuumActivity
+
 # Integration domain
 DOMAIN: Final = "hass_dyson"
 
@@ -335,6 +337,117 @@ DEVICE_CATEGORY_FAULT_CODES: Final = {
         "brsh",  # Brush system
         "bin",  # Tank/reservoir
     ],
+}
+
+# Robot Vacuum Constants
+# =====================
+
+# Robot Vacuum States (from design documentation)
+# Primary Operating Modes
+ROBOT_STATE_FULL_CLEAN_RUNNING: Final = "FULL_CLEAN_RUNNING"
+ROBOT_STATE_FULL_CLEAN_PAUSED: Final = "FULL_CLEAN_PAUSED"
+ROBOT_STATE_FULL_CLEAN_FINISHED: Final = "FULL_CLEAN_FINISHED"
+ROBOT_STATE_FULL_CLEAN_DISCOVERING: Final = "FULL_CLEAN_DISCOVERING"
+ROBOT_STATE_FULL_CLEAN_TRAVERSING: Final = "FULL_CLEAN_TRAVERSING"
+
+# Mapping and Navigation
+ROBOT_STATE_MAPPING_RUNNING: Final = "MAPPING_RUNNING"
+ROBOT_STATE_MAPPING_PAUSED: Final = "MAPPING_PAUSED"
+ROBOT_STATE_MAPPING_FINISHED: Final = "MAPPING_FINISHED"
+
+# Dock and Charging States
+ROBOT_STATE_INACTIVE_CHARGED: Final = "INACTIVE_CHARGED"
+ROBOT_STATE_INACTIVE_CHARGING: Final = "INACTIVE_CHARGING"
+ROBOT_STATE_INACTIVE_DISCHARGING: Final = "INACTIVE_DISCHARGING"
+ROBOT_STATE_FULL_CLEAN_CHARGING: Final = "FULL_CLEAN_CHARGING"
+ROBOT_STATE_MAPPING_CHARGING: Final = "MAPPING_CHARGING"
+
+# Error and Fault Conditions
+ROBOT_STATE_FAULT_CRITICAL: Final = "FAULT_CRITICAL"
+ROBOT_STATE_FAULT_USER_RECOVERABLE: Final = "FAULT_USER_RECOVERABLE"
+ROBOT_STATE_FAULT_LOST: Final = "FAULT_LOST"
+ROBOT_STATE_FAULT_ON_DOCK: Final = "FAULT_ON_DOCK"
+ROBOT_STATE_FAULT_RETURN_TO_DOCK: Final = "FAULT_RETURN_TO_DOCK"
+
+# Robot Vacuum Commands (MQTT)
+ROBOT_CMD_PAUSE: Final = "PAUSE"
+ROBOT_CMD_RESUME: Final = "RESUME"
+ROBOT_CMD_ABORT: Final = "ABORT"
+ROBOT_CMD_REQUEST_STATE: Final = "REQUEST-CURRENT-STATE"
+
+# Robot Vacuum MQTT Message Types
+ROBOT_MSG_CURRENT_STATE: Final = "CURRENT-STATE"
+ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
+
+# Robot Vacuum Cleaning Types
+ROBOT_CLEAN_TYPE_IMMEDIATE: Final = "immediate"
+ROBOT_CLEAN_TYPE_MANUAL: Final = "manual"
+ROBOT_CLEAN_TYPE_SCHEDULED: Final = "scheduled"
+
+# Robot Vacuum Area Modes
+ROBOT_AREA_MODE_GLOBAL: Final = "global"
+ROBOT_AREA_MODE_ZONE_CONFIGURED: Final = "zoneConfigured"
+
+# Robot Vacuum Power Levels (capability-based)
+# 360 Eye Model (halfPower/fullPower capability)
+ROBOT_POWER_360_EYE_HALF: Final = "halfPower"
+ROBOT_POWER_360_EYE_FULL: Final = "fullPower"
+
+# 360 Heurist Model (1/2/3 levels capability)
+ROBOT_POWER_HEURIST_QUIET: Final = "1"
+ROBOT_POWER_HEURIST_HIGH: Final = "2"
+ROBOT_POWER_HEURIST_MAX: Final = "3"
+
+# 360 Vis Nav Model (1/2/3/4 levels capability)
+ROBOT_POWER_VIS_NAV_AUTO: Final = "1"
+ROBOT_POWER_VIS_NAV_QUICK: Final = "2"
+ROBOT_POWER_VIS_NAV_QUIET: Final = "3"
+ROBOT_POWER_VIS_NAV_BOOST: Final = "4"
+
+# Robot Vacuum Power Level Options (for select entities)
+ROBOT_POWER_OPTIONS_360_EYE: Final = {
+    ROBOT_POWER_360_EYE_HALF: "Quiet (Half Power)",
+    ROBOT_POWER_360_EYE_FULL: "Deep Clean (Full Power)",
+}
+
+ROBOT_POWER_OPTIONS_HEURIST: Final = {
+    ROBOT_POWER_HEURIST_QUIET: "Quiet Mode",
+    ROBOT_POWER_HEURIST_HIGH: "High Mode",
+    ROBOT_POWER_HEURIST_MAX: "Maximum Mode",
+}
+
+ROBOT_POWER_OPTIONS_VIS_NAV: Final = {
+    ROBOT_POWER_VIS_NAV_AUTO: "Auto Mode",
+    ROBOT_POWER_VIS_NAV_QUICK: "Quick Mode",
+    ROBOT_POWER_VIS_NAV_QUIET: "Quiet Mode",
+    ROBOT_POWER_VIS_NAV_BOOST: "Boost Mode",
+}
+
+ROBOT_STATE_TO_HA_STATE: Final = {
+    # Active cleaning states
+    ROBOT_STATE_FULL_CLEAN_RUNNING: VacuumActivity.CLEANING,
+    ROBOT_STATE_FULL_CLEAN_DISCOVERING: VacuumActivity.CLEANING,
+    ROBOT_STATE_FULL_CLEAN_TRAVERSING: VacuumActivity.CLEANING,
+    # Paused states
+    ROBOT_STATE_FULL_CLEAN_PAUSED: VacuumActivity.PAUSED,
+    ROBOT_STATE_MAPPING_PAUSED: VacuumActivity.PAUSED,
+    # Docked states
+    ROBOT_STATE_INACTIVE_CHARGED: VacuumActivity.DOCKED,
+    ROBOT_STATE_INACTIVE_CHARGING: VacuumActivity.DOCKED,
+    ROBOT_STATE_INACTIVE_DISCHARGING: VacuumActivity.DOCKED,
+    # Returning states
+    ROBOT_STATE_FULL_CLEAN_FINISHED: VacuumActivity.RETURNING,
+    ROBOT_STATE_FULL_CLEAN_CHARGING: VacuumActivity.RETURNING,
+    ROBOT_STATE_MAPPING_CHARGING: VacuumActivity.RETURNING,
+    # Mapping as idle (non-cleaning operation)
+    ROBOT_STATE_MAPPING_RUNNING: VacuumActivity.IDLE,
+    ROBOT_STATE_MAPPING_FINISHED: VacuumActivity.IDLE,
+    # Error states
+    ROBOT_STATE_FAULT_CRITICAL: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_USER_RECOVERABLE: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_LOST: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_ON_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_RETURN_TO_DOCK: VacuumActivity.ERROR,
 }
 
 # Capability-based fault code filtering
