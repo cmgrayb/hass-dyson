@@ -1032,7 +1032,9 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = ROBOT_POWER_OPTIONS_360_EYE[current_power]
             else:
                 # Default to first option if power level not found
-                self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[
+                    0
+                ]
         except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
         self.async_write_ha_state()
@@ -1066,7 +1068,7 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
             command_data = {
                 "msg": "STATE-SET",
                 "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": command_value}
+                "data": {"fPwr": command_value},
             }
             await self.coordinator.device._send_robot_command(command_data)
 
@@ -1115,10 +1117,14 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
             device_state = self.coordinator.device._state_data.get("product-state", {})
             current_power = device_state.get("fPwr")
             if current_power and str(current_power) in ROBOT_POWER_OPTIONS_HEURIST:
-                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[str(current_power)]
+                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[
+                    str(current_power)
+                ]
             else:
                 # Default to first option if power level not found
-                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
+                    0
+                ]
         except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
@@ -1152,7 +1158,7 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
             command_data = {
                 "msg": "STATE-SET",
                 "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": int(command_value)}
+                "data": {"fPwr": int(command_value)},
             }
             await self.coordinator.device._send_robot_command(command_data)
 
@@ -1201,10 +1207,14 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
             device_state = self.coordinator.device._state_data.get("product-state", {})
             current_power = device_state.get("fPwr")
             if current_power and str(current_power) in ROBOT_POWER_OPTIONS_VIS_NAV:
-                self._attr_current_option = ROBOT_POWER_OPTIONS_VIS_NAV[str(current_power)]
+                self._attr_current_option = ROBOT_POWER_OPTIONS_VIS_NAV[
+                    str(current_power)
+                ]
             else:
                 # Default to first option if power level not found
-                self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[
+                    0
+                ]
         except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
         self.async_write_ha_state()
@@ -1238,7 +1248,7 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
             command_data = {
                 "msg": "STATE-SET",
                 "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": int(command_value)}
+                "data": {"fPwr": int(command_value)},
             }
             await self.coordinator.device._send_robot_command(command_data)
 
@@ -1288,10 +1298,14 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
             device_state = self.coordinator.device._state_data.get("product-state", {})
             current_power = device_state.get("fPwr")
             if current_power and str(current_power) in ROBOT_POWER_OPTIONS_HEURIST:
-                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[str(current_power)]
+                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[
+                    str(current_power)
+                ]
             else:
                 # Default to first option if power level not found
-                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
+                    0
+                ]
         except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
@@ -1325,7 +1339,7 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
             command_data = {
                 "msg": "STATE-SET",
                 "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": int(command_value)}
+                "data": {"fPwr": int(command_value)},
             }
             await self.coordinator.device._send_robot_command(command_data)
 
