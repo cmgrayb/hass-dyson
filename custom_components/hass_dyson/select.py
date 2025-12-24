@@ -57,17 +57,15 @@ async def async_setup_entry(
         # Since we don't have specific capability names yet, we'll need to detect
         # based on other device information. For now, create placeholder logic.
 
-        # TODO: Replace with actual capability detection once we know the capability names
-        # For now, we'll create all three and let them determine their own availability
-
-        if "RobotPower360Eye" in device_capabilities:
-            entities.append(DysonRobotPower360EyeSelect(coordinator))
-        elif "RobotPowerHeurist" in device_capabilities:
-            entities.append(DysonRobotPowerHeuristSelect(coordinator))
-        elif "RobotPowerVisNav" in device_capabilities:
+        # Detect specific robot model based on device capabilities
+        # 360 Vis Nav has Mapping, Restrictions, DirectedCleaning capabilities
+        if all(cap in device_capabilities for cap in ["Mapping", "DirectedCleaning"]):
             entities.append(DysonRobotPowerVisNavSelect(coordinator))
+        elif "Heat" in device_capabilities:  # Heurist has Heat capability
+            entities.append(DysonRobotPowerHeuristSelect(coordinator))
         else:
-            # Default fallback - create a generic robot power select
+            # Default to 360 Eye for other robot devices
+            entities.append(DysonRobotPower360EyeSelect(coordinator))
             # This will need to be refined once we have real device data
             _LOGGER.debug(
                 "Robot device %s has unknown power capabilities, using generic power select",
@@ -1026,9 +1024,17 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
             return
 
         # Get current robot power level from device state
-        # TODO: Implement when we know the exact state field name
-        # For now, default to the first option
-        self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and current_power in ROBOT_POWER_OPTIONS_360_EYE:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_360_EYE[current_power]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
@@ -1056,8 +1062,13 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # TODO: Implement robot power level command once we know the exact format
-            # await self.coordinator.device.set_robot_power_level(command_value)
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": command_value}
+            }
+            await self.coordinator.device._send_robot_command(command_data)
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1099,9 +1110,17 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
             return
 
         # Get current robot power level from device state
-        # TODO: Implement when we know the exact state field name
-        # For now, default to the first option
-        self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and str(current_power) in ROBOT_POWER_OPTIONS_HEURIST:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[str(current_power)]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
@@ -1129,8 +1148,13 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # TODO: Implement robot power level command once we know the exact format
-            # await self.coordinator.device.set_robot_power_level(command_value)
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": int(command_value)}
+            }
+            await self.coordinator.device._send_robot_command(command_data)
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1172,9 +1196,17 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
             return
 
         # Get current robot power level from device state
-        # TODO: Implement when we know the exact state field name
-        # For now, default to the first option
-        self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and str(current_power) in ROBOT_POWER_OPTIONS_VIS_NAV:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_VIS_NAV[str(current_power)]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
@@ -1202,8 +1234,13 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # TODO: Implement robot power level command once we know the exact format
-            # await self.coordinator.device.set_robot_power_level(command_value)
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": int(command_value)}
+            }
+            await self.coordinator.device._send_robot_command(command_data)
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1246,9 +1283,17 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
             return
 
         # Get current robot power level from device state
-        # TODO: Implement when we know the exact state field name
-        # For now, default to the first option
-        self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and str(current_power) in ROBOT_POWER_OPTIONS_HEURIST:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[str(current_power)]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
@@ -1276,8 +1321,13 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # TODO: Implement robot power level command once we know the exact format
-            # await self.coordinator.device.set_robot_power_level(command_value)
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": int(command_value)}
+            }
+            await self.coordinator.device._send_robot_command(command_data)
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option

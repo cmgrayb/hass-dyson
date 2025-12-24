@@ -47,11 +47,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
@@ -64,12 +60,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    CAPABILITY_EXTENDED_AQ,
-    CAPABILITY_FORMALDEHYDE,
-    CAPABILITY_VOC,
-    DOMAIN,
-)
+from .const import CAPABILITY_EXTENDED_AQ, CAPABILITY_FORMALDEHYDE, CAPABILITY_VOC, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -783,13 +774,13 @@ async def async_setup_entry(  # noqa: C901
             )
 
         # Add battery sensor only for devices with robot category
-        # TODO: Implement when we have a robot device to test battery data format
+        # Robot devices report battery level via coordinator.device.robot_battery_level
         if any(cat in ["robot"] for cat in device_category):
             _LOGGER.debug(
-                "Robot device detected for %s, but battery sensor not yet implemented",
+                "Adding battery sensor for robot device %s",
                 device_serial,
             )
-            # entities.append(DysonBatterySensor(coordinator))
+            entities.append(DysonBatterySensor(coordinator))
 
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
