@@ -41,14 +41,10 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Status Monitoring** - Connectivity, filter life, fault detection, firmware version
 - **Precise Adjustments** - Timers, oscillation angles
 - **Heating Support** - Climate Control with Heater mode, Heater Thermostat, and Fan Direction
+- **Humidifier Support** (e.g. PH models) - Experimental support is now available
+- **Climate Control** - Climate Control with Humidistat (Experimental)
 
 ## Planned Features
-
-### Environmental Cleaners (Fans/Purifiers)
-
-- **Humidifier Support** (e.g. PH models) - All functions should currently work except for humidification controls
-- **Climate Control** - Climate Control with Humidistat
-- **TBD** - Any features found which can be supported, will be
 
 ### Robotic Vacuums
 
@@ -150,12 +146,12 @@ Based on your device capabilities and category, you'll automatically get:
 - Climate control platform
 - Heating controls
 
-### Future Support (Under Development):
-
 **Humidifier models (Humidifier Capability):**
 
 - Climate control platform
 - Humidifier controls
+
+### Future Support (Under Development):
 
 **Robot Models:**
 

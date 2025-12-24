@@ -1,6 +1,6 @@
 """Extended coordinator tests for device info extraction and MQTT methods."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -524,7 +524,13 @@ class TestDysonDataUpdateCoordinatorUpdate:
 
         assert result == {"state": "reconnected", "environmental-data": {}}
         mock_device.connect.assert_called_once()
-        mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
+        # Should call both current state and fault requests (new fault polling feature)
+        assert mock_device.send_command.call_count == 2
+        expected_calls = [
+            call(MQTT_CMD_REQUEST_CURRENT_STATE),
+            call("REQUEST-CURRENT-FAULTS"),
+        ]
+        mock_device.send_command.assert_has_calls(expected_calls, any_order=True)
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
