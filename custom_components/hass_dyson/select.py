@@ -10,7 +10,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import (
+    DEVICE_CATEGORY_ROBOT,
+    DOMAIN,
+    ROBOT_POWER_OPTIONS_360_EYE,
+    ROBOT_POWER_OPTIONS_HEURIST,
+    ROBOT_POWER_OPTIONS_VIS_NAV,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -41,6 +47,31 @@ async def async_setup_entry(
     # Add water hardness select for humidifier devices
     if "Humidifier" in device_capabilities:
         entities.append(DysonWaterHardnessSelect(coordinator))
+
+    # Add robot vacuum power level selects based on device category and capabilities
+    device_categories = getattr(coordinator, "device_category", [])
+    if isinstance(device_categories, list) and any(
+        cat == DEVICE_CATEGORY_ROBOT for cat in device_categories
+    ):
+        # Determine which power level select to show based on capabilities
+        # Since we don't have specific capability names yet, we'll need to detect
+        # based on other device information. For now, create placeholder logic.
+
+        # Detect specific robot model based on device capabilities
+        # 360 Vis Nav has Mapping, Restrictions, DirectedCleaning capabilities
+        if all(cap in device_capabilities for cap in ["Mapping", "DirectedCleaning"]):
+            entities.append(DysonRobotPowerVisNavSelect(coordinator))
+        elif "Heat" in device_capabilities:  # Heurist has Heat capability
+            entities.append(DysonRobotPowerHeuristSelect(coordinator))
+        else:
+            # Default to 360 Eye for other robot devices
+            entities.append(DysonRobotPower360EyeSelect(coordinator))
+            # This will need to be refined once we have real device data
+            _LOGGER.debug(
+                "Robot device %s has unknown power capabilities, using generic power select",
+                coordinator.serial_number,
+            )
+            entities.append(DysonRobotPowerGenericSelect(coordinator))
 
     # Note: Heating mode control is now integrated into the fan entity's preset modes
     # No separate heating mode select needed
@@ -969,3 +1000,362 @@ class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
         attributes["water_hardness_raw"] = wath
 
         return attributes
+
+
+class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
+    """Select entity for Dyson 360 Eye robot vacuum power level."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the 360 Eye robot power select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_power_360_eye"
+        self._attr_translation_key = "robot_power_360_eye"
+        self._attr_name = "Power Level"
+        self._attr_icon = "mdi:vacuum"
+        self._attr_options = list(ROBOT_POWER_OPTIONS_360_EYE.values())
+        self._attr_current_option = None
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_current_option = None
+            return
+
+        # Get current robot power level from device state
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and current_power in ROBOT_POWER_OPTIONS_360_EYE:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_360_EYE[current_power]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[
+                    0
+                ]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
+        self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected robot power level."""
+        if not self.coordinator.device:
+            _LOGGER.error("Device not available for power level change")
+            return
+
+        # Find the command value for the selected option
+        command_value = None
+        for cmd_val, display_name in ROBOT_POWER_OPTIONS_360_EYE.items():
+            if display_name == option:
+                command_value = cmd_val
+                break
+
+        if command_value is None:
+            _LOGGER.error("Unknown power level option: %s", option)
+            return
+
+        try:
+            _LOGGER.info(
+                "Setting 360 Eye robot power to '%s' (%s) for %s",
+                option,
+                command_value,
+                self.coordinator.serial_number,
+            )
+
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": command_value},
+            }
+            await self.coordinator.device._send_robot_command(command_data)
+
+            # Update local state immediately for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set 360 Eye robot power to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Error setting 360 Eye robot power to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
+    """Select entity for Dyson 360 Heurist robot vacuum power level."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the 360 Heurist robot power select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_power_heurist"
+        self._attr_translation_key = "robot_power_heurist"
+        self._attr_name = "Power Level"
+        self._attr_icon = "mdi:vacuum"
+        self._attr_options = list(ROBOT_POWER_OPTIONS_HEURIST.values())
+        self._attr_current_option = None
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_current_option = None
+            return
+
+        # Get current robot power level from device state
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and str(current_power) in ROBOT_POWER_OPTIONS_HEURIST:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[
+                    str(current_power)
+                ]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
+                    0
+                ]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+        self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected robot power level."""
+        if not self.coordinator.device:
+            _LOGGER.error("Device not available for power level change")
+            return
+
+        # Find the command value for the selected option
+        command_value = None
+        for cmd_val, display_name in ROBOT_POWER_OPTIONS_HEURIST.items():
+            if display_name == option:
+                command_value = cmd_val
+                break
+
+        if command_value is None:
+            _LOGGER.error("Unknown power level option: %s", option)
+            return
+
+        try:
+            _LOGGER.info(
+                "Setting 360 Heurist robot power to '%s' (%s) for %s",
+                option,
+                command_value,
+                self.coordinator.serial_number,
+            )
+
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": int(command_value)},
+            }
+            await self.coordinator.device._send_robot_command(command_data)
+
+            # Update local state immediately for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set 360 Heurist robot power to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Error setting 360 Heurist robot power to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
+    """Select entity for Dyson 360 Vis Nav robot vacuum power level."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the 360 Vis Nav robot power select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_power_vis_nav"
+        self._attr_translation_key = "robot_power_vis_nav"
+        self._attr_name = "Power Level"
+        self._attr_icon = "mdi:vacuum"
+        self._attr_options = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())
+        self._attr_current_option = None
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_current_option = None
+            return
+
+        # Get current robot power level from device state
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and str(current_power) in ROBOT_POWER_OPTIONS_VIS_NAV:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_VIS_NAV[
+                    str(current_power)
+                ]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[
+                    0
+                ]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
+        self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected robot power level."""
+        if not self.coordinator.device:
+            _LOGGER.error("Device not available for power level change")
+            return
+
+        # Find the command value for the selected option
+        command_value = None
+        for cmd_val, display_name in ROBOT_POWER_OPTIONS_VIS_NAV.items():
+            if display_name == option:
+                command_value = cmd_val
+                break
+
+        if command_value is None:
+            _LOGGER.error("Unknown power level option: %s", option)
+            return
+
+        try:
+            _LOGGER.info(
+                "Setting 360 Vis Nav robot power to '%s' (%s) for %s",
+                option,
+                command_value,
+                self.coordinator.serial_number,
+            )
+
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": int(command_value)},
+            }
+            await self.coordinator.device._send_robot_command(command_data)
+
+            # Update local state immediately for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set 360 Vis Nav robot power to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Error setting 360 Vis Nav robot power to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
+    """Generic select entity for robot vacuum power level (fallback)."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the generic robot power select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_power_generic"
+        self._attr_translation_key = "robot_power_generic"
+        self._attr_name = "Power Level"
+        self._attr_icon = "mdi:vacuum"
+        # Default to Heurist-style options as a reasonable fallback
+        self._attr_options = list(ROBOT_POWER_OPTIONS_HEURIST.values())
+        self._attr_current_option = None
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_current_option = None
+            return
+
+        # Get current robot power level from device state
+        # Robot devices report power level in product-state.fPwr field
+        try:
+            device_state = self.coordinator.device._state_data.get("product-state", {})
+            current_power = device_state.get("fPwr")
+            if current_power and str(current_power) in ROBOT_POWER_OPTIONS_HEURIST:
+                self._attr_current_option = ROBOT_POWER_OPTIONS_HEURIST[
+                    str(current_power)
+                ]
+            else:
+                # Default to first option if power level not found
+                self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
+                    0
+                ]
+        except (AttributeError, KeyError):
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+        self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        """Change the selected robot power level."""
+        if not self.coordinator.device:
+            _LOGGER.error("Device not available for power level change")
+            return
+
+        # Find the command value for the selected option
+        command_value = None
+        for cmd_val, display_name in ROBOT_POWER_OPTIONS_HEURIST.items():
+            if display_name == option:
+                command_value = cmd_val
+                break
+
+        if command_value is None:
+            _LOGGER.error("Unknown power level option: %s", option)
+            return
+
+        try:
+            _LOGGER.info(
+                "Setting generic robot power to '%s' (%s) for %s",
+                option,
+                command_value,
+                self.coordinator.serial_number,
+            )
+
+            # Send robot power level command via MQTT
+            command_data = {
+                "msg": "STATE-SET",
+                "time": self.coordinator.device._get_command_timestamp(),
+                "data": {"fPwr": int(command_value)},
+            }
+            await self.coordinator.device._send_robot_command(command_data)
+
+            # Update local state immediately for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set generic robot power to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Error setting generic robot power to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
