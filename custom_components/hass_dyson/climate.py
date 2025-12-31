@@ -212,17 +212,35 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 device_data, "haut", "OFF"
             )
 
+        # Only set to OFF if we're certain the fan power is actually OFF
         if fan_power == "OFF":
             self._attr_hvac_mode = HVACMode.OFF
         elif heating_mode == "HEAT":
             self._attr_hvac_mode = HVACMode.HEAT
         elif humidity_enabled == "HUMD" or humidity_auto == "ON":
             self._attr_hvac_mode = HVACMode.DRY  # Use DRY mode for humidification
-        elif heating_mode == "OFF" and fan_power == "ON":
-            self._attr_hvac_mode = HVACMode.FAN_ONLY
+        elif fan_power == "ON":
+            # Fan is on - determine the specific mode based on heating state
+            if heating_mode == "OFF":
+                self._attr_hvac_mode = HVACMode.FAN_ONLY
+            else:
+                # Fan is on but heating mode is unclear - default to FAN_ONLY to avoid OFF
+                _LOGGER.debug(
+                    "Climate %s: Fan power ON but heating mode unclear (%s), defaulting to FAN_ONLY",
+                    self.coordinator.serial_number,
+                    heating_mode,
+                )
+                self._attr_hvac_mode = HVACMode.FAN_ONLY
         else:
-            # Default to OFF if state is unclear
-            self._attr_hvac_mode = HVACMode.OFF
+            # State is unclear - preserve current mode to avoid flickering
+            _LOGGER.debug(
+                "Climate %s: Device state unclear (fpwr=%s, hmod=%s), preserving current HVAC mode (%s)",
+                self.coordinator.serial_number,
+                fan_power,
+                heating_mode,
+                self._attr_hvac_mode,
+            )
+            # Don't change self._attr_hvac_mode - keep existing state
 
     def _update_hvac_action(self, device_data: dict[str, Any]) -> None:
         """Update HVAC action based on current heating/cooling/humidifying status."""
