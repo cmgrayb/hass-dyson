@@ -736,7 +736,51 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 "Found %d devices in Dyson account", len(devices)
                             )
 
-                            # Store devices and connection type for next step
+                            # Filter out devices with known unsupported connectivity types
+                            supported_devices = []
+                            skipped_devices = []
+
+                            for device in devices:
+                                connectivity = getattr(
+                                    device, "connection_category", None
+                                )
+                                device_name = getattr(device, "name", "Unknown Device")
+
+                                # Only skip devices that are specifically known to be unsupported
+                                # Allow devices with None or missing connectivity (these are typically working devices)
+                                if connectivity == "lecOnly":
+                                    skipped_devices.append((device_name, connectivity))
+                                    _LOGGER.info(
+                                        "Skipping device '%s' with connectivity '%s' - will be supported in future release",
+                                        device_name,
+                                        connectivity,
+                                    )
+                                else:
+                                    supported_devices.append(device)
+
+                            # Log summary if any devices were skipped
+                            if skipped_devices:
+                                _LOGGER.info(
+                                    "Skipped %d devices with unsupported connectivity types",
+                                    len(skipped_devices),
+                                )
+
+                            if not supported_devices:
+                                _LOGGER.warning(
+                                    "No supported devices found. All %d devices in account have unsupported connectivity types.",
+                                    len(devices),
+                                )
+                                errors["base"] = "no_supported_devices"
+                                devices = None
+                            else:
+                                _LOGGER.info(
+                                    "Using %d supported devices (skipped %d unsupported)",
+                                    len(supported_devices),
+                                    len(skipped_devices),
+                                )
+                                devices = supported_devices
+
+                            # Store filtered devices and connection type for next step
                             self._discovered_devices = devices
                             self._connection_type = connection_type
 

@@ -570,10 +570,8 @@ async def async_setup_entry(  # noqa: C901
                     device_serial,
                 )
 
-            # Add Formaldehyde sensor if HCHO data is present and not 'NONE' (hchr or hcho)
-            hchr_val = env_data.get("hchr")
-            hcho_val = env_data.get("hcho")
-            if (hchr_val and hchr_val != "NONE") or (hcho_val and hcho_val != "NONE"):
+            # Add Formaldehyde sensor if HCHO data is present (hchr or hcho)
+            if "hchr" in env_data or "hcho" in env_data:
                 _LOGGER.debug(
                     "Adding Formaldehyde sensor for device %s - HCHO data detected",
                     device_serial,
@@ -581,7 +579,7 @@ async def async_setup_entry(  # noqa: C901
                 entities.append(DysonFormaldehydeSensor(coordinator))
             else:
                 _LOGGER.debug(
-                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response or values are NONE",
+                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response",
                     device_serial,
                 )
         else:
@@ -785,13 +783,13 @@ async def async_setup_entry(  # noqa: C901
             )
 
         # Add battery sensor only for devices with robot category
-        # TODO: Implement when we have a robot device to test battery data format
+        # Robot devices report battery level via the vacuum entity battery_level property
+        # No separate battery sensor needed - vacuum entity handles both control and battery monitoring
         if any(cat in ["robot"] for cat in device_category):
             _LOGGER.debug(
-                "Robot device detected for %s, but battery sensor not yet implemented",
+                "Robot device %s battery level available via vacuum entity",
                 device_serial,
             )
-            # entities.append(DysonBatterySensor(coordinator))
 
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
@@ -1404,19 +1402,19 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                 else {}
             )
             # Try revised value first (hchr), fall back to legacy (hcho)
-            # Handle 'NONE' values properly - they should not override valid fallback values
-            hchr_val = env_data.get("hchr")
-            hcho_val = env_data.get("hcho")
+            # Handle 'NONE' values explicitly - they should be treated as unavailable
+            hchr_raw = env_data.get("hchr")
+            hcho_raw = env_data.get("hcho")
 
-            # Use hchr if it exists and is not 'NONE', otherwise use hcho
-            if hchr_val and hchr_val != "NONE":
-                hcho_raw = hchr_val
-            elif hcho_val and hcho_val != "NONE":
-                hcho_raw = hcho_val
+            # Use hchr if available and not 'NONE', otherwise fall back to hcho
+            if hchr_raw and hchr_raw != "NONE":
+                hcho_raw = hchr_raw
+            elif hcho_raw and hcho_raw != "NONE":
+                hcho_raw = hcho_raw
             else:
-                hcho_raw = hchr_val or hcho_val  # Will be None or 'NONE'
+                hcho_raw = None
 
-            if hcho_raw is not None and hcho_raw != "NONE":
+            if hcho_raw is not None:
                 try:
                     # Convert and validate the HCHO value
                     # Legacy devices provide hchr as raw index value that needs /1000 to get ppb
@@ -1447,13 +1445,6 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                         hcho_raw,
                     )
                     new_value = None
-            elif hcho_raw == "NONE":
-                # Device explicitly reports HCHO sensor as unavailable
-                _LOGGER.debug(
-                    "HCHO sensor data unavailable for device %s: reported as NONE",
-                    device_serial,
-                )
-                new_value = None
 
             self._attr_native_value = new_value
 

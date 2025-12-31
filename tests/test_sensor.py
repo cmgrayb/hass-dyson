@@ -1103,7 +1103,7 @@ class TestSensorCoverageEnhancement:
 
             # Assert that the debug log was called for robot device battery sensor placeholder
             mock_logger.debug.assert_any_call(
-                "Robot device detected for %s, but battery sensor not yet implemented",
+                "Robot device %s battery level available via vacuum entity",
                 mock_coordinator.serial_number,
             )
 

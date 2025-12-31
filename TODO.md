@@ -1,10 +1,40 @@
 # TO DO
 
-## Testing Architecture Overhaul (Major)
+## Completed Items
 
-**Priority**: Medium-High
-**Estimated Effort**: 4-6 weeks
+### Device Connectivity Filtering (December 29, 2025) ✓
 
+**Issue**: Users were experiencing errors with non-MQTT devices in their accounts that don't support standard connectivity.
+
+**Root Cause**: Some devices in Dyson accounts use connectivity types like `lecOnly` that are not yet supported by the integration.
+
+**Solution**:
+- Updated libdyson-rest from 0.10.0 to 0.11.0b2 (handles device discovery without errors)
+- Implemented selective device filtering - **only** filters out `lecOnly` devices
+- Allows devices with missing/None connectivity (most existing devices work this way)
+- Added informational logging for unsupported devices with future support indication
+- Enhanced error messages for cases where no supported devices are found
+- Comprehensive testing for device filtering logic
+
+**Technical Implementation**:
+- **Approach**: Blacklist-based filtering instead of whitelist
+- **Filtered Out**: Only devices with `connection_category == 'lecOnly'`
+- **Allowed Through**: All other devices including None, 'wifiOnly', 'lecAndWifi', etc.
+- **Rationale**: Most existing working devices don't have a connection_category attribute
+
+**Files Changed**:
+- requirements.txt: Updated libdyson-rest version
+- pyproject.toml: Updated libdyson-rest version
+- config_flow.py: Added selective device filtering logic
+- Updated comprehensive tests for device filtering
+
+**Supported Connectivity Types**:
+- `None` (missing attribute): Most existing devices - **SUPPORTED**
+- `wifiOnly`: WiFi-only devices - **SUPPORTED**
+- `lecAndWifi`: Devices with both local electrical connection and WiFi - **SUPPORTED**
+- `lecOnly`: Local electrical connection only devices - **FILTERED OUT** (planned future support)
+
+**Testing**: All 1,501 tests pass, including new comprehensive device filtering tests.
 Migrate from `pytest-homeassistant-custom-component` to pure pytest with custom fixtures.
 
 ### Background

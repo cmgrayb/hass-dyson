@@ -18,7 +18,7 @@ aioresponses==0.7.8
 paho-mqtt==2.1.0
 
 # Ensure compatible DNS resolution - CI environment needs specific pycares version
-pycares==4.9.0
+pycares==4.11.0
 
 # Mock libraries for testing Dyson devices
 pytest-mock==3.15.1
