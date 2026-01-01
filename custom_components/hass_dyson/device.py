@@ -1555,8 +1555,22 @@ class DysonDevice:
     def fan_power(self) -> bool:
         """Return if fan power is on (fpwr)."""
         product_state = self._state_data.get("product-state", {})
-        fpwr = self.get_state_value(product_state, "fpwr", "OFF")
-        return fpwr == "ON"
+        fpwr = self.get_state_value(product_state, "fpwr", "MISSING")
+
+        # If fpwr is available, use it directly
+        if fpwr != "MISSING":
+            _LOGGER.debug(
+                "Device %s fan_power using fpwr: %s", self.serial_number, fpwr
+            )
+            return fpwr == "ON"
+
+        # Fallback to fnst (fan state) when fpwr is not available
+        # This handles cases where STATE-CHANGE messages don't include fpwr
+        fnst = self.get_state_value(product_state, "fnst", "OFF")
+        _LOGGER.debug(
+            "Device %s fan_power using fnst fallback: %s", self.serial_number, fnst
+        )
+        return fnst == "FAN"
 
     @property
     def fan_speed_setting(self) -> str:

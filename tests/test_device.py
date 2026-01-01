@@ -1504,6 +1504,88 @@ class TestDysonDeviceFaultHandling:
         assert result[0]["value"] == "FAIL"
 
 
+class TestDysonDeviceProperties:
+    """Test device property methods."""
+
+    @pytest.fixture
+    def device_with_state(self, mock_hass):
+        """Create device with mock state data."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="PROP123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+        return device
+
+    def test_fan_power_with_fpwr_on(self, device_with_state):
+        """Test fan_power property when fpwr is ON."""
+        # Setup device state with fpwr ON
+        device_with_state._state_data = {"product-state": {"fpwr": "ON", "fnst": "FAN"}}
+
+        result = device_with_state.fan_power
+
+        assert result is True
+
+    def test_fan_power_with_fpwr_off(self, device_with_state):
+        """Test fan_power property when fpwr is OFF."""
+        # Setup device state with fpwr OFF
+        device_with_state._state_data = {
+            "product-state": {"fpwr": "OFF", "fnst": "FAN"}
+        }
+
+        result = device_with_state.fan_power
+
+        assert result is False
+
+    def test_fan_power_no_fpwr_fnst_fan(self, device_with_state):
+        """Test fan_power property fallback to fnst when fpwr missing and fnst is FAN."""
+        # Setup device state without fpwr but with fnst FAN
+        device_with_state._state_data = {
+            "product-state": {"fnst": "FAN", "fnsp": "0007"}
+        }
+
+        result = device_with_state.fan_power
+
+        assert result is True
+
+    def test_fan_power_no_fpwr_fnst_off(self, device_with_state):
+        """Test fan_power property fallback to fnst when fpwr missing and fnst is OFF."""
+        # Setup device state without fpwr but with fnst OFF
+        device_with_state._state_data = {"product-state": {"fnst": "OFF"}}
+
+        result = device_with_state.fan_power
+
+        assert result is False
+
+    def test_fan_power_no_fpwr_no_fnst(self, device_with_state):
+        """Test fan_power property when both fpwr and fnst are missing."""
+        # Setup device state without fpwr or fnst
+        device_with_state._state_data = {"product-state": {"hmod": "OFF"}}
+
+        result = device_with_state.fan_power
+
+        assert result is False
+
+    def test_fan_power_empty_state(self, device_with_state):
+        """Test fan_power property with empty state data."""
+        # Setup empty device state
+        device_with_state._state_data = {}
+
+        result = device_with_state.fan_power
+
+        assert result is False
+
+    def test_fan_power_no_product_state(self, device_with_state):
+        """Test fan_power property without product-state key."""
+        # Setup device state without product-state
+        device_with_state._state_data = {"some-other-data": {}}
+
+        result = device_with_state.fan_power
+
+        assert result is False
+
+
 class TestDysonDeviceMQTTCallbacks:
     """Test MQTT connection and callback functionality."""
 
