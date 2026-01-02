@@ -192,7 +192,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             return
 
         device_capabilities = self.coordinator.device_capabilities
-        fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
+        # Use device fan_power property which handles fpwr/fnst fallback properly
+        fan_power_state = self.coordinator.device.fan_power
+        fan_power = "ON" if fan_power_state else "OFF"
 
         # Check heating mode if device supports heating
         heating_mode = "OFF"
@@ -253,7 +255,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         heating_status = self.coordinator.device.get_state_value(
             device_data, "hsta", "OFF"
         )
-        fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
+        # Use device fan_power property which handles fpwr/fnst fallback properly
+        fan_power_state = self.coordinator.device.fan_power
+        fan_power = "ON" if fan_power_state else "OFF"
         hvac_mode = getattr(self, "_attr_hvac_mode", HVACMode.OFF)
 
         # Check humidifier status if supported

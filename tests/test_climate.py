@@ -397,6 +397,8 @@ class TestDysonClimateEntity:
                 "hmod": "OFF",
             }.get(key, default)
         )
+        # Mock the fan_power property to return False for OFF state
+        mock_coordinator.device.fan_power = False
 
         # Act
         entity._update_hvac_mode(device_data)

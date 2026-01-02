@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import socket
 import time
 import uuid
 from collections.abc import Callable
@@ -468,9 +469,59 @@ class DysonDevice:
             )
             return False
 
+    async def _test_network_connectivity(self, host: str, port: int = 1883) -> bool:
+        """Test basic network connectivity to device."""
+        try:
+            # Attempt to establish a basic socket connection
+            _LOGGER.debug("Testing network connectivity to %s:%s", host, port)
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)  # 5 second timeout
+
+            try:
+                await self.hass.async_add_executor_job(sock.connect, (host, port))
+                _LOGGER.debug(
+                    "Network connectivity test successful for %s:%s", host, port
+                )
+                return True
+            finally:
+                sock.close()
+
+        except socket.gaierror as err:
+            _LOGGER.warning(
+                "DNS resolution failed for %s: %s. "
+                "Device hostname is not resolvable on local network.",
+                host,
+                err,
+            )
+            return False
+        except (TimeoutError, ConnectionError, OSError) as err:
+            _LOGGER.warning(
+                "Network connectivity test failed for %s:%s: %s. "
+                "Device may be unreachable or port blocked.",
+                host,
+                port,
+                err,
+            )
+            return False
+        except Exception as err:
+            _LOGGER.warning(
+                "Unexpected error during network test for %s:%s: %s", host, port, err
+            )
+            return False
+
     async def _attempt_local_connection(self, host: str, credential: str) -> bool:
         """Attempt local MQTT connection."""
         try:
+            # First test basic network connectivity
+            if not await self._test_network_connectivity(host, 1883):
+                _LOGGER.info(
+                    "Skipping MQTT connection attempt to %s due to network connectivity failure. "
+                    "Consider switching to cloud-only connection or checking network configuration.",
+                    host,
+                )
+                return False
+
             # Create paho MQTT client for local connection
             client_id = f"dyson-ha-local-{uuid.uuid4().hex[:8]}"
             username = self.serial_number
@@ -507,9 +558,34 @@ class DysonDevice:
                 # Wait for connection to be established
                 return await self._wait_for_connection("local")
             else:
-                _LOGGER.debug("Local MQTT connection failed with result: %s", result)
+                _LOGGER.warning(
+                    "Local MQTT connection to %s failed with result: %s. "
+                    "Common causes: device not reachable, mDNS resolution failure, "
+                    "network firewall blocking port 1883, or device on different VLAN. "
+                    "Consider using cloud-only connection type if local network issues persist.",
+                    host,
+                    result,
+                )
                 return False
 
+        except socket.gaierror as err:
+            _LOGGER.warning(
+                "DNS resolution failed for %s: %s. "
+                "Device may not be discoverable on local network. "
+                "Try using the device's IP address instead of hostname, "
+                "or switch to cloud-only connection.",
+                host,
+                err,
+            )
+            return False
+        except ConnectionError as err:
+            _LOGGER.warning(
+                "Network connection failed to %s: %s. "
+                "Check if device is on same network segment and port 1883 is accessible.",
+                host,
+                err,
+            )
+            return False
         except Exception as err:
             _LOGGER.error("Local connection failed: %s", err)
             return False

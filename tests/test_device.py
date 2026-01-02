@@ -1,5 +1,6 @@
 """Test device wrapper communication logic."""
 
+import socket
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -129,15 +130,17 @@ class TestDysonDevice:
                 credential=sample_device_data["credential"],
             )
 
-            # Mock the wait for connection to return True and set internal state
-            def mock_wait_for_connection(conn_type):
-                device._connected = True  # Simulate successful connection
-                return True
+            # Mock the network connectivity test to return success
+            with patch.object(device, "_test_network_connectivity", return_value=True):
+                # Mock the wait for connection to return True and set internal state
+                def mock_wait_for_connection(conn_type):
+                    device._connected = True  # Simulate successful connection
+                    return True
 
-            with patch.object(
-                device, "_wait_for_connection", side_effect=mock_wait_for_connection
-            ):
-                result = await device.connect()
+                with patch.object(
+                    device, "_wait_for_connection", side_effect=mock_wait_for_connection
+                ):
+                    result = await device.connect()
 
             assert result is True
             assert device.is_connected is True
@@ -441,23 +444,25 @@ class TestDysonDevice:
 
         mock_hass.async_add_executor_job.side_effect = mock_executor_job
 
-        # Mock the wait for connection to return True
-        with (
-            patch.object(device, "_wait_for_connection", return_value=True),
-            patch("paho.mqtt.client.Client") as mock_client_class,
-        ):
-            mock_client = MagicMock()
-            mock_client_class.return_value = mock_client
-            mock_client.connect.return_value = 0  # CONNACK_ACCEPTED
+        # Mock the network connectivity test to return success
+        with patch.object(device, "_test_network_connectivity", return_value=True):
+            # Mock the wait for connection to return True
+            with (
+                patch.object(device, "_wait_for_connection", return_value=True),
+                patch("paho.mqtt.client.Client") as mock_client_class,
+            ):
+                mock_client = MagicMock()
+                mock_client_class.return_value = mock_client
+                mock_client.connect.return_value = 0  # CONNACK_ACCEPTED
 
-            result = await device._attempt_local_connection(
-                "192.168.1.100", "local_cred"
-            )
+                result = await device._attempt_local_connection(
+                    "192.168.1.100", "local_cred"
+                )
 
-            assert result is True
-            mock_client.username_pw_set.assert_called_once_with(
-                "LOCAL123", "local_cred"
-            )
+                assert result is True
+                mock_client.username_pw_set.assert_called_once_with(
+                    "LOCAL123", "local_cred"
+                )
             mock_client.connect.assert_called_once_with("192.168.1.100", 1883, 60)
 
     @pytest.mark.asyncio
@@ -756,24 +761,26 @@ class TestDysonDevice:
                 credential=sample_device_data["credential"],
             )
 
-            # Mock the wait for connection to return True and set internal state
-            def mock_wait_for_connection(conn_type):
-                device._connected = True  # Simulate successful connection
-                return True
+            # Mock the network connectivity test to return success
+            with patch.object(device, "_test_network_connectivity", return_value=True):
+                # Mock the wait for connection to return True and set internal state
+                def mock_wait_for_connection(conn_type):
+                    device._connected = True  # Simulate successful connection
+                    return True
 
-            with patch.object(
-                device, "_wait_for_connection", side_effect=mock_wait_for_connection
-            ):
-                # Connect first
-                await device.connect()
+                with patch.object(
+                    device, "_wait_for_connection", side_effect=mock_wait_for_connection
+                ):
+                    # Connect first
+                    await device.connect()
 
-                # Ensure device is connected
-                assert device.is_connected is True
+                    # Ensure device is connected
+                    assert device.is_connected is True
 
-                # Test sending a command
-                await device.send_command("set_fan_speed", {"speed": 5})
+                    # Test sending a command
+                    await device.send_command("set_fan_speed", {"speed": 5})
 
-                # Verify the MQTT publish was called
+                    # Verify the MQTT publish was called
                 mock_mqtt_client.publish.assert_called_once()
 
     @pytest.mark.asyncio
@@ -897,26 +904,226 @@ class TestDysonDevice:
 
             mock_hass.async_add_executor_job.side_effect = mock_executor_job
 
-            # Mock the wait for connection to return True and set internal state
-            def mock_wait_for_connection(conn_type):
-                device._connected = True  # Simulate successful connection
-                return True
+            # Mock the network connectivity test to return success
+            with patch.object(device, "_test_network_connectivity", return_value=True):
+                # Mock the wait for connection to return True and set internal state
+                def mock_wait_for_connection(conn_type):
+                    device._connected = True  # Simulate successful connection
+                    return True
 
-            with patch.object(
-                device, "_wait_for_connection", side_effect=mock_wait_for_connection
-            ):
-                # Connect first
-                await device.connect()
-                assert device.is_connected is True
+                with patch.object(
+                    device, "_wait_for_connection", side_effect=mock_wait_for_connection
+                ):
+                    # Connect first
+                    await device.connect()
+                    assert device.is_connected is True
 
-                # Now disconnect
-                mock_mqtt_client.is_connected.return_value = (
-                    False  # Mock MQTT client as disconnected
-                )
+                    # Now disconnect
+                    mock_mqtt_client.is_connected.return_value = (
+                        False  # Mock MQTT client as disconnected
+                    )
                 await device.disconnect()
 
                 assert device.is_connected is False
                 mock_mqtt_client.disconnect.assert_called_once()
+
+    # Network Connectivity Tests
+    @pytest.mark.asyncio
+    async def test_network_connectivity_success(self, mock_hass):
+        """Test successful network connectivity test."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        def mock_executor_job(func, *args):
+            # Mock successful socket connection
+            if len(args) == 1 and hasattr(args[0], "__getitem__"):
+                return None  # Successful connection
+            return func(*args) if args else func()
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        with patch("socket.socket") as mock_socket_class:
+            mock_socket = MagicMock()
+            mock_socket_class.return_value = mock_socket
+
+            result = await device._test_network_connectivity("192.168.1.100", 1883)
+
+            assert result is True
+            mock_socket.settimeout.assert_called_once_with(5)
+            mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_network_connectivity_dns_failure(self, mock_hass):
+        """Test network connectivity with DNS resolution failure."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        def mock_executor_job(func, *args):
+            raise socket.gaierror("Name resolution failed")
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        with patch("socket.socket") as mock_socket_class:
+            mock_socket = MagicMock()
+            mock_socket_class.return_value = mock_socket
+
+            result = await device._test_network_connectivity("nonexistent.local", 1883)
+
+            assert result is False
+            mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_network_connectivity_timeout(self, mock_hass):
+        """Test network connectivity with timeout."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        def mock_executor_job(func, *args):
+            raise TimeoutError("Connection timed out")
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        with patch("socket.socket") as mock_socket_class:
+            mock_socket = MagicMock()
+            mock_socket_class.return_value = mock_socket
+
+            result = await device._test_network_connectivity("192.168.1.100", 1883)
+
+            assert result is False
+            mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_network_connectivity_connection_error(self, mock_hass):
+        """Test network connectivity with connection error."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        def mock_executor_job(func, *args):
+            raise ConnectionError("Connection refused")
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        with patch("socket.socket") as mock_socket_class:
+            mock_socket = MagicMock()
+            mock_socket_class.return_value = mock_socket
+
+            result = await device._test_network_connectivity("192.168.1.100", 1883)
+
+            assert result is False
+            mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_network_connectivity_os_error(self, mock_hass):
+        """Test network connectivity with OS error."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        def mock_executor_job(func, *args):
+            raise OSError("Network unreachable")
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        with patch("socket.socket") as mock_socket_class:
+            mock_socket = MagicMock()
+            mock_socket_class.return_value = mock_socket
+
+            result = await device._test_network_connectivity("192.168.1.100", 1883)
+
+            assert result is False
+            mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_network_connectivity_unexpected_error(self, mock_hass):
+        """Test network connectivity with unexpected error."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        def mock_executor_job(func, *args):
+            raise RuntimeError("Unexpected error")
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        with patch("socket.socket") as mock_socket_class:
+            mock_socket = MagicMock()
+            mock_socket_class.return_value = mock_socket
+
+            result = await device._test_network_connectivity("192.168.1.100", 1883)
+
+            assert result is False
+            mock_socket.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_local_connection_fails_network_test(self, mock_hass):
+        """Test local connection when network connectivity test fails."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="NETFAIL123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        # Mock network connectivity test to fail
+        with patch.object(device, "_test_network_connectivity", return_value=False):
+            result = await device._attempt_local_connection(
+                "192.168.1.100", "test_cred"
+            )
+
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_local_connection_enhanced_error_handling(self, mock_hass):
+        """Test enhanced error handling in local connection."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="ERRORTEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        # Mock executor job to execute functions
+        def mock_executor_job(func, *args):
+            if hasattr(func, "__name__") and func.__name__ == "connect":
+                return 1  # Connection refused
+            return func(*args) if args else func()
+
+        mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+        # Mock network connectivity test to succeed
+        with patch.object(device, "_test_network_connectivity", return_value=True):
+            with patch("paho.mqtt.client.Client") as mock_client_class:
+                mock_client = MagicMock()
+                mock_client_class.return_value = mock_client
+                mock_client.connect.return_value = 1  # Connection refused
+
+                result = await device._attempt_local_connection(
+                    "192.168.1.100", "test_cred"
+                )
+
+                assert result is False
 
 
 class TestDysonDeviceConnectionLogic:
