@@ -1402,7 +1402,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Periodic fault polling for all devices
             # This ensures fault sensors receive regular updates
             try:
-                await self.device.send_command("REQUEST-CURRENT-FAULTS")
+                await self.device.request_current_faults()
                 _LOGGER.debug(
                     "Requested current faults for device %s",
                     self.serial_number,

@@ -1620,6 +1620,23 @@ class DysonDevice:
 
         return self._normalize_faults_to_list(self._faults_data)
 
+    async def request_current_faults(self) -> None:
+        """Request current faults from the device.
+
+        Sends REQUEST-CURRENT-FAULTS command to get immediate fault status update.
+        Device will respond with current fault information on status/fault topic.
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.debug("Requesting current faults from %s", self.serial_number)
+
+        await self._request_current_faults()
+
     def set_firmware_version(self, firmware_version: str) -> None:
         """Set the firmware version for this device."""
         if firmware_version and firmware_version != "Unknown":
@@ -2460,9 +2477,25 @@ class DysonDevice:
 
         await self.send_command("STATE-SET", data)
 
-    async def set_heating_mode(self, mode: str) -> None:
-        """Set heating mode (OFF, HEAT, AUTO)."""
-        await self.send_command("STATE-SET", {"hmod": mode})
+    async def set_humidifier_mode(self, enabled: bool, auto_mode: bool = False) -> None:
+        """Set humidifier mode on/off with optional auto mode."""
+        hume_value = "HUMD" if enabled else "OFF"
+        # Only set auto mode if humidifier is enabled
+        haut_value = "ON" if (enabled and auto_mode) else "OFF"
+        await self.send_command("STATE-SET", {"hume": hume_value, "haut": haut_value})
+
+    async def set_target_humidity(self, humidity: int) -> None:
+        """Set target humidity percentage (30-50%).
+
+        Args:
+            humidity: Target humidity percentage (30-50%)
+        """
+        if not 30 <= humidity <= 50:
+            raise ValueError("Target humidity must be between 30% and 50%")
+
+        # Convert humidity percentage to device format (4-digit string)
+        humidity_value = f"{humidity:04d}"
+        await self.send_command("STATE-SET", {"humt": humidity_value})
 
     async def set_target_temperature(self, temperature: float) -> None:
         """Set target temperature in Celsius.
@@ -2637,3 +2670,105 @@ class DysonDevice:
                 "Failed to send robot command to %s: %s", self.serial_number, ex
             )
             raise
+
+    async def set_direction(self, direction: str) -> None:
+        """Set fan direction (forward/reverse).
+
+        Args:
+            direction: Direction to set ("forward" or "reverse")
+        """
+        # Map Home Assistant direction to Dyson direction values
+        # Based on libdyson-neon: fdir="ON" = front airflow = forward direction
+        #                         fdir="OFF" = no front airflow = reverse direction
+        direction_value = "ON" if direction.lower() == "forward" else "OFF"
+
+        await self.send_command("STATE-SET", {"fdir": direction_value})
+
+        _LOGGER.debug(
+            "Set fan direction to %s (%s) for %s",
+            direction,
+            direction_value,
+            self.serial_number,
+        )
+
+    async def set_heating_mode(self, mode: str) -> None:
+        """Set heating mode.
+
+        Args:
+            mode: Heating mode to set ("HEAT", "OFF")
+        """
+        await self.send_command("STATE-SET", {"hmod": mode})
+
+        _LOGGER.debug(
+            "Set heating mode to %s for %s",
+            mode,
+            self.serial_number,
+        )
+
+    async def set_fan_state(self, state: str) -> None:
+        """Set fan state.
+
+        Args:
+            state: Fan state to set ("OFF", "FAN")
+        """
+        await self.send_command("STATE-SET", {"fnst": state})
+
+        _LOGGER.debug(
+            "Set fan state to %s for %s",
+            state,
+            self.serial_number,
+        )
+
+    async def set_water_hardness(self, hardness: str) -> None:
+        """Set water hardness level for humidifier.
+
+        Args:
+            hardness: Water hardness level ("soft", "medium", "hard")
+        """
+        # Map hardness level to device values
+        hardness_map = {
+            "soft": "0675",
+            "medium": "1350",
+            "hard": "2025",
+        }
+
+        if hardness not in hardness_map:
+            raise ValueError(
+                f"Invalid water hardness: {hardness}. Must be one of {list(hardness_map.keys())}"
+            )
+
+        await self.send_command("STATE-SET", {"wath": hardness_map[hardness]})
+
+        _LOGGER.debug(
+            "Set water hardness to %s (%s) for %s",
+            hardness,
+            hardness_map[hardness],
+            self.serial_number,
+        )
+
+    async def set_robot_power(
+        self, power_level: str, model_type: str = "generic"
+    ) -> None:
+        """Set robot vacuum power level.
+
+        Args:
+            power_level: Power level value (model-specific)
+            model_type: Robot model type ("360eye", "heurist", "vis_nav", or "generic")
+        """
+        # Build the robot command data structure
+        command_data = {
+            "msg": "STATE-SET",
+            "time": self._get_command_timestamp(),
+            "data": {
+                "fPwr": int(power_level) if model_type != "360eye" else power_level
+            },
+        }
+
+        await self._send_robot_command(command_data)
+
+        _LOGGER.debug(
+            "Set %s robot power to %s for %s",
+            model_type,
+            power_level,
+            self.serial_number,
+        )

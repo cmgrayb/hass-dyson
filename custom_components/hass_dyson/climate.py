@@ -296,39 +296,34 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         try:
             if hvac_mode == HVACMode.OFF:
-                # Turn off fan power and all modes
-                command_data = {"fpwr": "OFF"}
+                # Turn off fan power and all modes using device methods
+                await self.coordinator.device.set_fan_power(False)
                 if "Heating" in device_capabilities:
-                    command_data["hmod"] = "OFF"
+                    await self.coordinator.device.set_heating_mode("OFF")
                 if "Humidifier" in device_capabilities:
-                    command_data["hume"] = "OFF"
-                    command_data["haut"] = "OFF"
-                await self.coordinator.device.send_command("STATE-SET", command_data)
+                    await self.coordinator.device.set_humidifier_mode(False)
 
             elif hvac_mode == HVACMode.HEAT and "Heating" in device_capabilities:
-                # Enable heating mode
-                command_data = {"fpwr": "ON", "hmod": "HEAT"}
+                # Enable heating mode using device methods
+                await self.coordinator.device.set_fan_power(True)
+                await self.coordinator.device.set_heating_mode("HEAT")
                 if "Humidifier" in device_capabilities:
-                    command_data["hume"] = "OFF"
-                    command_data["haut"] = "OFF"
-                await self.coordinator.device.send_command("STATE-SET", command_data)
+                    await self.coordinator.device.set_humidifier_mode(False)
 
             elif hvac_mode == HVACMode.FAN_ONLY:
-                # Enable fan only (no heat or humidification)
-                command_data = {"fpwr": "ON"}
+                # Enable fan only using device methods
+                await self.coordinator.device.set_fan_power(True)
                 if "Heating" in device_capabilities:
-                    command_data["hmod"] = "OFF"
+                    await self.coordinator.device.set_heating_mode("OFF")
                 if "Humidifier" in device_capabilities:
-                    command_data["hume"] = "OFF"
-                    command_data["haut"] = "OFF"
-                await self.coordinator.device.send_command("STATE-SET", command_data)
+                    await self.coordinator.device.set_humidifier_mode(False)
 
             elif hvac_mode == HVACMode.DRY and "Humidifier" in device_capabilities:
-                # Enable humidification mode (manual on, auto off)
-                command_data = {"fpwr": "ON", "hume": "HUMD", "haut": "OFF"}
+                # Enable humidification mode using device methods for fan power
+                await self.coordinator.device.set_fan_power(True)
                 if "Heating" in device_capabilities:
-                    command_data["hmod"] = "OFF"
-                await self.coordinator.device.send_command("STATE-SET", command_data)
+                    await self.coordinator.device.set_heating_mode("OFF")
+                await self.coordinator.device.set_humidifier_mode(True)
 
             else:
                 supported_modes = [mode.value for mode in self._attr_hvac_modes]
@@ -422,11 +417,8 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             return
 
         try:
-            # Convert humidity percentage to device format (4-digit string)
-            humidity_value = f"{humidity:04d}"
-            await self.coordinator.device.send_command(
-                "STATE-SET", {"humt": humidity_value}
-            )
+            # Call the device method directly
+            await self.coordinator.device.set_target_humidity(humidity)
 
             # Update local state immediately for responsive UI
             self._attr_target_humidity = int(humidity)
