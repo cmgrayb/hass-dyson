@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import socket
 import time
 import uuid
 from collections.abc import Callable
@@ -186,6 +187,14 @@ class DysonDevice:
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: list[Callable[[str, dict[str, Any]], None]] = []
+
+        # Power control capability detection
+        self._fpwr_message_count = 0  # Track messages containing fpwr
+        self._fmod_message_count = 0  # Track messages containing fmod
+        self._total_state_messages = 0  # Total STATE-CHANGE messages received
+        self._power_control_type: str | None = (
+            None  # "fpwr" or "fmod" or None (detecting)
+        )
         self._environmental_callbacks: list[
             Callable[[], None]
         ] = []  # Environmental update callbacks
@@ -468,9 +477,59 @@ class DysonDevice:
             )
             return False
 
+    async def _test_network_connectivity(self, host: str, port: int = 1883) -> bool:
+        """Test basic network connectivity to device."""
+        try:
+            # Attempt to establish a basic socket connection
+            _LOGGER.debug("Testing network connectivity to %s:%s", host, port)
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)  # 5 second timeout
+
+            try:
+                await self.hass.async_add_executor_job(sock.connect, (host, port))
+                _LOGGER.debug(
+                    "Network connectivity test successful for %s:%s", host, port
+                )
+                return True
+            finally:
+                sock.close()
+
+        except socket.gaierror as err:
+            _LOGGER.warning(
+                "DNS resolution failed for %s: %s. "
+                "Device hostname is not resolvable on local network.",
+                host,
+                err,
+            )
+            return False
+        except (TimeoutError, ConnectionError, OSError) as err:
+            _LOGGER.warning(
+                "Network connectivity test failed for %s:%s: %s. "
+                "Device may be unreachable or port blocked.",
+                host,
+                port,
+                err,
+            )
+            return False
+        except Exception as err:
+            _LOGGER.warning(
+                "Unexpected error during network test for %s:%s: %s", host, port, err
+            )
+            return False
+
     async def _attempt_local_connection(self, host: str, credential: str) -> bool:
         """Attempt local MQTT connection."""
         try:
+            # First test basic network connectivity
+            if not await self._test_network_connectivity(host, 1883):
+                _LOGGER.info(
+                    "Skipping MQTT connection attempt to %s due to network connectivity failure. "
+                    "Consider switching to cloud-only connection or checking network configuration.",
+                    host,
+                )
+                return False
+
             # Create paho MQTT client for local connection
             client_id = f"dyson-ha-local-{uuid.uuid4().hex[:8]}"
             username = self.serial_number
@@ -507,9 +566,34 @@ class DysonDevice:
                 # Wait for connection to be established
                 return await self._wait_for_connection("local")
             else:
-                _LOGGER.debug("Local MQTT connection failed with result: %s", result)
+                _LOGGER.warning(
+                    "Local MQTT connection to %s failed with result: %s. "
+                    "Common causes: device not reachable, mDNS resolution failure, "
+                    "network firewall blocking port 1883, or device on different VLAN. "
+                    "Consider using cloud-only connection type if local network issues persist.",
+                    host,
+                    result,
+                )
                 return False
 
+        except socket.gaierror as err:
+            _LOGGER.warning(
+                "DNS resolution failed for %s: %s. "
+                "Device may not be discoverable on local network. "
+                "Try using the device's IP address instead of hostname, "
+                "or switch to cloud-only connection.",
+                host,
+                err,
+            )
+            return False
+        except ConnectionError as err:
+            _LOGGER.warning(
+                "Network connection failed to %s: %s. "
+                "Check if device is on same network segment and port 1883 is accessible.",
+                host,
+                err,
+            )
+            return False
         except Exception as err:
             _LOGGER.error("Local connection failed: %s", err)
             return False
@@ -893,6 +977,35 @@ class DysonDevice:
             self._handle_faults_data(data)
         elif message_type == "STATE-CHANGE":
             _LOGGER.debug("Processing STATE-CHANGE message for %s", self.serial_number)
+
+            # Track power control capability patterns for device type detection
+            self._total_state_messages += 1
+            product_state = data.get("product-state", {})
+            if "fpwr" in product_state:
+                self._fpwr_message_count += 1
+            if "fmod" in product_state:
+                self._fmod_message_count += 1
+
+            # Update power control type detection if we have enough data
+            # Note: Only runs when coordinator immediate detection failed to set _power_control_type
+            if self._power_control_type is None and self._total_state_messages >= 1:
+                detected_type = self._detect_power_control_type()
+                if detected_type != "unknown":
+                    self._power_control_type = detected_type
+                    _LOGGER.info(
+                        "Device %s fallback detection: %s-based power control (fpwr_msgs: %d, fmod_msgs: %d, total: %d)",
+                        self.serial_number,
+                        detected_type,
+                        self._fpwr_message_count,
+                        self._fmod_message_count,
+                        self._total_state_messages,
+                    )
+                    _LOGGER.debug(
+                        "Fallback detection completed for %s after %d STATE-CHANGE message(s)",
+                        self.serial_number,
+                        self._total_state_messages,
+                    )
+
             self._handle_state_change(data)
         else:
             _LOGGER.debug(
@@ -1507,6 +1620,23 @@ class DysonDevice:
 
         return self._normalize_faults_to_list(self._faults_data)
 
+    async def request_current_faults(self) -> None:
+        """Request current faults from the device.
+
+        Sends REQUEST-CURRENT-FAULTS command to get immediate fault status update.
+        Device will respond with current fault information on status/fault topic.
+
+        Raises:
+            RuntimeError: If device is not connected
+            Exception: If command transmission fails
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.debug("Requesting current faults from %s", self.serial_number)
+
+        await self._request_current_faults()
+
     def set_firmware_version(self, firmware_version: str) -> None:
         """Set the firmware version for this device."""
         if firmware_version and firmware_version != "Unknown":
@@ -1553,10 +1683,40 @@ class DysonDevice:
 
     @property
     def fan_power(self) -> bool:
-        """Return if fan power is on (fpwr)."""
+        """Return if fan power is on, handling both fpwr and fmod-based devices."""
         product_state = self._state_data.get("product-state", {})
-        fpwr = self.get_state_value(product_state, "fpwr", "OFF")
-        return fpwr == "ON"
+
+        # Determine power control type if not yet detected
+        power_control_type = (
+            self._power_control_type or self._detect_power_control_type()
+        )
+
+        if power_control_type == "fmod":
+            # HP02 and similar devices: power state based on fmod
+            fmod = self.get_state_value(product_state, "fmod", "OFF")
+            _LOGGER.debug(
+                "Device %s fan_power using fmod (HP02-style): %s",
+                self.serial_number,
+                fmod,
+            )
+            return fmod in ["FAN", "AUTO"]
+        else:
+            # Most devices: try fpwr first, fallback to fnst
+            fpwr = self.get_state_value(product_state, "fpwr", "MISSING")
+
+            if fpwr != "MISSING":
+                _LOGGER.debug(
+                    "Device %s fan_power using fpwr: %s", self.serial_number, fpwr
+                )
+                return fpwr == "ON"
+
+            # Fallback to fnst (fan state) when fpwr is not available
+            # This handles cases where STATE-CHANGE messages don't include fpwr
+            fnst = self.get_state_value(product_state, "fnst", "OFF")
+            _LOGGER.debug(
+                "Device %s fan_power using fnst fallback: %s", self.serial_number, fnst
+            )
+            return fnst == "FAN"
 
     @property
     def fan_speed_setting(self) -> str:
@@ -1955,6 +2115,36 @@ class DysonDevice:
 
         return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    def _detect_power_control_type(self) -> str:
+        """Detect device power control type based on MQTT message patterns.
+
+        Returns:
+            "fpwr" for modern devices that have fpwr key in their state messages
+            "fmod" for HP02-style devices that use fmod for power control (no fpwr key)
+            "unknown" if not enough data to determine
+
+        Note:
+            This is a fallback detection method that only runs when the coordinator's
+            immediate detection failed during startup. It analyzes STATE-CHANGE messages:
+            - Modern devices: include fpwr key in messages, use fpwr-based control
+            - HP02-style devices: have fmod but no fpwr key, use fmod-based power control
+            - Some modern heating devices may have both fpwr and fmod (fpwr is power, fmod is fan mode)
+            - Only requires 1 STATE-CHANGE message since we just need to see which keys are present
+        """
+        # Need at least one message to make a determination
+        if self._total_state_messages < 1:
+            return "unknown"
+
+        # If we've seen fpwr in any messages, this is a modern fpwr-based device
+        if self._fpwr_message_count > 0:
+            return "fpwr"
+
+        # If we've never seen fpwr but have seen fmod, this is an HP02-style fmod-based device
+        if self._fmod_message_count > 0:
+            return "fmod"
+
+        return "unknown"
+
     def get_state_value(
         self, data: dict[str, Any], key: str, default: str = "OFF"
     ) -> str:
@@ -2115,9 +2305,28 @@ class DysonDevice:
         await self.send_command("STATE-SET", {"fnsp": speed_str})
 
     async def set_fan_power(self, enabled: bool) -> None:
-        """Set fan power on/off using fpwr."""
-        fpwr_value = "ON" if enabled else "OFF"
-        await self.send_command("STATE-SET", {"fpwr": fpwr_value})
+        """Set fan power on/off using appropriate method for device type."""
+        # Determine power control type if not yet detected
+        power_control_type = (
+            self._power_control_type or self._detect_power_control_type()
+        )
+
+        if power_control_type == "fmod":
+            # HP02 and similar devices: use fmod for power control
+            fmod_value = "FAN" if enabled else "OFF"
+            _LOGGER.debug(
+                "Device %s setting power via fmod (HP02-style): %s",
+                self.serial_number,
+                fmod_value,
+            )
+            await self.send_command("STATE-SET", {"fmod": fmod_value})
+        else:
+            # Most devices: use fpwr for power control
+            fpwr_value = "ON" if enabled else "OFF"
+            _LOGGER.debug(
+                "Device %s setting power via fpwr: %s", self.serial_number, fpwr_value
+            )
+            await self.send_command("STATE-SET", {"fpwr": fpwr_value})
 
     async def reset_hepa_filter_life(self) -> None:
         """Reset HEPA filter life to 100%."""
@@ -2268,9 +2477,25 @@ class DysonDevice:
 
         await self.send_command("STATE-SET", data)
 
-    async def set_heating_mode(self, mode: str) -> None:
-        """Set heating mode (OFF, HEAT, AUTO)."""
-        await self.send_command("STATE-SET", {"hmod": mode})
+    async def set_humidifier_mode(self, enabled: bool, auto_mode: bool = False) -> None:
+        """Set humidifier mode on/off with optional auto mode."""
+        hume_value = "HUMD" if enabled else "OFF"
+        # Only set auto mode if humidifier is enabled
+        haut_value = "ON" if (enabled and auto_mode) else "OFF"
+        await self.send_command("STATE-SET", {"hume": hume_value, "haut": haut_value})
+
+    async def set_target_humidity(self, humidity: int) -> None:
+        """Set target humidity percentage (30-50%).
+
+        Args:
+            humidity: Target humidity percentage (30-50%)
+        """
+        if not 30 <= humidity <= 50:
+            raise ValueError("Target humidity must be between 30% and 50%")
+
+        # Convert humidity percentage to device format (4-digit string)
+        humidity_value = f"{humidity:04d}"
+        await self.send_command("STATE-SET", {"humt": humidity_value})
 
     async def set_target_temperature(self, temperature: float) -> None:
         """Set target temperature in Celsius.
@@ -2445,3 +2670,105 @@ class DysonDevice:
                 "Failed to send robot command to %s: %s", self.serial_number, ex
             )
             raise
+
+    async def set_direction(self, direction: str) -> None:
+        """Set fan direction (forward/reverse).
+
+        Args:
+            direction: Direction to set ("forward" or "reverse")
+        """
+        # Map Home Assistant direction to Dyson direction values
+        # Based on libdyson-neon: fdir="ON" = front airflow = forward direction
+        #                         fdir="OFF" = no front airflow = reverse direction
+        direction_value = "ON" if direction.lower() == "forward" else "OFF"
+
+        await self.send_command("STATE-SET", {"fdir": direction_value})
+
+        _LOGGER.debug(
+            "Set fan direction to %s (%s) for %s",
+            direction,
+            direction_value,
+            self.serial_number,
+        )
+
+    async def set_heating_mode(self, mode: str) -> None:
+        """Set heating mode.
+
+        Args:
+            mode: Heating mode to set ("HEAT", "OFF")
+        """
+        await self.send_command("STATE-SET", {"hmod": mode})
+
+        _LOGGER.debug(
+            "Set heating mode to %s for %s",
+            mode,
+            self.serial_number,
+        )
+
+    async def set_fan_state(self, state: str) -> None:
+        """Set fan state.
+
+        Args:
+            state: Fan state to set ("OFF", "FAN")
+        """
+        await self.send_command("STATE-SET", {"fnst": state})
+
+        _LOGGER.debug(
+            "Set fan state to %s for %s",
+            state,
+            self.serial_number,
+        )
+
+    async def set_water_hardness(self, hardness: str) -> None:
+        """Set water hardness level for humidifier.
+
+        Args:
+            hardness: Water hardness level ("soft", "medium", "hard")
+        """
+        # Map hardness level to device values
+        hardness_map = {
+            "soft": "0675",
+            "medium": "1350",
+            "hard": "2025",
+        }
+
+        if hardness not in hardness_map:
+            raise ValueError(
+                f"Invalid water hardness: {hardness}. Must be one of {list(hardness_map.keys())}"
+            )
+
+        await self.send_command("STATE-SET", {"wath": hardness_map[hardness]})
+
+        _LOGGER.debug(
+            "Set water hardness to %s (%s) for %s",
+            hardness,
+            hardness_map[hardness],
+            self.serial_number,
+        )
+
+    async def set_robot_power(
+        self, power_level: str, model_type: str = "generic"
+    ) -> None:
+        """Set robot vacuum power level.
+
+        Args:
+            power_level: Power level value (model-specific)
+            model_type: Robot model type ("360eye", "heurist", "vis_nav", or "generic")
+        """
+        # Build the robot command data structure
+        command_data = {
+            "msg": "STATE-SET",
+            "time": self._get_command_timestamp(),
+            "data": {
+                "fPwr": int(power_level) if model_type != "360eye" else power_level
+            },
+        }
+
+        await self._send_robot_command(command_data)
+
+        _LOGGER.debug(
+            "Set %s robot power to %s for %s",
+            model_type,
+            power_level,
+            self.serial_number,
+        )

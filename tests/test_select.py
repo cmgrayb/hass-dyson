@@ -1588,6 +1588,7 @@ class TestDysonWaterHardnessSelect:
         coordinator.device_capabilities = ["Humidifier"]
         coordinator.device.get_state_value = Mock()
         coordinator.device.send_command = AsyncMock()
+        coordinator.device.set_water_hardness = AsyncMock()
         coordinator.data = {
             "product-state": {
                 "wath": "1350",  # Medium water hardness
@@ -1669,8 +1670,8 @@ class TestDysonWaterHardnessSelect:
 
         await entity.async_select_option("Soft")
 
-        mock_humidifier_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"wath": "2025"}
+        mock_humidifier_coordinator.device.set_water_hardness.assert_called_once_with(
+            "soft"
         )
         assert entity._attr_current_option == "Soft"
 
@@ -1683,8 +1684,8 @@ class TestDysonWaterHardnessSelect:
 
         await entity.async_select_option("Medium")
 
-        mock_humidifier_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"wath": "1350"}
+        mock_humidifier_coordinator.device.set_water_hardness.assert_called_once_with(
+            "medium"
         )
         assert entity._attr_current_option == "Medium"
 
@@ -1697,8 +1698,8 @@ class TestDysonWaterHardnessSelect:
 
         await entity.async_select_option("Hard")
 
-        mock_humidifier_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"wath": "0675"}
+        mock_humidifier_coordinator.device.set_water_hardness.assert_called_once_with(
+            "hard"
         )
         assert entity._attr_current_option == "Hard"
 
@@ -1713,7 +1714,7 @@ class TestDysonWaterHardnessSelect:
         with patch("custom_components.hass_dyson.select._LOGGER") as mock_logger:
             await entity.async_select_option("Invalid")
 
-        mock_humidifier_coordinator.device.send_command.assert_not_called()
+        mock_humidifier_coordinator.device.set_water_hardness.assert_not_called()
         mock_logger.error.assert_called_once()
 
     def test_water_hardness_extra_state_attributes(self, mock_humidifier_coordinator):

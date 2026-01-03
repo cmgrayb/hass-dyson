@@ -1,6 +1,6 @@
 """Simple coordinator tests focusing on uncovered methods."""
 
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -435,21 +435,18 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         mock_device.is_connected = False
         mock_device.connect = AsyncMock(return_value=True)
         mock_device.send_command = AsyncMock()
+        mock_device.request_current_faults = AsyncMock()
         mock_device.get_state = AsyncMock(return_value={"fan": {"speed": 3}})
         coordinator.device = mock_device
 
         result = await coordinator._async_update_data()
 
-        # Should reconnect, send current state command and fault request, and return state
+        # Should reconnect, send current state command and request faults, and return state
         assert result == {"fan": {"speed": 3}, "environmental-data": {}}
         mock_device.connect.assert_called_once()
-        # Should call both current state and fault requests (new fault polling feature)
-        assert mock_device.send_command.call_count == 2
-        expected_calls = [
-            call(MQTT_CMD_REQUEST_CURRENT_STATE),
-            call("REQUEST-CURRENT-FAULTS"),
-        ]
-        mock_device.send_command.assert_has_calls(expected_calls, any_order=True)
+        # Should call current state command and fault request (new fault polling feature)
+        mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
+        mock_device.request_current_faults.assert_called_once()
         mock_device.get_state.assert_called_once()
 
     @pytest.mark.asyncio
@@ -509,6 +506,9 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
         mock_device.is_connected = False
         mock_device.connect = AsyncMock(return_value=True)
         mock_device.send_command = AsyncMock(side_effect=Exception("Command failed"))
+        mock_device.request_current_faults = AsyncMock(
+            side_effect=Exception("Fault request failed")
+        )
         mock_device.get_state = AsyncMock(return_value={"fan": {"speed": 1}})
         coordinator.device = mock_device
 
@@ -517,11 +517,7 @@ class TestDysonDataUpdateCoordinatorAsyncUpdateData:
 
         assert result == {"fan": {"speed": 1}, "environmental-data": {}}
         mock_device.connect.assert_called_once()
-        # Should call both current state and fault requests (new fault polling feature)
-        assert mock_device.send_command.call_count == 2
-        expected_calls = [
-            call(MQTT_CMD_REQUEST_CURRENT_STATE),
-            call("REQUEST-CURRENT-FAULTS"),
-        ]
-        mock_device.send_command.assert_has_calls(expected_calls, any_order=True)
+        # Should call current state command and fault request (new fault polling feature)
+        mock_device.send_command.assert_called_once_with(MQTT_CMD_REQUEST_CURRENT_STATE)
+        mock_device.request_current_faults.assert_called_once()
         mock_device.get_state.assert_called_once()

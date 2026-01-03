@@ -301,6 +301,21 @@ class TestDysonTemperatureSensor:
         # Assert
         assert sensor._attr_native_value is None
 
+    def test_native_value_with_off_temperature(self, mock_coordinator):
+        """Test sensor handles OFF temperature values gracefully."""
+        # Arrange
+        sensor = DysonTemperatureSensor(mock_coordinator)
+        mock_coordinator.data = {
+            "environmental-data": {"tact": "OFF"}  # Sensor inactive
+        }
+
+        # Act - trigger update
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value is None
+
 
 class TestDysonHumiditySensor:
     """Test DysonHumiditySensor."""
@@ -332,6 +347,23 @@ class TestDysonHumiditySensor:
 
         # Assert
         assert sensor._attr_native_value == 58
+
+    def test_native_value_with_off_humidity(self, mock_coordinator):
+        """Test sensor handles OFF humidity values gracefully."""
+        # Arrange
+        sensor = DysonHumiditySensor(mock_coordinator)
+        mock_coordinator.data = {
+            "environmental-data": {
+                "hact": "OFF"  # Sensor inactive
+            }
+        }
+
+        # Act
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value is None
 
 
 class TestDysonFilterLifeSensor:

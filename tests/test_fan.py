@@ -36,6 +36,9 @@ def mock_coordinator():
     coordinator.device.set_fan_power = AsyncMock()
     coordinator.device.set_fan_speed = AsyncMock()
     coordinator.device.set_auto_mode = AsyncMock()
+    coordinator.device.set_direction = AsyncMock()
+    coordinator.device.set_heating_mode = AsyncMock()
+    coordinator.device.set_fan_state = AsyncMock()
     coordinator.device.send_command = AsyncMock()
     coordinator.device.get_state_value = MagicMock(return_value="OFF")
     coordinator.async_request_refresh = AsyncMock()
@@ -70,6 +73,9 @@ def mock_coordinator_no_direction():
     coordinator.device.set_fan_power = AsyncMock()
     coordinator.device.set_fan_speed = AsyncMock()
     coordinator.device.set_auto_mode = AsyncMock()
+    coordinator.device.set_direction = AsyncMock()
+    coordinator.device.set_heating_mode = AsyncMock()
+    coordinator.device.set_fan_state = AsyncMock()
     coordinator.device.send_command = AsyncMock()
     coordinator.device.get_state_value = MagicMock(return_value="OFF")
     coordinator.async_request_refresh = AsyncMock()
@@ -447,9 +453,7 @@ class TestDysonFan:
             await fan.async_set_direction("forward")
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fdir": "ON"}
-        )
+        mock_coordinator.device.set_direction.assert_called_once_with("forward")
         mock_coordinator.async_request_refresh.assert_called_once()
 
     @pytest.mark.asyncio
@@ -466,22 +470,20 @@ class TestDysonFan:
             await fan.async_set_direction("reverse")
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fdir": "OFF"}
-        )
+        mock_coordinator.device.set_direction.assert_called_once_with("reverse")
 
     @pytest.mark.asyncio
     async def test_async_set_direction_error_handling(self, mock_coordinator):
         """Test async_set_direction error handling."""
         # Arrange
         fan = DysonFan(mock_coordinator)
-        mock_coordinator.device.send_command.side_effect = Exception("Test error")
+        mock_coordinator.device.set_direction.side_effect = Exception("Test error")
 
         # Act - should not raise exception
         await fan.async_set_direction("forward")
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once()
+        mock_coordinator.device.set_direction.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_set_direction_forward_no_support(
@@ -499,7 +501,7 @@ class TestDysonFan:
             await fan.async_set_direction("forward")
 
         # Assert - should not send command when direction not supported
-        mock_coordinator_no_direction.device.send_command.assert_not_called()
+        mock_coordinator_no_direction.device.set_direction.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_async_set_preset_mode_auto(self, mock_coordinator):

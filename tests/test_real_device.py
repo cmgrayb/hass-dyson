@@ -135,17 +135,19 @@ async def test_sticker_config_from_real_data(real_device_data, mock_hass):
             "scheduling",
         ]
 
-        # Mock the wait for connection to return True and set internal state
-        def mock_wait_for_connection(conn_type):
-            device._connected = True  # Simulate successful connection
-            return True
+        # Mock the network connectivity test to return success
+        with patch.object(device, "_test_network_connectivity", return_value=True):
+            # Mock the wait for connection to return True and set internal state
+            def mock_wait_for_connection(conn_type):
+                device._connected = True  # Simulate successful connection
+                return True
 
-        with patch.object(
-            device, "_wait_for_connection", side_effect=mock_wait_for_connection
-        ):
-            # Test connection
-            result = await device.connect()
-            assert result is True
+            with patch.object(
+                device, "_wait_for_connection", side_effect=mock_wait_for_connection
+            ):
+                # Test connection
+                result = await device.connect()
+                assert result is True
         assert device.is_connected is True
 
 

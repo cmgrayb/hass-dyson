@@ -397,6 +397,8 @@ class TestDysonClimateEntity:
                 "hmod": "OFF",
             }.get(key, default)
         )
+        # Mock the fan_power property to return False for OFF state
+        mock_coordinator.device.fan_power = False
 
         # Act
         entity._update_hvac_mode(device_data)
@@ -531,15 +533,15 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()  # Mock hass for async_write_ha_state
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_heating_mode = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.OFF)
 
         # Assert - Should turn off fan and heating since device has Heating capability
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fpwr": "OFF", "hmod": "OFF"}
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(False)
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("OFF")
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_heat(self, mock_coordinator):
@@ -548,15 +550,15 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()  # Mock hass for async_write_ha_state
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_heating_mode = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.HEAT)
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fpwr": "ON", "hmod": "HEAT"}
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(True)
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("HEAT")
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_fan_only(self, mock_coordinator):
@@ -565,15 +567,15 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()  # Mock hass for async_write_ha_state
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_heating_mode = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.FAN_ONLY)
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fpwr": "ON", "hmod": "OFF"}
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(True)
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("OFF")
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_unsupported(self, mock_coordinator):
@@ -596,15 +598,15 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_humidifier_mode = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.DRY)
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fpwr": "ON", "hume": "HUMD", "haut": "OFF"}
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(True)
+        mock_coordinator.device.set_humidifier_mode.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_off_with_humidifier(self, mock_coordinator):
@@ -614,16 +616,17 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_heating_mode = AsyncMock()
+        mock_coordinator.device.set_humidifier_mode = AsyncMock()
 
         # Act
         await entity.async_set_hvac_mode(HVACMode.OFF)
 
         # Assert
-        expected_command = {"fpwr": "OFF", "hmod": "OFF", "hume": "OFF", "haut": "OFF"}
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", expected_command
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(False)
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("OFF")
+        mock_coordinator.device.set_humidifier_mode.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_async_set_humidity(self, mock_coordinator):
@@ -633,15 +636,13 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_target_humidity = AsyncMock()
 
         # Act
         await entity.async_set_humidity(45)
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"humt": "0045"}
-        )
+        mock_coordinator.device.set_target_humidity.assert_called_once_with(45)
 
     @pytest.mark.asyncio
     async def test_async_set_humidity_without_capability(self, mock_coordinator):
@@ -736,15 +737,15 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()  # Mock hass for async_write_ha_state
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_heating_mode = AsyncMock()
 
         # Act
         await entity.async_turn_on()
 
         # Assert
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fpwr": "ON", "hmod": "HEAT"}
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(True)
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("HEAT")
 
     @pytest.mark.asyncio
     async def test_async_turn_off(self, mock_coordinator):
@@ -753,15 +754,15 @@ class TestDysonClimateEntity:
         entity = DysonClimateEntity(mock_coordinator)
         entity.hass = MagicMock()  # Mock hass for async_write_ha_state
         entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.send_command = AsyncMock()
+        mock_coordinator.device.set_fan_power = AsyncMock()
+        mock_coordinator.device.set_heating_mode = AsyncMock()
 
         # Act
         await entity.async_turn_off()
 
         # Assert - Should turn off fan and heating since device has Heating capability
-        mock_coordinator.device.send_command.assert_called_once_with(
-            "STATE-SET", {"fpwr": "OFF", "hmod": "OFF"}
-        )
+        mock_coordinator.device.set_fan_power.assert_called_once_with(False)
+        mock_coordinator.device.set_heating_mode.assert_called_once_with("OFF")
 
     def test_extra_state_attributes_with_device(self, mock_coordinator):
         """Test extra state attributes when device is available."""
