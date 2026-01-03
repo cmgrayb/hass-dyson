@@ -215,7 +215,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             return {}
 
         device = self.coordinator.device
-        attributes = {}
+        attributes: dict[str, Any] = {}
 
         # Raw robot state for debugging and advanced automations
         if device.robot_state:

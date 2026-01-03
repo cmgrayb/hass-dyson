@@ -187,6 +187,14 @@ class DysonDevice:
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: list[Callable[[str, dict[str, Any]], None]] = []
+
+        # Power control capability detection
+        self._fpwr_message_count = 0  # Track messages containing fpwr
+        self._fmod_message_count = 0  # Track messages containing fmod
+        self._total_state_messages = 0  # Total STATE-CHANGE messages received
+        self._power_control_type: str | None = (
+            None  # "fpwr" or "fmod" or None (detecting)
+        )
         self._environmental_callbacks: list[
             Callable[[], None]
         ] = []  # Environmental update callbacks
@@ -969,6 +977,35 @@ class DysonDevice:
             self._handle_faults_data(data)
         elif message_type == "STATE-CHANGE":
             _LOGGER.debug("Processing STATE-CHANGE message for %s", self.serial_number)
+
+            # Track power control capability patterns for device type detection
+            self._total_state_messages += 1
+            product_state = data.get("product-state", {})
+            if "fpwr" in product_state:
+                self._fpwr_message_count += 1
+            if "fmod" in product_state:
+                self._fmod_message_count += 1
+
+            # Update power control type detection if we have enough data
+            # Note: Only runs when coordinator immediate detection failed to set _power_control_type
+            if self._power_control_type is None and self._total_state_messages >= 1:
+                detected_type = self._detect_power_control_type()
+                if detected_type != "unknown":
+                    self._power_control_type = detected_type
+                    _LOGGER.info(
+                        "Device %s fallback detection: %s-based power control (fpwr_msgs: %d, fmod_msgs: %d, total: %d)",
+                        self.serial_number,
+                        detected_type,
+                        self._fpwr_message_count,
+                        self._fmod_message_count,
+                        self._total_state_messages,
+                    )
+                    _LOGGER.debug(
+                        "Fallback detection completed for %s after %d STATE-CHANGE message(s)",
+                        self.serial_number,
+                        self._total_state_messages,
+                    )
+
             self._handle_state_change(data)
         else:
             _LOGGER.debug(
@@ -1629,24 +1666,40 @@ class DysonDevice:
 
     @property
     def fan_power(self) -> bool:
-        """Return if fan power is on (fpwr)."""
+        """Return if fan power is on, handling both fpwr and fmod-based devices."""
         product_state = self._state_data.get("product-state", {})
-        fpwr = self.get_state_value(product_state, "fpwr", "MISSING")
 
-        # If fpwr is available, use it directly
-        if fpwr != "MISSING":
-            _LOGGER.debug(
-                "Device %s fan_power using fpwr: %s", self.serial_number, fpwr
-            )
-            return fpwr == "ON"
-
-        # Fallback to fnst (fan state) when fpwr is not available
-        # This handles cases where STATE-CHANGE messages don't include fpwr
-        fnst = self.get_state_value(product_state, "fnst", "OFF")
-        _LOGGER.debug(
-            "Device %s fan_power using fnst fallback: %s", self.serial_number, fnst
+        # Determine power control type if not yet detected
+        power_control_type = (
+            self._power_control_type or self._detect_power_control_type()
         )
-        return fnst == "FAN"
+
+        if power_control_type == "fmod":
+            # HP02 and similar devices: power state based on fmod
+            fmod = self.get_state_value(product_state, "fmod", "OFF")
+            _LOGGER.debug(
+                "Device %s fan_power using fmod (HP02-style): %s",
+                self.serial_number,
+                fmod,
+            )
+            return fmod in ["FAN", "AUTO"]
+        else:
+            # Most devices: try fpwr first, fallback to fnst
+            fpwr = self.get_state_value(product_state, "fpwr", "MISSING")
+
+            if fpwr != "MISSING":
+                _LOGGER.debug(
+                    "Device %s fan_power using fpwr: %s", self.serial_number, fpwr
+                )
+                return fpwr == "ON"
+
+            # Fallback to fnst (fan state) when fpwr is not available
+            # This handles cases where STATE-CHANGE messages don't include fpwr
+            fnst = self.get_state_value(product_state, "fnst", "OFF")
+            _LOGGER.debug(
+                "Device %s fan_power using fnst fallback: %s", self.serial_number, fnst
+            )
+            return fnst == "FAN"
 
     @property
     def fan_speed_setting(self) -> str:
@@ -2045,6 +2098,36 @@ class DysonDevice:
 
         return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    def _detect_power_control_type(self) -> str:
+        """Detect device power control type based on MQTT message patterns.
+
+        Returns:
+            "fpwr" for modern devices that have fpwr key in their state messages
+            "fmod" for HP02-style devices that use fmod for power control (no fpwr key)
+            "unknown" if not enough data to determine
+
+        Note:
+            This is a fallback detection method that only runs when the coordinator's
+            immediate detection failed during startup. It analyzes STATE-CHANGE messages:
+            - Modern devices: include fpwr key in messages, use fpwr-based control
+            - HP02-style devices: have fmod but no fpwr key, use fmod-based power control
+            - Some modern heating devices may have both fpwr and fmod (fpwr is power, fmod is fan mode)
+            - Only requires 1 STATE-CHANGE message since we just need to see which keys are present
+        """
+        # Need at least one message to make a determination
+        if self._total_state_messages < 1:
+            return "unknown"
+
+        # If we've seen fpwr in any messages, this is a modern fpwr-based device
+        if self._fpwr_message_count > 0:
+            return "fpwr"
+
+        # If we've never seen fpwr but have seen fmod, this is an HP02-style fmod-based device
+        if self._fmod_message_count > 0:
+            return "fmod"
+
+        return "unknown"
+
     def get_state_value(
         self, data: dict[str, Any], key: str, default: str = "OFF"
     ) -> str:
@@ -2205,9 +2288,28 @@ class DysonDevice:
         await self.send_command("STATE-SET", {"fnsp": speed_str})
 
     async def set_fan_power(self, enabled: bool) -> None:
-        """Set fan power on/off using fpwr."""
-        fpwr_value = "ON" if enabled else "OFF"
-        await self.send_command("STATE-SET", {"fpwr": fpwr_value})
+        """Set fan power on/off using appropriate method for device type."""
+        # Determine power control type if not yet detected
+        power_control_type = (
+            self._power_control_type or self._detect_power_control_type()
+        )
+
+        if power_control_type == "fmod":
+            # HP02 and similar devices: use fmod for power control
+            fmod_value = "FAN" if enabled else "OFF"
+            _LOGGER.debug(
+                "Device %s setting power via fmod (HP02-style): %s",
+                self.serial_number,
+                fmod_value,
+            )
+            await self.send_command("STATE-SET", {"fmod": fmod_value})
+        else:
+            # Most devices: use fpwr for power control
+            fpwr_value = "ON" if enabled else "OFF"
+            _LOGGER.debug(
+                "Device %s setting power via fpwr: %s", self.serial_number, fpwr_value
+            )
+            await self.send_command("STATE-SET", {"fpwr": fpwr_value})
 
     async def reset_hepa_filter_life(self) -> None:
         """Reset HEPA filter life to 100%."""
