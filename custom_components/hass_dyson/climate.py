@@ -52,6 +52,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         self._attr_unique_id = f"{coordinator.serial_number}_climate"
         self._attr_name = None  # Use device name from device_info
         self._attr_icon = "mdi:thermostat"
+        self._attr_translation_key = "dyson_climate"
 
         # Check device capabilities for feature support
         device_capabilities = coordinator.device_capabilities
