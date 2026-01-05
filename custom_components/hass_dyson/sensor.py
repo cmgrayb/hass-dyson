@@ -952,11 +952,20 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
         temperature = environmental_data.get("tact")
         if temperature is not None:
             try:
-                # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
-                # Convert to Celsius: (K * 10) / 10 - 273.15
-                # Home Assistant will automatically convert to Fahrenheit for imperial users
-                temp_celsius = (float(temperature) / 10) - 273.15
-                self._attr_native_value = round(temp_celsius, 1)
+                # Handle "OFF" as a valid state when sensors are inactive
+                if temperature == "OFF":
+                    _LOGGER.debug(
+                        "Temperature sensor inactive for device %s: %s",
+                        self.coordinator.serial_number,
+                        temperature,
+                    )
+                    self._attr_native_value = None
+                else:
+                    # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
+                    # Convert to Celsius: (K * 10) / 10 - 273.15
+                    # Home Assistant will automatically convert to Fahrenheit for imperial users
+                    temp_celsius = (float(temperature) / 10) - 273.15
+                    self._attr_native_value = round(temp_celsius, 1)
             except (ValueError, TypeError):
                 self._attr_native_value = None
         else:
@@ -998,24 +1007,33 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
 
             if humidity_raw is not None:
                 try:
-                    # Convert and validate the humidity value
-                    # libdyson-neon shows hact as 4-digit string: "0030" = 30%, "0058" = 58%
-                    humidity_value = int(humidity_raw)
-                    if not (0 <= humidity_value <= 100):
-                        _LOGGER.warning(
-                            "Invalid humidity value for device %s: %s%% (expected 0-100)",
+                    # Handle "OFF" as a valid state when sensors are inactive
+                    if humidity_raw == "OFF":
+                        _LOGGER.debug(
+                            "Humidity sensor inactive for device %s: %s",
                             device_serial,
-                            humidity_value,
+                            humidity_raw,
                         )
                         new_value = None
                     else:
-                        new_value = humidity_value
-                        _LOGGER.debug(
-                            "Humidity conversion for %s: %s -> %d%%",
-                            device_serial,
-                            humidity_raw,
-                            new_value,
-                        )
+                        # Convert and validate the humidity value
+                        # libdyson-neon shows hact as 4-digit string: "0030" = 30%, "0058" = 58%
+                        humidity_value = int(humidity_raw)
+                        if not (0 <= humidity_value <= 100):
+                            _LOGGER.warning(
+                                "Invalid humidity value for device %s: %s%% (expected 0-100)",
+                                device_serial,
+                                humidity_value,
+                            )
+                            new_value = None
+                        else:
+                            new_value = humidity_value
+                            _LOGGER.debug(
+                                "Humidity conversion for %s: %s -> %d%%",
+                                device_serial,
+                                humidity_raw,
+                                new_value,
+                            )
                 except (ValueError, TypeError):
                     _LOGGER.warning(
                         "Invalid humidity value format for device %s: %s",

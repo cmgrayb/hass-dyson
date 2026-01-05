@@ -1,0 +1,381 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dyson Integration Setup",
+        "description": "Wählen Sie aus, wie Sie Ihre Dyson-Geräte einrichten möchten.",
+        "data": {
+          "setup_method": "Setup-Methode"
+        }
+      },
+      "cloud_account": {
+        "title": "Dyson-Konto-Authentifizierung",
+        "description": "Geben Sie Ihre Dyson-Konto-Anmeldedaten ein, um Ihre Geräte zu entdecken und einzurichten.",
+        "data": {
+          "email": "E-Mail-Adresse"
+        }
+      },
+      "manual_device": {
+        "title": "Manuelle Gerätekonfiguration",
+        "description": "Geben Sie Ihre Geräteinformationen manuell ein. Sie finden die Seriennummer, das Gerätepasswort und das MQTT-Präfix auf einem Aufkleber auf Ihrem Gerät oder über Tools wie libdyson-rest und opendyson. Lassen Sie die IP-Adresse leer für automatische Erkennung via mDNS. Wählen Sie Gerätekategorien und Fähigkeiten aus, um Ihr Gerät anzupassen.",
+        "data": {
+          "serial_number": "Geräte-Seriennummer",
+          "credential": "Geräte-Passwort",
+          "mqtt_prefix": "MQTT-Präfix (z.B. 438, 475, 455)",
+          "hostname": "Geräte-IP-Adresse (optional - leer lassen für Auto-Erkennung)",
+          "device_name": "Gerätename (Optional)",
+          "device_category": "Gerätekategorien (alle auswählen, die auf Ihr Gerät zutreffen)",
+          "capabilities": "Gerätefähigkeiten (Funktionen zum Aktivieren auswählen)"
+        }
+      },
+      "verify": {
+        "title": "E-Mail-Verifizierung",
+        "description": "Ein Verifizierungscode wurde an {email} gesendet. Bitte überprüfen Sie Ihre E-Mail und geben Sie den Code unten ein.",
+        "data": {
+          "verification_code": "Verifizierungscode",
+          "password": "Passwort"
+        }
+      },
+      "connection": {
+        "title": "Verbindungseinstellungen",
+        "description": "Wählen Sie aus, wie sich Home Assistant mit Ihren Dyson-Geräten verbinden soll.",
+        "data": {
+          "connection_type": "Verbindungstyp"
+        }
+      },
+      "cloud_preferences": {
+        "title": "Cloud-Konto-Einstellungen",
+        "description": "Konfigurieren Sie, wie Ihr Dyson Cloud-Konto ({email}) {device_count} entdeckte Geräte verwaltet.",
+        "data": {
+          "poll_for_devices": "Nach neuen Geräten suchen (regelmäßig nach neuen Geräten in Ihrem Konto suchen)",
+          "auto_add_devices": "Entdeckte Geräte automatisch hinzufügen (wenn deaktiviert, erscheinen Geräte als erkennbar, erfordern aber manuelle Genehmigung)"
+        }
+      },
+      "discovery_confirm": {
+        "title": "{device_name}",
+        "description": "Ein neues Dyson-Gerät wurde in Ihrem Cloud-Konto entdeckt:\n\n**{device_name}**\nSerie: {device_serial}\nTyp: {product_type}\n\nMöchten Sie dieses Gerät zu Home Assistant hinzufügen?",
+        "data": {
+          "confirm": "Dieses Gerät zu Home Assistant hinzufügen"
+        }
+      }
+    },
+    "error": {
+      "auth_failed": "Authentifizierung fehlgeschlagen. Bitte überprüfen Sie Ihre E-Mail und Ihr Passwort.",
+      "verification_failed": "Verifizierung fehlgeschlagen. Bitte überprüfen Sie Ihr Passwort und den Code und versuchen Sie es erneut.",
+      "connection_failed": "Verbindung fehlgeschlagen. Bitte versuchen Sie es später erneut.",
+      "no_devices": "Keine Geräte in Ihrem Dyson-Konto gefunden.",
+      "manual_setup_failed": "Manuelle Einrichtung fehlgeschlagen. Bitte überprüfen Sie Ihre Geräteinformationen.",
+      "invalid_setup_method": "Ungültige Setup-Methode ausgewählt.",
+      "preferences_failed": "Speichern der Cloud-Einstellungen fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "device_data_invalid": "Einige Geräte in Ihrem Dyson-Konto haben ungültige oder fehlende Daten. Bitte führen Sie {libdyson_rest_url} oder {opendyson_url} aus, um eine Liste der Geräte im Konto abzurufen, bevor Sie ein Problem melden, oder versuchen Sie, die problematischen Geräte in der Dyson-App zu entfernen und erneut hinzuzufügen.",
+      "api_format_changed": "Das Dyson Cloud-API-Format hat sich geändert. Cloud-Geräteerkennung ist vorübergehend nicht verfügbar. Bitte verwenden Sie stattdessen die manuelle Gerätekonfiguration.",
+      "api_validation_failed": "Dyson Cloud-API-Antwort-Validierung fehlgeschlagen. Bitte versuchen Sie es erneut oder verwenden Sie die manuelle Gerätekonfiguration.",
+      "cloud_api_error": "Fehler bei der Kommunikation mit der Dyson Cloud-API. Bitte versuchen Sie es später erneut.",
+      "required": "Dieses Feld ist erforderlich."
+    },
+    "abort": {
+      "already_configured": "Dieses Dyson-Gerät ist bereits konfiguriert.",
+      "invalid_discovery_info": "Ungültige Erkennungsinformationen erhalten. Gerätekonfiguration kann nicht fortgesetzt werden.",
+      "no_discovery_info": "Keine Erkennungsinformationen verfügbar. Bitte versuchen Sie es erneut oder verwenden Sie die manuelle Einrichtung.",
+      "user_declined": "Gerätekonfiguration wurde vom Benutzer abgebrochen.",
+      "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dyson-Geräteverwaltung",
+        "description": "Verwalten Sie Ihre Dyson-Geräte und Verbindungseinstellungen."
+      },
+      "manage_devices": {
+        "title": "Kontoverwaltung",
+        "description": "Verwalten Sie {device_count} Geräte in Ihrem Dyson-Konto ({account_email}).\n\n{active_count} Geräte sind derzeit aktiv.\n\n💡 Einzelne Geräte können mit den nativen Home Assistant-Steuerelementen auf jeder Geräteseite neu geladen/gelöscht werden.\n\nWählen Sie eine Aktion auf Kontoebene:",
+        "data": {
+          "action": "Aktion"
+        }
+      },
+      "reload_all": {
+        "title": "Alle Geräte neu laden",
+        "description": "Dies wird alle {active_count} aktiven Geräte von insgesamt {device_count} Geräten neu laden und ihre Verbindungs- und Statusinformationen aktualisieren.\n\nAlle temporären Verbindungsprobleme können behoben werden. Fortfahren?",
+        "data": {
+          "confirm": "Neu laden bestätigen"
+        }
+      },
+      "delete_device": {
+        "title": "Gerät entfernen",
+        "description": "Dies wird {device_name} ({device_serial}) dauerhaft aus Home Assistant entfernen.\n\nStatus: {device_status}\n\nAlle Entitäten für dieses Gerät werden gelöscht. Sie können es später wieder hinzufügen, indem Sie den Kontoeintrag neu laden.\n\n⚠️ Diese Aktion kann nicht rückgängig gemacht werden. Fortfahren?",
+        "data": {
+          "confirm": "Entfernung bestätigen",
+          "device_serial": "Geräte-Serie"
+        }
+      },
+      "reconfigure_connection": {
+        "title": "Verbindung neu konfigurieren",
+        "description": "Ändern Sie, wie sich Home Assistant mit Ihren Dyson-Geräten verbindet.\n\nAktuelle Einstellung: {current_type}\n\nNeuen Verbindungstyp auswählen:",
+        "data": {
+          "connection_type": "Verbindungstyp"
+        }
+      },
+      "device_reconfigure_connection": {
+        "title": "Geräteverbindungseinstellungen",
+        "description": "Konfigurieren Sie, wie sich {device_name} mit Home Assistant verbindet.\n\nKonto-Standard: {account_connection_type}\nAktuelle Einstellung: {current_setting}\n\nVerbindungsmethode wählen:",
+        "data": {
+          "connection_type": "Verbindungstyp"
+        }
+      },
+      "manage_cloud_preferences": {
+        "title": "Cloud-Konto-Einstellungen",
+        "description": "Konfigurieren Sie, wie Ihr Dyson Cloud-Konto ({email}) {device_count} Geräte verwaltet.",
+        "data": {
+          "poll_for_devices": "Nach neuen Geräten suchen (regelmäßig nach neuen Geräten in Ihrem Konto suchen)",
+          "auto_add_devices": "Entdeckte Geräte automatisch hinzufügen (wenn deaktiviert, erscheinen Geräte als erkennbar, erfordern aber manuelle Genehmigung)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": {
+        "name": "Temperatur"
+      },
+      "humidity": {
+        "name": "Luftfeuchtigkeit"
+      },
+      "pm25": {
+        "name": "PM2.5"
+      },
+      "pm10": {
+        "name": "PM10"
+      },
+      "voc": {
+        "name": "VOC"
+      },
+      "no2": {
+        "name": "NO2"
+      },
+      "co2": {
+        "name": "CO2"
+      },
+      "hcho": {
+        "name": "HCHO"
+      },
+      "formaldehyde": {
+        "name": "Formaldehyd"
+      },
+      "wifi_signal": {
+        "name": "WiFi-Signal"
+      },
+      "connection_status": {
+        "name": "Verbindungsstatus"
+      },
+      "filter_life": {
+        "name": "{filter_type}-Filter Lebensdauer"
+      },
+      "hepa_filter_life": {
+        "name": "HEPA-Filter Lebensdauer"
+      },
+      "carbon_filter_life": {
+        "name": "Aktivkohlefilter Lebensdauer"
+      },
+      "filter_status": {
+        "name": "Filter-Status"
+      },
+      "hepa_filter_type": {
+        "name": "HEPA-Filter Typ"
+      },
+      "carbon_filter_type": {
+        "name": "Aktivkohlefilter Typ"
+      },
+      "p25r": {
+        "name": "PM2.5 Roh"
+      },
+      "p10r": {
+        "name": "PM10 Roh"
+      }
+    },
+    "switch": {
+      "auto_mode": {
+        "name": "Automatik-Modus"
+      },
+      "night_mode": {
+        "name": "Nachtmodus"
+      },
+      "oscillation": {
+        "name": "Oszillation"
+      },
+      "heating": {
+        "name": "Heizung"
+      },
+      "continuous_monitoring": {
+        "name": "Kontinuierliche Überwachung"
+      },
+      "firmware_auto_update": {
+        "name": "Automatische Firmware-Updates"
+      }
+    },
+    "select": {
+      "fan_control_mode": {
+        "name": "Lüfter-Steuerungsmodus"
+      },
+      "oscillation_mode": {
+        "name": "Oszillation"
+      },
+      "heating_mode": {
+        "name": "Heizmodus"
+      }
+    },
+    "number": {
+      "sleep_timer": {
+        "name": "Schlaftimer"
+      },
+      "oscillation_low_angle": {
+        "name": "Oszillations-Unterwinkel"
+      },
+      "oscillation_high_angle": {
+        "name": "Oszillations-Oberwinkel"
+      },
+      "oscillation_center_angle": {
+        "name": "Oszillations-Mittelwinkel"
+      },
+      "oscillation_angle_span": {
+        "name": "Oszillationswinkel"
+      }
+    },
+    "binary_sensor": {
+      "filter_replacement": {
+        "name": "Filterwechsel"
+      }
+    },
+    "update": {
+      "firmware_update": {
+        "name": "Firmware-Update"
+      }
+    },
+    "climate": {
+      "dyson_climate": {
+        "state_attributes": {
+          "hvac_mode": {
+            "state": {
+              "dry": "Befeuchten"
+            }
+          },
+          "hvac_action": {
+            "state": {
+              "drying": "Befeuchtung"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "set_sleep_timer": {
+      "name": "Schlaftimer einstellen",
+      "description": "Stellen Sie einen Schlaftimer für das Gerät ein. Das Gerät schaltet sich nach der angegebenen Zeit aus. [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das der Schlaftimer eingestellt werden soll."
+        },
+        "minutes": {
+          "name": "Minuten",
+          "description": "Schlaftimer-Dauer in Minuten (15-540)."
+        }
+      }
+    },
+    "cancel_sleep_timer": {
+      "name": "Schlaftimer abbrechen",
+      "description": "Brechen Sie den derzeit aktiven Schlaftimer für das Gerät ab. [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das der Schlaftimer abgebrochen werden soll."
+        }
+      }
+    },
+    "schedule_operation": {
+      "name": "Vorgang planen",
+      "description": "Planen Sie einen zukünftigen Vorgang für das Gerät. [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das der Vorgang geplant werden soll."
+        },
+        "schedule_time": {
+          "name": "Geplante Zeit",
+          "description": "Wann der Vorgang ausgeführt werden soll (ISO 8601 Format)."
+        },
+        "operation": {
+          "name": "Vorgang",
+          "description": "Der auszuführende Vorgang (JSON-Format)."
+        }
+      }
+    },
+    "set_oscillation_angles": {
+      "name": "Oszillationswinkel einstellen",
+      "description": "Stellen Sie benutzerdefinierte Oszillationswinkel für das Gerät ein. [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das die Oszillationswinkel eingestellt werden sollen."
+        },
+        "lower_angle": {
+          "name": "Unterer Winkel",
+          "description": "Unterer Oszillationswinkel (5-355 Grad)."
+        },
+        "upper_angle": {
+          "name": "Oberer Winkel",
+          "description": "Oberer Oszillationswinkel (5-355 Grad)."
+        }
+      }
+    },
+    "fetch_account_data": {
+      "name": "Kontodaten abrufen",
+      "description": "Rufen Sie Gerätedaten vom Dyson Cloud-Konto zur Fehlerbehebung ab.",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das Kontodaten abgerufen werden sollen (optional - alle abrufen, falls nicht angegeben)."
+        }
+      }
+    },
+    "reset_filter": {
+      "name": "Filter-Lebensdauer zurücksetzen",
+      "description": "Setzen Sie den Filter-Lebensdauer-Zähler für das Gerät zurück. [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das der Filter zurückgesetzt werden soll."
+        },
+        "filter_type": {
+          "name": "Filtertyp",
+          "description": "Filtertyp zum Zurücksetzen (hepa, carbon oder beide)."
+        }
+      }
+    },
+    "refresh_account_data": {
+      "name": "Kontodaten aktualisieren",
+      "description": "Aktualisieren Sie Geräteinformationen vom Dyson Cloud-Konto (aktualisiert Entitätsstatus im Hintergrund). [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Das Dyson-Gerät, für das Daten aktualisiert werden sollen (optional - aktualisiert alle, falls nicht angegeben)."
+        }
+      }
+    },
+    "get_cloud_devices": {
+      "name": "Cloud-Geräte abrufen",
+      "description": "Rufen Sie Geräteinformationen von Dyson Cloud-Konten für manuelle Einrichtung und Fehlerbehebung ab. [Mehr erfahren]({docs_url}).",
+      "fields": {
+        "account_email": {
+          "name": "Konto-E-Mail",
+          "description": "Spezifische Cloud-Konto-E-Mail (optional - verwendet erstes Konto, falls nicht angegeben)."
+        },
+        "sanitize": {
+          "name": "Daten bereinigen",
+          "description": "Entfernen Sie sensible Informationen für sichere öffentliche Veröffentlichung."
+        }
+      }
+    }
+  }
+}

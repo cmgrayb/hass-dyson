@@ -361,5 +361,140 @@
         }
       }
     }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": {
+        "name": "Temperature"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "pm25": {
+        "name": "PM2.5"
+      },
+      "pm10": {
+        "name": "PM10"
+      },
+      "voc": {
+        "name": "VOC"
+      },
+      "no2": {
+        "name": "NO2"
+      },
+      "co2": {
+        "name": "CO2"
+      },
+      "hcho": {
+        "name": "HCHO"
+      },
+      "formaldehyde": {
+        "name": "Formaldehyde"
+      },
+      "wifi_signal": {
+        "name": "WiFi Signal"
+      },
+      "connection_status": {
+        "name": "Connection Status"
+      },
+      "filter_life": {
+        "name": "{filter_type} Filter Life"
+      },
+      "hepa_filter_life": {
+        "name": "HEPA Filter Life"
+      },
+      "carbon_filter_life": {
+        "name": "Carbon Filter Life"
+      },
+      "filter_status": {
+        "name": "Filter Status"
+      },
+      "hepa_filter_type": {
+        "name": "HEPA Filter Type"
+      },
+      "carbon_filter_type": {
+        "name": "Carbon Filter Type"
+      },
+      "p25r": {
+        "name": "PM2.5 Raw"
+      },
+      "p10r": {
+        "name": "PM10 Raw"
+      }
+    },
+    "switch": {
+      "auto_mode": {
+        "name": "Auto Mode"
+      },
+      "night_mode": {
+        "name": "Night Mode"
+      },
+      "oscillation": {
+        "name": "Oscillation"
+      },
+      "heating": {
+        "name": "Heating"
+      },
+      "continuous_monitoring": {
+        "name": "Continuous Monitoring"
+      },
+      "firmware_auto_update": {
+        "name": "Firmware Auto Update"
+      }
+    },
+    "select": {
+      "fan_control_mode": {
+        "name": "Fan Control Mode"
+      },
+      "oscillation_mode": {
+        "name": "Oscillation"
+      },
+      "heating_mode": {
+        "name": "Heating Mode"
+      }
+    },
+    "number": {
+      "sleep_timer": {
+        "name": "Sleep Timer"
+      },
+      "oscillation_low_angle": {
+        "name": "Oscillation Low Angle"
+      },
+      "oscillation_high_angle": {
+        "name": "Oscillation High Angle"
+      },
+      "oscillation_center_angle": {
+        "name": "Oscillation Center Angle"
+      },
+      "oscillation_angle_span": {
+        "name": "Oscillation Angle"
+      }
+    },
+    "binary_sensor": {
+      "filter_replacement": {
+        "name": "Filter Replacement"
+      }
+    },
+    "update": {
+      "firmware_update": {
+        "name": "Firmware Update"
+      }
+    },
+    "climate": {
+      "dyson_climate": {
+        "state_attributes": {
+          "hvac_mode": {
+            "state": {
+              "dry": "Humidify"
+            }
+          },
+          "hvac_action": {
+            "state": {
+              "drying": "Humidifying"
+            }
+          }
+        }
+      }
+    }
   }
 }

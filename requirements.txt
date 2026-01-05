@@ -13,4 +13,3 @@ paho-mqtt[websockets]>=2.1.0
 # Network discovery support
 
 zeroconf>=0.148.0
-

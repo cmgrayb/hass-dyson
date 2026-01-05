@@ -948,9 +948,7 @@ class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
             return
 
         try:
-            await self.coordinator.device.send_command(
-                "STATE-SET", {"wath": value_map[option]}
-            )
+            await self.coordinator.device.set_water_hardness(option.lower())
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1064,13 +1062,8 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # Send robot power level command via MQTT
-            command_data = {
-                "msg": "STATE-SET",
-                "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": command_value},
-            }
-            await self.coordinator.device._send_robot_command(command_data)
+            # Send robot power level command via device method
+            await self.coordinator.device.set_robot_power(command_value, "360eye")
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1154,13 +1147,8 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # Send robot power level command via MQTT
-            command_data = {
-                "msg": "STATE-SET",
-                "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": int(command_value)},
-            }
-            await self.coordinator.device._send_robot_command(command_data)
+            # Send robot power level command via device method
+            await self.coordinator.device.set_robot_power(command_value, "heurist")
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1244,13 +1232,8 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # Send robot power level command via MQTT
-            command_data = {
-                "msg": "STATE-SET",
-                "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": int(command_value)},
-            }
-            await self.coordinator.device._send_robot_command(command_data)
+            # Send robot power level command via device method
+            await self.coordinator.device.set_robot_power(command_value, "vis_nav")
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option
@@ -1335,13 +1318,8 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
             )
 
-            # Send robot power level command via MQTT
-            command_data = {
-                "msg": "STATE-SET",
-                "time": self.coordinator.device._get_command_timestamp(),
-                "data": {"fPwr": int(command_value)},
-            }
-            await self.coordinator.device._send_robot_command(command_data)
+            # Send robot power level command via device method
+            await self.coordinator.device.set_robot_power(command_value, "generic")
 
             # Update local state immediately for responsive UI
             self._attr_current_option = option

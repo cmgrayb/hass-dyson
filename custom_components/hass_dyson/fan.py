@@ -524,13 +524,10 @@ class DysonFan(DysonEntity, FanEntity):
         # Map Home Assistant direction to Dyson direction values
         # Based on libdyson-neon: fdir="ON" = front airflow = forward direction
         #                         fdir="OFF" = no front airflow = reverse direction
-        direction_value = "ON" if direction == "forward" else "OFF"
 
         try:
-            # Use device method directly instead of coordinator
-            await self.coordinator.device.send_command(
-                "STATE-SET", {"fdir": direction_value}
-            )
+            # Use device method for consistency
+            await self.coordinator.device.set_direction(direction)
             _LOGGER.debug(
                 "Set fan direction to %s for %s",
                 direction,
@@ -585,9 +582,7 @@ class DysonFan(DysonEntity, FanEntity):
                 await self.coordinator.device.set_auto_mode(False)
             elif preset_mode == "Heat" and self._has_heating:
                 # Enable heating mode
-                await self.coordinator.async_send_command(
-                    "set_climate_mode", {"hmod": "HEAT"}
-                )
+                await self.coordinator.device.set_heating_mode("HEAT")
             else:
                 _LOGGER.warning("Unknown preset mode: %s", preset_mode)
                 return
@@ -935,15 +930,13 @@ class DysonFan(DysonEntity, FanEntity):
 
         try:
             if hvac_mode == HVACMode.OFF:
-                await self.coordinator.device.send_command("STATE-SET", {"fnst": "OFF"})
+                await self.coordinator.device.set_fan_state("OFF")
             elif hvac_mode == HVACMode.HEAT:
-                await self.coordinator.device.send_command(
-                    "STATE-SET", {"hmod": "HEAT"}
-                )
+                await self.coordinator.device.set_heating_mode("HEAT")
             elif hvac_mode == HVACMode.FAN_ONLY:
-                await self.coordinator.device.send_command("STATE-SET", {"fnst": "FAN"})
+                await self.coordinator.device.set_fan_state("FAN")
             elif hvac_mode == HVACMode.AUTO:
-                await self.coordinator.device.send_command("STATE-SET", {"auto": "ON"})
+                await self.coordinator.device.set_auto_mode(True)
 
             # Update state immediately for responsive UI
             self._attr_hvac_mode = hvac_mode

@@ -44,12 +44,12 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Humidifier Support** (e.g. PH models) - Experimental support is now available
 - **Climate Control** - Climate Control with Humidistat (Experimental)
 
-## Planned Features
-
 ### Robotic Vacuums
 
-- **Battery Sensor** - Monitor your 360 robotic vacuum's battery
-- **TBD** - Any features found which can be supported, will be
+- **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
+- **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session (for future use)
+
+## Planned Features
 
 ### BLE Devices
 
@@ -90,25 +90,57 @@ When selecting **Cloud Discovery**, you'll be guided through the following steps
 #### **Step 1: Account Credentials**
 
 - **Email**: Your Dyson account email address
-- **Password**: Your Dyson account password
 - **Country**: Verify your country and culture (affects API region and localization)
 
-#### **Step 2: Device Discovery**
+- **Password**: Your Dyson account password
+- **OTP**: The one-time password sent to your e-mail by Dyson
 
-The integration will:
+#### **Step 2: Default Connection Method**
 
-- Connect to Dyson's cloud API using your credentials
-- Prompt the user for configuration preferences
-- Extract device capabilities and configuration from cloud data
-- If configured to do so (default), automatically discover and add all supportable devices linked to your account
-- Alternatively, prompt to add a list of found devices for selection
-- If polling and auto-add are both deselected, the cloud account may be used for fetching account and device data via Home Assistant Actions only.  For more information, see: [Actions](docs/ACTIONS.md)
+Choose your preferred default connection method for your devices:
 
-#### **What You'll See**
+- **Local Only**: Talks to the device only through the device's MQTT server
+  - Maximum privacy, can be used without internet access for the device
+  - Susceptible to local device MQTT server failures and mDNS resolution issues
+  - Note: This mode is most similar to the [ha-dyson](https://github.com/libdyson-wg/ha-dyson) integration
 
-- **Device List**: All Dyson devices registered to your account
-- **Device Info**: Model, serial number, and current online status
-- **Automatic Setup**: Each device configured with appropriate sensors and controls
+- **Local with Cloud Fallback**: Stays local until and unless the local server cannot be
+    reached, then reconnects to the device through the Dyson-hosted MQTT Proxy service.
+  - Balances privacy and uptime by only using cloud when necessary
+  - Attempts to reconnect to local periodically
+  - Allows the user to reconnect to local manually through the Reconnect button
+
+- **Cloud with Local Fallback**: Stays on the Dyson MQTT Proxy service until and unless
+    internet access is lost, then reconnects to the device directly
+  - Uses an encrypted connection as often as possible but switches to local to maintain connectivity in the event of internet outage
+  - Attempts to reconnect to cloud periodically
+  - Allows the user to reconnect to cloud manually through the Reconnect button
+
+- **Cloud Only**: Stays on the Dyson MQTT Proxy
+  - Useful for environments which cannot support mDNS
+  - Can be used to control Dyson devices on other networks for remote management
+  - All communication with the device is encrypted in transit
+
+**Note**: Each device may individually override its preferred connection method once discovered
+
+#### **Step 3: Device Discovery Configuration**
+
+Choose your preference for level of control of discovery:
+
+- **Poll for New Devices**: If selected, the API will be queried for new devices periodically, making them available for discovery
+- **Automatically Add Discovered Devices**: Uses the information from polling your Dyson account to connect to the devices using your Default Connection Method
+
+Scenarios:
+
+1. I want my Dyson devices to show up in Home Assistant as soon as they are found
+    - Leave both checkboxes selected
+
+2. I want Home Assistant to ask me to add my devices as they are found so I can choose which ones to add or ignore
+    - Only select Poll for New Devices, leave Automatically Add Discovered Devices unchecked.
+
+3. I want to add my Dyson devices individually and manually or I am only interested in using the Get Cloud Devices Action
+    - Deselect both checkboxes
+    - For more information, see: [Actions](docs/ACTIONS.md)
 
 #### **Expected Entities Per Device**
 
@@ -141,25 +173,26 @@ Based on your device capabilities and category, you'll automatically get:
 - CO2 sensor
 - HCHO/Formaldehyde sensor
 
-**Heating Models (Heating Capability):**
+**Heating models (Heating Capability):**
 
-- Climate control platform
-- Heating controls
+- **Climate control platform**
+- **HVAC Controls**:
+  - Mode control: Heat/Fan only/Off
+  - Heat minimum temperature (thermostat)
 
 **Humidifier models (Humidifier Capability):**
 
-- Climate control platform
-- Humidifier controls
+- **Climate control platform**
+- **Humidifier Controls**:
+  - Mode control: Humidify/Fan only/Off
+  - Humidifier minimum humidity (humidistat)
 
-### Future Support (Under Development):
+**Robotic Vacuum models (Robot Category) (360/Heurist/Vis Nav, etc.)**:
 
-**Robot Models:**
+- **Vacuum platform**
+  - **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
+  - **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session
 
-- Battery sensors
-- Cleaning modes
-- Dustbin status
-
-> **See [Device Compatibility Matrix](docs/DEVICE_COMPATIBILITY.md) for complete entity breakdown by device type**
 
 #### **Setup Time**
 
@@ -176,7 +209,7 @@ Based on your device capabilities and category, you'll automatically get:
 
 ### Manual/Sticker Setup (Advanced Use Case such as isolated network)
 
-**Please note: some sensors (like Firmware version) will not work without access to the Cloud API**
+**Please note: some features (like Firmware version) will not work without access to the Cloud API**
 
 Required information from device sticker, libdyson-rest, or opendyson:
 
@@ -226,9 +259,9 @@ hass_dyson:
 - **Home Assistant** 2025.12+
 - **Python** 3.11+
 - **Dependencies** (auto-installed):
-  - `libdyson-rest>=0.8.2`
+  - `libdyson-rest>=0.11.0`
   - `paho-mqtt>=2.1.0`
-  - `cryptography>=3.4.0`
+  - `cryptography>=45.0.7`
 
 ## Acknowledgments
 
