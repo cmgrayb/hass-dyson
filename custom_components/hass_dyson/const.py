@@ -191,6 +191,7 @@ PLATFORMS: Final = [
     "switch",
     "vacuum",
     "climate",
+    "humidifier",
 ]
 
 # Service names
@@ -449,6 +450,118 @@ ROBOT_STATE_TO_HA_STATE: Final = {
     ROBOT_STATE_FAULT_ON_DOCK: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_RETURN_TO_DOCK: VacuumActivity.ERROR,
 }
+
+# Product type mapping from cloud API to internal device types
+# Maps cloud product types (model names and numeric codes) to MQTT prefix codes
+# This is critical for proper device identification and MQTT topic construction
+PRODUCT_TYPE_MAPPING: Final = {
+    # 360 Eye robot vacuum
+    "360 Eye": "N223",
+    "360EYE": "N223",
+    "N223": "N223",
+
+    # 360 Heurist robot vacuum
+    "360 Heurist": "276",
+    "360HEURIST": "276",
+    "276": "276",
+
+    # 360 Vis Nav robot vacuum
+    "360 Vis Nav": "277",
+    "360VIS": "277",
+    "277": "277",
+
+    # Pure Cool Link models
+    "TP02": "475",
+    "TP01": "475",
+    "DP01": "469",
+    "DP02": "469",
+    "475": "475",
+    "469": "469",
+
+    # Pure Cool models
+    "TP04": "438",
+    "AM06": "520",
+    "438": "438",
+    "520": "520",
+
+    # Purifier Cool models (newer) - specific model mappings
+    "TP07": "438K",
+    "TP09": "438K",
+    "TP11": "438M",
+    "PC1": "438M",
+    "438K": "438K",
+    "438E": "438E",
+    "438M": "438M",
+
+    # Pure Hot+Cool Link models
+    "HP02": "455",
+    "455": "455",
+
+    # Pure Hot+Cool models
+    "HP04": "527",
+    "527": "527",
+
+    # Purifier Hot+Cool models (newer)
+    "HP07": "527K",
+    "HP09": "527K",
+    "527K": "527K",
+    "527E": "527E",
+    "527M": "527K",  # HP series doesn't have M variant, map to K
+
+    # Pure Humidify+Cool models
+    "PH01": "358",
+    "PH02": "358",
+    "358": "358",
+
+    # Purifier Humidify+Cool models (newer)
+    "PH03": "358K",
+    "PH04": "358K",
+    "358K": "358K",
+    "358E": "358E",
+    "358M": "358K",  # PH series doesn't have M variant, map to K
+
+    # Purifier Big+Quiet models
+    "BP02": "664",
+    "BP03": "664",
+    "BP04": "664",
+    "664": "664",
+}
+
+
+def get_mqtt_prefix_from_product_type(product_type: str, variant: str | None = None) -> str:
+    """Get the MQTT prefix from a cloud product type.
+
+    This function maps cloud API product types to the correct MQTT prefix codes
+    used for device communication.
+
+    Args:
+        product_type: The product type from cloud API (e.g., "TP07", "438", "HP04")
+        variant: Optional variant suffix (e.g., "K", "E", "M")
+
+    Returns:
+        The MQTT prefix code to use for this device
+    """
+    # If variant is provided, try combined lookup first (e.g., "438" + "K" -> "438K")
+    if variant:
+        combined = f"{product_type}{variant}"
+        if combined in PRODUCT_TYPE_MAPPING:
+            return PRODUCT_TYPE_MAPPING[combined]
+
+    # Try direct lookup of product_type
+    if product_type in PRODUCT_TYPE_MAPPING:
+        return PRODUCT_TYPE_MAPPING[product_type]
+
+    # If product_type ends with a letter, it might already be a variant code
+    if product_type and product_type[-1].isalpha():
+        return product_type
+
+    # If we have a variant, combine them
+    if variant:
+        return f"{product_type}{variant}"
+
+    # Return as-is if no mapping found
+    return product_type
+
 
 # Capability-based fault code filtering
 # These faults only appear if the device has specific capabilities
