@@ -361,5 +361,23 @@
         }
       }
     }
+  },
+  "entity": {
+    "climate": {
+      "dyson_climate": {
+        "state_attributes": {
+          "hvac_mode": {
+            "state": {
+              "dry": "Humidify"
+            }
+          },
+          "hvac_action": {
+            "state": {
+              "drying": "Humidifying"
+            }
+          }
+        }
+      }
+    }
   }
 }
