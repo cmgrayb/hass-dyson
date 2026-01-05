@@ -1402,7 +1402,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Periodic fault polling for all devices
             # This ensures fault sensors receive regular updates
             try:
-                await self.device.send_command("REQUEST-CURRENT-FAULTS")
+                await self.device.request_current_faults()
                 _LOGGER.debug(
                     "Requested current faults for device %s",
                     self.serial_number,
@@ -1777,6 +1777,47 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "Device %s does not support humidification ('hume' key not found) - capability removed",
                         self.serial_number,
                     )
+
+            # Detect HP02 power control type immediately from CURRENT-STATE response
+            # This provides instant detection instead of waiting for STATE-CHANGE messages
+            # HP02 devices use fmod for power control and don't have fpwr key
+            # Modern devices use fpwr for power control and may have fmod for other purposes
+            if "fpwr" in product_state:
+                # Device has fpwr key - modern device regardless of fmod presence
+                power_control_type = "fpwr"
+                if "fmod" in product_state:
+                    _LOGGER.debug(
+                        "Device %s uses fpwr-based power control (modern device with both fpwr and fmod keys)",
+                        self.serial_number,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Device %s uses fpwr-based power control (modern device with fpwr key only)",
+                        self.serial_number,
+                    )
+            elif "fmod" in product_state:
+                # Device has fmod but no fpwr - HP02-style device using fmod for power control
+                power_control_type = "fmod"
+                _LOGGER.debug(
+                    "Device %s uses fmod-based power control (HP02-style device: fmod present, fpwr absent)",
+                    self.serial_number,
+                )
+            else:
+                # Device has neither - unknown power control
+                power_control_type = None
+                _LOGGER.debug(
+                    "Device %s power control type unknown (neither fpwr nor fmod keys present)",
+                    self.serial_number,
+                )
+
+            # Set power control type on device for immediate use
+            if power_control_type and self.device:
+                self.device._power_control_type = power_control_type
+                _LOGGER.debug(
+                    "Device %s power control type set to %s for immediate use",
+                    self.serial_number,
+                    power_control_type,
+                )
 
             # Log capability changes at debug level to avoid confusion
             if original_capabilities != self._device_capabilities:
