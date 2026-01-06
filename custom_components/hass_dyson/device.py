@@ -164,6 +164,7 @@ class DysonDevice:
 
         self._mqtt_client: mqtt.Client | None = None
         self._connected = False
+        self._had_stable_connection = False  # Track if we've had a stable connection
         self._current_connection_type: str = (
             CONNECTION_STATUS_DISCONNECTED  # Track current connection
         )
@@ -217,7 +218,7 @@ class DysonDevice:
             # local_only, local_cloud_fallback, or any unknown type defaults to local
             return "local"
 
-    async def connect(self) -> bool:
+    async def connect(self, force: bool = False) -> bool:
         """Establish MQTT connection to the Dyson device.
 
         Attempts to connect using the configured connection strategy:
@@ -231,6 +232,9 @@ class DysonDevice:
         3. Topic subscription for device state and environmental data
         4. Heartbeat task initialization for connection monitoring
         5. Initial state and environmental data requests
+
+        Args:
+            force: If True, bypass reconnection backoff and attempt connection immediately
 
         Returns:
             True if connection successful, False if all connection attempts failed
@@ -265,7 +269,7 @@ class DysonDevice:
             if the connection is lost.
         """
         # Check reconnection backoff to prevent rapid reconnection attempts
-        if not self._check_reconnect_backoff():
+        if not self._check_reconnect_backoff(force):
             return False
 
         self._last_reconnect_attempt = time.time()
@@ -281,9 +285,18 @@ class DysonDevice:
         # Try connections in order
         return await self._try_connection_order()
 
-    def _check_reconnect_backoff(self) -> bool:
+    def _check_reconnect_backoff(self, force: bool = False) -> bool:
         """Check if reconnection backoff period has passed."""
         current_time = time.time()
+
+        # Allow immediate connection attempts if force is True
+        if force:
+            _LOGGER.debug(
+                "Bypassing reconnection backoff for %s due to forced connection attempt",
+                self.serial_number,
+            )
+            return True
+
         if current_time - self._last_reconnect_attempt < self._reconnect_backoff:
             time_remaining = self._reconnect_backoff - (
                 current_time - self._last_reconnect_attempt
@@ -543,6 +556,11 @@ class DysonDevice:
             )
             self._mqtt_client = mqtt_client
 
+            # Disable automatic reconnection - we handle reconnection ourselves
+            mqtt_client.enable_logger(logger=None)  # Disable MQTT client logging to reduce noise
+            # Note: paho-mqtt doesn't have a direct disable auto-reconnect method,
+            # so we rely on our own connection management
+
             # Set up authentication
             mqtt_client.username_pw_set(username, credential)
 
@@ -564,7 +582,18 @@ class DysonDevice:
                 await self.hass.async_add_executor_job(mqtt_client.loop_start)
 
                 # Wait for connection to be established
-                return await self._wait_for_connection("local")
+                connection_success = await self._wait_for_connection("local")
+
+                if not connection_success:
+                    # Clean up failed connection attempt
+                    try:
+                        await self.hass.async_add_executor_job(mqtt_client.loop_stop)
+                        await self.hass.async_add_executor_job(mqtt_client.disconnect)
+                        _LOGGER.debug("Cleaned up failed local connection attempt for %s", self.serial_number)
+                    except Exception as cleanup_err:
+                        _LOGGER.debug("Failed to clean up connection for %s: %s", self.serial_number, cleanup_err)
+
+                return connection_success
             else:
                 _LOGGER.warning(
                     "Local MQTT connection to %s failed with result: %s. "
@@ -644,6 +673,9 @@ class DysonDevice:
 
             self._mqtt_client = mqtt_client
 
+            # Disable automatic reconnection - we handle reconnection ourselves
+            mqtt_client.enable_logger(logger=None)  # Disable MQTT client logging to reduce noise
+
             # Set up TLS for secure WebSocket connection
             # Use executor to avoid blocking SSL operations in the event loop
             await self.hass.async_add_executor_job(mqtt_client.tls_set)
@@ -689,7 +721,18 @@ class DysonDevice:
                 await self.hass.async_add_executor_job(mqtt_client.loop_start)
 
                 # Wait for connection to be established
-                return await self._wait_for_connection("cloud")
+                connection_success = await self._wait_for_connection("cloud")
+
+                if not connection_success:
+                    # Clean up failed connection attempt
+                    try:
+                        await self.hass.async_add_executor_job(mqtt_client.loop_stop)
+                        await self.hass.async_add_executor_job(mqtt_client.disconnect)
+                        _LOGGER.debug("Cleaned up failed cloud connection attempt for %s", self.serial_number)
+                    except Exception as cleanup_err:
+                        _LOGGER.debug("Failed to clean up connection for %s: %s", self.serial_number, cleanup_err)
+
+                return connection_success
             else:
                 _LOGGER.debug(
                     "AWS IoT WebSocket connection failed with result: %s", result
@@ -702,7 +745,7 @@ class DysonDevice:
 
     async def _wait_for_connection(self, conn_type: str) -> bool:
         """Wait for MQTT connection to be established."""
-        connection_timeout = 10  # 10 seconds timeout
+        connection_timeout = 5  # Reduced to 5 seconds timeout for faster failover
         check_interval = 0.1  # Check every 100ms
         elapsed_time = 0.0
 
@@ -720,7 +763,10 @@ class DysonDevice:
             elapsed_time += check_interval
 
         _LOGGER.debug(
-            "Connection timeout for device %s via %s", self.serial_number, conn_type
+            "Connection timeout for device %s via %s after %.1f seconds",
+            self.serial_number,
+            conn_type,
+            elapsed_time,
         )
         return False
 
@@ -852,6 +898,7 @@ class DysonDevice:
         if rc == mqtt.CONNACK_ACCEPTED:
             _LOGGER.info("MQTT connected to device %s", self.serial_number)
             self._connected = True
+            self._had_stable_connection = True  # Mark that we've had a successful connection
 
             # Subscribe to device topics
             topics_to_subscribe = [
@@ -910,13 +957,20 @@ class DysonDevice:
         )
 
         # If this is an unexpected disconnection (not initiated by us), prepare for intelligent reconnection
-        if rc != mqtt.MQTT_ERR_SUCCESS:
+        # Only apply the 15-minute fallback timer if we had a stable connection (not during initial connection attempts)
+        if rc != mqtt.MQTT_ERR_SUCCESS and hasattr(self, '_had_stable_connection') and self._had_stable_connection:
             _LOGGER.info(
-                "Unexpected disconnection for %s, will retry preferred connection on next attempt",
+                "Unexpected disconnection for %s, will stay on fallback connection for 15 minutes unless manually reconnected",
                 self.serial_number,
             )
-            # Reset the preferred retry timer so we'll try preferred connection first on next connect
-            self._last_preferred_retry = 0.0
+            # Set preferred retry timer to 15 minutes from now to prevent automatic retry of preferred connection
+            # Manual reconnection (force_reconnect) will reset this to allow immediate preferred connection attempts
+            self._last_preferred_retry = time.time() + 900  # 15 minutes = 900 seconds
+        elif rc != mqtt.MQTT_ERR_SUCCESS:
+            _LOGGER.debug(
+                "Disconnection during connection attempt for %s, not applying fallback timer",
+                self.serial_number,
+            )
 
     def _on_message(
         self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage
@@ -927,7 +981,7 @@ class DysonDevice:
             payload: str | bytes = message.payload
 
             _LOGGER.debug("Received MQTT message on %s: %s", topic, payload[:100])
-            _LOGGER.info(
+            _LOGGER.debug(
                 "MQTT MESSAGE RECEIVED for %s - Topic: %s", self.serial_number, topic
             )
 
@@ -942,7 +996,7 @@ class DysonDevice:
 
             data = json.loads(payload)
             _LOGGER.debug("Parsed message data for %s: %s", self.serial_number, data)
-            _LOGGER.info("MQTT PARSED DATA for %s: %s", self.serial_number, data)
+            _LOGGER.debug("MQTT PARSED DATA for %s: %s", self.serial_number, data)
 
             self._process_message_data(data, topic)
 

@@ -1232,7 +1232,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.device.set_firmware_version(self._firmware_version)
 
         # Let DysonDevice handle the connection
-        connected = await self.device.connect()
+        connected = await self.device.connect(force=True)
         if not connected:
             raise UpdateFailed(f"Failed to connect to device {self.serial_number}")
 
@@ -1302,7 +1302,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.device.set_firmware_version("Unknown")
 
             # Let DysonDevice handle the connection
-            connected = await self.device.connect()
+            connected = await self.device.connect(force=True)
             if not connected:
                 raise UpdateFailed(
                     f"Failed to connect to manual device {self.serial_number}"
@@ -1344,34 +1344,18 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("Checking connectivity for device %s", self.serial_number)
 
         try:
-            # Check if device is still connected, attempt reconnection if needed
+            # Check if device is still connected, but don't aggressively reconnect during normal operation
+            # The device has its own reconnection logic that should be allowed to work
             if not self.device.is_connected:
-                _LOGGER.warning(
-                    "Device %s not connected, attempting reconnection",
+                _LOGGER.debug(
+                    "Device %s not connected, letting device handle reconnection",
                     self.serial_number,
                 )
-                success = await self.device.connect()
-                if not success:
-                    raise UpdateFailed(
-                        f"Failed to reconnect to device {self.serial_number}"
-                    )
-                _LOGGER.info(
-                    "Successfully reconnected to device %s", self.serial_number
+                # Don't force reconnection here - let the device's own logic handle it
+                # This prevents loops where coordinator interferes with device reconnection timing
+                raise UpdateFailed(
+                    f"Device {self.serial_number} not connected - will retry on next update"
                 )
-
-                # Only request current state after reconnection to get initial state
-                try:
-                    await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
-                    _LOGGER.debug(
-                        "Requested current state after reconnection for %s",
-                        self.serial_number,
-                    )
-                except Exception as cmd_err:
-                    _LOGGER.warning(
-                        "Failed to request current state after reconnection for %s: %s",
-                        self.serial_number,
-                        cmd_err,
-                    )
 
             # Get current device state (from last received MQTT message)
             device_state = await self.device.get_state()
@@ -1511,11 +1495,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest >=0.7.0"""
-        from libdyson_rest.exceptions import (
-            DysonAPIError,
-            DysonAuthError,
-            DysonConnectionError,
-        )
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
 
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug(
