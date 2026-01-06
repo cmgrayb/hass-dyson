@@ -53,14 +53,10 @@ jobs:
         run: |
           python -c "import custom_components.hass_dyson; print('✅ Integration import successful')"
 
-      - name: Run all tests in /tests folder
+      - name: Run all tests in /tests folder in parallel
         run: |
           echo "🧪 Running all tests defined in the /tests folder..."
-          python -m pytest tests/ \
-            -v \
-            --tb=short \
-            --maxfail=5 \
-            --no-cov
+          python -m pytest tests/ -n auto
 
       - name: Quick code quality check
         run: |

@@ -5,9 +5,9 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, release/*]
   push:
-    branches: [main, develop]
+    branches: [main, develop, release/*]
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -63,7 +63,8 @@ jobs:
           python -m pytest tests/ \
             -v \
             --tb=short \
-            --no-cov
+            --no-cov \
+            -n auto
 
   coverage:
     name: Code Coverage Analysis
@@ -103,7 +104,8 @@ jobs:
             --cov-report=html \
             --cov-report=term-missing \
             --cov-branch \
-            -v
+            -v \
+            -n auto
 
       - name: Check coverage threshold
         run: |
@@ -206,7 +208,7 @@ jobs:
       - name: Run all tests (integration validation)
         run: |
           echo "🔗 Running all tests to validate integration..."
-          python -m pytest tests/ -v --tb=short --no-cov
+          python -m pytest tests/ -v --tb=short --no-cov -n auto
 
   build:
     name: Build Package
