@@ -192,6 +192,7 @@ class TestDysonDevice:
         mock_client = MagicMock()
         mock_flags = MagicMock()  # API v2 flags parameter
         import time
+
         start_time = time.time()
         device._on_disconnect(
             mock_client, None, mock_flags, 1
@@ -200,7 +201,9 @@ class TestDysonDevice:
         assert device._connected is False
         assert device._current_connection_type == CONNECTION_STATUS_DISCONNECTED
         # Should set retry timer to 15 minutes in the future for unexpected disconnection
-        assert device._last_preferred_retry >= start_time + 899  # Allow 1 second tolerance
+        assert (
+            device._last_preferred_retry >= start_time + 899
+        )  # Allow 1 second tolerance
 
         # Test normal disconnection
         device._connected = True
@@ -219,10 +222,14 @@ class TestDysonDevice:
         device2._had_stable_connection = False  # No stable connection yet
         device2._current_connection_type = "LOCAL"
 
-        device2._on_disconnect(mock_client, None, mock_flags, 1)  # Non-success return code
+        device2._on_disconnect(
+            mock_client, None, mock_flags, 1
+        )  # Non-success return code
 
         assert device2._connected is False
-        assert device2._last_preferred_retry == 0.0  # Should not set timer for unstable connection
+        assert (
+            device2._last_preferred_retry == 0.0
+        )  # Should not set timer for unstable connection
 
     def test_mqtt_message_processing_current_state(self, mock_hass):
         """Test MQTT message processing for current state messages."""

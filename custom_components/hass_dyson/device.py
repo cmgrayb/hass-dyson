@@ -557,7 +557,9 @@ class DysonDevice:
             self._mqtt_client = mqtt_client
 
             # Disable automatic reconnection - we handle reconnection ourselves
-            mqtt_client.enable_logger(logger=None)  # Disable MQTT client logging to reduce noise
+            mqtt_client.enable_logger(
+                logger=None
+            )  # Disable MQTT client logging to reduce noise
             # Note: paho-mqtt doesn't have a direct disable auto-reconnect method,
             # so we rely on our own connection management
 
@@ -589,9 +591,16 @@ class DysonDevice:
                     try:
                         await self.hass.async_add_executor_job(mqtt_client.loop_stop)
                         await self.hass.async_add_executor_job(mqtt_client.disconnect)
-                        _LOGGER.debug("Cleaned up failed local connection attempt for %s", self.serial_number)
+                        _LOGGER.debug(
+                            "Cleaned up failed local connection attempt for %s",
+                            self.serial_number,
+                        )
                     except Exception as cleanup_err:
-                        _LOGGER.debug("Failed to clean up connection for %s: %s", self.serial_number, cleanup_err)
+                        _LOGGER.debug(
+                            "Failed to clean up connection for %s: %s",
+                            self.serial_number,
+                            cleanup_err,
+                        )
 
                 return connection_success
             else:
@@ -674,7 +683,9 @@ class DysonDevice:
             self._mqtt_client = mqtt_client
 
             # Disable automatic reconnection - we handle reconnection ourselves
-            mqtt_client.enable_logger(logger=None)  # Disable MQTT client logging to reduce noise
+            mqtt_client.enable_logger(
+                logger=None
+            )  # Disable MQTT client logging to reduce noise
 
             # Set up TLS for secure WebSocket connection
             # Use executor to avoid blocking SSL operations in the event loop
@@ -728,9 +739,16 @@ class DysonDevice:
                     try:
                         await self.hass.async_add_executor_job(mqtt_client.loop_stop)
                         await self.hass.async_add_executor_job(mqtt_client.disconnect)
-                        _LOGGER.debug("Cleaned up failed cloud connection attempt for %s", self.serial_number)
+                        _LOGGER.debug(
+                            "Cleaned up failed cloud connection attempt for %s",
+                            self.serial_number,
+                        )
                     except Exception as cleanup_err:
-                        _LOGGER.debug("Failed to clean up connection for %s: %s", self.serial_number, cleanup_err)
+                        _LOGGER.debug(
+                            "Failed to clean up connection for %s: %s",
+                            self.serial_number,
+                            cleanup_err,
+                        )
 
                 return connection_success
             else:
@@ -898,7 +916,9 @@ class DysonDevice:
         if rc == mqtt.CONNACK_ACCEPTED:
             _LOGGER.info("MQTT connected to device %s", self.serial_number)
             self._connected = True
-            self._had_stable_connection = True  # Mark that we've had a successful connection
+            self._had_stable_connection = (
+                True  # Mark that we've had a successful connection
+            )
 
             # Subscribe to device topics
             topics_to_subscribe = [
@@ -958,7 +978,11 @@ class DysonDevice:
 
         # If this is an unexpected disconnection (not initiated by us), prepare for intelligent reconnection
         # Only apply the 15-minute fallback timer if we had a stable connection (not during initial connection attempts)
-        if rc != mqtt.MQTT_ERR_SUCCESS and hasattr(self, '_had_stable_connection') and self._had_stable_connection:
+        if (
+            rc != mqtt.MQTT_ERR_SUCCESS
+            and hasattr(self, "_had_stable_connection")
+            and self._had_stable_connection
+        ):
             _LOGGER.info(
                 "Unexpected disconnection for %s, will stay on fallback connection for 15 minutes unless manually reconnected",
                 self.serial_number,
