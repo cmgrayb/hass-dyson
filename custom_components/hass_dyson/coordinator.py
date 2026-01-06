@@ -47,6 +47,7 @@ from .const import (
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
+    get_mqtt_prefix_from_product_type,
 )
 from .device import DysonDevice
 
@@ -876,19 +877,40 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
 
     def _extract_device_type(self, device_info) -> None:
-        """Extract device type from device info."""
-        # Extract device type from device_info using both possible field names
-        device_type = getattr(device_info, "product_type", None)
-        if device_type is None:
-            device_type = getattr(device_info, "type", None)
+        """Extract device type from device info and map to MQTT prefix code.
 
-        if device_type is None:
+        The cloud API returns product_type values like "TP07", "HP04", "438", etc.
+        These need to be mapped to the correct MQTT prefix codes for device communication.
+        """
+        # Extract raw product type from device_info using both possible field names
+        raw_product_type = getattr(device_info, "product_type", None)
+        if raw_product_type is None:
+            raw_product_type = getattr(device_info, "type", None)
+
+        if raw_product_type is None:
             raise ValueError(
                 f"Device type not available for device {self.serial_number}"
             )
 
-        self._device_type = str(device_type)
-        _LOGGER.debug("Extracted device type: %s", self._device_type)
+        raw_product_type = str(raw_product_type)
+
+        # Get variant if available (e.g., "K", "E", "M")
+        variant = getattr(device_info, "variant", None)
+        if variant:
+            variant = str(variant)
+
+        # Map product type to MQTT prefix code
+        mapped_type = get_mqtt_prefix_from_product_type(raw_product_type, variant)
+
+        _LOGGER.debug(
+            "Device type mapping for %s: raw=%s, variant=%s, mapped=%s",
+            self.serial_number,
+            raw_product_type,
+            variant,
+            mapped_type,
+        )
+
+        self._device_type = mapped_type
 
     def _extract_device_category(self, device_info) -> None:
         """Extract device category from config entry or API response."""
@@ -1778,6 +1800,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.serial_number,
                     )
 
+            # Check if capabilities changed and trigger platform reload if needed
+            if original_capabilities != self._device_capabilities:
+                _LOGGER.info(
+                    "Capabilities changed for %s: %s -> %s. Platforms will be reloaded if integration is already set up.",
+                    self.serial_number,
+                    original_capabilities,
+                    self._device_capabilities,
+                )
+                # Note: Platform reload happens in _handle_capability_change after initial setup
+
             # Detect HP02 power control type immediately from CURRENT-STATE response
             # This provides instant detection instead of waiting for STATE-CHANGE messages
             # HP02 devices use fmod for power control and don't have fpwr key
@@ -1901,11 +1933,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None
 
     def _construct_mqtt_prefix_fallback_from_device_info(self, device_info: Any) -> str:
-        """Construct MQTT prefix from device info using Dyson's naming conventions.
+        """Construct MQTT prefix from device info using product type mapping.
 
-        Extracts product_type and variant from device_info and applies the fallback rules:
-        - If product_type ends in a letter OR variant is empty/None: use product_type
-        - If product_type does not end in a letter AND variant exists: use product_type + variant
+        Uses the product type mapping to convert cloud API product types to MQTT prefix codes.
+        Falls back to Dyson's naming conventions if no mapping is found.
         """
         # Extract product type and variant from device info
         product_type = getattr(
@@ -1913,28 +1944,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         variant = getattr(device_info, "variant", None)
 
-        return self._construct_mqtt_prefix_fallback(product_type, variant)
+        # Use the centralized mapping function
+        return get_mqtt_prefix_from_product_type(str(product_type), str(variant) if variant else None)
 
     def _construct_mqtt_prefix_fallback(
         self, product_type: str, variant: str | None
     ) -> str:
-        """Construct MQTT prefix from product type and variant using Dyson's naming conventions.
+        """Construct MQTT prefix from product type and variant using product type mapping.
 
-        Rules:
-        - If product_type ends in a letter OR variant is empty/None: use product_type
-        - If product_type does not end in a letter AND variant exists: use product_type + variant
+        Uses the centralized mapping function to ensure consistent MQTT prefix generation.
         """
-        product_type = str(product_type)
-        # Check if product type ends in a letter
-        ends_in_letter = product_type and product_type[-1].isalpha()
-        # Check if variant is meaningful
-        has_variant = variant and str(variant).strip()
-        if ends_in_letter or not has_variant:
-            # Use product type as-is
-            return product_type
-        else:
-            # Combine product type with variant
-            return product_type + str(variant)
+        return get_mqtt_prefix_from_product_type(str(product_type), str(variant) if variant else None)
 
 
 class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):

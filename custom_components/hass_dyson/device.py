@@ -2485,13 +2485,13 @@ class DysonDevice:
         await self.send_command("STATE-SET", {"hume": hume_value, "haut": haut_value})
 
     async def set_target_humidity(self, humidity: int) -> None:
-        """Set target humidity percentage (30-50%).
+        """Set target humidity percentage (30-70%).
 
         Args:
-            humidity: Target humidity percentage (30-50%)
+            humidity: Target humidity percentage (30-70%)
         """
-        if not 30 <= humidity <= 50:
-            raise ValueError("Target humidity must be between 30% and 50%")
+        if not 30 <= humidity <= 70:
+            raise ValueError("Target humidity must be between 30% and 70%")
 
         # Convert humidity percentage to device format (4-digit string)
         humidity_value = f"{humidity:04d}"

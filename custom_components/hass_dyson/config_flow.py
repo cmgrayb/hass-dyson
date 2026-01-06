@@ -890,12 +890,18 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Create device list from discovered devices
         device_list: list[dict[str, Any]] = []
         if self._discovered_devices is not None:
+            from .device_utils import extract_capabilities_from_device_info
+
             for device in self._discovered_devices:
+                # Extract capabilities from the libdyson-rest device object
+                capabilities = extract_capabilities_from_device_info(device)
+
                 device_info = {
                     "serial_number": device.serial_number,
                     "name": getattr(device, "name", f"Dyson {device.serial_number}"),
-                    "product_type": getattr(device, "product_type", "unknown"),
+                    "product_type": getattr(device, "type", "unknown"),
                     "category": getattr(device, "category", "unknown"),
+                    "capabilities": capabilities,
                 }
                 device_list.append(device_info)
 

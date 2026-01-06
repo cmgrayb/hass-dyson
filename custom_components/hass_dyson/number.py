@@ -28,17 +28,14 @@ async def async_setup_entry(
 
     entities: list[NumberEntity] = []
 
-    # Add timer control if device supports scheduling
     device_capabilities = coordinator.device_capabilities
     if "Scheduling" in device_capabilities:
         entities.append(DysonSleepTimerNumber(coordinator))
 
-    # Add oscillation angle control if supported
     _LOGGER.debug(
         "Device capabilities for %s: %s", coordinator.serial_number, device_capabilities
     )
 
-    # Check if device has oscillation capability
     if "AdvanceOscillationDay1" in device_capabilities:
         _LOGGER.info(
             "Adding oscillation angle controls for %s", coordinator.serial_number
@@ -48,8 +45,6 @@ async def async_setup_entry(
         entities.append(DysonOscillationCenterAngleNumber(coordinator))
         entities.append(DysonOscillationAngleSpanNumber(coordinator))
     elif "AdvanceOscillationDay0" in device_capabilities:
-        # Day0 devices use simplified preset-only oscillation control
-        # Custom angle controls are disabled due to firmware limitations
         _LOGGER.info(
             "Day0 device detected for %s - using preset-only oscillation control",
             coordinator.serial_number,
@@ -69,7 +64,6 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_sleep_timer"
         self._attr_translation_key = "sleep_timer"
         self._attr_icon = "mdi:timer"
-        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.BOX
         self._attr_native_min_value = 0
         self._attr_native_max_value = 540  # 9 hours in minutes
@@ -80,7 +74,6 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
     async def async_added_to_hass(self) -> None:
         """Entity added to hass."""
         await super().async_added_to_hass()
-        # Start minimal polling when timer is active (vendor app behavior)
         self._start_timer_polling_if_needed()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -92,9 +85,8 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
     def _start_timer_polling_if_needed(self) -> None:
         """Start polling only when timer is active, like vendor app."""
         if self._timer_polling_task and not self._timer_polling_task.done():
-            return  # Already running
+            return
 
-        # Check if timer is currently active
         if self.coordinator.device:
             product_state = self.coordinator.data.get("product-state", {})
             timer_data = self.coordinator.device.get_state_value(
@@ -118,11 +110,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
     async def _poll_timer_updates(self) -> None:
         """Poll for timer updates when timer is active (vendor app behavior)."""
         try:
-            # Device reports whole minutes rounded down, so timing is unpredictable
-            # Use more frequent polling initially to catch minute transitions reliably
             await self._do_frequent_initial_polling()
-
-            # Then continue with regular 60-second intervals
             await self._do_regular_polling()
         except asyncio.CancelledError:
             _LOGGER.debug(
@@ -147,8 +135,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
 
     async def _do_frequent_initial_polling(self) -> None:
         """Do frequent polling for first few minutes to catch transitions."""
-        # Poll every 30 seconds for the first 3 minutes to catch transitions
-        for i in range(6):  # 6 polls over 3 minutes
+        for i in range(6):
             await asyncio.sleep(30)
 
             if not await self._poll_timer_once(f"initial poll {i + 1}/6"):
@@ -157,7 +144,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
     async def _do_regular_polling(self) -> None:
         """Continue with regular 60-second polling intervals."""
         while True:
-            await asyncio.sleep(60)  # Wait 1 minute
+            await asyncio.sleep(60)
 
             if not await self._poll_timer_once("regular poll"):
                 return
@@ -203,7 +190,6 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             self.coordinator.serial_number,
         )
         if self.coordinator.device:
-            # Get sleep timer from device state (sltm)
             product_state = self.coordinator.data.get("product-state", {})
             try:
                 timer_data = self.coordinator.device.get_state_value(
@@ -213,7 +199,6 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                     device_value = 0
                 else:
                     try:
-                        # Convert timer data to minutes
                         device_value = int(timer_data)
                     except (ValueError, TypeError):
                         device_value = 0
@@ -226,7 +211,6 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                 )
                 self._attr_native_value = device_value
 
-                # Start polling if timer is now active (handles vendor app timer changes)
                 if device_value > 0:
                     self._start_timer_polling_if_needed()
                 else:
@@ -270,24 +254,17 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                 self.coordinator.serial_number,
             )
 
-            # Send the command to the device
             await self.coordinator.device.set_sleep_timer(minutes)
 
             if minutes > 0:
-                # Wait for device to process the command, then poll to get actual value
                 _LOGGER.debug(
                     "Sleep timer set, waiting 15s then polling for actual device value"
                 )
                 await asyncio.sleep(15)
-
-                # Force a poll to get the device's actual timer value
                 await self.coordinator.device._request_current_state()
-
-                # Wait a bit more for the coordinator update, then start polling
                 await asyncio.sleep(5)
                 self._start_timer_polling_if_needed()
             else:
-                # Timer turned off, stop polling and set to 0
                 self._stop_timer_polling()
                 self._attr_native_value = 0
                 self.async_write_ha_state()
@@ -323,11 +300,9 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         attributes = {}
         product_state = self.coordinator.data.get("product-state", {})
 
-        # Sleep timer state for scene support
         native_value: float | None = self._attr_native_value
         attributes["sleep_timer_minutes"] = native_value  # type: ignore[assignment]
 
-        # Raw device state
         sltm = self.coordinator.device.get_state_value(product_state, "sltm", "OFF")
         attributes["sleep_timer_raw"] = sltm  # type: ignore[assignment]
         attributes["sleep_timer_enabled"] = sltm != "OFF"
@@ -346,7 +321,6 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_lower_angle"
         self._attr_translation_key = "oscillation_low_angle"
         self._attr_icon = "mdi:rotate-left"
-        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -362,7 +336,6 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
                 product_state, "osal", "0000"
             )
             try:
-                # Convert angle data to number (e.g., "0090" -> 90)
                 self._attr_native_value = int(angle_data.lstrip("0") or "0")
             except (ValueError, TypeError):
                 self._attr_native_value = 0
@@ -382,10 +355,8 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
             )
             upper_angle = int(upper_angle_data.lstrip("0") or "350")
 
-            # Ensure lower angle is less than upper angle
             lower_angle = min(int(value), upper_angle - 5)
 
-            # Use device method directly
             await self.coordinator.device.set_oscillation_angles(
                 lower_angle, upper_angle
             )
@@ -435,7 +406,6 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_upper_angle"
         self._attr_translation_key = "oscillation_high_angle"
         self._attr_icon = "mdi:rotate-right"
-        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
@@ -451,7 +421,6 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
                 product_state, "osau", "0350"
             )
             try:
-                # Convert angle data to number (e.g., "0350" -> 350)
                 self._attr_native_value = int(angle_data.lstrip("0") or "350")
             except (ValueError, TypeError):
                 self._attr_native_value = 350
@@ -471,10 +440,8 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
             )
             lower_angle = int(lower_angle_data.lstrip("0") or "0")
 
-            # Ensure upper angle is greater than lower angle
             upper_angle = max(int(value), lower_angle + 5)
 
-            # Use device method directly
             await self.coordinator.device.set_oscillation_angles(
                 lower_angle, upper_angle
             )
@@ -534,7 +501,6 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Calculate center angle from lower and upper angles
             product_state = self.coordinator.data.get("product-state", {})
             lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
@@ -545,10 +511,9 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
             try:
                 lower_angle = int(lower_data.lstrip("0") or "0")
                 upper_angle = int(upper_data.lstrip("0") or "350")
-                # Center is the median between lower and upper
                 self._attr_native_value = (lower_angle + upper_angle) // 2
             except (ValueError, TypeError):
-                self._attr_native_value = 175  # Default center
+                self._attr_native_value = 175
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()
@@ -559,7 +524,6 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
             return
 
         try:
-            # Get current span (upper - lower)
             product_state = self.coordinator.data.get("product-state", {})
             lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
@@ -571,21 +535,17 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
             upper_angle = int(upper_data.lstrip("0") or "350")
             current_span = upper_angle - lower_angle
 
-            # Calculate new lower and upper angles centered on the target
             center_angle = int(value)
             half_span = current_span // 2
             new_lower = max(0, center_angle - half_span)
             new_upper = min(350, center_angle + half_span)
 
-            # Adjust if we hit boundaries
             if new_lower == 0:
                 new_upper = min(350, current_span)
             elif new_upper == 350:
                 new_lower = max(0, 350 - current_span)
 
-            # Use device method directly
             await self.coordinator.device.set_oscillation_angles(new_lower, new_upper)
-            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug(
                 "Set oscillation center angle to %s (lower: %s, upper: %s) for %s",
                 center_angle,
@@ -633,7 +593,6 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_angle_span"
         self._attr_translation_key = "oscillation_angle_span"
         self._attr_icon = "mdi:angle-acute"
-        # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 10
         self._attr_native_max_value = 350
@@ -657,7 +616,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
                 # Span is the difference between upper and lower
                 self._attr_native_value = upper_angle - lower_angle
             except (ValueError, TypeError):
-                self._attr_native_value = 350  # Default full span
+                self._attr_native_value = 350
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()
@@ -668,7 +627,6 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
             return
 
         try:
-            # Get current center angle
             product_state = self.coordinator.data.get("product-state", {})
             lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
@@ -680,21 +638,17 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
             upper_angle = int(upper_data.lstrip("0") or "350")
             current_center = (lower_angle + upper_angle) // 2
 
-            # Calculate new lower and upper angles with the desired span
             new_span = int(value)
             half_span = new_span // 2
             new_lower = max(0, current_center - half_span)
             new_upper = min(350, current_center + half_span)
 
-            # Adjust if we hit boundaries
             if new_lower == 0:
                 new_upper = min(350, new_span)
             elif new_upper == 350:
                 new_lower = max(0, 350 - new_span)
 
-            # Use device method directly
             await self.coordinator.device.set_oscillation_angles(new_lower, new_upper)
-            # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug(
                 "Set oscillation angle span to %s (lower: %s, upper: %s) for %s",
                 new_span,

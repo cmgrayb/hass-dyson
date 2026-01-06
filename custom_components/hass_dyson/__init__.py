@@ -38,7 +38,7 @@ Example:
 
     >>> dyson:
     >>>   devices:
-    >>>     - serial_number: "VS6-EU-HJA1234A"
+    >>>     - serial_number: "XXX-XX-XXX0000A"
     >>>       discovery_method: "cloud"
     >>>       capabilities: ["WiFi", "ExtendedAQ"]
 """
@@ -117,6 +117,7 @@ PLATFORMS_MAP = {
     Platform.SWITCH: "switch",
     Platform.VACUUM: "vacuum",
     Platform.CLIMATE: "climate",
+    Platform.HUMIDIFIER: "humidifier",
 }
 
 
@@ -526,7 +527,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         >>> entry = ConfigEntry(
         >>>     domain="hass_dyson",
         >>>     data={
-        >>>         "serial_number": "VS6-EU-HJA1234A",
+        >>>         "serial_number": "XXX-XX-XXX0000A",
         >>>         "device_name": "Living Room Purifier",
         >>>         "connection_type": "local_cloud_fallback",
         >>>         "hostname": "192.168.1.100",
@@ -758,6 +759,11 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
     # Add switch platform for devices with switching capabilities
     if "Switch" in device_capabilities or any(cat in ["ec"] for cat in device_category):
         platforms.append("switch")
+
+    # Add humidifier platform for EC devices - the platform will check device state
+    # for "hume" key to determine if humidifier should be set up
+    if any(cat in ["ec"] for cat in device_category):
+        platforms.append("humidifier")
 
     # Add update platform for cloud-discovered devices (for firmware updates)
     from .const import CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD

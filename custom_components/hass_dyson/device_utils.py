@@ -168,29 +168,10 @@ def extract_capabilities_from_device_info(device_info: Any) -> list[str]:
             if firmware and hasattr(firmware, "capabilities"):
                 capabilities = firmware.capabilities or []
 
-    # Add virtual capabilities based on product type
-    product_type = getattr(
-        device_info, "product_type", getattr(device_info, "type", "")
-    )
-
-    # Note: We do not want to use product type to determine device capabilities
-    # Please do not replicate this functionality.  Instead, extract capabilities
-    # from device state in the coordinator as needed.
-    # To do: replace product_type.startswith("PH") with a function which determines
-    # Humidifier capability from device state.
-    if product_type:
-        # PH model (Purifier/Humidifier) should have virtual Humidifier capability
-        if product_type.startswith("PH"):
-            if "Humidifier" not in capabilities:
-                capabilities.append("Humidifier")
-                _LOGGER.debug(
-                    "Added virtual Humidifier capability for PH model %s",
-                    product_type,
-                )
-
-        # Note: Heating capability detection is handled by the coordinator's
-        # _refine_capabilities_from_device_state() method which checks for 'hmod'
-        # state key presence. This avoids hardcoding product types.
+    # Note: Capability detection is handled by the coordinator's
+    # _refine_capabilities_from_device_state() method which checks for state keys
+    # like 'hume' (humidifier) and 'hmod' (heating) in the MQTT data.
+    # This avoids hardcoding product types and relies on actual device capabilities.
 
     _LOGGER.debug("Raw extracted capabilities from device_info: %s", capabilities)
     _LOGGER.debug("Capability types: %s", [type(cap).__name__ for cap in capabilities])
