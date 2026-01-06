@@ -359,3 +359,8 @@ class TestNetworkAndConnectionErrors:
         # Second call should fail
         with pytest.raises(ConnectionError):
             mock_coordinator.device.get_state()
+
+
+# ================================================================================
+# ENTITY FUNCTIONALITY TESTS (from test_entity.py)
+# ================================================================================

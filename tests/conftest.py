@@ -62,84 +62,6 @@ def _cleanup_threads(threads_before):
             continue
 
 
-def _create_patched_verify_cleanup():
-    """Create the patched verify_cleanup function."""
-
-    def patched_verify_cleanup_func(
-        expected_lingering_tasks, expected_lingering_timers
-    ):
-        """Patched verify_cleanup that handles closed event loops gracefully."""
-        import gc
-        import threading
-
-        # Get the event loop safely
-        event_loop = _get_safe_event_loop()
-
-        if event_loop is None or event_loop.is_closed():
-            # If no loop or closed loop, create a minimal cleanup that always yields
-            yield
-            return
-
-        # Store original state
-        threads_before = frozenset(threading.enumerate())
-        tasks_before = asyncio.all_tasks(event_loop)
-
-        # Yield control back to the test
-        yield
-
-        # Enhanced cleanup with error handling
-        try:
-            # Patch the problematic shutdown_default_executor call
-            with _patch_shutdown_executor(event_loop):
-                # Try the original cleanup logic with patches
-                try:
-                    if not event_loop.is_closed():
-                        event_loop.run_until_complete(
-                            event_loop.shutdown_default_executor()
-                        )
-                except (RuntimeError, OSError) as e:
-                    if "Event loop is closed" not in str(e):
-                        # Re-raise if it's not the specific error we're handling
-                        raise
-
-            # Clean up tasks and threads
-            _cleanup_tasks(event_loop, tasks_before, expected_lingering_tasks)
-            _cleanup_threads(threads_before)
-
-            # Force garbage collection
-            gc.collect()
-
-        except Exception:
-            # Silently ignore all cleanup exceptions to prevent test failures
-            pass
-
-    return patched_verify_cleanup_func
-
-
-def _apply_ha_plugin_patches():
-    """Apply monkey patches to prevent 'Event loop is closed' errors during teardown."""
-    try:
-        # Patch the specific verify_cleanup function from the Home Assistant plugin
-        import pytest_homeassistant_custom_component.plugins as ha_plugins
-
-        # Store the original function
-        original_verify_cleanup = getattr(ha_plugins, "verify_cleanup", None)
-        if original_verify_cleanup is None:
-            return  # Plugin not loaded or different version
-
-        # Replace the original fixture with our patched version
-        patched_func = _create_patched_verify_cleanup()
-        ha_plugins.verify_cleanup = pytest.fixture(autouse=True)(patched_func)
-
-    except (ImportError, AttributeError):
-        # Plugin not available or different structure - no patching needed
-        pass
-
-
-# Apply patches immediately when conftest is imported
-_apply_ha_plugin_patches()
-
-
 # Configure warnings and event loop handling
 @pytest.fixture(scope="session", autouse=True)
 def configure_test_environment():
@@ -164,14 +86,6 @@ def configure_test_environment():
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="_pytest")
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="coverage")
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="unittest.mock")
-
-    # Home Assistant plugin specific warnings
-    warnings.filterwarnings(
-        "ignore",
-        category=RuntimeWarning,
-        module="pytest_homeassistant_custom_component",
-    )
-    warnings.filterwarnings("ignore", message=".*verify_cleanup.*")
 
 
 def _cancel_pending_tasks(loop):

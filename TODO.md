@@ -1,7 +1,70 @@
 # TO DO
 
-**Testing**: ✅ **Phase 1 STARTED** - Pure pytest infrastructure established and working!
-Migrate from `pytest-homeassistant-custom-component` to pure pytest with custom fixtures.
+## 🎯 PRIORITY: Code Coverage Recovery Plan
+
+**Current Status**: 59% coverage (down from 77% baseline)
+**Target**: 75%+ minimum for CI/CD pipeline
+**Gap**: Need to recover 16+ percentage points
+
+### Coverage Recovery Strategy (Estimated 2-3 days)
+
+#### Phase A: High-Impact Coverage Wins (Target: +10-12%)
+1. **Coordinator Error Handling** - Add tests for network failures, reconnection logic, data parsing errors
+   - Files: `custom_components/hass_dyson/coordinator.py` (lines 45-89, 120-156)
+   - Impact: ~4% coverage increase
+
+2. **Service Method Coverage** - Test all device service methods with edge cases
+   - Files: `custom_components/hass_dyson/services.py` (lines 78-145)
+   - Missing: Error handling, invalid parameters, device offline scenarios
+   - Impact: ~3% coverage increase
+
+3. **Config Flow Edge Cases** - Test validation failures, network errors, device discovery
+   - Files: `custom_components/hass_dyson/config_flow.py` (lines 89-134, 167-203)
+   - Missing: API failures, duplicate entries, timeout scenarios
+   - Impact: ~3% coverage increase
+
+#### Phase B: Entity Platform Coverage (Target: +6-8%)
+4. **Climate Entity Edge Cases** - Test mode changes, temperature validation, offline handling
+   - Files: `custom_components/hass_dyson/climate.py` (lines 156-234)
+   - Missing: Invalid temperature ranges, mode conflicts, device errors
+   - Impact: ~2% coverage increase
+
+5. **Fan Entity Complex Operations** - Test speed controls, oscillation, timer functions
+   - Files: `custom_components/hass_dyson/fan.py` (lines 123-189, 234-267)
+   - Missing: Speed validation, oscillation errors, timer edge cases
+   - Impact: ~2% coverage increase
+
+6. **Vacuum Entity Advanced Features** - Test cleaning modes, navigation, error recovery
+   - Files: `custom_components/hass_dyson/vacuum.py` (lines 178-245, 289-334)
+   - Missing: Navigation failures, cleaning mode errors, battery scenarios
+   - Impact: ~2% coverage increase
+
+#### Phase C: Infrastructure Coverage (Target: +2-4%)
+7. **Device Registry & Setup** - Test device initialization, registry errors, cleanup
+   - Files: `custom_components/hass_dyson/device.py` (lines 67-123)
+   - Missing: Registry failures, device ID conflicts, cleanup errors
+   - Impact: ~1% coverage increase
+
+8. **Entity Base Class Methods** - Test common entity functionality, availability updates
+   - Files: `custom_components/hass_dyson/entity.py` (lines 89-145)
+   - Missing: Availability changes, attribute updates, error states
+   - Impact: ~1% coverage increase
+
+### Implementation Timeline
+- **Day 1**: Phases A.1-A.2 (Coordinator + Services) → Target: 67% coverage
+- **Day 2**: Phases A.3 + B.4-B.5 (Config Flow + Climate/Fan) → Target: 73% coverage
+- **Day 3**: Phases B.6 + C.7-C.8 (Vacuum + Infrastructure) → Target: 76% coverage
+
+### Testing Approach
+- **Error Path Testing**: Focus on exception handling and edge cases
+- **Integration Scenarios**: Multi-device interactions, network issues
+- **State Validation**: Comprehensive entity state testing
+- **Mock Strategies**: Realistic failure simulation
+
+---
+
+**Testing**: ✅ **Phase 1 COMPLETED** - Pure pytest migration achieved 100% success rate!
+All 1064 tests passing. Now focusing on coverage recovery to meet CI/CD requirements.
 
 ## Migration Status: Phase 1 In Progress ✅
 
