@@ -5,7 +5,7 @@ name: PR Tests
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, release/*]
     types: [opened, synchronize, reopened]
 
 jobs:
