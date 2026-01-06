@@ -1,0 +1,733 @@
+"""Comprehensive tests for Dyson config flow.
+
+This consolidated module combines all config flow testing including:
+- Main config flow functionality (test_config_flow.py)
+- Comprehensive enhanced coverage (test_config_flow_comprehensive_enhanced.py)
+- Error handling scenarios (test_config_flow_error_handling.py)
+- Local broker credentials and connectivity filtering (test_config_flow_localBrokerCredentials_fix.py)
+
+Following pure pytest patterns for Home Assistant integration testing.
+"""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+
+from custom_components.hass_dyson.config_flow import (
+    DysonConfigFlow,
+    DysonOptionsFlow,
+    _discover_device_via_mdns,
+    _get_connection_type_display_name,
+    _get_connection_type_options,
+    _get_connection_type_options_detailed,
+    _get_device_connection_options,
+    _get_management_actions,
+    _get_setup_method_options,
+)
+from custom_components.hass_dyson.const import (
+    CONF_AUTO_ADD_DEVICES,
+    CONF_CREDENTIAL,
+    CONF_DEVICE_NAME,
+    CONF_HOSTNAME,
+    CONF_POLL_FOR_DEVICES,
+    CONF_SERIAL_NUMBER,
+)
+
+
+@pytest.fixture
+def mock_hass():
+    """Create a mock HomeAssistant instance."""
+    return MagicMock(spec=HomeAssistant)
+
+
+@pytest.fixture
+def config_flow(mock_hass):
+    """Create a DysonConfigFlow instance."""
+    flow = DysonConfigFlow()
+    flow.hass = mock_hass
+    flow._abort_if_unique_id_configured = MagicMock()
+    # Mock the context to be writable
+    flow.context = {}
+    return flow
+
+
+@pytest.fixture
+def options_flow(mock_hass):
+    """Create a DysonOptionsFlow instance."""
+    mock_config_entry = MagicMock()
+    mock_config_entry.data = {
+        CONF_SERIAL_NUMBER: "TEST123456",
+        CONF_DEVICE_NAME: "Test Device",
+    }
+
+    # Create options flow properly
+    flow = DysonOptionsFlow(mock_config_entry)
+    flow.hass = mock_hass
+    flow.context = {}
+    return flow
+
+
+@pytest.fixture
+def config_flow_with_client(mock_hass):
+    """Create a DysonConfigFlow instance with an initialized client."""
+    flow = DysonConfigFlow()
+    flow.hass = mock_hass
+    flow._email = "test@example.com"
+    flow._cloud_client = AsyncMock()
+    return flow
+
+
+class TestDysonConfigFlowInit:
+    """Test config flow initialization."""
+
+    def test_config_flow_init(self, config_flow):
+        """Test config flow initialization."""
+        assert config_flow.VERSION == 1
+        assert hasattr(config_flow, "hass")
+        assert hasattr(config_flow, "context")
+
+    def test_options_flow_init(self, options_flow):
+        """Test options flow initialization."""
+        assert hasattr(options_flow, "hass")
+        assert hasattr(options_flow, "context")
+
+
+class TestDysonConfigFlowUserStep:
+    """Test config flow user step."""
+
+    @pytest.mark.asyncio
+    async def test_async_step_user_shows_setup_methods(self, config_flow):
+        """Test user step shows setup method selection."""
+        result = await config_flow.async_step_user()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "user"
+        assert "setup_method" in result["data_schema"].schema
+
+    @pytest.mark.asyncio
+    async def test_async_step_user_cloud_selection(self, config_flow):
+        """Test user step with cloud setup method selection."""
+        user_input = {"setup_method": "cloud"}
+
+        with patch.object(config_flow, "async_step_cloud_account") as mock_step:
+            mock_step.return_value = {"type": FlowResultType.FORM}
+            await config_flow.async_step_user(user_input)
+            mock_step.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_step_user_manual_selection(self, config_flow):
+        """Test user step with manual setup method selection."""
+        user_input = {"setup_method": "manual"}
+
+        with patch.object(config_flow, "async_step_manual_device") as mock_step:
+            mock_step.return_value = {"type": FlowResultType.FORM}
+            await config_flow.async_step_user(user_input)
+            mock_step.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_step_user_invalid_setup_method(self, config_flow):
+        """Test user step with invalid setup method."""
+        user_input = {"setup_method": "invalid_method"}
+
+        result = await config_flow.async_step_user(user_input)
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["errors"]["base"] == "invalid_setup_method"
+
+
+class TestDysonConfigFlowCloudAccount:
+    """Test cloud account configuration."""
+
+    @pytest.mark.asyncio
+    async def test_async_step_cloud_account_form(self, config_flow):
+        """Test cloud account step shows form."""
+        result = await config_flow.async_step_cloud_account()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "cloud_account"
+        assert "email" in result["data_schema"].schema
+
+    @pytest.mark.asyncio
+    async def test_async_step_cloud_account_valid_credentials(self, config_flow):
+        """Test cloud account with valid credentials."""
+        user_input = {"email": "test@example.com", "country": "US", "language": "en-US"}
+
+        with patch.object(config_flow, "_initiate_otp_with_dyson_api") as mock_otp:
+            mock_otp.return_value = ("otp_token", {})
+
+            with patch.object(config_flow, "async_step_otp_verification") as mock_step:
+                mock_step.return_value = {"type": FlowResultType.FORM}
+                await config_flow.async_step_cloud_account(user_input)
+                mock_step.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_step_cloud_account_api_error(self, config_flow):
+        """Test cloud account with API error."""
+        user_input = {"email": "test@example.com", "country": "US", "language": "en-US"}
+
+        with patch.object(config_flow, "_initiate_otp_with_dyson_api") as mock_otp:
+            mock_otp.return_value = (None, {"base": "api_error"})
+
+            result = await config_flow.async_step_cloud_account(user_input)
+
+            assert result["type"] == FlowResultType.FORM
+            assert result["errors"]["base"] == "api_error"
+
+
+class TestDysonConfigFlowOTPVerification:
+    """Test OTP verification step."""
+
+    @pytest.mark.asyncio
+    async def test_otp_verification_success(self, config_flow):
+        """Test successful OTP verification."""
+        config_flow._otp_token = "test_token"
+        user_input = {"otp": "123456"}
+
+        with patch.object(config_flow, "_verify_otp_with_dyson_api") as mock_verify:
+            mock_verify.return_value = (MagicMock(), {})
+
+            with patch.object(config_flow, "async_step_cloud_devices") as mock_step:
+                mock_step.return_value = {"type": FlowResultType.FORM}
+                await config_flow.async_step_otp_verification(user_input)
+                mock_step.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_otp_verification_invalid_code(self, config_flow):
+        """Test OTP verification with invalid code."""
+        config_flow._otp_token = "test_token"
+        user_input = {"otp": "invalid"}
+
+        with patch.object(config_flow, "_verify_otp_with_dyson_api") as mock_verify:
+            mock_verify.return_value = (None, {"base": "invalid_otp"})
+
+            result = await config_flow.async_step_otp_verification(user_input)
+
+            assert result["type"] == FlowResultType.FORM
+            assert result["errors"]["base"] == "invalid_otp"
+
+
+class TestDysonConfigFlowManualDevice:
+    """Test manual device configuration."""
+
+    @pytest.mark.asyncio
+    async def test_manual_device_form(self, config_flow):
+        """Test manual device step shows form."""
+        result = await config_flow.async_step_manual_device()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "manual_device"
+        assert CONF_SERIAL_NUMBER in result["data_schema"].schema
+
+    @pytest.mark.asyncio
+    async def test_manual_device_mdns_discovery_success(self, config_flow):
+        """Test manual device with successful MDNS discovery."""
+        user_input = {CONF_SERIAL_NUMBER: "TEST123456", CONF_DEVICE_NAME: "Test Device"}
+
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_mdns:
+            mock_mdns.return_value = "192.168.1.100"
+
+            with patch.object(config_flow, "async_step_verify_device") as mock_step:
+                mock_step.return_value = {"type": FlowResultType.FORM}
+                await config_flow.async_step_manual_device(user_input)
+                mock_step.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_manual_device_mdns_discovery_failure(self, config_flow):
+        """Test manual device with MDNS discovery failure."""
+        user_input = {CONF_SERIAL_NUMBER: "TEST123456", CONF_DEVICE_NAME: "Test Device"}
+
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_mdns:
+            mock_mdns.return_value = None
+
+            result = await config_flow.async_step_manual_device(user_input)
+
+            assert result["type"] == FlowResultType.FORM
+            assert result["errors"]["base"] == "device_not_found"
+
+    @pytest.mark.asyncio
+    async def test_manual_device_mdns_exception(self, config_flow):
+        """Test manual device with MDNS exception."""
+        user_input = {CONF_SERIAL_NUMBER: "TEST123456", CONF_DEVICE_NAME: "Test Device"}
+
+        with patch(
+            "custom_components.hass_dyson.config_flow._discover_device_via_mdns"
+        ) as mock_mdns:
+            mock_mdns.side_effect = Exception("MDNS error")
+
+            result = await config_flow.async_step_manual_device(user_input)
+
+            assert result["type"] == FlowResultType.FORM
+            assert result["errors"]["base"] == "mdns_error"
+
+
+class TestDysonConfigFlowDeviceVerification:
+    """Test device verification."""
+
+    @pytest.mark.asyncio
+    async def test_verify_device_success(self, config_flow):
+        """Test successful device verification."""
+        config_flow._device_info = {
+            CONF_SERIAL_NUMBER: "TEST123456",
+            CONF_HOSTNAME: "192.168.1.100",
+        }
+
+        user_input = {CONF_CREDENTIAL: "test_credential"}
+
+        with patch.object(config_flow, "_test_device_connection") as mock_test:
+            mock_test.return_value = True
+
+            result = await config_flow.async_step_verify_device(user_input)
+
+            assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    @pytest.mark.asyncio
+    async def test_verify_device_connection_failure(self, config_flow):
+        """Test device verification with connection failure."""
+        config_flow._device_info = {
+            CONF_SERIAL_NUMBER: "TEST123456",
+            CONF_HOSTNAME: "192.168.1.100",
+        }
+
+        user_input = {CONF_CREDENTIAL: "invalid_credential"}
+
+        with patch.object(config_flow, "_test_device_connection") as mock_test:
+            mock_test.return_value = False
+
+            result = await config_flow.async_step_verify_device(user_input)
+
+            assert result["type"] == FlowResultType.FORM
+            assert result["errors"]["base"] == "cannot_connect"
+
+
+class TestDysonConfigFlowDiscovery:
+    """Test device discovery functionality."""
+
+    def test_discover_device_via_mdns_success(self):
+        """Test successful MDNS discovery."""
+        with patch("socket.socket") as mock_socket:
+            mock_socket_instance = MagicMock()
+            mock_socket.return_value.__enter__.return_value = mock_socket_instance
+            mock_socket_instance.connect.return_value = None
+            mock_socket_instance.getsockname.return_value = ("192.168.1.100", 1883)
+
+            result = _discover_device_via_mdns("TEST123456")
+            assert result == "192.168.1.100"
+
+    def test_discover_device_via_mdns_socket_error(self):
+        """Test MDNS discovery with socket error."""
+        with patch("socket.socket") as mock_socket:
+            mock_socket.return_value.__enter__.return_value.connect.side_effect = (
+                OSError()
+            )
+
+            result = _discover_device_via_mdns("TEST123456")
+            assert result is None
+
+    def test_discover_device_via_mdns_exception(self):
+        """Test MDNS discovery with general exception."""
+        with patch("socket.socket") as mock_socket:
+            mock_socket.side_effect = Exception("Network error")
+
+            result = _discover_device_via_mdns("TEST123456")
+            assert result is None
+
+
+class TestDysonOptionsFlow:
+    """Test options flow functionality."""
+
+    @pytest.mark.asyncio
+    async def test_init_form(self, options_flow):
+        """Test options flow shows init form."""
+        result = await options_flow.async_step_init()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "init"
+
+    @pytest.mark.asyncio
+    async def test_init_with_valid_options(self, options_flow):
+        """Test options flow with valid options."""
+        user_input = {CONF_AUTO_ADD_DEVICES: True, CONF_POLL_FOR_DEVICES: True}
+
+        result = await options_flow.async_step_init(user_input)
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"] == user_input
+
+
+class TestDysonConfigFlowHelpers:
+    """Test helper functions."""
+
+    def test_get_connection_type_display_name(self):
+        """Test connection type display name function."""
+        assert _get_connection_type_display_name("cloud") == "Cloud Connection"
+        assert _get_connection_type_display_name("local") == "Local Connection"
+        assert _get_connection_type_display_name("unknown") == "Unknown Connection"
+
+    def test_get_setup_method_options(self):
+        """Test setup method options function."""
+        options = _get_setup_method_options()
+        assert "cloud" in options
+        assert "manual" in options
+
+    def test_get_connection_type_options(self):
+        """Test connection type options function."""
+        options = _get_connection_type_options()
+        assert isinstance(options, list)
+        assert len(options) > 0
+
+    def test_get_management_actions(self):
+        """Test management actions function."""
+        actions = _get_management_actions()
+        assert isinstance(actions, list)
+
+
+class TestDysonConfigFlowErrorHandling:
+    """Test comprehensive error handling scenarios."""
+
+    @pytest.fixture
+    def mock_flow(self):
+        """Create a mock config flow instance."""
+        flow = DysonConfigFlow()
+        flow.hass = MagicMock(spec=HomeAssistant)
+        flow.context = {"title_placeholders": {}}
+        return flow
+
+    @pytest.mark.asyncio
+    async def test_initiate_otp_network_error(self, mock_flow):
+        """Test OTP initiation with network error."""
+        from libdyson_rest.exceptions import DysonConnectionError
+
+        mock_client = MagicMock()
+        mock_client.provision = AsyncMock(side_effect=DysonConnectionError())
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
+
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
+        )
+
+        assert token is None
+        assert "base" in errors
+
+    @pytest.mark.asyncio
+    async def test_verify_otp_network_error(self, mock_flow):
+        """Test OTP verification with network error."""
+        from libdyson_rest.exceptions import DysonConnectionError
+
+        mock_flow._otp_token = "test_token"
+        mock_client = MagicMock()
+        mock_client.confirm_otp = AsyncMock(side_effect=DysonConnectionError())
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
+
+        client, errors = await mock_flow._verify_otp_with_dyson_api("123456")
+
+        assert client is None
+        assert "base" in errors
+
+    @pytest.mark.asyncio
+    async def test_device_connection_timeout(self, mock_flow):
+        """Test device connection with timeout."""
+        mock_flow._device_info = {
+            CONF_SERIAL_NUMBER: "TEST123456",
+            CONF_HOSTNAME: "192.168.1.100",
+            CONF_CREDENTIAL: "test_cred",
+        }
+
+        with patch(
+            "custom_components.hass_dyson.config_flow.get_device"
+        ) as mock_get_device:
+            mock_get_device.side_effect = TimeoutError()
+
+            result = await mock_flow._test_device_connection()
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_mdns_discovery_timeout(self, mock_flow):
+        """Test MDNS discovery with timeout."""
+        with patch("socket.socket") as mock_socket:
+            mock_socket.return_value.__enter__.return_value.connect.side_effect = (
+                TimeoutError()
+            )
+
+            result = _discover_device_via_mdns("TEST123456", timeout=1)
+            assert result is None
+
+
+class TestDysonConfigFlowConnectivityTypeFiltering:
+    """Test device filtering based on connectivity types."""
+
+    @pytest.mark.asyncio
+    async def test_unsupported_connectivity_type_handling(
+        self, config_flow_with_client
+    ):
+        """Test filtering of devices with unsupported connectivity types."""
+        # Mock devices with different connectivity types
+        standard_device = MagicMock()
+        standard_device.name = "Standard Device"
+        standard_device.connection_category = (
+            None  # Most existing devices have no category
+        )
+        standard_device.serial_number = "STD123"
+        standard_device.product_type = "475"
+
+        lec_only_device = MagicMock()
+        lec_only_device.name = "LEC Only Device"
+        lec_only_device.connection_category = "lecOnly"
+        lec_only_device.serial_number = "LEC456"
+        lec_only_device.product_type = "999"
+
+        config_flow_with_client._cloud_client.get_devices.return_value = [
+            standard_device,
+            lec_only_device,
+        ]
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_cloud_devices(user_input)
+
+        # Verify that only supported devices are presented
+        assert result["type"] == FlowResultType.FORM
+        # The form should only show the standard device, filtering out LEC-only
+        form_devices = [
+            option
+            for option in result["data_schema"].schema.get("device", {}).options
+            if option != "add_another"
+        ]
+        assert len(form_devices) == 1
+        assert "Standard Device" in str(form_devices[0])
+
+    @pytest.mark.asyncio
+    async def test_supported_connectivity_type_inclusion(self, config_flow_with_client):
+        """Test that devices with supported connectivity types are included."""
+        # Mock device with supported connectivity
+        supported_device = MagicMock()
+        supported_device.name = "Supported Device"
+        supported_device.connection_category = None  # Standard category
+        supported_device.serial_number = "SUP789"
+        supported_device.product_type = "527"
+
+        config_flow_with_client._cloud_client.get_devices.return_value = [
+            supported_device,
+        ]
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_cloud_devices(user_input)
+
+        assert result["type"] == FlowResultType.FORM
+        form_devices = [
+            option
+            for option in result["data_schema"].schema.get("device", {}).options
+            if option != "add_another"
+        ]
+        assert len(form_devices) == 1
+        assert "Supported Device" in str(form_devices[0])
+
+    @pytest.mark.asyncio
+    async def test_mixed_connectivity_types_filtering(self, config_flow_with_client):
+        """Test filtering with mixed supported and unsupported connectivity types."""
+        # Mock mix of devices
+        devices = [
+            # Supported devices
+            MagicMock(
+                name="Device 1",
+                connection_category=None,
+                serial_number="D1",
+                product_type="475",
+            ),
+            MagicMock(
+                name="Device 2",
+                connection_category="standard",
+                serial_number="D2",
+                product_type="527",
+            ),
+            # Unsupported devices
+            MagicMock(
+                name="Device 3",
+                connection_category="lecOnly",
+                serial_number="D3",
+                product_type="999",
+            ),
+            MagicMock(
+                name="Device 4",
+                connection_category="unsupported",
+                serial_number="D4",
+                product_type="888",
+            ),
+        ]
+
+        config_flow_with_client._cloud_client.get_devices.return_value = devices
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_cloud_devices(user_input)
+
+        assert result["type"] == FlowResultType.FORM
+        form_devices = [
+            option
+            for option in result["data_schema"].schema.get("device", {}).options
+            if option != "add_another"
+        ]
+        # Should only show 2 supported devices, filtering out the 2 unsupported
+        assert len(form_devices) == 2
+
+    @pytest.mark.asyncio
+    async def test_no_supported_devices_available(self, config_flow_with_client):
+        """Test behavior when no supported devices are available."""
+        # Mock only unsupported devices
+        unsupported_device = MagicMock()
+        unsupported_device.name = "Unsupported Device"
+        unsupported_device.connection_category = "lecOnly"
+        unsupported_device.serial_number = "UNS123"
+        unsupported_device.product_type = "999"
+
+        config_flow_with_client._cloud_client.get_devices.return_value = [
+            unsupported_device,
+        ]
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_cloud_devices(user_input)
+
+        # Should show error or empty form when no supported devices
+        assert result["type"] == FlowResultType.FORM
+        assert result.get("errors", {}).get("base") == "no_supported_devices"
+
+
+class TestDysonConfigFlowComprehensiveAuth:
+    """Test comprehensive authentication scenarios."""
+
+    @pytest.fixture
+    def mock_flow(self):
+        """Create a mock config flow instance."""
+        flow = DysonConfigFlow()
+        flow.hass = MagicMock(spec=HomeAssistant)
+        flow.context = {"title_placeholders": {}}
+        return flow
+
+    @pytest.mark.asyncio
+    async def test_authentication_rate_limiting(self, mock_flow):
+        """Test authentication with rate limiting."""
+        from libdyson_rest.exceptions import DysonTooManyRequestsError
+
+        mock_client = MagicMock()
+        mock_client.provision = AsyncMock(side_effect=DysonTooManyRequestsError())
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
+
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
+        )
+
+        assert token is None
+        assert errors["base"] == "rate_limited"
+
+    @pytest.mark.asyncio
+    async def test_authentication_invalid_credentials(self, mock_flow):
+        """Test authentication with invalid credentials."""
+        from libdyson_rest.exceptions import DysonAuthenticationError
+
+        mock_client = MagicMock()
+        mock_client.provision = AsyncMock(side_effect=DysonAuthenticationError())
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
+
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
+        )
+
+        assert token is None
+        assert errors["base"] == "invalid_credentials"
+
+
+class TestDysonConfigFlowUtilityFunctions:
+    """Test utility functions comprehensively."""
+
+    def test_get_connection_type_options_detailed(self):
+        """Test detailed connection type options."""
+        options = _get_connection_type_options_detailed()
+        assert isinstance(options, dict)
+        assert len(options) > 0
+
+    def test_get_device_connection_options(self):
+        """Test device connection options."""
+        mock_device = MagicMock()
+        mock_device.serial_number = "TEST123"
+
+        options = _get_device_connection_options(mock_device)
+        assert isinstance(options, list)
+
+    def test_utility_functions_edge_cases(self):
+        """Test utility functions with edge cases."""
+        # Test with None inputs
+        assert _get_connection_type_display_name(None) is not None
+
+        # Test with empty strings
+        assert _get_connection_type_display_name("") is not None
+
+
+class TestDysonConfigFlowEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_flow_handling(self, config_flow):
+        """Test handling of concurrent config flows."""
+        config_flow.context["unique_id"] = "TEST123456"
+
+        # Mock that device is already configured
+        config_flow._abort_if_unique_id_configured.return_value = True
+
+        with patch.object(config_flow, "async_abort") as mock_abort:
+            await config_flow.async_step_user()
+            mock_abort.assert_called_with(reason="already_configured")
+
+    @pytest.mark.asyncio
+    async def test_malformed_device_data_handling(self, config_flow):
+        """Test handling of malformed device data."""
+        config_flow._cloud_client = MagicMock()
+
+        # Mock device with missing required fields
+        malformed_device = MagicMock()
+        malformed_device.name = None  # Missing name
+        malformed_device.serial_number = ""  # Empty serial
+
+        config_flow._cloud_client.get_devices.return_value = [malformed_device]
+
+        result = await config_flow.async_step_cloud_devices(
+            {"connection_type": "cloud"}
+        )
+
+        # Should handle malformed data gracefully
+        assert result["type"] == FlowResultType.FORM
+
+    @pytest.mark.asyncio
+    async def test_network_interruption_recovery(self, config_flow):
+        """Test recovery from network interruptions."""
+        config_flow._device_info = {
+            CONF_SERIAL_NUMBER: "TEST123456",
+            CONF_HOSTNAME: "192.168.1.100",
+        }
+
+        with patch.object(config_flow, "_test_device_connection") as mock_test:
+            # Simulate intermittent network failure then success
+            mock_test.side_effect = [False, True]
+
+            # First attempt should fail
+            result1 = await config_flow.async_step_verify_device(
+                {CONF_CREDENTIAL: "test"}
+            )
+            assert result1["type"] == FlowResultType.FORM
+            assert result1["errors"]["base"] == "cannot_connect"
+
+            # Second attempt should succeed
+            result2 = await config_flow.async_step_verify_device(
+                {CONF_CREDENTIAL: "test"}
+            )
+            assert result2["type"] == FlowResultType.CREATE_ENTRY
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

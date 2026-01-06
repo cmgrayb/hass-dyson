@@ -1,7 +1,7 @@
-"""Comprehensive coverage enhancement tests for device_utils.py.
+"""Comprehensive coverage enhancement tests for device_utils.py using pure pytest.
 
-This module targets the missing lines and edge cases in device_utils.py
-to improve coverage from 78% toward 90%+ as part of Phase 1 strategy.
+This module demonstrates migrating from pytest-homeassistant-custom-component
+to pure pytest fixtures while maintaining full test coverage.
 """
 
 from unittest.mock import MagicMock, patch
