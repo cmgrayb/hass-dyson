@@ -14,7 +14,6 @@ import voluptuous as vol
 
 from custom_components.hass_dyson.services import (
     SERVICE_RESET_FILTER_SCHEMA,
-    SERVICE_SCHEDULE_OPERATION_SCHEMA,
     SERVICE_SET_OSCILLATION_ANGLES_SCHEMA,
     SERVICE_SET_SLEEP_TIMER_SCHEMA,
     _convert_to_string,
@@ -111,27 +110,17 @@ class TestServiceSchemaValidation:
         valid_data = schema({"device_id": "test", "filter_type": "carbon"})
         assert valid_data["filter_type"] == "carbon"
 
-    def test_schedule_operation_missing_required_params(self):
-        """Test schedule operation requires both days and time."""
-        schema = SERVICE_SCHEDULE_OPERATION_SCHEMA
+    # Removed: schedule_operation service was experimental and removed
+    #
+    # def test_schedule_operation_missing_required_params(self):
+    #     \"\"\"Test schedule operation requires both days and time.\"\"\"
+    #     ...
 
-        # Missing time
-        with pytest.raises(vol.Invalid):
-            schema({"device_id": "test", "days": 7})
-
-        # Missing days
-        with pytest.raises(vol.Invalid):
-            schema({"device_id": "test", "time": "10:00"})
-
-    def test_schedule_operation_invalid_time_format(self):
-        """Test schedule operation rejects invalid time format."""
-        schema = SERVICE_SCHEDULE_OPERATION_SCHEMA
-
-        with pytest.raises(vol.Invalid):
-            schema({"device_id": "test", "days": 7, "time": "25:00"})
-
-        with pytest.raises(vol.Invalid):
-            schema({"device_id": "test", "days": 7, "time": "10:70"})
+    # Removed: schedule_operation service was experimental and removed
+    #
+    # def test_schedule_operation_invalid_time_format(self):
+    #     \"\"\"Test schedule operation rejects invalid time format.\"\"\"
+    #     ...
 
 
 class TestServiceParameterValidation:
