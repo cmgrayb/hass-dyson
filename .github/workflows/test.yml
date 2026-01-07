@@ -113,8 +113,27 @@ jobs:
           import xml.etree.ElementTree as ET
           tree = ET.parse('coverage.xml')
           root = tree.getroot()
-          coverage = float(root.get('line-rate')) * 100
-          print(f'Coverage: {coverage:.2f}%')
+
+          # Get line and branch rates from coverage.xml
+          line_rate = float(root.get('line-rate', 0))
+          branch_rate = float(root.get('branch-rate', 0))
+          lines_valid = int(root.get('lines-valid', 0))
+          branches_valid = int(root.get('branches-valid', 0))
+
+          # Calculate combined coverage (same as pytest-cov reports)
+          if lines_valid + branches_valid > 0:
+              lines_covered = line_rate * lines_valid
+              branches_covered = branch_rate * branches_valid
+              total_covered = lines_covered + branches_covered
+              total_valid = lines_valid + branches_valid
+              coverage = (total_covered / total_valid) * 100
+          else:
+              coverage = 0.0
+
+          print(f'Line coverage: {line_rate * 100:.2f}%')
+          print(f'Branch coverage: {branch_rate * 100:.2f}%')
+          print(f'Combined coverage: {coverage:.2f}%')
+
           if coverage < 75:
               print(f'❌ Coverage {coverage:.2f}% is below 75% threshold')
               exit(1)
