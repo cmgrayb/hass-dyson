@@ -798,7 +798,7 @@ class TestDysonConfigFlowErrorHandlingGaps:
         """Test error during setup method form creation."""
         with patch(
             "custom_components.hass_dyson.config_flow._get_setup_method_options",
-            side_effect=Exception("Form creation error")
+            side_effect=Exception("Form creation error"),
         ):
             # This should trigger the first except block in async_step_user
             with pytest.raises(Exception) as exc_info:
@@ -809,7 +809,10 @@ class TestDysonConfigFlowErrorHandlingGaps:
     async def test_async_step_user_top_level_exception(self, mock_flow):
         """Test top-level exception handler in async_step_user."""
         # Force an exception in the main try block by mocking the module-level function
-        with patch('custom_components.hass_dyson.config_flow._get_default_country_culture', side_effect=Exception("Top level error")):
+        with patch(
+            "custom_components.hass_dyson.config_flow._get_default_country_culture",
+            side_effect=Exception("Top level error"),
+        ):
             result = await mock_flow.async_step_user()
             # The method should handle the exception and return a form with errors
             assert result["type"] == "form"
@@ -825,14 +828,19 @@ class TestDysonConfigFlowErrorHandlingGaps:
             mock_zeroconf_class.return_value = mock_zeroconf
 
             # Mock socket.gethostbyname to raise gaierror
-            with patch("socket.gethostbyname", side_effect=socket.gaierror("Name resolution failed")):
+            with patch(
+                "socket.gethostbyname",
+                side_effect=socket.gaierror("Name resolution failed"),
+            ):
                 result = await _discover_device_via_mdns(mock_hass, "TEST123456")
                 assert result is None
 
     @pytest.mark.asyncio
     async def test_mdns_discovery_general_exception(self, mock_hass):
         """Test mDNS discovery general exception handling."""
-        with patch("zeroconf.Zeroconf", side_effect=Exception("Zeroconf initialization failed")):
+        with patch(
+            "zeroconf.Zeroconf", side_effect=Exception("Zeroconf initialization failed")
+        ):
             result = await _discover_device_via_mdns(mock_hass, "TEST123456")
             assert result is None
 
@@ -862,10 +870,12 @@ class TestDysonConfigFlowErrorHandlingGaps:
         # Mock successful client creation but None challenge
         mock_client = AsyncMock()
         mock_client.provision = AsyncMock()
-        mock_client.get_user_status = AsyncMock(return_value=MagicMock(
-            account_status=MagicMock(value="active"),
-            authentication_method=MagicMock(value="otp")
-        ))
+        mock_client.get_user_status = AsyncMock(
+            return_value=MagicMock(
+                account_status=MagicMock(value="active"),
+                authentication_method=MagicMock(value="otp"),
+            )
+        )
         mock_client.begin_login = AsyncMock(return_value=None)
 
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
@@ -883,10 +893,12 @@ class TestDysonConfigFlowErrorHandlingGaps:
         # Mock successful client but challenge without ID
         mock_client = AsyncMock()
         mock_client.provision = AsyncMock()
-        mock_client.get_user_status = AsyncMock(return_value=MagicMock(
-            account_status=MagicMock(value="active"),
-            authentication_method=MagicMock(value="otp")
-        ))
+        mock_client.get_user_status = AsyncMock(
+            return_value=MagicMock(
+                account_status=MagicMock(value="active"),
+                authentication_method=MagicMock(value="otp"),
+            )
+        )
 
         # Mock challenge with None challenge_id
         mock_challenge = MagicMock()
@@ -905,7 +917,9 @@ class TestDysonConfigFlowErrorHandlingGaps:
     @pytest.mark.asyncio
     async def test_default_country_culture_no_config(self):
         """Test _get_default_country_culture with hass that has no config attribute."""
-        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+        from custom_components.hass_dyson.config_flow import (
+            _get_default_country_culture,
+        )
 
         # Mock hass without config attribute
         mock_hass = MagicMock()
@@ -919,7 +933,9 @@ class TestDysonConfigFlowErrorHandlingGaps:
     @pytest.mark.asyncio
     async def test_default_country_culture_config_none(self):
         """Test _get_default_country_culture with hass.config = None."""
-        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+        from custom_components.hass_dyson.config_flow import (
+            _get_default_country_culture,
+        )
 
         mock_hass = MagicMock()
         mock_hass.config = None
@@ -932,7 +948,9 @@ class TestDysonConfigFlowErrorHandlingGaps:
     @pytest.mark.asyncio
     async def test_default_country_culture_attribute_error(self):
         """Test _get_default_country_culture with AttributeError."""
-        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+        from custom_components.hass_dyson.config_flow import (
+            _get_default_country_culture,
+        )
 
         # Mock hass with None config to trigger fallback
         mock_hass = MagicMock()
@@ -946,12 +964,16 @@ class TestDysonConfigFlowErrorHandlingGaps:
     @pytest.mark.asyncio
     async def test_default_country_culture_type_error(self):
         """Test _get_default_country_culture with TypeError."""
-        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+        from custom_components.hass_dyson.config_flow import (
+            _get_default_country_culture,
+        )
 
         # Mock hass that raises TypeError
         mock_hass = MagicMock()
         mock_hass.config = MagicMock()
-        type(mock_hass.config).language = PropertyMock(side_effect=TypeError("Invalid type"))
+        type(mock_hass.config).language = PropertyMock(
+            side_effect=TypeError("Invalid type")
+        )
 
         country, culture = _get_default_country_culture(mock_hass)
 

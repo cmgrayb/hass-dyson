@@ -1100,7 +1100,9 @@ class TestCoordinatorErrorHandling:
     @pytest.mark.asyncio
     async def test_helper_function_no_hass_config(self):
         """Test helper function when hass.config is None."""
-        from custom_components.hass_dyson.coordinator import _get_default_country_culture_for_coordinator
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
 
         mock_hass = MagicMock()
         mock_hass.config = None
@@ -1112,7 +1114,9 @@ class TestCoordinatorErrorHandling:
     @pytest.mark.asyncio
     async def test_helper_function_missing_country(self):
         """Test helper function when country is missing."""
-        from custom_components.hass_dyson.coordinator import _get_default_country_culture_for_coordinator
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
 
         mock_hass = MagicMock()
         mock_hass.config = MagicMock()
@@ -1126,7 +1130,9 @@ class TestCoordinatorErrorHandling:
     @pytest.mark.asyncio
     async def test_helper_function_missing_language(self):
         """Test helper function when language is missing."""
-        from custom_components.hass_dyson.coordinator import _get_default_country_culture_for_coordinator
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
 
         mock_hass = MagicMock()
         mock_hass.config = MagicMock()
@@ -1140,7 +1146,9 @@ class TestCoordinatorErrorHandling:
     @pytest.mark.asyncio
     async def test_helper_function_invalid_language_format(self):
         """Test helper function with existing culture format."""
-        from custom_components.hass_dyson.coordinator import _get_default_country_culture_for_coordinator
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
 
         mock_hass = MagicMock()
         mock_hass.config = MagicMock()
@@ -1154,14 +1162,16 @@ class TestCoordinatorErrorHandling:
     @pytest.mark.asyncio
     async def test_helper_function_attribute_error(self):
         """Test helper function with AttributeError exception."""
-        from custom_components.hass_dyson.coordinator import _get_default_country_culture_for_coordinator
 
         mock_hass = MagicMock()
         # Remove config attribute to trigger AttributeError in getattr
         del mock_hass.config
+
     async def test_helper_function_type_error(self):
         """Test helper function with TypeError exception."""
-        from custom_components.hass_dyson.coordinator import _get_default_country_culture_for_coordinator
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
 
         # Pass invalid type instead of hass object
         country, culture = _get_default_country_culture_for_coordinator(None)
@@ -1169,9 +1179,13 @@ class TestCoordinatorErrorHandling:
         assert culture == "en-US"
 
     @pytest.mark.asyncio
-    async def test_coordinator_async_setup_device_network_error(self, mock_hass, mock_config_entry_cloud):
+    async def test_coordinator_async_setup_device_network_error(
+        self, mock_hass, mock_config_entry_cloud
+    ):
         """Test coordinator setup with network error."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_cloud
@@ -1183,9 +1197,13 @@ class TestCoordinatorErrorHandling:
                 await coordinator._async_setup_device()
 
     @pytest.mark.asyncio
-    async def test_coordinator_connection_lost_recovery(self, mock_hass, mock_config_entry_cloud):
+    async def test_coordinator_connection_lost_recovery(
+        self, mock_hass, mock_config_entry_cloud
+    ):
         """Test coordinator recovery when connection is lost."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_cloud
@@ -1204,15 +1222,21 @@ class TestCoordinatorErrorHandling:
             coordinator.device.request_current_faults = AsyncMock()
             coordinator.device.get_environmental_data = MagicMock(return_value={})
 
-            with patch.object(coordinator, "ensure_device_services_registered", new_callable=AsyncMock):
+            with patch.object(
+                coordinator, "ensure_device_services_registered", new_callable=AsyncMock
+            ):
                 # Second attempt should succeed
                 result = await coordinator._async_update_data()
                 assert result == {}
 
     @pytest.mark.asyncio
-    async def test_coordinator_mqtt_callback_error_handling(self, mock_hass, mock_config_entry_cloud):
+    async def test_coordinator_mqtt_callback_error_handling(
+        self, mock_hass, mock_config_entry_cloud
+    ):
         """Test coordinator MQTT callback error handling."""
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_cloud
@@ -1220,7 +1244,11 @@ class TestCoordinatorErrorHandling:
             coordinator.async_update_listeners = MagicMock()
 
             # Test message callback with correct signature (topic, data)
-            with patch.object(coordinator, "_schedule_coordinator_data_update", side_effect=Exception("Parse error")):
+            with patch.object(
+                coordinator,
+                "_schedule_coordinator_data_update",
+                side_effect=Exception("Parse error"),
+            ):
                 # Should not raise exception, just log error
                 coordinator._on_message_update("test/topic", {"invalid": "data"})
 
@@ -1228,7 +1256,11 @@ class TestCoordinatorErrorHandling:
                 assert True  # No exception raised
 
             # Mock schedule_coordinator_data_update to raise exception
-            with patch.object(coordinator, "_schedule_coordinator_data_update", side_effect=Exception("Scheduler error")):
+            with patch.object(
+                coordinator,
+                "_schedule_coordinator_data_update",
+                side_effect=Exception("Scheduler error"),
+            ):
                 # Should not raise exception from callback (no parameters for _on_environmental_update)
                 coordinator._on_environmental_update()
                 assert True  # No exception propagated
@@ -1242,7 +1274,9 @@ class TestCoordinatorErrorHandling:
             CONF_SERIAL_NUMBER: "TEST123456",
         }
 
-        with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
             coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry

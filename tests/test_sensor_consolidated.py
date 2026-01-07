@@ -14,22 +14,22 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
-from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER, PERCENTAGE, UnitOfTemperature
+from homeassistant.const import (
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+    PERCENTAGE,
+    UnitOfTemperature,
+)
 
 from custom_components.hass_dyson.const import DOMAIN
 from custom_components.hass_dyson.sensor import (
-    DysonAirQualitySensor,
-    DysonCO2Sensor,
     DysonFilterLifeSensor,
     DysonFormaldehydeSensor,
     DysonHumiditySensor,
     DysonNO2Sensor,
-    DysonP10RSensor,
     DysonP25RSensor,
     DysonPM10Sensor,
     DysonPM25Sensor,
     DysonTemperatureSensor,
-    DysonVOCSensor,
     async_setup_entry,
 )
 
@@ -473,75 +473,75 @@ class TestDysonNO2Sensor:
             assert sensor.native_value == 25
 
 
-class TestSensorErrorHandling:
-    """Test sensor error handling scenarios using pure pytest."""
+# class TestSensorErrorHandling:
+#     """Test sensor error handling scenarios using pure pytest."""
 
-    def test_sensor_coordinator_data_none(self, pure_mock_coordinator):
-        """Test sensor behavior when coordinator data is None."""
-        from unittest.mock import patch
+#     def test_sensor_coordinator_data_none(self, pure_mock_coordinator):
+#         """Test sensor behavior when coordinator data is None."""
+#         from unittest.mock import patch
 
-        # Arrange
-        pure_mock_coordinator.data = None
+#         # Arrange
+#         pure_mock_coordinator.data = None
 
-        # Mock the sensor initialization to avoid HA context issues
-        with patch(
-            "custom_components.hass_dyson.sensor.DysonPM25Sensor.__init__",
-            return_value=None,
-        ):
-            sensor = DysonPM25Sensor.__new__(DysonPM25Sensor)
-            sensor.coordinator = pure_mock_coordinator
+#         # Mock the sensor initialization to avoid HA context issues
+#         with patch(
+#             "custom_components.hass_dyson.sensor.DysonPM25Sensor.__init__",
+#             return_value=None,
+#         ):
+#             sensor = DysonPM25Sensor.__new__(DysonPM25Sensor)
+#             sensor.coordinator = pure_mock_coordinator
 
-            # Mock native_value to handle None data
-            sensor.native_value = None
+#             # Mock native_value to handle None data
+#             sensor.native_value = None
 
-            # Assert
-            assert sensor.native_value is None
+#             # Assert
+#             assert sensor.native_value is None
 
-    def test_sensor_coordinator_data_missing_keys(self, pure_mock_coordinator):
-        """Test sensor behavior with missing data keys."""
-        from unittest.mock import patch
+#     def test_sensor_coordinator_data_missing_keys(self, pure_mock_coordinator):
+#         """Test sensor behavior with missing data keys."""
+#         from unittest.mock import patch
 
-        # Arrange
-        pure_mock_coordinator.data = {"product-state": {}}  # Missing environmental-data
+#         # Arrange
+#         pure_mock_coordinator.data = {"product-state": {}}  # Missing environmental-data
 
-        # Mock the sensor initialization to avoid HA context issues
-        with patch(
-            "custom_components.hass_dyson.sensor.DysonTemperatureSensor.__init__",
-            return_value=None,
-        ):
-            sensor = DysonTemperatureSensor.__new__(DysonTemperatureSensor)
-            sensor.coordinator = pure_mock_coordinator
+#         # Mock the sensor initialization to avoid HA context issues
+#         with patch(
+#             "custom_components.hass_dyson.sensor.DysonTemperatureSensor.__init__",
+#             return_value=None,
+#         ):
+#             sensor = DysonTemperatureSensor.__new__(DysonTemperatureSensor)
+#             sensor.coordinator = pure_mock_coordinator
 
-            # Mock native_value to handle missing keys
-            sensor.native_value = None
+#             # Mock native_value to handle missing keys
+#             sensor.native_value = None
 
-            # Assert
-            assert sensor.native_value is None
+#             # Assert
+#             assert sensor.native_value is None
 
-    def test_sensor_coordinator_update_exception_handling(self, pure_mock_coordinator):
-        """Test sensor handles exceptions during coordinator update."""
-        from unittest.mock import MagicMock, patch
+#     def test_sensor_coordinator_update_exception_handling(self, pure_mock_coordinator):
+#         """Test sensor handles exceptions during coordinator update."""
+#         from unittest.mock import MagicMock, patch
 
-        # Mock the sensor initialization to avoid HA context issues
-        with patch(
-            "custom_components.hass_dyson.sensor.DysonPM25Sensor.__init__",
-            return_value=None,
-        ):
-            sensor = DysonPM25Sensor.__new__(DysonPM25Sensor)
-            sensor.coordinator = pure_mock_coordinator
+#         # Mock the sensor initialization to avoid HA context issues
+#         with patch(
+#             "custom_components.hass_dyson.sensor.DysonPM25Sensor.__init__",
+#             return_value=None,
+#         ):
+#             sensor = DysonPM25Sensor.__new__(DysonPM25Sensor)
+#             sensor.coordinator = pure_mock_coordinator
 
-            # Mock data access to raise exception
-            def side_effect(*args, **kwargs):
-                raise KeyError("Test exception")
+#             # Mock data access to raise exception
+#             def side_effect(*args, **kwargs):
+#                 raise KeyError("Test exception")
 
-            pure_mock_coordinator.data = MagicMock()
-            pure_mock_coordinator.data.__getitem__.side_effect = side_effect
+#             pure_mock_coordinator.data = MagicMock()
+#             pure_mock_coordinator.data.__getitem__.side_effect = side_effect
 
-            # Mock native_value to handle exceptions gracefully
-            sensor.native_value = None
+#             # Mock native_value to handle exceptions gracefully
+#             sensor.native_value = None
 
-            # Act & Assert - Should not raise exception
-            assert sensor.native_value is None
+#             # Act & Assert - Should not raise exception
+#             assert sensor.native_value is None
 
 
 class TestSensorStateClasses:
@@ -604,20 +604,22 @@ class TestSensorErrorHandling:
         coordinator.data = {
             "environmental-data": {
                 "p25r": "invalid",  # Invalid P25R data
-                "p10r": 1500,       # Out of range P10 data
-                "co2": "abc",       # Invalid CO2 data
-                "voc": -5,          # Out of range VOC data
+                "p10r": 1500,  # Out of range P10 data
+                "co2": "abc",  # Invalid CO2 data
+                "voc": -5,  # Out of range VOC data
             }
         }
         return coordinator
 
-    def test_p25r_sensor_invalid_data_handling(self, mock_coordinator_with_invalid_data, pure_mock_hass):
+    def test_p25r_sensor_invalid_data_handling(
+        self, mock_coordinator_with_invalid_data, pure_mock_hass
+    ):
         """Test DysonP25RSensor handles invalid data gracefully."""
         sensor = DysonP25RSensor(mock_coordinator_with_invalid_data)
         sensor.hass = pure_mock_hass
 
         # Mock async_write_ha_state to avoid hass requirement
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Should handle invalid data and set to None
@@ -636,7 +638,7 @@ class TestSensorErrorHandling:
         sensor = DysonP25RSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -650,7 +652,7 @@ class TestSensorErrorHandling:
         sensor = DysonP25RSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -664,7 +666,7 @@ class TestSensorErrorHandling:
         sensor = DysonP25RSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -680,7 +682,7 @@ class TestSensorErrorHandling:
         sensor = DysonP25RSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -694,7 +696,7 @@ class TestSensorErrorHandling:
         sensor = DysonP25RSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -712,7 +714,7 @@ class TestSensorErrorHandling:
         sensor = DysonPM10Sensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -730,7 +732,7 @@ class TestSensorErrorHandling:
         sensor = DysonNO2Sensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -748,7 +750,7 @@ class TestSensorErrorHandling:
         sensor = DysonFormaldehydeSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -766,7 +768,7 @@ class TestSensorErrorHandling:
         sensor = DysonTemperatureSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -784,7 +786,7 @@ class TestSensorErrorHandling:
         sensor = DysonHumiditySensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -802,7 +804,7 @@ class TestSensorErrorHandling:
         sensor = DysonFilterLifeSensor(coordinator, "HEPA")  # Add required filter_type
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -816,7 +818,7 @@ class TestSensorErrorHandling:
         sensor = DysonPM25Sensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -834,7 +836,7 @@ class TestSensorErrorHandling:
         sensor = DysonPM25Sensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         assert sensor._attr_native_value is None
@@ -853,19 +855,19 @@ class TestSensorEdgeCases:
 
         # Test minimum valid value
         coordinator.data = {"environmental-data": {"p25r": 0}}
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
         assert sensor._attr_native_value == 0
 
         # Test maximum valid value
         coordinator.data = {"environmental-data": {"p25r": 999}}
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
         assert sensor._attr_native_value == 999
 
         # Test just over maximum (should be rejected)
         coordinator.data = {"environmental-data": {"p25r": 1000}}
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
         assert sensor._attr_native_value is None
 
@@ -882,7 +884,7 @@ class TestSensorEdgeCases:
         sensor = DysonTemperatureSensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Should convert from Kelvin to Celsius
@@ -902,7 +904,7 @@ class TestSensorEdgeCases:
         sensor = DysonHumiditySensor(coordinator)
         sensor.hass = pure_mock_hass
 
-        with patch.object(sensor, 'async_write_ha_state'):
+        with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
         # Should convert to proper percentage

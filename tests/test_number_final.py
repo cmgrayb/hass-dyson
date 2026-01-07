@@ -394,7 +394,7 @@ class TestNumberEntityErrorHandling:
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
-        with patch.object(entity, '_start_timer_polling_if_needed') as mock_start:
+        with patch.object(entity, "_start_timer_polling_if_needed") as mock_start:
             await entity.async_added_to_hass()
             mock_start.assert_called_once()
 
@@ -441,7 +441,10 @@ class TestNumberEntityErrorHandling:
 
         # Should handle ValueError gracefully
         entity._start_timer_polling_if_needed()
-        assert not hasattr(entity, '_timer_polling_task') or entity._timer_polling_task is None
+        assert (
+            not hasattr(entity, "_timer_polling_task")
+            or entity._timer_polling_task is None
+        )
 
     def test_sleep_timer_stop_polling(self):
         """Test _stop_timer_polling method."""
@@ -471,7 +474,7 @@ class TestNumberEntityErrorHandling:
         entity = DysonSleepTimerNumber(mock_coordinator)
 
         # Mock async_write_ha_state to avoid hass requirement
-        with patch.object(entity, 'async_write_ha_state'):
+        with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
             assert entity._attr_native_value == 0
 
@@ -486,7 +489,7 @@ class TestNumberEntityErrorHandling:
         entity = DysonSleepTimerNumber(mock_coordinator)
 
         # Mock async_write_ha_state to avoid hass requirement
-        with patch.object(entity, 'async_write_ha_state'):
+        with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
             assert entity._attr_native_value == 0
 
@@ -496,7 +499,9 @@ class TestNumberEntityErrorHandling:
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
         mock_coordinator.device = Mock()
-        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=ConnectionError("Connection failed"))
+        mock_coordinator.device.set_sleep_timer = AsyncMock(
+            side_effect=ConnectionError("Connection failed")
+        )
         mock_coordinator.device._request_current_state = AsyncMock()
 
         entity = DysonSleepTimerNumber(mock_coordinator)
@@ -510,7 +515,9 @@ class TestNumberEntityErrorHandling:
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
         mock_coordinator.device = Mock()
-        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=TimeoutError("Timeout"))
+        mock_coordinator.device.set_sleep_timer = AsyncMock(
+            side_effect=TimeoutError("Timeout")
+        )
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -523,7 +530,9 @@ class TestNumberEntityErrorHandling:
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
         mock_coordinator.device = Mock()
-        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=ValueError("Invalid value"))
+        mock_coordinator.device.set_sleep_timer = AsyncMock(
+            side_effect=ValueError("Invalid value")
+        )
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -536,7 +545,9 @@ class TestNumberEntityErrorHandling:
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
         mock_coordinator.device = Mock()
-        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=RuntimeError("Unexpected error"))
+        mock_coordinator.device.set_sleep_timer = AsyncMock(
+            side_effect=RuntimeError("Unexpected error")
+        )
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -562,7 +573,9 @@ class TestNumberEntityErrorHandling:
         entity = DysonSleepTimerNumber(mock_coordinator)
 
         # Mock method to raise exception
-        with patch.object(entity, '_do_frequent_initial_polling', side_effect=Exception("Test error")):
+        with patch.object(
+            entity, "_do_frequent_initial_polling", side_effect=Exception("Test error")
+        ):
             await entity._poll_timer_updates()
             # Should handle exception gracefully
 
@@ -575,8 +588,10 @@ class TestNumberEntityErrorHandling:
         entity = DysonSleepTimerNumber(mock_coordinator)
 
         # Mock methods
-        with patch.object(entity, '_do_frequent_initial_polling', return_value=None):
-            with patch.object(entity, '_do_regular_polling', side_effect=TimeoutError("Timeout")):
+        with patch.object(entity, "_do_frequent_initial_polling", return_value=None):
+            with patch.object(
+                entity, "_do_regular_polling", side_effect=TimeoutError("Timeout")
+            ):
                 await entity._poll_timer_updates()
                 # Should handle TimeoutError gracefully
 
@@ -618,12 +633,16 @@ class TestOscillationAngleNumberEntities:
 
     def test_lower_angle_native_value_invalid_data(self, mock_coordinator_with_angles):
         """Test native_value property with invalid angle data."""
-        mock_coordinator_with_angles.device.get_state_value = Mock(return_value="invalid")
+        mock_coordinator_with_angles.device.get_state_value = Mock(
+            return_value="invalid"
+        )
         entity = DysonOscillationLowerAngleNumber(mock_coordinator_with_angles)
 
         # Manually simulate what _handle_coordinator_update does without calling HA state methods
         product_state = mock_coordinator_with_angles.data.get("product-state", {})
-        angle_data = mock_coordinator_with_angles.device.get_state_value(product_state, "osal", "0000")
+        angle_data = mock_coordinator_with_angles.device.get_state_value(
+            product_state, "osal", "0000"
+        )
         try:
             entity._attr_native_value = int(angle_data.lstrip("0") or "0")
         except (ValueError, TypeError):
@@ -632,24 +651,33 @@ class TestOscillationAngleNumberEntities:
         assert entity.native_value == 0
 
     @pytest.mark.asyncio
-    async def test_lower_angle_set_native_value_success(self, mock_coordinator_with_angles):
+    async def test_lower_angle_set_native_value_success(
+        self, mock_coordinator_with_angles
+    ):
         """Test setting lower angle value successfully."""
         entity = DysonOscillationLowerAngleNumber(mock_coordinator_with_angles)
 
         # Mock current upper angle
-        mock_coordinator_with_angles.device.get_state_value = Mock(side_effect=lambda state, key, default: {
-            "osal": "045",
-            "osau": "315"
-        }.get(key, default))
+        mock_coordinator_with_angles.device.get_state_value = Mock(
+            side_effect=lambda state, key, default: {"osal": "045", "osau": "315"}.get(
+                key, default
+            )
+        )
 
         await entity.async_set_native_value(90)
-        mock_coordinator_with_angles.device.set_oscillation_angles.assert_called_once_with(90, 315)
+        mock_coordinator_with_angles.device.set_oscillation_angles.assert_called_once_with(
+            90, 315
+        )
 
     @pytest.mark.asyncio
-    async def test_lower_angle_set_native_value_error(self, mock_coordinator_with_angles):
+    async def test_lower_angle_set_native_value_error(
+        self, mock_coordinator_with_angles
+    ):
         """Test setting lower angle value with device error."""
         entity = DysonOscillationLowerAngleNumber(mock_coordinator_with_angles)
-        mock_coordinator_with_angles.device.set_oscillation_angles = AsyncMock(side_effect=ConnectionError("Failed"))
+        mock_coordinator_with_angles.device.set_oscillation_angles = AsyncMock(
+            side_effect=ConnectionError("Failed")
+        )
 
         # Should handle error gracefully
         await entity.async_set_native_value(90)
@@ -660,19 +688,25 @@ class TestOscillationAngleNumberEntities:
 
         # Test icon property instead of name which requires platform setup
         assert entity.icon == "mdi:rotate-right"
+
     @pytest.mark.asyncio
-    async def test_upper_angle_set_native_value_success(self, mock_coordinator_with_angles):
+    async def test_upper_angle_set_native_value_success(
+        self, mock_coordinator_with_angles
+    ):
         """Test setting upper angle value successfully."""
         entity = DysonOscillationUpperAngleNumber(mock_coordinator_with_angles)
 
         # Mock current lower angle
-        mock_coordinator_with_angles.device.get_state_value = Mock(side_effect=lambda state, key, default: {
-            "osal": "045",
-            "osau": "315"
-        }.get(key, default))
+        mock_coordinator_with_angles.device.get_state_value = Mock(
+            side_effect=lambda state, key, default: {"osal": "045", "osau": "315"}.get(
+                key, default
+            )
+        )
 
         await entity.async_set_native_value(270)
-        mock_coordinator_with_angles.device.set_oscillation_angles.assert_called_once_with(45, 270)
+        mock_coordinator_with_angles.device.set_oscillation_angles.assert_called_once_with(
+            45, 270
+        )
 
     def test_center_angle_number_properties(self, mock_coordinator_with_angles):
         """Test DysonOscillationCenterAngleNumber properties."""
@@ -680,7 +714,10 @@ class TestOscillationAngleNumberEntities:
 
         # Test icon property instead of name which requires platform setup
         assert entity.icon == "mdi:crosshairs"
-    async def test_center_angle_set_native_value_success(self, mock_coordinator_with_angles):
+
+    async def test_center_angle_set_native_value_success(
+        self, mock_coordinator_with_angles
+    ):
         """Test setting center angle value successfully."""
         entity = DysonOscillationCenterAngleNumber(mock_coordinator_with_angles)
 
@@ -693,8 +730,11 @@ class TestOscillationAngleNumberEntities:
 
         # Test icon property instead of name which requires platform setup
         assert entity.icon == "mdi:angle-acute"
+
     @pytest.mark.asyncio
-    async def test_angle_span_set_native_value_success(self, mock_coordinator_with_angles):
+    async def test_angle_span_set_native_value_success(
+        self, mock_coordinator_with_angles
+    ):
         """Test setting angle span value successfully."""
         entity = DysonOscillationAngleSpanNumber(mock_coordinator_with_angles)
 
@@ -706,15 +746,21 @@ class TestOscillationAngleNumberEntities:
         entity = DysonOscillationAngleSpanNumber(mock_coordinator_with_angles)
 
         # Mock angles: lower=45, upper=315
-        mock_coordinator_with_angles.device.get_state_value = Mock(side_effect=lambda state, key, default: {
-            "osal": "045",  # 45 degrees
-            "osau": "315"   # 315 degrees
-        }.get(key, default))
+        mock_coordinator_with_angles.device.get_state_value = Mock(
+            side_effect=lambda state, key, default: {
+                "osal": "045",  # 45 degrees
+                "osau": "315",  # 315 degrees
+            }.get(key, default)
+        )
 
         # Manually simulate what _handle_coordinator_update does without calling HA state methods
         product_state = mock_coordinator_with_angles.data.get("product-state", {})
-        lower_data = mock_coordinator_with_angles.device.get_state_value(product_state, "osal", "0000")
-        upper_data = mock_coordinator_with_angles.device.get_state_value(product_state, "osau", "0350")
+        lower_data = mock_coordinator_with_angles.device.get_state_value(
+            product_state, "osal", "0000"
+        )
+        upper_data = mock_coordinator_with_angles.device.get_state_value(
+            product_state, "osau", "0350"
+        )
         try:
             lower_angle = int(lower_data.lstrip("0") or "0")
             upper_angle = int(upper_data.lstrip("0") or "350")
