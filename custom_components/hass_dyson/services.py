@@ -11,7 +11,7 @@ Device Control Services:
     - cancel_sleep_timer: Cancel active sleep timer
     - set_oscillation_angles: Custom oscillation angle control (0-350 degrees)
     - reset_filter: Reset HEPA and/or carbon filter life indicators
-    - schedule_operation: Schedule future device operations (turn on/off, speed, etc.)
+
 
 Cloud Account Services:
     - get_cloud_devices: Retrieve device information from Dyson cloud accounts
@@ -49,7 +49,7 @@ Example Usage:
     Services are automatically registered when devices are added:
 
     >>> # Device with Scheduling capability
-    >>> # Automatically registers: set_sleep_timer, cancel_sleep_timer, schedule_operation
+    >>> # Automatically registers: set_sleep_timer, cancel_sleep_timer
     >>>
     >>> # Call service via Home Assistant
     >>> await hass.services.async_call(
@@ -61,9 +61,7 @@ Example Usage:
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
 from typing import Any
 
 import voluptuous as vol
@@ -81,7 +79,6 @@ from .const import (
     SERVICE_GET_CLOUD_DEVICES,
     SERVICE_REFRESH_ACCOUNT_DATA,
     SERVICE_RESET_FILTER,
-    SERVICE_SCHEDULE_OPERATION,
     SERVICE_SET_OSCILLATION_ANGLES,
     SERVICE_SET_SLEEP_TIMER,
     SLEEP_TIMER_MAX,
@@ -97,7 +94,6 @@ DEVICE_CAPABILITY_SERVICES = {
     "Scheduling": [  # Sleep timer and scheduling capabilities
         SERVICE_SET_SLEEP_TIMER,  # Configure automatic shutdown timer
         SERVICE_CANCEL_SLEEP_TIMER,  # Cancel active sleep timer
-        SERVICE_SCHEDULE_OPERATION,  # Schedule future device operations
     ],
     "AdvanceOscillationDay1": [  # Advanced oscillation control
         SERVICE_SET_OSCILLATION_ANGLES,  # Custom oscillation angle control (0-350°)
@@ -116,18 +112,14 @@ DEVICE_CATEGORY_SERVICES = {
         SERVICE_SET_SLEEP_TIMER,
         SERVICE_CANCEL_SLEEP_TIMER,
         SERVICE_RESET_FILTER,
-        SERVICE_SCHEDULE_OPERATION,
     ],
     "robot": [  # Robot vacuum/cleaning devices
-        SERVICE_SCHEDULE_OPERATION,
         SERVICE_RESET_FILTER,  # Different filter types for cleaning devices
     ],
     "vacuum": [  # Vacuum devices
-        SERVICE_SCHEDULE_OPERATION,
         SERVICE_RESET_FILTER,
     ],
     "flrc": [  # Floor cleaning devices
-        SERVICE_SCHEDULE_OPERATION,
         SERVICE_RESET_FILTER,
     ],
 }
@@ -147,17 +139,6 @@ SERVICE_SET_SLEEP_TIMER_SCHEMA = vol.Schema(
 )
 
 SERVICE_CANCEL_SLEEP_TIMER_SCHEMA = vol.Schema({vol.Required("device_id"): str})
-
-SERVICE_SCHEDULE_OPERATION_SCHEMA = vol.Schema(
-    {
-        vol.Required("device_id"): str,
-        vol.Required("operation"): vol.In(
-            ["turn_on", "turn_off", "set_speed", "toggle_auto_mode"]
-        ),
-        vol.Required("schedule_time"): str,  # ISO format datetime
-        vol.Optional("parameters"): str,  # JSON string
-    }
-)
 
 # Custom oscillation angles schema: device ID and angle range validation
 SERVICE_SET_OSCILLATION_ANGLES_SCHEMA = vol.Schema(
@@ -417,49 +398,6 @@ async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> 
             err,
         )
         raise HomeAssistantError(f"Failed to cancel sleep timer: {err}") from err
-
-
-async def _handle_schedule_operation(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle schedule operation service call (experimental)."""
-    device_id = call.data["device_id"]
-    operation = call.data["operation"]
-    schedule_time_str = call.data["schedule_time"]
-    parameters_str = call.data.get("parameters")
-
-    coordinator = await _get_coordinator_from_device_id(hass, device_id)
-    if not coordinator or not coordinator.device:
-        raise ServiceValidationError(f"Device {device_id} not found or not available")
-
-    try:
-        # Parse schedule time
-        schedule_time = datetime.fromisoformat(schedule_time_str.replace("Z", "+00:00"))
-
-        # Parse parameters if provided
-        parameters = {}
-        if parameters_str:
-            parameters = json.loads(parameters_str)
-
-        # For now, just log the scheduled operation (would need proper scheduler implementation)
-        _LOGGER.warning(
-            "Scheduled operation '%s' for device %s at %s with parameters %s - "
-            "Note: Scheduling is experimental and not yet fully implemented",
-            operation,
-            coordinator.serial_number,
-            schedule_time,
-            parameters,
-        )
-
-    except (ValueError, json.JSONDecodeError) as err:
-        raise ServiceValidationError(
-            f"Invalid schedule time or parameters format: {err}"
-        ) from err
-    except Exception as err:
-        _LOGGER.error(
-            "Unexpected error scheduling operation for device %s: %s",
-            coordinator.serial_number,
-            err,
-        )
-        raise HomeAssistantError(f"Failed to schedule operation: {err}") from err
 
 
 async def _handle_set_oscillation_angles(
@@ -1456,7 +1394,7 @@ async def async_register_device_services_for_coordinator(
         5. Register all unique services via _register_services
 
     Capability to Service Mapping:
-        - "Scheduling": sleep_timer, cancel_sleep_timer, schedule_operation
+        - "Scheduling": sleep_timer, cancel_sleep_timer
         - "AdvanceOscillationDay1": set_oscillation_angles
         - "ExtendedAQ": reset_filter (for advanced air quality devices)
         - "EnvironmentalData": reset_filter (for basic environmental monitoring)
@@ -1569,14 +1507,6 @@ async def _register_services(
 
         service_handlers[SERVICE_CANCEL_SLEEP_TIMER] = async_handle_cancel_sleep_timer
         service_schemas[SERVICE_CANCEL_SLEEP_TIMER] = SERVICE_CANCEL_SLEEP_TIMER_SCHEMA
-
-    if SERVICE_SCHEDULE_OPERATION in services_to_register:
-
-        async def async_handle_schedule_operation(call: ServiceCall) -> None:
-            await _handle_schedule_operation(hass, call)
-
-        service_handlers[SERVICE_SCHEDULE_OPERATION] = async_handle_schedule_operation
-        service_schemas[SERVICE_SCHEDULE_OPERATION] = SERVICE_SCHEDULE_OPERATION_SCHEMA
 
     if SERVICE_SET_OSCILLATION_ANGLES in services_to_register:
 
@@ -1866,7 +1796,6 @@ async def async_remove_services(hass: HomeAssistant) -> None:
     services_to_remove = [
         SERVICE_SET_SLEEP_TIMER,
         SERVICE_CANCEL_SLEEP_TIMER,
-        SERVICE_SCHEDULE_OPERATION,
         SERVICE_SET_OSCILLATION_ANGLES,
         SERVICE_REFRESH_ACCOUNT_DATA,
         SERVICE_RESET_FILTER,
