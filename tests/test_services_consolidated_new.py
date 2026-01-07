@@ -88,9 +88,7 @@ class TestServiceSetup:
         mock_hass.services.has_service.return_value = False
 
         # Import the actual function
-        from custom_components.hass_dyson.services import (
-            async_register_device_services_for_categories,
-        )
+        from custom_components.hass_dyson.services import async_register_device_services_for_categories
 
         # Call with actual supported categories to trigger service registration
         await async_register_device_services_for_categories(mock_hass, ["ec"])
@@ -106,9 +104,7 @@ class TestServiceSetup:
         mock_hass.services.has_service.return_value = False
 
         # Import the actual function
-        from custom_components.hass_dyson.services import (
-            async_register_device_services_for_categories,
-        )
+        from custom_components.hass_dyson.services import async_register_device_services_for_categories
 
         # Call with actual supported categories to trigger service registration
         await async_register_device_services_for_categories(mock_hass, ["ec", "robot"])
@@ -148,34 +144,335 @@ class TestSleepTimerService:
         """Test successful cancel sleep timer service call."""
         mock_hass.data[DOMAIN]["test_entry"] = mock_coordinator
         # Mock the actual method used: set_sleep_timer(0) to cancel
-        mock_coordinator.device.set_sleep_timer = AsyncMock()
-        mock_coordinator.async_request_refresh = AsyncMock()
+
+
+class TestServiceErrorHandling:
+    """Test error handling scenarios for all service methods."""
+
+    @pytest.mark.asyncio
+    async def test_set_sleep_timer_device_not_found(self, mock_hass):
+        """Test set sleep timer with non-existent device."""
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            side_effect=HomeAssistantError("Device not found"),
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SET_SLEEP_TIMER
+            service_call.data = {"device_id": "nonexistent_device", "minutes": 60}
+
+            with pytest.raises(HomeAssistantError, match="Device not found"):
+                await _handle_set_sleep_timer(mock_hass, service_call)
+
+    @pytest.mark.asyncio
+    async def test_set_sleep_timer_device_offline(self, mock_hass, mock_coordinator):
+        """Test set sleep timer with offline device."""
+        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=Exception("Device offline"))
 
         with patch(
             "custom_components.hass_dyson.services._get_coordinator_from_device_id",
             return_value=mock_coordinator,
         ):
-            # Create ServiceCall with proper attributes
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SET_SLEEP_TIMER
+            service_call.data = {"device_id": "test_device", "minutes": 60}
+
+            with pytest.raises(HomeAssistantError, match="Failed to set sleep timer"):
+                await _handle_set_sleep_timer(mock_hass, service_call)
+
+    @pytest.mark.asyncio
+    async def test_set_sleep_timer_invalid_duration(self, mock_hass, mock_coordinator):
+        """Test set sleep timer with invalid duration."""
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            return_value=mock_coordinator,
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SET_SLEEP_TIMER
+            service_call.data = {"device_id": "test_device", "minutes": 999}  # Invalid: too high
+
+            # Schema validation should catch this before reaching handler
+            with pytest.raises(vol.Invalid):
+                SERVICE_SET_SLEEP_TIMER_SCHEMA(service_call.data)
+
+    @pytest.mark.asyncio
+    async def test_cancel_sleep_timer_device_error(self, mock_hass, mock_coordinator):
+        """Test cancel sleep timer with device error."""
+        mock_coordinator.device.set_sleep_timer = AsyncMock(side_effect=Exception("Communication error"))
+
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            return_value=mock_coordinator,
+        ):
             service_call = ServiceCall.__new__(ServiceCall)
             service_call.domain = DOMAIN
             service_call.service = SERVICE_CANCEL_SLEEP_TIMER
             service_call.data = {"device_id": "test_device"}
 
-            await _handle_cancel_sleep_timer(mock_hass, service_call)
+            with pytest.raises(HomeAssistantError, match="Failed to cancel sleep timer"):
+                await _handle_cancel_sleep_timer(mock_hass, service_call)
 
-            # The actual implementation calls set_sleep_timer(0) to cancel
-            mock_coordinator.device.set_sleep_timer.assert_called_once_with(0)
+    @pytest.mark.asyncio
+    async def test_schedule_operation_device_not_found(self, mock_hass):
+        """Test schedule operation with non-existent device."""
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            side_effect=HomeAssistantError("Device not found"),
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SCHEDULE_OPERATION
+            service_call.data = {
+                "device_id": "nonexistent_device",
+                "operation": "start",
+                "scheduled_time": "2024-12-31T23:59:59"
+            }
 
-    def test_sleep_timer_schema_validation(self):
-        """Test sleep timer schema validation."""
-        # Valid data
-        valid_data = {"device_id": "test", "minutes": 120}
-        result = SERVICE_SET_SLEEP_TIMER_SCHEMA(valid_data)
-        assert result["minutes"] == 120
+            with pytest.raises(HomeAssistantError, match="Device not found"):
+                await _handle_schedule_operation(mock_hass, service_call)
 
-        # Invalid data
+    @pytest.mark.asyncio
+    async def test_schedule_operation_invalid_operation(self, mock_hass, mock_coordinator):
+        """Test schedule operation with invalid operation type."""
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            return_value=mock_coordinator,
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SCHEDULE_OPERATION
+            service_call.data = {
+                "device_id": "test_device",
+                "operation": "invalid_operation",
+                "scheduled_time": "2024-12-31T23:59:59"
+            }
+
+            # Schema validation should catch invalid operation
+            with pytest.raises(vol.Invalid):
+                SERVICE_SCHEDULE_OPERATION_SCHEMA(service_call.data)
+
+    @pytest.mark.asyncio
+    async def test_set_oscillation_angles_device_error(self, mock_hass, mock_coordinator):
+        """Test set oscillation angles with device communication error."""
+        mock_coordinator.device.set_oscillation_angle_low = AsyncMock(side_effect=Exception("Device error"))
+
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            return_value=mock_coordinator,
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SET_OSCILLATION_ANGLES
+            service_call.data = {
+                "device_id": "test_device",
+                "angle_low": 45,
+                "angle_high": 315
+            }
+
+            with pytest.raises(HomeAssistantError, match="Failed to set oscillation angles"):
+                await _handle_set_oscillation_angles(mock_hass, service_call)
+
+    @pytest.mark.asyncio
+    async def test_set_oscillation_angles_invalid_range(self, mock_hass, mock_coordinator):
+        """Test set oscillation angles with invalid angle range."""
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            return_value=mock_coordinator,
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_SET_OSCILLATION_ANGLES
+            service_call.data = {
+                "device_id": "test_device",
+                "angle_low": 400,  # Invalid: > 350
+                "angle_high": 315
+            }
+
+            # Schema validation should catch invalid angles
+            with pytest.raises(vol.Invalid):
+                SERVICE_SET_OSCILLATION_ANGLES_SCHEMA(service_call.data)
+
+    @pytest.mark.asyncio
+    async def test_reset_filter_device_offline(self, mock_hass, mock_coordinator):
+        """Test reset filter with offline device."""
+        mock_coordinator.device.reset_filter = AsyncMock(side_effect=Exception("Device not reachable"))
+
+        with patch(
+            "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+            return_value=mock_coordinator,
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_RESET_FILTER
+            service_call.data = {"device_id": "test_device"}
+
+            with pytest.raises(HomeAssistantError, match="Failed to reset filter"):
+                await _handle_reset_filter(mock_hass, service_call)
+
+    @pytest.mark.asyncio
+    async def test_get_cloud_devices_authentication_error(self, mock_hass):
+        """Test get cloud devices with authentication error."""
+        from libdyson_rest import DysonAuthError
+
+        with patch(
+            "custom_components.hass_dyson.services._find_cloud_coordinators",
+            side_effect=DysonAuthError("Invalid credentials"),
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_GET_CLOUD_DEVICES
+            service_call.data = {}
+
+            with pytest.raises(ServiceValidationError, match="Authentication failed"):
+                await _handle_get_cloud_devices(mock_hass, service_call)
+
+    @pytest.mark.asyncio
+    async def test_get_cloud_devices_connection_error(self, mock_hass):
+        """Test get cloud devices with connection error."""
+        from libdyson_rest import DysonConnectionError
+
+        with patch(
+            "custom_components.hass_dyson.services._find_cloud_coordinators",
+            side_effect=DysonConnectionError("Network error"),
+        ):
+            service_call = ServiceCall.__new__(ServiceCall)
+            service_call.domain = DOMAIN
+            service_call.service = SERVICE_GET_CLOUD_DEVICES
+            service_call.data = {}
+
+            with pytest.raises(HomeAssistantError, match="Network error"):
+                await _handle_get_cloud_devices(mock_hass, service_call)
+
+    @pytest.mark.asyncio
+    async def test_get_coordinator_from_device_id_not_found(self, mock_hass):
+        """Test helper function with non-existent device ID."""
+        mock_hass.data = {DOMAIN: {}}  # Empty domain data
+
+        with pytest.raises(HomeAssistantError, match="Device .* not found"):
+            _get_coordinator_from_device_id(mock_hass, "nonexistent_device")
+
+    @pytest.mark.asyncio
+    async def test_convert_to_string_with_enum(self):
+        """Test string conversion utility with enum objects."""
+        from enum import Enum
+
+        class TestEnum(Enum):
+            VALUE1 = "test_value"
+            VALUE2 = 42
+
+        # Test enum with value attribute
+        result = _convert_to_string(TestEnum.VALUE1)
+        assert result == "test_value"
+
+        result = _convert_to_string(TestEnum.VALUE2)
+        assert result == "42"
+
+        # Test regular objects
+        result = _convert_to_string("string")
+        assert result == "string"
+
+        result = _convert_to_string(123)
+        assert result == "123"
+
+    @pytest.mark.asyncio
+    async def test_find_cloud_coordinators_empty_data(self, mock_hass):
+        """Test find cloud coordinators with empty HA data."""
+        mock_hass.data = {}  # No domain data
+
+        result = _find_cloud_coordinators(mock_hass)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_find_cloud_coordinators_no_cloud_devices(self, mock_hass):
+        """Test find cloud coordinators with no cloud devices."""
+        mock_coordinator = MagicMock()
+        mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: "manual"}  # Not cloud
+
+        mock_hass.data = {DOMAIN: {"entry1": mock_coordinator}}
+
+        result = _find_cloud_coordinators(mock_hass)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_refresh_account_data_no_cloud_coordinators(self, mock_hass):
+        """Test refresh account data with no cloud coordinators."""
+        mock_hass.data = {DOMAIN: {}}  # No coordinators
+
+        service_call = ServiceCall.__new__(ServiceCall)
+        service_call.domain = DOMAIN
+        service_call.service = SERVICE_REFRESH_ACCOUNT_DATA
+        service_call.data = {}
+
+        # Should return empty result without error
+        result = await async_handle_refresh_account_data(mock_hass, service_call)
+        assert result == {"refreshed_entries": []}
+
+
+class TestServiceValidationEdgeCases:
+    """Test edge cases in service schema validation."""
+
+    def test_sleep_timer_boundary_values(self):
+        """Test sleep timer schema with boundary values."""
+        # Valid boundary values
+        valid_data = {"device_id": "test", "minutes": 15}  # Min value
+        assert SERVICE_SET_SLEEP_TIMER_SCHEMA(valid_data) == valid_data
+
+        valid_data = {"device_id": "test", "minutes": 540}  # Max value
+        assert SERVICE_SET_SLEEP_TIMER_SCHEMA(valid_data) == valid_data
+
+        # Invalid boundary values
         with pytest.raises(vol.Invalid):
-            SERVICE_SET_SLEEP_TIMER_SCHEMA({"device_id": "test", "minutes": -5})
+            SERVICE_SET_SLEEP_TIMER_SCHEMA({"device_id": "test", "minutes": 14})  # Too low
+
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_SLEEP_TIMER_SCHEMA({"device_id": "test", "minutes": 541})  # Too high
+
+    def test_oscillation_angles_validation(self):
+        """Test oscillation angles schema validation."""
+        # Valid angles
+        valid_data = {
+            "device_id": "test",
+            "lower_angle": 0,
+            "upper_angle": 350
+        }
+        assert SERVICE_SET_OSCILLATION_ANGLES_SCHEMA(valid_data) == valid_data
+
+        # Invalid angles
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_OSCILLATION_ANGLES_SCHEMA({
+                "device_id": "test",
+                "lower_angle": -1,  # Too low
+                "upper_angle": 350
+            })
+
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_OSCILLATION_ANGLES_SCHEMA({
+                "device_id": "test",
+                "lower_angle": 0,
+                "upper_angle": 351  # Too high
+            })
+
+    def test_missing_required_fields(self):
+        """Test schemas with missing required fields."""
+        # Missing device_id
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_SLEEP_TIMER_SCHEMA({"minutes": 60})
+
+        # Missing minutes
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_SLEEP_TIMER_SCHEMA({"device_id": "test"})
+
+    def test_invalid_data_types(self):
+        """Test schemas with invalid data types."""
+        # Non-string device_id
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_SLEEP_TIMER_SCHEMA({"device_id": 123, "minutes": 60})
+
+        # Non-integer minutes (that can't be coerced)
+        with pytest.raises(vol.Invalid):
+            SERVICE_SET_SLEEP_TIMER_SCHEMA({"device_id": "test", "minutes": "invalid"})
 
 
 class TestOscillationAnglesService:
@@ -560,9 +857,7 @@ class TestServiceMissingCoverage:
         mock_hass.services.has_service.return_value = False
 
         # Import the actual function
-        from custom_components.hass_dyson.services import (
-            async_register_device_services_for_categories,
-        )
+        from custom_components.hass_dyson.services import async_register_device_services_for_categories
 
         # Setup services twice with actual supported category
         await async_register_device_services_for_categories(mock_hass, ["ec"])

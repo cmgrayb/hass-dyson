@@ -9,7 +9,7 @@ This consolidated module combines all config flow testing including:
 Following pure pytest patterns for Home Assistant integration testing.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -780,3 +780,241 @@ class TestDysonConfigFlowEdgeCases:
 
         # Verify proper error was captured and user can retry
         assert result["errors"]["base"] == "verification_failed"
+
+
+class TestDysonConfigFlowErrorHandlingGaps:
+    """Test specific error handling paths that need coverage improvement."""
+
+    @pytest.fixture
+    def mock_flow(self):
+        """Create a mock config flow with proper setup."""
+        flow = DysonConfigFlow()
+        flow.hass = MagicMock(spec=HomeAssistant)
+        flow.context = {"title_placeholders": {}}
+        return flow
+
+    @pytest.mark.asyncio
+    async def test_async_step_user_form_creation_error(self, mock_flow):
+        """Test error during setup method form creation."""
+        with patch(
+            "custom_components.hass_dyson.config_flow._get_setup_method_options",
+            side_effect=Exception("Form creation error")
+        ):
+            # This should trigger the first except block in async_step_user
+            with pytest.raises(Exception) as exc_info:
+                await mock_flow.async_step_user()
+            assert "Form creation error" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_async_step_user_top_level_exception(self, mock_flow):
+        """Test top-level exception handler in async_step_user."""
+        # Force an exception in the main try block by mocking the module-level function
+        with patch('custom_components.hass_dyson.config_flow._get_default_country_culture', side_effect=Exception("Top level error")):
+            result = await mock_flow.async_step_user()
+            # The method should handle the exception and return a form with errors
+            assert result["type"] == "form"
+            assert "errors" in result
+
+    @pytest.mark.asyncio
+    async def test_mdns_discovery_socket_gaierror(self, mock_hass):
+        """Test mDNS discovery socket.gaierror handling."""
+        import socket
+
+        with patch("zeroconf.Zeroconf") as mock_zeroconf_class:
+            mock_zeroconf = MagicMock()
+            mock_zeroconf_class.return_value = mock_zeroconf
+
+            # Mock socket.gethostbyname to raise gaierror
+            with patch("socket.gethostbyname", side_effect=socket.gaierror("Name resolution failed")):
+                result = await _discover_device_via_mdns(mock_hass, "TEST123456")
+                assert result is None
+
+    @pytest.mark.asyncio
+    async def test_mdns_discovery_general_exception(self, mock_hass):
+        """Test mDNS discovery general exception handling."""
+        with patch("zeroconf.Zeroconf", side_effect=Exception("Zeroconf initialization failed")):
+            result = await _discover_device_via_mdns(mock_hass, "TEST123456")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_mdns_discovery_timeout_error(self, mock_hass):
+        """Test mDNS discovery timeout handling."""
+        with patch("asyncio.wait_for", side_effect=TimeoutError("Discovery timeout")):
+            result = await _discover_device_via_mdns(mock_hass, "TEST123456")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_initiate_otp_client_initialization_error(self, mock_flow):
+        """Test OTP initiation with client initialization failure."""
+        # Mock async_add_executor_job to return None
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=None)
+
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
+        )
+
+        assert token is None
+        assert errors["base"] == "auth_failed"
+
+    @pytest.mark.asyncio
+    async def test_initiate_otp_challenge_none_response(self, mock_flow):
+        """Test OTP initiation with None challenge response."""
+        # Mock successful client creation but None challenge
+        mock_client = AsyncMock()
+        mock_client.provision = AsyncMock()
+        mock_client.get_user_status = AsyncMock(return_value=MagicMock(
+            account_status=MagicMock(value="active"),
+            authentication_method=MagicMock(value="otp")
+        ))
+        mock_client.begin_login = AsyncMock(return_value=None)
+
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
+
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
+        )
+
+        assert token is None
+        assert errors["base"] == "connection_failed"
+
+    @pytest.mark.asyncio
+    async def test_initiate_otp_challenge_no_id(self, mock_flow):
+        """Test OTP initiation with challenge but no challenge_id."""
+        # Mock successful client but challenge without ID
+        mock_client = AsyncMock()
+        mock_client.provision = AsyncMock()
+        mock_client.get_user_status = AsyncMock(return_value=MagicMock(
+            account_status=MagicMock(value="active"),
+            authentication_method=MagicMock(value="otp")
+        ))
+
+        # Mock challenge with None challenge_id
+        mock_challenge = MagicMock()
+        mock_challenge.challenge_id = None
+        mock_client.begin_login = AsyncMock(return_value=mock_challenge)
+
+        mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
+
+        token, errors = await mock_flow._initiate_otp_with_dyson_api(
+            "test@example.com", "US", "en-US"
+        )
+
+        assert token is None
+        assert errors["base"] == "connection_failed"
+
+    @pytest.mark.asyncio
+    async def test_default_country_culture_no_config(self):
+        """Test _get_default_country_culture with hass that has no config attribute."""
+        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+
+        # Mock hass without config attribute
+        mock_hass = MagicMock()
+        del mock_hass.config  # Remove config attribute
+
+        country, culture = _get_default_country_culture(mock_hass)
+
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_default_country_culture_config_none(self):
+        """Test _get_default_country_culture with hass.config = None."""
+        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+
+        mock_hass = MagicMock()
+        mock_hass.config = None
+
+        country, culture = _get_default_country_culture(mock_hass)
+
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_default_country_culture_attribute_error(self):
+        """Test _get_default_country_culture with AttributeError."""
+        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+
+        # Mock hass with None config to trigger fallback
+        mock_hass = MagicMock()
+        mock_hass.config = None
+
+        country, culture = _get_default_country_culture(mock_hass)
+
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_default_country_culture_type_error(self):
+        """Test _get_default_country_culture with TypeError."""
+        from custom_components.hass_dyson.config_flow import _get_default_country_culture
+
+        # Mock hass that raises TypeError
+        mock_hass = MagicMock()
+        mock_hass.config = MagicMock()
+        type(mock_hass.config).language = PropertyMock(side_effect=TypeError("Invalid type"))
+
+        country, culture = _get_default_country_culture(mock_hass)
+
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_cloud_client_success(self, mock_flow):
+        """Test successful cloud client cleanup."""
+        mock_client = AsyncMock()
+        mock_client.close = AsyncMock()
+        mock_flow._cloud_client = mock_client
+
+        await mock_flow._cleanup_cloud_client()
+
+        mock_client.close.assert_called_once()
+        assert mock_flow._cloud_client is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_cloud_client_exception(self, mock_flow):
+        """Test cloud client cleanup with exception."""
+        mock_client = AsyncMock()
+        mock_client.close = AsyncMock(side_effect=Exception("Close failed"))
+        mock_flow._cloud_client = mock_client
+
+        # Should not raise exception, just log and continue
+        await mock_flow._cleanup_cloud_client()
+
+        mock_client.close.assert_called_once()
+        assert mock_flow._cloud_client is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_cloud_client_none(self, mock_flow):
+        """Test cloud client cleanup when client is None."""
+        mock_flow._cloud_client = None
+
+        # Should handle gracefully without error
+        await mock_flow._cleanup_cloud_client()
+
+        assert mock_flow._cloud_client is None
+
+    def test_get_connection_type_display_name_edge_cases(self):
+        """Test connection type display name with edge cases."""
+        # Test with empty string
+        result = _get_connection_type_display_name("")
+        assert result == ""
+
+        # Test with unknown type
+        result = _get_connection_type_display_name("unknown_connection")
+        assert result == "unknown_connection"
+
+        # Test with None (coverage for missing key in dict.get)
+        result = _get_connection_type_display_name(None)
+        assert result is None
+
+    def test_get_device_connection_options_edge_cases(self):
+        """Test device connection options with edge cases."""
+        # Test with None account connection type
+        options = _get_device_connection_options(None)
+        assert isinstance(options, dict)
+        assert "use_account_default" in options
+
+        # Test with unknown account connection type
+        options = _get_device_connection_options("unknown_type")
+        assert isinstance(options, dict)
+        assert "use_account_default" in options
