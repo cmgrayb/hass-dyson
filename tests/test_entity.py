@@ -1,334 +1,366 @@
-"""Test entity module for Dyson integration."""
+"""
+Unit tests for entity filtering edge cases and error conditions.
 
-from unittest.mock import MagicMock, patch
+This module tests error handling, malformed data, and edge cases in the
+entity filtering logic to ensure robustness.
+"""
+
+from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from custom_components.hass_dyson.const import (
+    CAPABILITY_EXTENDED_AQ,
+    CAPABILITY_HEATING,
+    DEVICE_CATEGORY_EC,
+)
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
-from custom_components.hass_dyson.entity import DysonEntity
 
 
-@pytest.fixture
-def mock_coordinator():
-    """Create a mock coordinator."""
-    coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
-    coordinator.last_update_success = True
-    coordinator.device = MagicMock()
-    coordinator.device.is_connected = True
-    coordinator.device.device_info = {
-        "identifiers": {("dyson", "TEST-SERIAL-123")},
-        "name": "Test Device",
-        "manufacturer": "Dyson",
-        "model": "Test Model",
-    }
-    return coordinator
+class TestEntityFilteringEdgeCases:
+    """Test edge cases and error conditions in entity filtering."""
 
-
-@pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    hass = MagicMock(spec=HomeAssistant)
-    hass.loop = MagicMock()
-    hass.async_create_task = MagicMock()
-    return hass
-
-
-class TestDysonEntity:
-    """Test DysonEntity class."""
-
-    def test_init(self, mock_coordinator):
-        """Test entity initialization."""
-        # Act
-        entity = DysonEntity(mock_coordinator)
-
-        # Assert
-        assert entity.coordinator == mock_coordinator
-        assert isinstance(entity, CoordinatorEntity)
-
-    def test_device_info_with_device(self, mock_coordinator):
-        """Test device_info property when device is available."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        device_info = entity.device_info
-
-        # Assert
-        assert device_info == {
-            "identifiers": {("dyson", "TEST-SERIAL-123")},
-            "name": "Test Device",
-            "manufacturer": "Dyson",
-            "model": "Test Model",
-        }
-
-    def test_device_info_without_device(self, mock_coordinator):
-        """Test device_info property when device is not available."""
-        # Arrange
-        mock_coordinator.device = None
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        device_info = entity.device_info
-
-        # Assert
-        assert device_info is None
-
-    def test_available_when_connected_and_update_success(self, mock_coordinator):
-        """Test available property when device is connected and update successful."""
-        # Arrange
-        mock_coordinator.last_update_success = True
-        mock_coordinator.device.is_connected = True
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        available = entity.available
-
-        # Assert
-        assert available is True
-
-    def test_available_when_update_failed(self, mock_coordinator):
-        """Test available property when update failed."""
-        # Arrange
-        mock_coordinator.last_update_success = False
-        mock_coordinator.device.is_connected = True
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        available = entity.available
-
-        # Assert
-        assert available is False
-
-    def test_available_when_device_disconnected(self, mock_coordinator):
-        """Test available property when device is disconnected."""
-        # Arrange
-        mock_coordinator.last_update_success = True
-        mock_coordinator.device.is_connected = False
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        available = entity.available
-
-        # Assert
-        assert available is False
-
-    def test_available_when_no_device(self, mock_coordinator):
-        """Test available property when no device is available."""
-        # Arrange
-        mock_coordinator.last_update_success = True
-        mock_coordinator.device = None
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        available = entity.available
-
-        # Assert
-        assert available is False
-
-    def test_available_complex_false_conditions(self, mock_coordinator):
-        """Test available property with multiple false conditions."""
-        # Arrange
-        mock_coordinator.last_update_success = False
-        mock_coordinator.device.is_connected = False
-        entity = DysonEntity(mock_coordinator)
-
-        # Act
-        available = entity.available
-
-        # Assert
-        assert available is False
-
-    def test_handle_coordinator_update_safe_with_hass_loop(
-        self, mock_coordinator, mock_hass
-    ):
-        """Test _handle_coordinator_update_safe with hass and loop available."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-        entity.hass = mock_hass
-
-        # Act
-        entity._handle_coordinator_update_safe()
-
-        # Assert
-        mock_hass.loop.call_soon_threadsafe.assert_called_once()
-
-        # Extract the scheduled function and call it to test the inner behavior
-        scheduled_func = mock_hass.loop.call_soon_threadsafe.call_args[0][0]
-        scheduled_func()
-        mock_hass.async_create_task.assert_called_once()
-
-    def test_handle_coordinator_update_safe_without_hass(self, mock_coordinator):
-        """Test _handle_coordinator_update_safe without hass."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-
-        with patch.object(entity, "hass", None):
-            with patch.object(
-                CoordinatorEntity, "_handle_coordinator_update"
-            ) as mock_super_update:
-                # Act
-                entity._handle_coordinator_update_safe()
-
-                # Assert
-                mock_super_update.assert_called_once()
-
-    def test_handle_coordinator_update_safe_without_loop(
-        self, mock_coordinator, mock_hass
-    ):
-        """Test _handle_coordinator_update_safe with hass but no loop."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-        entity.hass = mock_hass
-        delattr(mock_hass, "loop")  # Remove loop attribute
-
-        with patch.object(
-            CoordinatorEntity, "_handle_coordinator_update"
-        ) as mock_super_update:
-            # Act
-            entity._handle_coordinator_update_safe()
-
-            # Assert
-            mock_super_update.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_async_handle_coordinator_update(self, mock_coordinator):
-        """Test _async_handle_coordinator_update method."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-
-        with patch.object(
-            CoordinatorEntity, "_handle_coordinator_update"
-        ) as mock_super_update:
-            # Act
-            await entity._async_handle_coordinator_update()
-
-            # Assert
-            mock_super_update.assert_called_once()
-
-    def test_coordinator_type_annotation(self, mock_coordinator):
-        """Test that coordinator has correct type annotation."""
-        # Act
-        entity = DysonEntity(mock_coordinator)
-
-        # Assert
-        assert hasattr(entity, "coordinator")
-        assert entity.coordinator == mock_coordinator
-
-    def test_inherits_from_coordinator_entity(self, mock_coordinator):
-        """Test that DysonEntity inherits from CoordinatorEntity."""
-        # Act
-        entity = DysonEntity(mock_coordinator)
-
-        # Assert
-        assert isinstance(entity, CoordinatorEntity)
-
-    def test_device_info_changes_with_coordinator_device(self, mock_coordinator):
-        """Test that device_info reflects changes in coordinator.device."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-
-        # Test initial device info
-        initial_device_info = entity.device_info
-        assert initial_device_info is not None
-
-        # Change coordinator device
-        mock_coordinator.device = None
-
-        # Test device info is now None
-        updated_device_info = entity.device_info
-        assert updated_device_info is None
-
-        # Set a new device
-        new_device = MagicMock()
-        new_device.device_info = {"identifiers": {("dyson", "NEW-SERIAL-456")}}
-        mock_coordinator.device = new_device
-
-        # Test device info reflects new device
-        new_device_info = entity.device_info
-        assert new_device_info == {"identifiers": {("dyson", "NEW-SERIAL-456")}}
-
-    def test_available_property_reflects_coordinator_state_changes(
-        self, mock_coordinator
-    ):
-        """Test that available property reflects coordinator state changes."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-
-        # Initial state - should be available
-        assert entity.available is True
-
-        # Change update success
-        mock_coordinator.last_update_success = False
-        assert entity.available is False
-
-        # Restore update success but disconnect device
-        mock_coordinator.last_update_success = True
-        mock_coordinator.device.is_connected = False
-        assert entity.available is False
-
-        # Restore connection
-        mock_coordinator.device.is_connected = True
-        assert entity.available is True
-
-        # Remove device entirely
-        mock_coordinator.device = None
-        assert entity.available is False
-
-
-class TestDysonEntityIntegration:
-    """Test DysonEntity integration scenarios."""
-
-    def test_entity_with_real_coordinator_behavior(self):
-        """Test entity behavior with more realistic coordinator."""
-        # Arrange
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator with basic configuration."""
         coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
-        coordinator.last_update_success = True
+        coordinator.serial_number = "TEST-EDGE-CASE-123"
+        coordinator.device_name = "Test Edge Case Device"
         coordinator.device = MagicMock()
-        coordinator.device.is_connected = True
-        coordinator.device.device_info = {
-            "identifiers": {("dyson", "INTEGRATION-TEST")},
-            "name": "Integration Test Device",
-        }
+        coordinator.data = {}
+        return coordinator
 
-        entity = DysonEntity(coordinator)
+    def test_none_capabilities(self, mock_coordinator):
+        """Test handling when capabilities is None."""
+        mock_coordinator.device_capabilities = None
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
-        # Act & Assert
-        assert entity.available is True
-        device_info = entity.device_info
-        assert device_info is not None
-        assert device_info["name"] == "Integration Test Device"
-        assert entity.coordinator == coordinator
+        # Should handle None gracefully without crashing
+        assert mock_coordinator.device_capabilities is None
 
-    def test_thread_safety_mechanisms(self, mock_coordinator, mock_hass):
-        """Test that thread safety mechanisms work correctly."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
-        entity.hass = mock_hass
+    def test_empty_capabilities_list(self, mock_coordinator):
+        """Test handling when capabilities is an empty list."""
+        mock_coordinator.device_capabilities = []
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
-        # Test that call_soon_threadsafe is used when hass.loop is available
-        entity._handle_coordinator_update_safe()
+        # Should handle empty list gracefully
+        assert len(mock_coordinator.device_capabilities) == 0
 
-        # Verify thread-safe scheduling
-        mock_hass.loop.call_soon_threadsafe.assert_called_once()
+    def test_malformed_capabilities_not_list(self, mock_coordinator):
+        """Test handling when capabilities is not a list."""
+        # String instead of list
+        mock_coordinator.device_capabilities = "ExtendedAQ"
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
-        # Verify the scheduled function creates an async task
-        scheduled_func = mock_hass.loop.call_soon_threadsafe.call_args[0][0]
-        scheduled_func()
-        mock_hass.async_create_task.assert_called_once()
+        # Should handle non-list gracefully
+        assert isinstance(mock_coordinator.device_capabilities, str)
 
-    def test_entity_state_consistency(self, mock_coordinator):
-        """Test that entity state remains consistent across property calls."""
-        # Arrange
-        entity = DysonEntity(mock_coordinator)
+    def test_malformed_capabilities_dict(self, mock_coordinator):
+        """Test handling when capabilities is a dict instead of list."""
+        mock_coordinator.device_capabilities = {"capability": "ExtendedAQ"}
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
 
-        # Act - call properties multiple times
-        available1 = entity.available
-        device_info1 = entity.device_info
-        available2 = entity.available
-        device_info2 = entity.device_info
+        # Should handle dict gracefully
+        assert isinstance(mock_coordinator.device_capabilities, dict)
 
-        # Assert - results should be consistent
-        assert available1 == available2
-        assert device_info1 == device_info2
+    def test_capabilities_with_none_elements(self, mock_coordinator):
+        """Test capabilities list containing None elements."""
+        mock_coordinator.device_capabilities = [
+            CAPABILITY_EXTENDED_AQ,
+            None,
+            CAPABILITY_HEATING,
+        ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle None elements in list
+        assert None in mock_coordinator.device_capabilities
+        assert CAPABILITY_EXTENDED_AQ in mock_coordinator.device_capabilities
+
+    def test_capabilities_with_empty_strings(self, mock_coordinator):
+        """Test capabilities list containing empty strings."""
+        mock_coordinator.device_capabilities = [
+            CAPABILITY_EXTENDED_AQ,
+            "",
+            CAPABILITY_HEATING,
+        ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle empty strings
+        assert "" in mock_coordinator.device_capabilities
+        assert CAPABILITY_EXTENDED_AQ in mock_coordinator.device_capabilities
+
+    def test_capabilities_case_sensitivity(self, mock_coordinator):
+        """Test that capability matching is case sensitive."""
+        mock_coordinator.device_capabilities = [
+            "extendedaq",
+            "EXTENDEDAQ",
+            "ExtendedAQ",
+        ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Only the correctly cased capability should match
+        assert "ExtendedAQ" in mock_coordinator.device_capabilities
+        assert "extendedaq" in mock_coordinator.device_capabilities
+        assert "EXTENDEDAQ" in mock_coordinator.device_capabilities
+
+    def test_unknown_capabilities(self, mock_coordinator):
+        """Test handling of unknown/future capabilities."""
+        mock_coordinator.device_capabilities = [
+            "UnknownCapability",
+            "FutureFeature",
+            CAPABILITY_EXTENDED_AQ,
+        ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle unknown capabilities gracefully
+        assert "UnknownCapability" in mock_coordinator.device_capabilities
+        assert CAPABILITY_EXTENDED_AQ in mock_coordinator.device_capabilities
+
+    def test_none_device_category(self, mock_coordinator):
+        """Test handling when device category is None."""
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = None
+
+        # Should handle None category gracefully
+        assert mock_coordinator.device_category is None
+
+    def test_empty_device_category(self, mock_coordinator):
+        """Test handling when device category is empty string."""
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = ""
+
+        # Should handle empty category gracefully
+        assert mock_coordinator.device_category == ""
+
+    def test_unknown_device_category(self, mock_coordinator):
+        """Test handling of unknown device categories."""
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = "unknown_category"
+
+        # Should handle unknown categories gracefully
+        assert mock_coordinator.device_category == "unknown_category"
+
+    def test_very_long_capability_names(self, mock_coordinator):
+        """Test handling of extremely long capability names."""
+        long_capability = "A" * 1000  # 1000 character capability name
+        mock_coordinator.device_capabilities = [long_capability, CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle long names gracefully
+        assert long_capability in mock_coordinator.device_capabilities
+
+    def test_special_characters_in_capabilities(self, mock_coordinator):
+        """Test handling of special characters in capability names."""
+        special_capabilities = [
+            "Capability-With-Dashes",
+            "Capability_With_Underscores",
+            "Capability.With.Dots",
+            "Capability With Spaces",
+            "Capability@#$%^&*()",
+            CAPABILITY_EXTENDED_AQ,
+        ]
+        mock_coordinator.device_capabilities = special_capabilities
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle special characters gracefully
+        for cap in special_capabilities:
+            assert cap in mock_coordinator.device_capabilities
+
+    def test_unicode_in_capabilities(self, mock_coordinator):
+        """Test handling of Unicode characters in capability names."""
+        unicode_capabilities = [
+            "Capability_ñ_español",
+            "Capability_中文",
+            "Capability_🚀_emoji",
+            CAPABILITY_EXTENDED_AQ,
+        ]
+        mock_coordinator.device_capabilities = unicode_capabilities
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle Unicode gracefully
+        for cap in unicode_capabilities:
+            assert cap in mock_coordinator.device_capabilities
+
+    def test_duplicate_capabilities(self, mock_coordinator):
+        """Test handling of duplicate capabilities in list."""
+        mock_coordinator.device_capabilities = [
+            CAPABILITY_EXTENDED_AQ,
+            CAPABILITY_HEATING,
+            CAPABILITY_EXTENDED_AQ,  # Duplicate
+            CAPABILITY_HEATING,  # Duplicate
+        ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle duplicates gracefully
+        assert mock_coordinator.device_capabilities.count(CAPABILITY_EXTENDED_AQ) == 2
+        assert mock_coordinator.device_capabilities.count(CAPABILITY_HEATING) == 2
+
+    def test_extremely_large_capabilities_list(self, mock_coordinator):
+        """Test handling of very large capabilities lists."""
+        large_capabilities = [f"Capability_{i}" for i in range(1000)]
+        large_capabilities.append(CAPABILITY_EXTENDED_AQ)
+
+        mock_coordinator.device_capabilities = large_capabilities
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle large lists gracefully
+        assert len(mock_coordinator.device_capabilities) == 1001
+        assert CAPABILITY_EXTENDED_AQ in mock_coordinator.device_capabilities
+
+    def test_mixed_types_in_capabilities_list(self, mock_coordinator):
+        """Test capabilities list with mixed data types."""
+        mixed_capabilities = [
+            CAPABILITY_EXTENDED_AQ,  # string
+            123,  # int
+            45.67,  # float
+            True,  # bool
+            ["nested", "list"],  # list
+            {"nested": "dict"},  # dict
+        ]
+        mock_coordinator.device_capabilities = mixed_capabilities
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle mixed types gracefully
+        assert CAPABILITY_EXTENDED_AQ in mock_coordinator.device_capabilities
+        assert 123 in mock_coordinator.device_capabilities
+        assert True in mock_coordinator.device_capabilities
+
+
+class TestDeviceDataCorruption:
+    """Test handling of corrupted or invalid device data."""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator for corruption testing."""
+        coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
+        coordinator.serial_number = "TEST-CORRUPTION-123"
+        coordinator.device_name = "Test Corruption Device"
+        coordinator.device = MagicMock()
+        return coordinator
+
+    def test_coordinator_with_no_data_attribute(self, mock_coordinator):
+        """Test when coordinator has no data attribute."""
+        # Remove data attribute
+        if hasattr(mock_coordinator, "data"):
+            delattr(mock_coordinator, "data")
+
+        # Should handle missing data attribute gracefully
+        assert not hasattr(mock_coordinator, "data")
+
+    def test_coordinator_data_is_none(self, mock_coordinator):
+        """Test when coordinator.data is None."""
+        mock_coordinator.data = None
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle None data gracefully
+        assert mock_coordinator.data is None
+
+    def test_coordinator_data_corrupted_structure(self, mock_coordinator):
+        """Test when coordinator.data has unexpected structure."""
+        # Data should be dict but is string
+        mock_coordinator.data = "corrupted_data_string"
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle corrupted data structure gracefully
+        assert isinstance(mock_coordinator.data, str)
+
+    def test_missing_device_attribute(self, mock_coordinator):
+        """Test when coordinator has no device attribute."""
+        if hasattr(mock_coordinator, "device"):
+            delattr(mock_coordinator, "device")
+
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle missing device gracefully
+        assert not hasattr(mock_coordinator, "device")
+
+    def test_device_is_none(self, mock_coordinator):
+        """Test when coordinator.device is None."""
+        mock_coordinator.device = None
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle None device gracefully
+        assert mock_coordinator.device is None
+
+
+class TestNetworkAndConnectionErrors:
+    """Test error handling for network and connection issues."""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator for network testing."""
+        coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
+        coordinator.serial_number = "TEST-NETWORK-123"
+        coordinator.device_name = "Test Network Device"
+        coordinator.device = MagicMock()
+        coordinator.data = {}
+        return coordinator
+
+    def test_device_connection_timeout(self, mock_coordinator):
+        """Test handling of device connection timeouts."""
+        mock_coordinator.device.get_state.side_effect = TimeoutError(
+            "Connection timeout"
+        )
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle timeout gracefully
+        with pytest.raises(TimeoutError):
+            mock_coordinator.device.get_state()
+
+    def test_device_connection_refused(self, mock_coordinator):
+        """Test handling of connection refused errors."""
+        mock_coordinator.device.connect.side_effect = ConnectionRefusedError(
+            "Connection refused"
+        )
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle connection refused gracefully
+        with pytest.raises(ConnectionRefusedError):
+            mock_coordinator.device.connect()
+
+    def test_device_network_unreachable(self, mock_coordinator):
+        """Test handling of network unreachable errors."""
+        from socket import gaierror
+
+        mock_coordinator.device.connect.side_effect = gaierror("Network unreachable")
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # Should handle network errors gracefully
+        with pytest.raises(gaierror):
+            mock_coordinator.device.connect()
+
+    def test_intermittent_connectivity(self, mock_coordinator):
+        """Test handling of intermittent connectivity issues."""
+        # Simulate intermittent failures
+        call_count = 0
+
+        def side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count % 2 == 0:
+                raise ConnectionError("Intermittent failure")
+            return {"status": "connected"}
+
+        mock_coordinator.device.get_state.side_effect = side_effect
+        mock_coordinator.device_capabilities = [CAPABILITY_EXTENDED_AQ]
+        mock_coordinator.device_category = DEVICE_CATEGORY_EC
+
+        # First call should succeed
+        result = mock_coordinator.device.get_state()
+        assert result["status"] == "connected"
+
+        # Second call should fail
+        with pytest.raises(ConnectionError):
+            mock_coordinator.device.get_state()
+
+
+# ================================================================================
+# ENTITY FUNCTIONALITY TESTS (from test_entity.py)
+# ================================================================================

@@ -64,7 +64,6 @@
         "pytest",
         "pytest-cov",
         "pytest-asyncio",
-        "pytest-homeassistant-custom-component",
         "pytest-mock",
         "mypy",
         "safety"
@@ -90,8 +89,7 @@
     {
       "description": "Home Assistant core and related packages",
       "matchPackageNames": [
-        "homeassistant",
-        "pytest-homeassistant-custom-component"
+        "homeassistant"
       ],
       "prPriority": 6,
       "labels": ["dependencies", "homeassistant"],

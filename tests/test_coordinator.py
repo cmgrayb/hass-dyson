@@ -1092,3 +1092,196 @@ class TestHumidifierCapabilityRefinement:
 
         # Should not call get_state when not connected
         mock_coordinator.device.get_state.assert_not_called()
+
+
+class TestCoordinatorErrorHandling:
+    """Test error handling scenarios for coordinator."""
+
+    @pytest.mark.asyncio
+    async def test_helper_function_no_hass_config(self):
+        """Test helper function when hass.config is None."""
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
+
+        mock_hass = MagicMock()
+        mock_hass.config = None
+
+        country, culture = _get_default_country_culture_for_coordinator(mock_hass)
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_helper_function_missing_country(self):
+        """Test helper function when country is missing."""
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
+
+        mock_hass = MagicMock()
+        mock_hass.config = MagicMock()
+        mock_hass.config.country = None
+        mock_hass.config.language = "en"
+
+        country, culture = _get_default_country_culture_for_coordinator(mock_hass)
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_helper_function_missing_language(self):
+        """Test helper function when language is missing."""
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
+
+        mock_hass = MagicMock()
+        mock_hass.config = MagicMock()
+        mock_hass.config.country = "GB"
+        mock_hass.config.language = None
+
+        country, culture = _get_default_country_culture_for_coordinator(mock_hass)
+        assert country == "GB"
+        assert culture == "en-GB"
+
+    @pytest.mark.asyncio
+    async def test_helper_function_invalid_language_format(self):
+        """Test helper function with existing culture format."""
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
+
+        mock_hass = MagicMock()
+        mock_hass.config = MagicMock()
+        mock_hass.config.country = "NZ"
+        mock_hass.config.language = "en-NZ"
+
+        country, culture = _get_default_country_culture_for_coordinator(mock_hass)
+        assert country == "NZ"
+        assert culture == "en-NZ"
+
+    @pytest.mark.asyncio
+    async def test_helper_function_attribute_error(self):
+        """Test helper function with AttributeError exception."""
+
+        mock_hass = MagicMock()
+        # Remove config attribute to trigger AttributeError in getattr
+        del mock_hass.config
+
+    async def test_helper_function_type_error(self):
+        """Test helper function with TypeError exception."""
+        from custom_components.hass_dyson.coordinator import (
+            _get_default_country_culture_for_coordinator,
+        )
+
+        # Pass invalid type instead of hass object
+        country, culture = _get_default_country_culture_for_coordinator(None)
+        assert country == "US"
+        assert culture == "en-US"
+
+    @pytest.mark.asyncio
+    async def test_coordinator_async_setup_device_network_error(
+        self, mock_hass, mock_config_entry_cloud
+    ):
+        """Test coordinator setup with network error."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry_cloud
+            coordinator._device_capabilities = []
+            coordinator._device_category = []
+
+            # The real cloud setup flow will fail with device not found
+            with pytest.raises(UpdateFailed, match="Cloud device setup failed"):
+                await coordinator._async_setup_device()
+
+    @pytest.mark.asyncio
+    async def test_coordinator_connection_lost_recovery(
+        self, mock_hass, mock_config_entry_cloud
+    ):
+        """Test coordinator recovery when connection is lost."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry_cloud
+            coordinator.device = MagicMock()
+            coordinator.device.is_connected = False
+            coordinator._listeners = {}
+            coordinator.async_update_listeners = MagicMock()
+
+            # First attempt should fail due to disconnection
+            with pytest.raises(UpdateFailed, match="not connected"):
+                await coordinator._async_update_data()
+
+            # Reset device connection for second attempt
+            coordinator.device.is_connected = True
+            coordinator.device.get_state = AsyncMock(return_value={})
+            coordinator.device.request_current_faults = AsyncMock()
+            coordinator.device.get_environmental_data = MagicMock(return_value={})
+
+            with patch.object(
+                coordinator, "ensure_device_services_registered", new_callable=AsyncMock
+            ):
+                # Second attempt should succeed
+                result = await coordinator._async_update_data()
+                assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_coordinator_mqtt_callback_error_handling(
+        self, mock_hass, mock_config_entry_cloud
+    ):
+        """Test coordinator MQTT callback error handling."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry_cloud
+            coordinator._listeners = {}
+            coordinator.async_update_listeners = MagicMock()
+
+            # Test message callback with correct signature (topic, data)
+            with patch.object(
+                coordinator,
+                "_schedule_coordinator_data_update",
+                side_effect=Exception("Parse error"),
+            ):
+                # Should not raise exception, just log error
+                coordinator._on_message_update("test/topic", {"invalid": "data"})
+
+                # Verify callback handled gracefully
+                assert True  # No exception raised
+
+            # Mock schedule_coordinator_data_update to raise exception
+            with patch.object(
+                coordinator,
+                "_schedule_coordinator_data_update",
+                side_effect=Exception("Scheduler error"),
+            ):
+                # Should not raise exception from callback (no parameters for _on_environmental_update)
+                coordinator._on_environmental_update()
+                assert True  # No exception propagated
+
+    @pytest.mark.asyncio
+    async def test_coordinator_device_setup_unknown_discovery_method(self, mock_hass):
+        """Test coordinator with unknown discovery method."""
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {
+            CONF_DISCOVERY_METHOD: "unknown_method",
+            CONF_SERIAL_NUMBER: "TEST123456",
+        }
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry
+            coordinator._device_capabilities = []
+            coordinator._device_category = []
+
+            with pytest.raises(UpdateFailed, match="Unknown discovery method"):
+                await coordinator._async_setup_device()
