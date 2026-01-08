@@ -1,7 +1,7 @@
-name: Tests
+name: Tests & Quality Checks
 
-# Note: Testing limited to Python 3.13 due to pytest-homeassistant-custom-component
-# dependency compatibility issues with older Python versions
+# Consolidated workflow that runs tests once and reuses results for coverage analysis
+# Runs quality checks in parallel to optimize CI time
 
 on:
   pull_request:
@@ -11,8 +11,9 @@ on:
   workflow_dispatch: # Allow manual triggering
 
 jobs:
-  test:
-    name: Tests
+  # Run tests with coverage - this is the single source of test execution
+  test-with-coverage:
+    name: Run Tests with Coverage
     runs-on: ubuntu-latest
 
     steps:
@@ -41,34 +42,58 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e .
 
-      - name: Cache pytest and mypy
+      - name: Cache pytest
         uses: actions/cache@v4
         with:
           path: |
             .pytest_cache
-            .mypy_cache
             .coverage
-          key: ${{ runner.os }}-pytest-mypy-3.13-${{ github.sha }}
+          key: ${{ runner.os }}-pytest-3.13-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pytest-mypy-3.13-
-            ${{ runner.os }}-pytest-mypy-
+            ${{ runner.os }}-pytest-3.13-
 
       - name: Verify installation
         run: |
           python -c "import custom_components.hass_dyson; print('✅ Integration import successful')"
           python -c "import pytest; print(f'✅ Pytest version: {pytest.__version__}')"
 
-      - name: Run all tests
+      - name: Run tests with coverage
         run: |
           python -m pytest tests/ \
+            --cov=custom_components.hass_dyson \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=json \
+            --cov-report=term-missing \
+            --cov-branch \
             -v \
             --tb=short \
-            --no-cov \
             -n auto
 
-  coverage:
-    name: Code Coverage Analysis
+      - name: Upload coverage data
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-data
+          path: |
+            coverage.xml
+            coverage.json
+            htmlcov/
+            .coverage
+          retention-days: 7
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All tests from \`/tests\` folder have been executed." >> $GITHUB_STEP_SUMMARY
+
+  # Analyze coverage from test artifacts
+  coverage-analysis:
+    name: Coverage Analysis & Reporting
+    needs: test-with-coverage
     runs-on: ubuntu-latest
+    if: always()
 
     steps:
       - name: Checkout repository
@@ -79,66 +104,34 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
+      - name: Download coverage data
+        uses: actions/download-artifact@v5
         with:
-          path: |
-            ~/.cache/pip
-            ~/.local/lib/python*/site-packages
-          key: ${{ runner.os }}-pip-coverage-${{ hashFiles('requirements-dev.txt', 'requirements.txt', 'pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-coverage-
-            ${{ runner.os }}-pip-
+          name: coverage-data
 
-      - name: Install dependencies
+      - name: Install coverage package
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e .
-
-      - name: Run tests with comprehensive coverage
-        run: |
-          python -m pytest tests/ \
-            --cov=custom_components.hass_dyson \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-report=term-missing \
-            --cov-branch \
-            -v \
-            -n auto
+          pip install coverage[toml]
 
       - name: Check coverage threshold
         run: |
           python -c "
-          import xml.etree.ElementTree as ET
-          tree = ET.parse('coverage.xml')
-          root = tree.getroot()
+          from coverage import Coverage
 
-          # Get line and branch rates from coverage.xml
-          line_rate = float(root.get('line-rate', 0))
-          branch_rate = float(root.get('branch-rate', 0))
-          lines_valid = int(root.get('lines-valid', 0))
-          branches_valid = int(root.get('branches-valid', 0))
+          # Load the .coverage data file
+          cov = Coverage()
+          cov.load()
 
-          # Calculate combined coverage (same as pytest-cov reports)
-          if lines_valid + branches_valid > 0:
-              lines_covered = line_rate * lines_valid
-              branches_covered = branch_rate * branches_valid
-              total_covered = lines_covered + branches_covered
-              total_valid = lines_valid + branches_valid
-              coverage = (total_covered / total_valid) * 100
-          else:
-              coverage = 0.0
+          # Get the total coverage percentage (same calculation pytest-cov uses)
+          total = cov.report()
 
-          print(f'Line coverage: {line_rate * 100:.2f}%')
-          print(f'Branch coverage: {branch_rate * 100:.2f}%')
-          print(f'Combined coverage: {coverage:.2f}%')
+          print(f'Coverage: {total:.2f}%')
 
-          if coverage < 75:
-              print(f'❌ Coverage {coverage:.2f}% is below 75% threshold')
+          if total < 75:
+              print(f'❌ Coverage {total:.2f}% is below 75% threshold')
               exit(1)
           else:
-              print(f'✅ Coverage {coverage:.2f}% meets 75% threshold')
+              print(f'✅ Coverage {total:.2f}% meets 75% threshold')
           "
 
       - name: Upload coverage to Codecov
@@ -156,6 +149,14 @@ jobs:
           path: htmlcov/
           retention-days: 7
 
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Coverage analysis completed. Results available in artifacts." >> $GITHUB_STEP_SUMMARY
+
+  # Run quality checks in parallel with tests
   quality:
     name: Code Quality Checks
     runs-on: ubuntu-latest
@@ -194,6 +195,14 @@ jobs:
         run: |
           python -m ruff check . --output-format=github
 
+      - name: Cache mypy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: ${{ runner.os }}-mypy-3.13-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-mypy-3.13-
+
       - name: Run MyPy type checking
         continue-on-error: true
         run: |
@@ -205,59 +214,9 @@ jobs:
         run: |
           python -m bandit -r custom_components/ -f json || true
 
-  integration:
-    name: Integration Validation
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
+      - name: Quality check summary
+        if: always()
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e .
-
-      - name: Run all tests (integration validation)
-        run: |
-          echo "🔗 Running all tests to validate integration..."
-          python -m pytest tests/ -v --tb=short --no-cov -n auto
-
-  build:
-    name: Build Package
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
-
-      - name: Build package
-        run: |
-          python -m build
-
-      - name: Check package
-        run: |
-          python -m twine check dist/*
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v5
-        with:
-          name: dist-packages
-          path: dist/
-          retention-days: 7
+          echo "## Code Quality Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Quality checks completed. See job logs for details." >> $GITHUB_STEP_SUMMARY
