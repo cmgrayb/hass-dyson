@@ -66,95 +66,28 @@ jobs:
             --cov-report=json \
             --cov-report=term-missing \
             --cov-branch \
+            --cov-fail-under=75 \
             -v \
             --tb=short \
             -n auto
 
-      - name: Upload coverage data
+      - name: Upload coverage reports
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-data
+          name: coverage-reports
           path: |
             coverage.xml
             coverage.json
             htmlcov/
-            .coverage
           retention-days: 7
 
       - name: Test summary
         if: always()
         run: |
-          echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "## Test & Coverage Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All tests from \`/tests\` folder have been executed." >> $GITHUB_STEP_SUMMARY
-
-  # Analyze coverage from test artifacts
-  coverage-analysis:
-    name: Coverage Analysis & Reporting
-    needs: test-with-coverage
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Download coverage data
-        uses: actions/download-artifact@v5
-        with:
-          name: coverage-data
-
-      - name: Install coverage package
-        run: |
-          pip install coverage[toml]
-
-      - name: Check coverage threshold
-        run: |
-          python -c "
-          from coverage import Coverage
-
-          # Load the .coverage data file
-          cov = Coverage()
-          cov.load()
-
-          # Get the total coverage percentage (same calculation pytest-cov uses)
-          total = cov.report()
-
-          print(f'Coverage: {total:.2f}%')
-
-          if total < 75:
-              print(f'❌ Coverage {total:.2f}% is below 75% threshold')
-              exit(1)
-          else:
-              print(f'✅ Coverage {total:.2f}% meets 75% threshold')
-          "
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v5
-        with:
-          name: coverage-report
-          path: htmlcov/
-          retention-days: 7
-
-      - name: Coverage summary
-        if: always()
-        run: |
-          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Coverage analysis completed. Results available in artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests executed with coverage analysis" >> $GITHUB_STEP_SUMMARY
+          echo "📊 Coverage reports available in artifacts" >> $GITHUB_STEP_SUMMARY
 
   # Run quality checks in parallel with tests
   quality:
