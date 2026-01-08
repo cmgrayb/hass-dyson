@@ -206,8 +206,7 @@ addopts = [
     "--cov-branch",  # Enable branch coverage to match GitHub workflow
     "--cov-fail-under=0",  # No failure threshold - handled by dedicated coverage job
     "--strict-markers",
-    "-v",
-    "-n", "auto"  # Enable parallel test execution with automatic CPU detection
+    "-v"
 ]
 # Configure asyncio settings to handle event loop cleanup better
 asyncio_mode = "auto"
