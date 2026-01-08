@@ -1,0 +1,26 @@
+[run]
+source = custom_components/hass_dyson
+branch = True
+parallel = True
+concurrency = multiprocessing
+
+[report]
+precision = 2
+skip_covered = False
+show_missing = True
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+
+[paths]
+source =
+    custom_components/hass_dyson
+    */custom_components/hass_dyson
+
+[html]
+directory = htmlcov

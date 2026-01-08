@@ -71,6 +71,10 @@ jobs:
             --tb=short \
             -n auto
 
+          # Combine coverage data from parallel test runs
+          python -m coverage combine
+          python -m coverage report --precision=2
+
       - name: Upload coverage reports
         uses: actions/upload-artifact@v5
         with:
