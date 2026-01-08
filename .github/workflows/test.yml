@@ -68,8 +68,7 @@ jobs:
             --cov-branch \
             --cov-fail-under=75 \
             -v \
-            --tb=short \
-            -n auto
+            --tb=short
 
           # Combine coverage data from parallel test runs
           python -m coverage combine
