@@ -150,42 +150,69 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             self._attr_target_temperature = 20  # Default to 20°C
 
     def _update_humidity(self, device_data: dict[str, Any]) -> None:
-        """Update current and target humidity from device data."""
+        """Update current and target humidity from humidifier entity (compatibility layer)."""
         if (
             not self.coordinator.device
             or "Humidifier" not in self.coordinator.device_capabilities
         ):
             return
 
-        # Current humidity (if available)
+        # Get humidity values from humidifier entity through coordinator
+        # This provides a compatibility layer for automations expecting climate humidity
+        humidifier_entity_id = f"humidifier.{self.coordinator.serial_number.lower().replace('-', '_')}_humidifier"
+
+        try:
+            # Try to get state from humidifier entity if it exists
+            if self.hass and hasattr(self.hass, "states"):
+                humidifier_state = self.hass.states.get(humidifier_entity_id)
+                if humidifier_state:
+                    # Get current humidity from humidifier entity
+                    current_humidity = humidifier_state.attributes.get(
+                        "current_humidity"
+                    )
+                    if current_humidity is not None:
+                        self._attr_current_humidity = int(current_humidity)
+                    else:
+                        self._attr_current_humidity = None
+
+                    # Get target humidity from humidifier entity
+                    target_humidity = humidifier_state.attributes.get("humidity")
+                    if target_humidity is not None:
+                        self._attr_target_humidity = int(target_humidity)
+                    else:
+                        self._attr_target_humidity = 40  # Default to 40%
+                    return
+        except (ValueError, TypeError, AttributeError) as err:
+            _LOGGER.debug(
+                "Could not get humidity from humidifier entity %s: %s",
+                humidifier_entity_id,
+                err,
+            )
+
+        # Fallback to direct device data if humidifier entity not available yet
         current_humidity = self.coordinator.device.get_state_value(
             device_data, "humi", "0000"
         )
         try:
             humidity_percent = int(current_humidity)
-            # Only set humidity if we have a valid reading (not default 0000)
             if current_humidity != "0000" and humidity_percent > 0:
                 self._attr_current_humidity = humidity_percent
             else:
-                self._attr_current_humidity = (
-                    None  # No humidity sensor or invalid reading
-                )
+                self._attr_current_humidity = None
         except (ValueError, TypeError):
             self._attr_current_humidity = None
 
-        # Target humidity
         target_humidity = self.coordinator.device.get_state_value(
             device_data, "humt", "0040"
         )
         try:
             humidity_percent = int(target_humidity)
-            # Only set target humidity if we have a valid reading
             if target_humidity != "0000" and humidity_percent > 0:
                 self._attr_target_humidity = humidity_percent
             else:
-                self._attr_target_humidity = 40  # Default to 40%
+                self._attr_target_humidity = 40
         except (ValueError, TypeError):
-            self._attr_target_humidity = 40  # Default to 40%
+            self._attr_target_humidity = 40
 
     def _update_hvac_mode(self, device_data: dict[str, Any]) -> None:
         """Update HVAC mode from device data."""
@@ -297,12 +324,32 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         try:
             if hvac_mode == HVACMode.OFF:
-                # Turn off fan power and all modes using device methods
+                # Turn off fan power and all modes
                 await self.coordinator.device.set_fan_power(False)
                 if "Heating" in device_capabilities:
                     await self.coordinator.device.set_heating_mode("OFF")
                 if "Humidifier" in device_capabilities:
-                    await self.coordinator.device.set_humidifier_mode(False)
+                    # Control humidifier entity through Home Assistant service
+                    humidifier_entity_id = f"humidifier.{self.coordinator.serial_number.lower().replace('-', '_')}_humidifier"
+                    try:
+                        await self.hass.services.async_call(
+                            "humidifier",
+                            "turn_off",
+                            {"entity_id": humidifier_entity_id},
+                            blocking=True,
+                        )
+                        _LOGGER.debug(
+                            "Turned off humidifier entity %s via climate control",
+                            humidifier_entity_id,
+                        )
+                    except Exception as err:
+                        _LOGGER.warning(
+                            "Could not control humidifier entity %s, falling back to direct device control: %s",
+                            humidifier_entity_id,
+                            err,
+                        )
+                        # Fallback to direct device control if humidifier entity not available
+                        await self.coordinator.device.set_humidifier_mode(False)
 
             elif hvac_mode == HVACMode.HEAT and "Heating" in device_capabilities:
                 # Enable heating mode using device methods
@@ -312,19 +359,60 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                     await self.coordinator.device.set_humidifier_mode(False)
 
             elif hvac_mode == HVACMode.FAN_ONLY:
-                # Enable fan only using device methods
+                # Enable fan only
                 await self.coordinator.device.set_fan_power(True)
                 if "Heating" in device_capabilities:
                     await self.coordinator.device.set_heating_mode("OFF")
                 if "Humidifier" in device_capabilities:
-                    await self.coordinator.device.set_humidifier_mode(False)
+                    # Control humidifier entity through Home Assistant service
+                    humidifier_entity_id = f"humidifier.{self.coordinator.serial_number.lower().replace('-', '_')}_humidifier"
+                    try:
+                        await self.hass.services.async_call(
+                            "humidifier",
+                            "turn_off",
+                            {"entity_id": humidifier_entity_id},
+                            blocking=True,
+                        )
+                        _LOGGER.debug(
+                            "Turned off humidifier entity %s via climate control",
+                            humidifier_entity_id,
+                        )
+                    except Exception as err:
+                        _LOGGER.warning(
+                            "Could not control humidifier entity %s, falling back to direct device control: %s",
+                            humidifier_entity_id,
+                            err,
+                        )
+                        # Fallback to direct device control if humidifier entity not available
+                        await self.coordinator.device.set_humidifier_mode(False)
 
             elif hvac_mode == HVACMode.DRY and "Humidifier" in device_capabilities:
-                # Enable humidification mode using device methods for fan power
+                # Enable humidification mode through humidifier entity (compatibility layer)
                 await self.coordinator.device.set_fan_power(True)
                 if "Heating" in device_capabilities:
                     await self.coordinator.device.set_heating_mode("OFF")
-                await self.coordinator.device.set_humidifier_mode(True)
+
+                # Control humidifier entity through Home Assistant service
+                humidifier_entity_id = f"humidifier.{self.coordinator.serial_number.lower().replace('-', '_')}_humidifier"
+                try:
+                    await self.hass.services.async_call(
+                        "humidifier",
+                        "turn_on",
+                        {"entity_id": humidifier_entity_id},
+                        blocking=True,
+                    )
+                    _LOGGER.debug(
+                        "Turned on humidifier entity %s via climate control",
+                        humidifier_entity_id,
+                    )
+                except Exception as err:
+                    _LOGGER.warning(
+                        "Could not control humidifier entity %s, falling back to direct device control: %s",
+                        humidifier_entity_id,
+                        err,
+                    )
+                    # Fallback to direct device control if humidifier entity not available
+                    await self.coordinator.device.set_humidifier_mode(True)
 
             else:
                 supported_modes = [mode.value for mode in self._attr_hvac_modes]
@@ -410,7 +498,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             )
 
     async def async_set_humidity(self, humidity: int) -> None:
-        """Set new target humidity."""
+        """Set new target humidity through humidifier entity (compatibility layer)."""
         if (
             not self.coordinator.device
             or "Humidifier" not in self.coordinator.device_capabilities
@@ -418,8 +506,28 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             return
 
         try:
-            # Call the device method directly
-            await self.coordinator.device.set_target_humidity(humidity)
+            # Control humidifier entity through Home Assistant service
+            humidifier_entity_id = f"humidifier.{self.coordinator.serial_number.lower().replace('-', '_')}_humidifier"
+            try:
+                await self.hass.services.async_call(
+                    "humidifier",
+                    "set_humidity",
+                    {"entity_id": humidifier_entity_id, "humidity": humidity},
+                    blocking=True,
+                )
+                _LOGGER.debug(
+                    "Set humidity to %s%% via humidifier entity %s",
+                    humidity,
+                    humidifier_entity_id,
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Could not control humidifier entity %s, falling back to direct device control: %s",
+                    humidifier_entity_id,
+                    err,
+                )
+                # Fallback to direct device control if humidifier entity not available
+                await self.coordinator.device.set_target_humidity(humidity)
 
             # Update local state immediately for responsive UI
             self._attr_target_humidity = int(humidity)
