@@ -211,20 +211,32 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
             )
 
     async def async_set_humidity(self, humidity: int) -> None:
-        """Set new target humidity."""
+        """Set new target humidity (rounded to nearest 10% increment)."""
         if not self.coordinator.device:
             return
 
+        # Round to nearest 10% increment (30, 40, 50, 60, 70) to match Dyson app behavior
+        rounded_humidity = round(humidity / 10) * 10
+        rounded_humidity = max(30, min(70, rounded_humidity))
+
+        if rounded_humidity != humidity:
+            _LOGGER.debug(
+                "Adjusted humidity from %s%% to %s%% (nearest 10%% increment) for %s",
+                humidity,
+                rounded_humidity,
+                self.coordinator.serial_number,
+            )
+
         try:
-            await self.coordinator.device.set_target_humidity(humidity)
+            await self.coordinator.device.set_target_humidity(rounded_humidity)
 
             # Update local state immediately for responsive UI
-            self._attr_target_humidity = humidity
+            self._attr_target_humidity = rounded_humidity
             self.async_write_ha_state()
 
             _LOGGER.debug(
                 "Set target humidity to %s%% for %s",
-                humidity,
+                rounded_humidity,
                 self.coordinator.serial_number,
             )
         except (ConnectionError, TimeoutError) as err:

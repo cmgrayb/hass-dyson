@@ -199,10 +199,10 @@ class TestDysonHumidifierEntity:
             DysonHumidifierEntity, pure_mock_coordinator
         )
 
-        await humidifier.async_set_humidity(45)
+        await humidifier.async_set_humidity(44)
 
-        pure_mock_coordinator.device.set_target_humidity.assert_called_once_with(45)
-        assert humidifier._attr_target_humidity == 45
+        pure_mock_coordinator.device.set_target_humidity.assert_called_once_with(40)
+        assert humidifier._attr_target_humidity == 40
 
     @pytest.mark.asyncio
     async def test_set_mode_normal(
