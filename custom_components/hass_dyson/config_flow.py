@@ -746,14 +746,18 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 )
                                 device_name = getattr(device, "name", "Unknown Device")
 
-                                # Only skip devices that are specifically known to be unsupported
-                                # Allow devices with None or missing connectivity (these are typically working devices)
-                                if connectivity == "lecOnly":
+                                # Skip devices that cannot be controlled via MQTT/WiFi
+                                # lecOnly: local connection only (not yet supported)
+                                # nonConnected: devices with no connectivity (e.g., non-smart models)
+                                if connectivity in ("lecOnly", "nonConnected"):
                                     skipped_devices.append((device_name, connectivity))
                                     _LOGGER.info(
-                                        "Skipping device '%s' with connectivity '%s' - will be supported in future release",
+                                        "Skipping device '%s' with connectivity '%s' - %s",
                                         device_name,
                                         connectivity,
+                                        "not supported"
+                                        if connectivity == "nonConnected"
+                                        else "will be supported in future release",
                                     )
                                 else:
                                     supported_devices.append(device)

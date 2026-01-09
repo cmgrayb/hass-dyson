@@ -117,6 +117,7 @@ PLATFORMS_MAP = {
     Platform.SWITCH: "switch",
     Platform.VACUUM: "vacuum",
     Platform.CLIMATE: "climate",
+    Platform.HUMIDIFIER: "humidifier",
 }
 
 
@@ -754,6 +755,13 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
             platforms.append("number")
         if "select" not in platforms:
             platforms.append("select")
+
+    # Add humidifier platform for devices with humidifier capability
+    if "Humidifier" in device_capabilities:
+        platforms.append("humidifier")
+        # Also ensure climate is included for compatibility layer
+        if "climate" not in platforms:
+            platforms.append("climate")
 
     # Add switch platform for devices with switching capabilities
     if "Switch" in device_capabilities or any(cat in ["ec"] for cat in device_category):
