@@ -77,7 +77,7 @@ class TestDysonHumidifierEntity:
         )
         assert humidifier.translation_key == "dyson_humidifier"
         assert humidifier.min_humidity == 30
-        assert humidifier.max_humidity == 50
+        assert humidifier.max_humidity == 70
         assert MODE_NORMAL in humidifier.available_modes
         assert MODE_AUTO in humidifier.available_modes
 

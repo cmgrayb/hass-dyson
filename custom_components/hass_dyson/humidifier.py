@@ -63,9 +63,12 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
         self._attr_supported_features = HumidifierEntityFeature.MODES
         self._attr_device_class = HumidifierDeviceClass.HUMIDIFIER
 
-        # Humidity settings
+        # Humidity settings - matches Dyson app (30-70% in 10% steps)
         self._attr_min_humidity = 30
-        self._attr_max_humidity = 50  # Based on humt range 0030-0050
+        self._attr_max_humidity = 70
+        # Note: Home Assistant doesn't have a native step attribute for humidifier,
+        # but the frontend will respect the 10% increments when using the slider
+        # based on the range 30-70 which divides evenly by 10
 
         # Available modes
         self._attr_available_modes = AVAILABLE_MODES
