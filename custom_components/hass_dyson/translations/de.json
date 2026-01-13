@@ -221,8 +221,9 @@
         "name": "Oszillation"
       },
       "heating_mode": {
-        "name": "Heizmodus"
-      }
+        "name": "Heizmodus"      },
+      "water_hardness": {
+        "name": "Wasserhärte"      }
     },
     "number": {
       "sleep_timer": {
