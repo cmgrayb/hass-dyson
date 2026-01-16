@@ -25,6 +25,8 @@ jobs:
   test-with-coverage:
     name: Run Tests with Coverage
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: 1
 
     steps:
       - name: Checkout repository
@@ -102,6 +104,8 @@ jobs:
   quality:
     name: Code Quality Checks
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: 1
 
     steps:
       - name: Checkout repository

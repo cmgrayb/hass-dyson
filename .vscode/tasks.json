@@ -45,7 +45,10 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": []
         },
@@ -61,7 +64,10 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": [
                 {
@@ -99,7 +105,10 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": {
                 "owner": "python",
@@ -127,7 +136,10 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": {
                 "owner": "python",
@@ -154,7 +166,10 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": []
         },
@@ -170,12 +185,15 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": []
         },
         {
-            "label": "Run Integration Tests", 
+            "label": "Run Integration Tests",
             "type": "shell",
             "command": "python -m pytest tests/ -m integration",
             "group": "test",
@@ -186,7 +204,10 @@
                 "panel": "shared"
             },
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PYTHONDONTWRITEBYTECODE": "1"
+                }
             },
             "problemMatcher": []
         },
@@ -208,7 +229,7 @@
         },
         {
             "label": "Security Scan (Safety)",
-            "type": "shell", 
+            "type": "shell",
             "command": "docker run --rm -v \"${workspaceFolder}:/src\" securecodewarrior/bandit:latest bandit -r /src/custom_components -f json || echo 'Security scan completed'",
             "group": "test",
             "presentation": {
