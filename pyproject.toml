@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.27.1-beta.2"
+version = "0.27.1-beta.3"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -56,9 +56,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cmgrayb/ha-dyson-alt"
-Repository = "https://github.com/cmgrayb/ha-dyson-alt"
-Issues = "https://github.com/cmgrayb/ha-dyson-alt/issues"
+Homepage = "https://github.com/cmgrayb/hass-dyson"
+Repository = "https://github.com/cmgrayb/hass-dyson"
+Issues = "https://github.com/cmgrayb/hass-dyson/issues"
 
 [tool.setuptools.packages.find]
 where = ["custom_components"]
