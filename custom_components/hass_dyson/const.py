@@ -48,6 +48,15 @@ DEVICE_CATEGORY_EC: Final = "ec"  # Environment Cleaner (fans with filters)
 DEVICE_CATEGORY_LIGHT: Final = "light"  # Desk/floor lamps
 DEVICE_CATEGORY_ROBOT: Final = "robot"  # Self-piloting devices
 DEVICE_CATEGORY_VACUUM: Final = "vacuum"  # Suction cleaning devices
+
+
+# Exceptions
+class UnsupportedDeviceError(Exception):
+    """Exception raised when device does not support required features (e.g., MQTT)."""
+
+    pass
+
+
 DEVICE_CATEGORY_FLRC: Final = "flrc"  # Floor cleaner devices
 DEVICE_CATEGORY_WEARABLE: Final = "wearable"  # Wearable devices
 DEVICE_CATEGORY_HC: Final = "hc"  # Hair care devices
