@@ -694,6 +694,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_setup_cloud_device(self) -> None:
         """Set up device discovered via cloud API."""
+        from .const import UnsupportedDeviceError
+
         _LOGGER.debug("Setting up cloud device for %s", self.serial_number)
 
         try:
@@ -713,8 +715,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     getattr(device_info, "name", "Unknown"),
                     connection_category,
                 )
-                from .const import UnsupportedDeviceError
-
                 raise UnsupportedDeviceError(
                     f"Device {self.serial_number} does not support MQTT connection"
                 )
