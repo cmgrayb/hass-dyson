@@ -6,8 +6,18 @@ name: Tests & Quality Checks
 on:
   pull_request:
     branches: [main, develop, release/*]
+    paths:
+      - "**.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/test.yml"
   push:
     branches: [main, develop, release/*]
+    paths:
+      - "**.py"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/test.yml"
   workflow_dispatch: # Allow manual triggering
 
 jobs:
