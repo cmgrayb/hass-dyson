@@ -782,14 +782,15 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-        # Add battery sensor only for devices with robot category
-        # Robot devices report battery level via the vacuum entity battery_level property
-        # No separate battery sensor needed - vacuum entity handles both control and battery monitoring
+        # Add battery sensor for devices with robot category
+        # Battery sensor replaces the deprecated battery_level property and
+        # VacuumEntityFeature.BATTERY on the vacuum entity (deprecated in HA 2026.8)
         if any(cat in ["robot"] for cat in device_category):
             _LOGGER.debug(
-                "Robot device %s battery level available via vacuum entity",
+                "Adding battery sensor for robot device %s",
                 device_serial,
             )
+            entities.append(DysonRobotBatterySensor(coordinator))
 
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
@@ -2021,6 +2022,141 @@ class DysonCleaningTimeRemainingSensor(DysonEntity, SensorEntity):
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error updating cleaning time remaining sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonRobotBatterySensor(DysonEntity, SensorEntity):
+    """Battery sensor for Dyson robot vacuum devices.
+
+    This sensor provides battery level monitoring for Dyson robot vacuum cleaners,
+    replacing the deprecated battery_level property on the vacuum entity.
+
+    Attributes:
+        device_class: SensorDeviceClass.BATTERY for proper Home Assistant integration
+        state_class: SensorStateClass.MEASUREMENT for long-term statistics
+        unit_of_measurement: PERCENTAGE (0-100%)
+        entity_category: EntityCategory.DIAGNOSTIC for diagnostic information
+        icon: mdi:battery for visual representation
+
+    Data Source:
+        Battery level from robot vacuum device state (batteryChargeLevel field),
+        updated automatically via MQTT as battery state changes.
+
+    Availability:
+        Only created for devices with "robot" device category (Dyson 360 Eye,
+        360 Heurist, 360 Vis Nav models).
+
+    Migration:
+        This sensor replaces the deprecated battery_level property and
+        VacuumEntityFeature.BATTERY feature flag on the vacuum entity,
+        which will be removed in Home Assistant 2026.8.
+
+    Example:
+        Typical sensor values and automation:
+
+        >>> # Battery at 85%
+        >>> sensor.native_value = 85
+        >>>
+        >>> # Low battery - send notification
+        >>> if sensor.native_value < 20:
+        >>>     await notify.async_send_message("Robot vacuum battery low")
+
+    Note:
+        Battery percentage is reported directly from the robot device without
+        additional processing or calibration.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the robot battery sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+
+        Configuration:
+        - unique_id: {serial_number}_robot_battery for entity registry
+        - translation_key: "robot_battery" for localized naming
+        - device_class: BATTERY for proper sensor categorization
+        - state_class: MEASUREMENT for long-term statistics
+        - unit: PERCENTAGE for battery level display
+        - entity_category: DIAGNOSTIC for diagnostic information
+        - icon: battery for visual representation
+
+        Integration Features:
+        - Automatic device registry linking via parent DysonEntity
+        - Long-term statistics support for trend analysis
+        - Proper sensor categorization in Home Assistant UI
+        - Localized entity naming through translation system
+
+        Note:
+            Only initialized for devices with "robot" device category.
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_battery"
+        self._attr_translation_key = "robot_battery"
+        self._attr_device_class = SensorDeviceClass.BATTERY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:battery"
+
+        _LOGGER.debug(
+            "Initialized robot battery sensor for %s",
+            coordinator.serial_number,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_native_value = None
+            super()._handle_coordinator_update()
+            return
+
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = self.coordinator.device.robot_battery_level
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "Robot battery sensor updated for %s: %s -> %s%%",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "Robot battery sensor update: no battery data for device %s",
+                    device_serial,
+                )
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Robot battery data not available for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid robot battery data format for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating robot battery sensor for device %s: %s",
                 device_serial,
                 err,
             )

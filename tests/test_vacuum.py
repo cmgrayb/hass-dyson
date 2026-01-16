@@ -3,10 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.vacuum import (
-    VacuumActivity,
-    VacuumEntityFeature,
-)
+from homeassistant.components.vacuum import VacuumActivity, VacuumEntityFeature
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.hass_dyson.const import (
@@ -130,14 +127,16 @@ class TestDysonVacuumEntity:
         assert entity._attr_name is None  # Uses device name
         assert entity._attr_has_entity_name is True
 
-        # Check supported features
+        # Check supported features - battery monitoring moved to separate sensor
+        # to comply with Home Assistant deprecation (HA 2026.8)
         expected_features = (
             VacuumEntityFeature.PAUSE
             | VacuumEntityFeature.STOP
             | VacuumEntityFeature.STATE
-            | VacuumEntityFeature.BATTERY
         )
         assert entity._attr_supported_features == expected_features
+        # Verify BATTERY feature is not present
+        assert not (entity._attr_supported_features & VacuumEntityFeature.BATTERY)
 
     def test_state_mapping(self, mock_coordinator_robot):
         """Test robot state to HA state mapping."""
@@ -177,28 +176,6 @@ class TestDysonVacuumEntity:
 
         mock_coordinator_robot.device.robot_state = None
         assert entity.activity is None
-
-    def test_battery_level(self, mock_coordinator_robot):
-        """Test battery level reporting."""
-        entity = DysonVacuumEntity(mock_coordinator_robot)
-
-        # Test normal battery level
-        mock_coordinator_robot.device.robot_battery_level = 75
-        assert entity.battery_level == 75
-
-        # Test missing device
-        mock_coordinator_robot.device = None
-        assert entity.battery_level is None
-
-        # Test None battery level
-        mock_coordinator_robot.device = MagicMock()
-        mock_coordinator_robot.device.robot_battery_level = None
-        assert entity.battery_level is None
-
-        # Test unavailable through coordinator
-        mock_coordinator_robot.device.robot_battery_level = 85
-        with patch.object(entity.coordinator, "last_update_success", False):
-            assert entity.battery_level is None
 
     def test_extra_state_attributes(self, mock_coordinator_robot):
         """Test additional state attributes."""
@@ -427,15 +404,6 @@ class TestVacuumEntityIntegration:
         mock_coordinator_robot.device.robot_state = ROBOT_STATE_FAULT_CRITICAL
         assert entity.activity == VacuumActivity.ERROR
 
-    def test_battery_updates(self, mock_coordinator_robot):
-        """Test entity responds to battery level updates."""
-        entity = DysonVacuumEntity(mock_coordinator_robot)
-
-        # Test different battery levels
-        for level in [100, 75, 50, 25, 10, 0]:
-            mock_coordinator_robot.device.robot_battery_level = level
-            assert entity.battery_level == level
-
     def test_position_tracking(self, mock_coordinator_robot):
         """Test position tracking in attributes."""
         entity = DysonVacuumEntity(mock_coordinator_robot)
@@ -512,20 +480,6 @@ class TestVacuumEntityErrorHandling:
         mock_coordinator_robot.device.robot_state = ""
         assert entity.activity == VacuumActivity.IDLE
 
-    def test_invalid_battery_handling(self, mock_coordinator_robot):
-        """Test handling of invalid battery values."""
-        entity = DysonVacuumEntity(mock_coordinator_robot)
-
-        # Test negative battery
-        mock_coordinator_robot.device.robot_battery_level = -5
-        assert (
-            entity.battery_level == -5
-        )  # Should pass through, let HA handle validation
-
-        # Test over 100 battery
-        mock_coordinator_robot.device.robot_battery_level = 120
-        assert entity.battery_level == 120  # Should pass through
-
     def test_device_state_corruption(self, mock_coordinator_robot):
         """Test handling of corrupted device state."""
         entity = DysonVacuumEntity(mock_coordinator_robot)
@@ -545,7 +499,6 @@ class TestVacuumEntityErrorHandling:
         del mock_coordinator_robot.device.robot_pause
 
         # Entity should still work for other operations
-        assert entity.battery_level == 100
         assert entity.activity == VacuumActivity.DOCKED
 
         # But missing methods should raise HomeAssistantError (wrapped AttributeError)

@@ -405,15 +405,15 @@ class TestSensorSetupCategoryPaths:
 
         hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
 
-        # Act - should log message about battery being available via vacuum entity
+        # Act - should log message about adding battery sensor for robot device
         with patch("custom_components.hass_dyson.sensor._LOGGER") as mock_logger:
             result = await async_setup_entry(hass, config_entry, async_add_entities)
 
             # Assert
             assert result is True
-            # Check that debug message about robot battery was logged
+            # Check that debug message about robot battery sensor was logged
             assert any(
-                "battery level available via vacuum entity" in str(call)
+                "Adding battery sensor for robot device" in str(call)
                 for call in mock_logger.debug.call_args_list
             )
 
