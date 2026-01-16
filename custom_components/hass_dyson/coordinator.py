@@ -701,14 +701,14 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             cloud_client = await self._authenticate_cloud_client()
             device_info = await self._find_cloud_device(cloud_client)
-            self._extract_device_info(device_info)
 
-            # Check if device has MQTT support before attempting setup
+            # Check if device has MQTT support BEFORE extracting device info
+            # to avoid unnecessary API calls for unsupported devices
             if not self._device_has_mqtt_support(device_info):
                 connection_category = getattr(
                     device_info, "connection_category", "unknown"
                 )
-                _LOGGER.warning(
+                _LOGGER.info(
                     "Device %s (%s) does not have MQTT support (connectivity: %s). "
                     "This device will be automatically removed from Home Assistant.",
                     self.serial_number,
@@ -718,6 +718,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UnsupportedDeviceError(
                     f"Device {self.serial_number} does not support MQTT connection"
                 )
+
+            # Only extract device info for MQTT-supported devices
+            self._extract_device_info(device_info)
 
             mqtt_credentials = await self._extract_mqtt_credentials(
                 cloud_client, device_info

@@ -429,7 +429,7 @@ async def _setup_individual_device_entry(
     except UnsupportedDeviceError as err:
         # Device doesn't support MQTT - automatically remove it
         _LOGGER.info(
-            "Automatically removing unsupported device '%s': %s",
+            "Removing unsupported device '%s' (no MQTT support): %s",
             entry.title,
             err,
         )
