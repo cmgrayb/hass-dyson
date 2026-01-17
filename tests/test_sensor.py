@@ -95,6 +95,35 @@ class TestSensorPlatformSetup:
         entities = mock_add_entities.call_args[0][0]
         assert len(entities) >= 1
 
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_creates_robot_battery_sensor(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        """Test setting up battery sensor for robot vacuum devices."""
+        # Arrange
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        mock_add_entities = MagicMock()
+
+        # Ensure coordinator has robot category
+        pure_mock_coordinator.device_category = ["robot"]
+        pure_mock_coordinator.device.robot_battery_level = 85
+
+        # Act
+        result = await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        # Assert
+        assert result is True
+        mock_add_entities.assert_called_once()
+        entities = mock_add_entities.call_args[0][0]
+
+        # Should have battery sensor for robot device
+        sensor_types = [type(entity).__name__ for entity in entities]
+        assert "DysonRobotBatterySensor" in sensor_types
+
 
 class TestDysonPM25Sensor:
     """Test DysonPM25Sensor using pure pytest."""
@@ -909,6 +938,105 @@ class TestSensorEdgeCases:
 
         # Should convert to proper percentage
         assert sensor._attr_native_value == 45.0
+
+
+class TestDysonRobotBatterySensor:
+    """Test DysonRobotBatterySensor using pure pytest."""
+
+    def test_robot_battery_sensor_init(self, pure_mock_coordinator):
+        """Test robot battery sensor initialization."""
+        from custom_components.hass_dyson.sensor import DysonRobotBatterySensor
+
+        # Set robot category for coordinator
+        pure_mock_coordinator.device_category = ["robot"]
+
+        sensor = DysonRobotBatterySensor(pure_mock_coordinator)
+
+        # Assert initialization
+        assert sensor.coordinator == pure_mock_coordinator
+        assert (
+            sensor._attr_unique_id
+            == f"{pure_mock_coordinator.serial_number}_robot_battery"
+        )
+        assert sensor._attr_device_class == SensorDeviceClass.BATTERY
+        assert sensor._attr_state_class == SensorStateClass.MEASUREMENT
+        assert sensor._attr_native_unit_of_measurement == PERCENTAGE
+
+    def test_robot_battery_sensor_update(self, pure_mock_coordinator, pure_mock_hass):
+        """Test robot battery sensor state update."""
+        from custom_components.hass_dyson.sensor import DysonRobotBatterySensor
+
+        # Set robot category and battery level
+        pure_mock_coordinator.device_category = ["robot"]
+        pure_mock_coordinator.device.robot_battery_level = 75
+
+        sensor = DysonRobotBatterySensor(pure_mock_coordinator)
+        sensor.hass = pure_mock_hass
+
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value == 75
+
+    def test_robot_battery_sensor_missing_data(
+        self, pure_mock_coordinator, pure_mock_hass
+    ):
+        """Test robot battery sensor with missing battery data."""
+        from custom_components.hass_dyson.sensor import DysonRobotBatterySensor
+
+        # Set robot category but no battery data
+        pure_mock_coordinator.device_category = ["robot"]
+        pure_mock_coordinator.device.robot_battery_level = None
+
+        sensor = DysonRobotBatterySensor(pure_mock_coordinator)
+        sensor.hass = pure_mock_hass
+
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+
+    def test_robot_battery_sensor_device_unavailable(
+        self, pure_mock_coordinator, pure_mock_hass
+    ):
+        """Test robot battery sensor when device is unavailable."""
+        from custom_components.hass_dyson.sensor import DysonRobotBatterySensor
+
+        # Set robot category
+        pure_mock_coordinator.device_category = ["robot"]
+
+        sensor = DysonRobotBatterySensor(pure_mock_coordinator)
+        sensor.hass = pure_mock_hass
+
+        # Simulate device unavailable
+        pure_mock_coordinator.device = None
+
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+
+    def test_robot_battery_sensor_various_levels(
+        self, pure_mock_coordinator, pure_mock_hass
+    ):
+        """Test robot battery sensor with various battery levels."""
+        from custom_components.hass_dyson.sensor import DysonRobotBatterySensor
+
+        # Set robot category
+        pure_mock_coordinator.device_category = ["robot"]
+
+        sensor = DysonRobotBatterySensor(pure_mock_coordinator)
+        sensor.hass = pure_mock_hass
+
+        # Test various battery levels
+        test_levels = [0, 10, 25, 50, 75, 100]
+        for level in test_levels:
+            pure_mock_coordinator.device.robot_battery_level = level
+
+            with patch.object(sensor, "async_write_ha_state"):
+                sensor._handle_coordinator_update()
+
+            assert sensor._attr_native_value == level
 
 
 if __name__ == "__main__":

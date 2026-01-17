@@ -694,12 +694,34 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_setup_cloud_device(self) -> None:
         """Set up device discovered via cloud API."""
+        from .const import UnsupportedDeviceError
+
         _LOGGER.debug("Setting up cloud device for %s", self.serial_number)
 
         try:
             cloud_client = await self._authenticate_cloud_client()
             device_info = await self._find_cloud_device(cloud_client)
+
+            # Check if device has MQTT support BEFORE extracting device info
+            # to avoid unnecessary API calls for unsupported devices
+            if not self._device_has_mqtt_support(device_info):
+                connection_category = getattr(
+                    device_info, "connection_category", "unknown"
+                )
+                _LOGGER.info(
+                    "Device %s (%s) does not have MQTT support (connectivity: %s). "
+                    "This device will be automatically removed from Home Assistant.",
+                    self.serial_number,
+                    getattr(device_info, "name", "Unknown"),
+                    connection_category,
+                )
+                raise UnsupportedDeviceError(
+                    f"Device {self.serial_number} does not support MQTT connection"
+                )
+
+            # Only extract device info for MQTT-supported devices
             self._extract_device_info(device_info)
+
             mqtt_credentials = await self._extract_mqtt_credentials(
                 cloud_client, device_info
             )
@@ -716,6 +738,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._device_category,
             )
 
+        except UnsupportedDeviceError:
+            # Let UnsupportedDeviceError propagate unchanged for automatic removal
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Failed to set up cloud device %s: %s", self.serial_number, err
@@ -1021,6 +1046,36 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.debug("No firmware object found in connected configuration")
         else:
             _LOGGER.debug("No connected configuration found in device info")
+
+    def _device_has_mqtt_support(self, device_info) -> bool:
+        """Check if device has MQTT connection support.
+
+        Only devices with MQTT credentials in connected_configuration can be used.
+        This prevents attempting setup on non-connected devices like floor cleaners.
+
+        Args:
+            device_info: Device object from libdyson-rest
+
+        Returns:
+            True if device has MQTT credentials, False otherwise
+        """
+        try:
+            connected_config = getattr(device_info, "connected_configuration", None)
+            if not connected_config:
+                return False
+
+            mqtt_obj = getattr(connected_config, "mqtt", None)
+            if not mqtt_obj:
+                return False
+
+            encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
+            if not encrypted_credentials:
+                return False
+
+            return True
+
+        except (AttributeError, TypeError):
+            return False
 
     async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:
         """Extract MQTT credentials from device info."""

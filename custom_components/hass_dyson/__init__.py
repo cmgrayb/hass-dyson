@@ -418,11 +418,23 @@ async def _setup_individual_device_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> bool:
     """Set up individual device config entry."""
+    from .const import UnsupportedDeviceError
+
     _LOGGER.debug("Setting up individual device config entry")
     coordinator = DysonDataUpdateCoordinator(hass, entry)
 
-    # Perform initial data fetch
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        # Perform initial data fetch
+        await coordinator.async_config_entry_first_refresh()
+    except UnsupportedDeviceError as err:
+        # Device doesn't support MQTT - automatically remove it
+        _LOGGER.info(
+            "Removing unsupported device '%s' (no MQTT support): %s",
+            entry.title,
+            err,
+        )
+        await hass.config_entries.async_remove(entry.entry_id)
+        return False
 
     # Store coordinator in hass data
     hass.data.setdefault(DOMAIN, {})

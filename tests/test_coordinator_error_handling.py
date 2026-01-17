@@ -387,6 +387,53 @@ class TestCoordinatorMQTTErrors:
                 mock_cloud_client, mock_device_info
             )
 
+    @pytest.mark.asyncio
+    @patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__")
+    async def test_device_without_mqtt_support_rejected(
+        self, mock_super_init, pure_mock_hass, mock_config_entry_cloud
+    ):
+        """Test that devices without MQTT support are rejected during setup."""
+        from custom_components.hass_dyson.const import UnsupportedDeviceError
+
+        mock_super_init.return_value = None
+
+        # Set up config entry with serial number
+        mock_config_entry_cloud.data = {
+            "serial_number": "FLRC123",
+            "discovery_method": "cloud",
+            "username": "test@example.com",
+            "auth_token": "test_token",
+        }
+
+        coordinator = DysonDataUpdateCoordinator(
+            pure_mock_hass, mock_config_entry_cloud
+        )
+        coordinator.hass = pure_mock_hass
+        coordinator._listeners = {}
+        coordinator.config_entry = mock_config_entry_cloud
+
+        # Mock device info for floor cleaner (no MQTT)
+        mock_device_info = MagicMock()
+        mock_device_info.name = "Dyson Wash G1"
+        mock_device_info.connection_category = "nonConnected"
+        mock_device_info.connected_configuration = None  # No MQTT config
+
+        mock_cloud_client = MagicMock()
+        mock_cloud_client.get_devices = AsyncMock(return_value=[mock_device_info])
+
+        # Mock authentication and device finding
+        coordinator._authenticate_cloud_client = AsyncMock(
+            return_value=mock_cloud_client
+        )
+        coordinator._find_cloud_device = AsyncMock(return_value=mock_device_info)
+        coordinator._extract_device_info = MagicMock()
+
+        # Should raise UnsupportedDeviceError for device without MQTT support
+        with pytest.raises(
+            UnsupportedDeviceError, match="does not support MQTT connection"
+        ):
+            await coordinator._async_setup_cloud_device()
+
     @patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__")
     def test_firmware_update_status_exception(
         self, mock_super_init, pure_mock_hass, mock_config_entry_cloud
