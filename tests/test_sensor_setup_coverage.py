@@ -48,9 +48,13 @@ class TestSensorSetupCapabilityPaths:
         # Assert
         assert result is True
         async_add_entities.assert_called_once()
-        # PM2.5 and PM10 sensors should be created despite no data
+        # PM sensors should NOT be created without data, but HEPA filters and WiFi sensors should
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) >= 2  # At least PM25 and PM10 sensors
+        sensor_types = [type(entity).__name__ for entity in entities]
+        assert "DysonPM25Sensor" not in sensor_types
+        assert "DysonPM10Sensor" not in sensor_types
+        # HEPA filter and WiFi sensors should be created
+        assert "DysonHEPAFilterLifeSensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_setup_with_extended_aq_co2_data_present(self):
@@ -306,6 +310,133 @@ class TestSensorSetupCapabilityPaths:
         assert "DysonPM10Sensor" not in sensor_types
         assert "DysonCO2Sensor" not in sensor_types
         assert "DysonNO2Sensor" not in sensor_types
+
+    @pytest.mark.asyncio
+    async def test_setup_environmental_data_with_pm25_data(self):
+        """Test PM2.5 sensor created with EnvironmentalData capability and p25r data."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = ["EnvironmentalData"]
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "TP02-001"
+        coordinator.data = {"environmental-data": {"p25r": "15", "tact": "2950"}}
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        # PM2.5 sensor should be created with EnvironmentalData capability
+        assert "DysonPM25Sensor" in sensor_types
+        # But ExtendedAQ-only sensors should not be created
+        assert "DysonCO2Sensor" not in sensor_types
+        assert "DysonNO2Sensor" not in sensor_types
+
+    @pytest.mark.asyncio
+    async def test_setup_environmental_data_with_pm10_data(self):
+        """Test PM10 sensor created with EnvironmentalData capability and p10r data."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = ["EnvironmentalData"]
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "TP02-002"
+        coordinator.data = {"environmental-data": {"p10r": "28", "tact": "2950"}}
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        # PM10 sensor should be created with EnvironmentalData capability
+        assert "DysonPM10Sensor" in sensor_types
+        # But ExtendedAQ-only sensors should not be created
+        assert "DysonCO2Sensor" not in sensor_types
+        assert "DysonVOCSensor" not in sensor_types
+
+    @pytest.mark.asyncio
+    async def test_setup_environmental_data_with_both_pm_sensors(self):
+        """Test both PM2.5 and PM10 sensors created with EnvironmentalData capability."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = ["EnvironmentalData"]
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "TP02-003"
+        coordinator.data = {
+            "environmental-data": {
+                "p25r": "15",
+                "p10r": "28",
+                "tact": "2950",
+                "hact": "55",
+            }
+        }
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        # Both PM sensors should be created with EnvironmentalData capability
+        assert "DysonPM25Sensor" in sensor_types
+        assert "DysonPM10Sensor" in sensor_types
+        # Temperature and humidity sensors should also be created
+        assert "DysonTemperatureSensor" in sensor_types
+        assert "DysonHumiditySensor" in sensor_types
+
+    @pytest.mark.asyncio
+    async def test_setup_environmental_data_without_pm_data(self):
+        """Test PM sensors NOT created when EnvironmentalData has no PM data."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = ["EnvironmentalData"]
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "TEST-012"
+        coordinator.data = {
+            "environmental-data": {"tact": "2950", "hact": "55"}  # No PM data
+        }
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        # PM sensors should NOT be created without data
+        assert "DysonPM25Sensor" not in sensor_types
+        assert "DysonPM10Sensor" not in sensor_types
+        # Temperature and humidity should still be created
+        assert "DysonTemperatureSensor" in sensor_types
+        assert "DysonHumiditySensor" in sensor_types
 
 
 class TestSensorSetupCategoryPaths:

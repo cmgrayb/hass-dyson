@@ -7,14 +7,17 @@ and provide accurate, calibrated data for home automation.
 
 Sensor Categories:
 
-Air Quality Sensors (ExtendedAQ capability):
+Air Quality Sensors (EnvironmentalData capability):
     - PM2.5: Fine particulate matter concentration (μg/m³)
     - PM10: Coarse particulate matter concentration (μg/m³)
+
+Advanced Air Quality Sensors (ExtendedAQ capability, data-dependent):
     - VOC: Volatile organic compounds index (0-10)
     - NO2: Nitrogen dioxide index (0-10)
+    - CO2: Carbon dioxide concentration (ppm)
     - Formaldehyde: HCHO concentration (mg/m³, if supported)
 
-Environmental Sensors:
+Environmental Sensors (EnvironmentalData capability):
     - Temperature: Ambient temperature in °C
     - Humidity: Relative humidity percentage
 
@@ -77,7 +80,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DysonP25RSensor(DysonEntity, SensorEntity):
-    """PM2.5 air quality sensor for Dyson devices with ExtendedAQ capability.
+    """PM2.5 air quality sensor for Dyson devices with EnvironmentalData or ExtendedAQ capability.
 
     This sensor monitors fine particulate matter (PM2.5) concentration in
     micrograms per cubic meter. PM2.5 particles are particularly harmful
@@ -99,8 +102,8 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         updated automatically as air quality conditions change.
 
     Availability:
-        Only created for devices with "ExtendedAQ" capability that
-        support advanced air quality monitoring beyond basic PM sensors.
+        Created for devices with "EnvironmentalData" or "ExtendedAQ" capability
+        that report PM2.5 data (p25r or pm25 keys in environmental data).
 
     Example:
         Typical sensor values and automation:
@@ -140,8 +143,8 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         - Localized entity naming through translation system
 
         Note:
-            Only initialized for devices with ExtendedAQ capability
-            that support PM2.5 monitoring beyond basic air quality sensors.
+            Initialized for devices with EnvironmentalData or ExtendedAQ capability
+            that report PM2.5 data in environmental-data messages.
         """
         super().__init__(coordinator)
 
@@ -221,7 +224,16 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
 
 
 class DysonP10RSensor(DysonEntity, SensorEntity):
-    """P10R level sensor for Dyson devices with ExtendedAQ capability."""
+    """PM10 air quality sensor for Dyson devices with EnvironmentalData or ExtendedAQ capability.
+
+    This sensor monitors coarse particulate matter (PM10) concentration in
+    micrograms per cubic meter. PM10 particles can irritate airways and
+    exacerbate respiratory conditions.
+
+    Availability:
+        Created for devices with "EnvironmentalData" or "ExtendedAQ" capability
+        that report PM10 data (p10r or pm10 keys in environmental data).
+    """
 
     coordinator: DysonDataUpdateCoordinator
 
@@ -512,8 +524,61 @@ async def async_setup_entry(  # noqa: C901
             coordinator.data.get("environmental-data", {}) if coordinator.data else {}
         )
 
-        # Add PM2.5, PM10, P25R, P10R, and gas sensors for devices with ExtendedAQ capability
-        # ExtendedAQ now supports PM2.5, PM10, CO2, NO2, and HCHO (Formaldehyde) metrics per discovery.md
+        # Add PM2.5 and PM10 sensors for devices with EnvironmentalData or ExtendedAQ capability
+        # PM2.5 and PM10 are available on older devices (e.g., TP02) with EnvironmentalData capability
+        # as well as newer devices with ExtendedAQ capability
+        # Sensors are only created if the device actually reports the data keys
+        has_environmental_aq = has_any_capability_safe(
+            capabilities,
+            [
+                "EnvironmentalData",
+                "environmental_data",
+                "environmentalData",
+                "ExtendedAQ",
+                "extended_aq",
+                "extendedAQ",
+            ],
+        )
+
+        if has_environmental_aq:
+            _LOGGER.debug(
+                "Checking for PM sensors for device %s with environmental/air quality capability",
+                device_serial,
+            )
+
+            # Add PM2.5 sensor if PM2.5 data is present (p25r or pm25)
+            if "p25r" in env_data or "pm25" in env_data:
+                _LOGGER.debug(
+                    "Adding PM2.5 sensor for device %s - PM2.5 data detected",
+                    device_serial,
+                )
+                entities.append(DysonPM25Sensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping PM2.5 sensor for device %s - no PM2.5 data in environmental response",
+                    device_serial,
+                )
+
+            # Add PM10 sensor if PM10 data is present (p10r or pm10)
+            if "p10r" in env_data or "pm10" in env_data:
+                _LOGGER.debug(
+                    "Adding PM10 sensor for device %s - PM10 data detected",
+                    device_serial,
+                )
+                entities.append(DysonPM10Sensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
+                    device_serial,
+                )
+        else:
+            _LOGGER.debug(
+                "Skipping PM sensors for device %s - no EnvironmentalData or ExtendedAQ capability",
+                device_serial,
+            )
+
+        # Add advanced air quality sensors for devices with ExtendedAQ capability
+        # ExtendedAQ supports CO2, NO2, VOC, and HCHO (Formaldehyde) metrics
         # Gas sensor key mappings (per cmgrayb/libdyson-neon):
         # - CO2: co2r (not co2)
         # - HCHO (VOC): va10 (not hcho)
@@ -521,16 +586,9 @@ async def async_setup_entry(  # noqa: C901
         if has_any_capability_safe(
             capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
         ):
-            _LOGGER.debug("Adding ExtendedAQ sensors for device %s", device_serial)
-
-            # Add PM2.5 and PM10 sensors for ExtendedAQ devices
-            # These sensors now automatically use revised values (p25r, p10r) when available,
-            # falling back to legacy values (pm25, pm10) for older devices
-            entities.extend(
-                [
-                    DysonPM25Sensor(coordinator),
-                    DysonPM10Sensor(coordinator),
-                ]
+            _LOGGER.debug(
+                "Checking for advanced air quality sensors for device %s with ExtendedAQ capability",
+                device_serial,
             )
 
             # Add CO2 sensor if CO2 data is present
@@ -584,7 +642,7 @@ async def async_setup_entry(  # noqa: C901
                 )
         else:
             _LOGGER.debug(
-                "Skipping ExtendedAQ sensors for device %s - no ExtendedAQ capability",
+                "Skipping advanced air quality sensors for device %s - no ExtendedAQ capability",
                 device_serial,
             )
 
@@ -604,9 +662,18 @@ async def async_setup_entry(  # noqa: C901
                 device_category,
             )
 
-        # Add HEPA filter sensors only for devices with ExtendedAQ capability
+        # Add HEPA filter sensors for devices with EnvironmentalData or ExtendedAQ capability
+        # These capabilities indicate the device has air filtration with PM monitoring
         if has_any_capability_safe(
-            capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
+            capabilities,
+            [
+                "EnvironmentalData",
+                "environmental_data",
+                "environmentalData",
+                "ExtendedAQ",
+                "extended_aq",
+                "extendedAQ",
+            ],
         ):
             _LOGGER.debug("Adding HEPA filter sensors for device %s", device_serial)
             entities.extend(
@@ -617,7 +684,7 @@ async def async_setup_entry(  # noqa: C901
             )
         else:
             _LOGGER.debug(
-                "Skipping HEPA filter sensors for device %s - no ExtendedAQ capability",
+                "Skipping HEPA filter sensors for device %s - no EnvironmentalData or ExtendedAQ capability",
                 device_serial,
             )
 
