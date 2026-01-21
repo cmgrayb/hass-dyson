@@ -47,6 +47,7 @@ from .const import (
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
+    UnsupportedDeviceError,
 )
 from .device import DysonDevice
 
@@ -669,6 +670,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Perform initial data fetch
             await super().async_config_entry_first_refresh()
 
+        except UnsupportedDeviceError:
+            # Re-raise without logging - this is expected behavior for non-MQTT devices
+            # Already logged at INFO level in _async_setup_cloud_device()
+            raise
         except Exception as err:
             _LOGGER.error("Failed to setup device %s: %s", self.serial_number, err)
             raise
@@ -694,8 +699,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_setup_cloud_device(self) -> None:
         """Set up device discovered via cloud API."""
-        from .const import UnsupportedDeviceError
-
         _LOGGER.debug("Setting up cloud device for %s", self.serial_number)
 
         try:
