@@ -571,6 +571,38 @@ async def async_setup_entry(  # noqa: C901
                     "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
                     device_serial,
                 )
+
+            # Add Particulates sensor if pact data is present (Pure Cool Link TP02 models)
+            if "pact" in env_data:
+                _LOGGER.debug(
+                    "Adding Particulates sensor for device %s - pact data detected (Pure Cool Link)",
+                    device_serial,
+                )
+                entities.append(DysonParticulatesSensor(coordinator))
+            else:
+                _LOGGER.debug(
+                    "Skipping Particulates sensor for device %s - no pact data in environmental response",
+                    device_serial,
+                )
+
+            # Add VOC Link sensor if vact data is present (Pure Cool Link TP02 models)
+            # Only add if va10 is not present (va10 takes priority as the newer format)
+            if "vact" in env_data and "va10" not in env_data:
+                _LOGGER.debug(
+                    "Adding VOC Link sensor for device %s - vact data detected (Pure Cool Link)",
+                    device_serial,
+                )
+                entities.append(DysonVOCLinkSensor(coordinator))
+            elif "vact" in env_data and "va10" in env_data:
+                _LOGGER.debug(
+                    "Skipping VOC Link sensor for device %s - va10 (newer format) takes priority over vact",
+                    device_serial,
+                )
+            else:
+                _LOGGER.debug(
+                    "Skipping VOC Link sensor for device %s - no vact data in environmental response",
+                    device_serial,
+                )
         else:
             _LOGGER.debug(
                 "Skipping PM sensors for device %s - no EnvironmentalData or ExtendedAQ capability",
@@ -1366,6 +1398,239 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error updating PM10 sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonParticulatesSensor(DysonEntity, SensorEntity):
+    """Particulates sensor for Dyson Pure Cool Link devices (TP02).
+
+    This sensor monitors particulate matter using the 'pact' key from older
+    Pure Cool Link models. Unlike PM2.5/PM10 sensors that report specific
+    particle size ranges, this reports general particulate levels in an
+    unknown unit specific to Pure Cool Link devices.
+
+    Key Differences from PM2.5:
+        - Uses 'pact' key instead of 'p25r'/'pm25'
+        - Only present on Pure Cool Link models (device type 475)
+        - Unit is micrograms per cubic meter for consistency
+        - Different measurement methodology than PM2.5
+
+    Attributes:
+        device_class: SensorDeviceClass.PM25 (closest match for particulates)
+        state_class: SensorStateClass.MEASUREMENT for statistics
+        unit_of_measurement: μg/m³ (micrograms per cubic meter)
+        icon: mdi:air-filter for visual representation
+
+    Data Source:
+        Environmental sensor data from device MQTT 'pact' key
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Particulates sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_pact"
+        self._attr_translation_key = "pact"
+        self._attr_device_class = SensorDeviceClass.PM25
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_icon = "mdi:air-filter"
+
+        _LOGGER.debug(
+            "Initialized Particulates sensor for %s with initial value: %s",
+            coordinator.serial_number,
+            self._attr_native_value,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            pact_raw = env_data.get("pact")
+
+            if pact_raw is not None:
+                try:
+                    # Convert and validate the particulates value
+                    new_value = int(pact_raw)
+                    if not (0 <= new_value <= 9999):
+                        _LOGGER.warning(
+                            "Invalid particulates value for device %s: %s (expected 0-9999)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid particulates value format for device %s: %s",
+                        device_serial,
+                        pact_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "Particulates sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "No particulates data available for device %s", device_serial
+                )
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Particulates data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid particulates data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating particulates sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonVOCLinkSensor(DysonEntity, SensorEntity):
+    """VOC sensor for Dyson Pure Cool Link devices (TP02).
+
+    This sensor monitors volatile organic compounds using the 'vact' key from
+    older Pure Cool Link models. Unlike the newer 'va10' sensor that reports
+    VOC index values, this reports raw VOC levels.
+
+    Key Differences from va10 VOC:
+        - Uses 'vact' key instead of 'va10'
+        - Only present on Pure Cool Link models (device type 475)
+        - Reports raw values without division by 10
+        - Different measurement methodology than newer models
+
+    Attributes:
+        device_class: SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
+        state_class: SensorStateClass.MEASUREMENT for statistics
+        unit_of_measurement: mg/m³ (milligrams per cubic meter)
+        icon: mdi:air-filter for visual representation
+
+    Data Source:
+        Environmental sensor data from device MQTT 'vact' key
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the VOC Link sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_vact"
+        self._attr_translation_key = "voc"
+        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_icon = "mdi:air-filter"
+
+        _LOGGER.debug(
+            "Initialized VOC Link sensor for %s with initial value: %s",
+            coordinator.serial_number,
+            self._attr_native_value,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            vact_raw = env_data.get("vact")
+
+            if vact_raw is not None:
+                try:
+                    # Convert and validate the VOC value
+                    raw_value = int(vact_raw)
+                    if not (0 <= raw_value <= 9999):
+                        _LOGGER.warning(
+                            "Invalid VOC Link value for device %s: %s (expected 0-9999)",
+                            device_serial,
+                            raw_value,
+                        )
+                        new_value = None
+                    else:
+                        # Convert from raw value to mg/m³ (same conversion as va10)
+                        # Range 0-9999 raw becomes 0.000-9.999 mg/m³
+                        new_value = round(raw_value / 1000.0, 3)
+                        _LOGGER.debug(
+                            "VOC Link conversion for %s: %d raw -> %.3f mg/m³",
+                            device_serial,
+                            raw_value,
+                            new_value,
+                        )
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid VOC Link value format for device %s: %s",
+                        device_serial,
+                        vact_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "VOC Link sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug("No VOC Link data available for device %s", device_serial)
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "VOC Link data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid VOC Link data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating VOC Link sensor for device %s: %s",
                 device_serial,
                 err,
             )
