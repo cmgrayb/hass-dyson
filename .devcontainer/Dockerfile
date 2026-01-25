@@ -1,6 +1,11 @@
 # Use the official Python devcontainer image as base
 FROM mcr.microsoft.com/devcontainers/python:3.14-bookworm
 
+# Fix expired Yarn GPG key issue before any apt operations
+RUN apt-key del 23E7166788B63E1E 2>/dev/null || true \
+    && curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | tee /usr/share/keyrings/yarnkey.gpg >/dev/null \
+    && echo "deb [signed-by=/usr/share/keyrings/yarnkey.gpg] https://dl.yarnpkg.com/debian stable main" | tee /etc/apt/sources.list.d/yarn.list
+
 # Install system dependencies needed for Home Assistant
 RUN apt-get update && apt-get install -y \
     build-essential \
