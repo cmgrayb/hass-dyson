@@ -194,6 +194,15 @@
       },
       "p10r": {
         "name": "PM10 Brut"
+      },
+      "aqi": {
+        "name": "Indice de qualité de l'air"
+      },
+      "aqi_category": {
+        "name": "Catégorie de qualité de l'air"
+      },
+      "dominant_pollutant": {
+        "name": "Polluant dominant"
       }
     },
     "switch": {

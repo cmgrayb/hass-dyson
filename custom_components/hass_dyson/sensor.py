@@ -49,6 +49,7 @@ Sensor States:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -493,6 +494,454 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+def _calculate_pollutant_aqi(
+    value: float | int, ranges: list[tuple[float, float, int, int, str]]
+) -> tuple[int | None, str | None]:
+    """Calculate AQI value and category for a single pollutant.
+
+    Uses linear interpolation within range breakpoints per EPA AQI formula:
+    I_p = ((I_Hi - I_Lo) / (BP_Hi - BP_Lo)) * (C_p - BP_Lo) + I_Lo
+
+    Args:
+        value: Pollutant concentration value
+        ranges: List of (low, high, aqi_low, aqi_high, category) tuples
+
+    Returns:
+        Tuple of (aqi_value, category) or (None, None) if value is invalid
+    """
+    if value is None or value < 0:
+        return None, None
+
+    for low, high, aqi_low, aqi_high, category in ranges:
+        if low <= value <= high:
+            # Linear interpolation between breakpoints
+            if high == low:
+                # Avoid division by zero for single-value ranges
+                aqi = aqi_low
+            else:
+                aqi = ((aqi_high - aqi_low) / (high - low)) * (value - low) + aqi_low
+            return round(aqi), category
+
+    # Value exceeds all ranges - return highest category
+    if ranges:
+        _, _, _, aqi_high, category = ranges[-1]
+        return aqi_high, category
+
+    return None, None
+
+
+def _get_environmental_value(
+    env_data: dict[str, Any], keys: list[str]
+) -> float | int | None:
+    """Get environmental data value using priority key list.
+
+    Args:
+        env_data: Environmental data dictionary from device
+        keys: List of keys to check in priority order (newest to oldest)
+
+    Returns:
+        Value from first matching key, or None if no key found
+    """
+    for key in keys:
+        if key in env_data:
+            return env_data[key]
+    return None
+
+
+def _calculate_overall_aqi(
+    env_data: dict[str, Any],
+) -> tuple[int | None, str | None, list[str]]:
+    """Calculate overall AQI as the highest individual pollutant AQI.
+
+    Checks all available pollutants and returns the worst (highest) AQI value.
+    Uses Dyson ranges for PM2.5, PM10, VOC, NO2, HCHO and EPA ranges for CO2.
+
+    Args:
+        env_data: Environmental data dictionary from device
+
+    Returns:
+        Tuple of (overall_aqi, worst_category, dominant_pollutants) or (None, None, []) if no data
+        dominant_pollutants is a list of pollutant names at the maximum AQI level
+    """
+    from .const import (
+        AQI_CO2_RANGES,
+        AQI_HCHO_RANGES,
+        AQI_NO2_RANGES,
+        AQI_PM10_RANGES,
+        AQI_PM25_RANGES,
+        AQI_VOC_RANGES,
+        POLLUTANT_KEYS,
+    )
+
+    max_aqi = None
+    max_category = None
+    dominant_pollutants = []
+
+    # Define pollutant configurations: (pollutant_name, display_name, ranges, scale_factor)
+    # scale_factor converts device units to range units (e.g., 0.001 for mg/m³ to ppm)
+    pollutant_configs = [
+        ("pm25", "PM2.5", AQI_PM25_RANGES, 1),  # μg/m³
+        ("pm10", "PM10", AQI_PM10_RANGES, 1),  # μg/m³
+        ("voc", "VOC", AQI_VOC_RANGES, 1),  # index 0-10
+        ("no2", "NO2", AQI_NO2_RANGES, 1),  # index 0-10
+        ("co2", "CO2", AQI_CO2_RANGES, 1),  # ppm
+        ("hcho", "Formaldehyde", AQI_HCHO_RANGES, 0.001),  # Convert mg/m³ to ppm
+    ]
+
+    # First pass: calculate all AQI values
+    pollutant_aqis = []
+    for pollutant_name, display_name, ranges, scale_factor in pollutant_configs:
+        # Get value using priority key list
+        keys = POLLUTANT_KEYS.get(pollutant_name, [])
+        raw_value = _get_environmental_value(env_data, keys)
+
+        if raw_value is not None:
+            try:
+                # Convert to numeric and apply scale factor
+                value = float(raw_value) * scale_factor
+                aqi, category = _calculate_pollutant_aqi(value, ranges)
+
+                if aqi is not None:
+                    pollutant_aqis.append((display_name, aqi, category))
+                    _LOGGER.debug(
+                        "Pollutant %s: value=%.3f, AQI=%s, category=%s",
+                        pollutant_name,
+                        value,
+                        aqi,
+                        category,
+                    )
+            except (ValueError, TypeError) as err:
+                _LOGGER.debug(
+                    "Could not convert %s value %s: %s", pollutant_name, raw_value, err
+                )
+
+    # Second pass: find maximum AQI and all pollutants at that level
+    if pollutant_aqis:
+        max_aqi = max(aqi for _, aqi, _ in pollutant_aqis)
+        # Get category from any pollutant at max AQI (they should all have same category)
+        max_category = next(cat for _, aqi, cat in pollutant_aqis if aqi == max_aqi)
+        # Get all pollutants at max AQI level
+        dominant_pollutants = [
+            name for name, aqi, _ in pollutant_aqis if aqi == max_aqi
+        ]
+
+    return max_aqi, max_category, dominant_pollutants
+
+
+class DysonAQISensor(DysonEntity, SensorEntity):
+    """Numeric AQI sensor for Dyson devices with EnvironmentalData capability.
+
+    This sensor calculates the overall Air Quality Index (AQI) as the highest
+    individual pollutant AQI value across all available sensors. The AQI
+    provides a standardized measure of air quality from 0 (best) to 500 (worst).
+
+    Attributes:
+        device_class: SensorDeviceClass.AQI for proper Home Assistant integration
+        state_class: SensorStateClass.MEASUREMENT for long-term statistics
+        native_unit_of_measurement: None (AQI is dimensionless)
+        icon: mdi:air-filter for visual representation
+
+    AQI Scale:
+        - 0-50: Good (green)
+        - 51-100: Fair/Moderate (yellow)
+        - 101-150: Poor/Unhealthy for Sensitive Groups (orange)
+        - 151-200: Very Poor/Unhealthy (red)
+        - 201-300: Extremely Poor/Very Unhealthy (purple)
+        - 301-500: Severe/Hazardous (maroon)
+
+    Calculation Method:
+        Uses Dyson's official PH05 ranges for PM2.5, PM10, VOC, NO2, and HCHO,
+        with EPA AirNow ranges for CO2. The overall AQI is the highest value
+        across all available pollutants.
+
+    Data Source:
+        Real-time measurements from device environmental sensors, checking:
+        - PM2.5 (p25r/pm25/pact)
+        - PM10 (p10r/pm10)
+        - VOC (va10/vact)
+        - NO2 (noxl)
+        - CO2 (co2r/co2)
+        - Formaldehyde (hcho)
+
+    Availability:
+        Created for devices with "EnvironmentalData" capability that report
+        at least one air quality pollutant.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the AQI sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_aqi"
+        self._attr_translation_key = "aqi"
+        self._attr_device_class = SensorDeviceClass.AQI
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:air-filter"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+
+            # Calculate overall AQI
+            aqi_value, aqi_category, dominant_pollutants = _calculate_overall_aqi(
+                env_data
+            )
+
+            old_value = self._attr_native_value
+            self._attr_native_value = aqi_value
+
+            # Store category and dominant pollutants as extra state attributes
+            if aqi_category:
+                self._attr_extra_state_attributes = {
+                    "category": aqi_category,
+                    "dominant_pollutants": dominant_pollutants,
+                }
+            else:
+                self._attr_extra_state_attributes = {}
+
+            if aqi_value is not None:
+                _LOGGER.debug(
+                    "AQI sensor updated for %s: %s -> %s (%s)",
+                    device_serial,
+                    old_value,
+                    aqi_value,
+                    aqi_category,
+                )
+            else:
+                _LOGGER.debug("No AQI data available for device %s", device_serial)
+
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating AQI sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+
+        super()._handle_coordinator_update()
+
+
+class DysonAQICategorySensor(DysonEntity, SensorEntity):
+    """Text category AQI sensor for Dyson devices with EnvironmentalData capability.
+
+    This sensor reports the air quality category as text (Good, Fair, Poor, etc.)
+    based on the overall AQI calculation. Useful for automations that need
+    readable air quality status.
+
+    Attributes:
+        device_class: None (text sensor)
+        icon: mdi:air-filter for visual representation
+        entity_category: None (measurement sensor)
+
+    Categories:
+        - Good: Best air quality (AQI 0-50)
+        - Fair: Acceptable air quality (AQI 51-100)
+        - Poor: Unhealthy for sensitive groups (AQI 101-150)
+        - Very Poor: Unhealthy (AQI 151-200)
+        - Extremely Poor: Very unhealthy (AQI 201-300)
+        - Severe: Hazardous (AQI 301-500)
+
+    Data Source:
+        Uses same calculation as DysonAQISensor, reporting the category
+        of the worst pollutant detected.
+
+    Availability:
+        Created for devices with "EnvironmentalData" capability that report
+        at least one air quality pollutant.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the AQI category sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_aqi_category"
+        self._attr_translation_key = "aqi_category"
+        self._attr_icon = "mdi:air-filter"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+
+            # Calculate overall AQI
+            aqi_value, aqi_category, dominant_pollutants = _calculate_overall_aqi(
+                env_data
+            )
+
+            old_value = self._attr_native_value
+            self._attr_native_value = aqi_category
+
+            # Store numeric AQI and dominant pollutants as extra state attributes
+            if aqi_value is not None:
+                self._attr_extra_state_attributes = {
+                    "aqi": aqi_value,
+                    "dominant_pollutants": dominant_pollutants,
+                }
+            else:
+                self._attr_extra_state_attributes = {}
+
+            if aqi_category is not None:
+                _LOGGER.debug(
+                    "AQI category sensor updated for %s: %s -> %s (AQI: %s)",
+                    device_serial,
+                    old_value,
+                    aqi_category,
+                    aqi_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "No AQI category data available for device %s", device_serial
+                )
+
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating AQI category sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+
+        super()._handle_coordinator_update()
+
+
+class DysonDominantPollutantSensor(DysonEntity, SensorEntity):
+    """Dominant pollutant sensor for Dyson devices with EnvironmentalData capability.
+
+    This sensor reports which pollutant(s) have the worst air quality (highest AQI).
+    If multiple pollutants have the same highest AQI value, all are listed.
+
+    Attributes:
+        device_class: None (text sensor)
+        icon: mdi:molecule for visual representation
+        entity_category: None (measurement sensor)
+
+    Output Format:
+        - Single pollutant: "PM2.5"
+        - Multiple pollutants: "PM2.5, PM10"
+        - No data: None
+
+    Tracked Pollutants:
+        - PM2.5: Fine particulate matter
+        - PM10: Coarse particulate matter
+        - VOC: Volatile organic compounds
+        - NO2: Nitrogen dioxide
+        - CO2: Carbon dioxide
+        - Formaldehyde: HCHO
+
+    Use Cases:
+        - Identify which pollutant is causing poor air quality
+        - Target specific air quality issues with appropriate filters
+        - Automation triggers based on specific pollutant problems
+
+    Availability:
+        Created for devices with "EnvironmentalData" capability that report
+        at least one air quality pollutant.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the dominant pollutant sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_dominant_pollutant"
+        self._attr_translation_key = "dominant_pollutant"
+        self._attr_icon = "mdi:molecule"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+
+            # Calculate overall AQI to get dominant pollutants
+            aqi_value, aqi_category, dominant_pollutants = _calculate_overall_aqi(
+                env_data
+            )
+
+            old_value = self._attr_native_value
+
+            # Format dominant pollutants as comma-separated string
+            if dominant_pollutants:
+                self._attr_native_value = ", ".join(dominant_pollutants)
+            else:
+                self._attr_native_value = None
+
+            # Store AQI and category as extra state attributes
+            if aqi_value is not None:
+                self._attr_extra_state_attributes = {
+                    "aqi": aqi_value,
+                    "category": aqi_category,
+                    "pollutant_count": len(dominant_pollutants),
+                }
+            else:
+                self._attr_extra_state_attributes = {}
+
+            if dominant_pollutants:
+                _LOGGER.debug(
+                    "Dominant pollutant sensor updated for %s: %s -> %s (AQI: %s, %s)",
+                    device_serial,
+                    old_value,
+                    self._attr_native_value,
+                    aqi_value,
+                    aqi_category,
+                )
+            else:
+                _LOGGER.debug(
+                    "No dominant pollutant data available for device %s", device_serial
+                )
+
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating dominant pollutant sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+
+        super()._handle_coordinator_update()
+
+
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -878,6 +1327,27 @@ async def async_setup_entry(  # noqa: C901
         else:
             _LOGGER.debug(
                 "Skipping humidifier sensors for device %s - no Humidifier capability",
+                device_serial,
+            )
+
+        # Add AQI (Air Quality Index) sensors for devices with EnvironmentalData capability
+        # AQI sensors provide overall air quality assessment based on all available pollutants
+        if has_environmental_aq:
+            _LOGGER.debug(
+                "Adding AQI sensors for device %s - EnvironmentalData capability detected",
+                device_serial,
+            )
+            # Add numeric AQI, text category, and dominant pollutant sensors
+            entities.extend(
+                [
+                    DysonAQISensor(coordinator),
+                    DysonAQICategorySensor(coordinator),
+                    DysonDominantPollutantSensor(coordinator),
+                ]
+            )
+        else:
+            _LOGGER.debug(
+                "Skipping AQI sensors for device %s - no EnvironmentalData capability",
                 device_serial,
             )
 
