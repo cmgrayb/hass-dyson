@@ -569,7 +569,6 @@ def _calculate_overall_aqi(
         AQI_NO2_RANGES,
         AQI_PM10_RANGES,
         AQI_PM25_RANGES,
-        AQI_VOC_RANGES,
         POLLUTANT_KEYS,
     )
 
@@ -579,11 +578,11 @@ def _calculate_overall_aqi(
 
     # Define pollutant configurations: (pollutant_name, display_name, ranges, scale_factor)
     # scale_factor converts device units to range units (e.g., 0.001 for mg/m³ to ppm)
+    # Note: VOC is excluded due to inaccurate range mapping from device values
     pollutant_configs = [
         ("pm25", "PM2.5", AQI_PM25_RANGES, 1),  # μg/m³
         ("pm10", "PM10", AQI_PM10_RANGES, 1),  # μg/m³
-        ("voc", "VOC", AQI_VOC_RANGES, 1),  # index 0-10
-        ("no2", "NO2", AQI_NO2_RANGES, 1),  # index 0-10
+        ("no2", "NO2", AQI_NO2_RANGES, 1),  # ppb (EPA guidelines)
         ("co2", "CO2", AQI_CO2_RANGES, 1),  # ppm
         ("hcho", "Formaldehyde", AQI_HCHO_RANGES, 0.001),  # Convert mg/m³ to ppm
     ]

@@ -138,7 +138,9 @@ AQI_HCHO_RANGES: Final = [
     (0.500, 9999.0, 151, 500, AQI_CATEGORY_VERY_POOR),
 ]
 
-# VOC ranges (index 0-10)
+# VOC ranges - EXCLUDED FROM AQI CALCULATION
+# Device returns values that don't match the 0-10 scale shown in Dyson app
+# Keeping definition for reference but not used in AQI calculations
 AQI_VOC_RANGES: Final = [
     (0, 3, 0, 50, AQI_CATEGORY_GOOD),
     (4, 6, 51, 100, AQI_CATEGORY_FAIR),
@@ -146,12 +148,14 @@ AQI_VOC_RANGES: Final = [
     (9, 10, 151, 500, AQI_CATEGORY_VERY_POOR),
 ]
 
-# NO2 ranges (index 0-10)
+# NO2 ranges (ppb) - EPA AirNow guidelines
 AQI_NO2_RANGES: Final = [
-    (0, 3, 0, 50, AQI_CATEGORY_GOOD),
-    (4, 6, 51, 100, AQI_CATEGORY_FAIR),
-    (7, 8, 101, 150, AQI_CATEGORY_POOR),
-    (9, 10, 151, 500, AQI_CATEGORY_VERY_POOR),
+    (0, 53, 0, 50, AQI_CATEGORY_GOOD),
+    (54, 100, 51, 100, AQI_CATEGORY_FAIR),
+    (101, 360, 101, 150, AQI_CATEGORY_POOR),
+    (361, 649, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (650, 1249, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (1250, 9999, 301, 500, AQI_CATEGORY_SEVERE),
 ]
 
 # CO2 ranges (ppm) - EPA AirNow guidelines
@@ -166,16 +170,14 @@ AQI_CO2_RANGES: Final = [
 
 # Pollutant key mappings (newest to oldest)
 # Each pollutant may have multiple keys across different device generations
+# Note: VOC is excluded from AQI calculation due to inaccurate range mapping
 POLLUTANT_KEYS: Final = {
     "pm25": ["p25r", "pm25", "pact"],
     "pm10": ["p10r", "pm10"],
-    "voc": ["va10", "vact"],
+    "voc": ["va10", "vact"],  # VOC not used in AQI calculation
     "no2": ["noxl"],
     "co2": ["co2r", "co2"],
     "hcho": ["hcho"],
-    CAPABILITY_VOC: "VOC/NO2 Detection (VOC/NO2 sensors)",
-    CAPABILITY_FORMALDEHYDE: "Formaldehyde Detection (carbon filter, HCHO sensor)",
-    CAPABILITY_HUMIDIFIER: "Humidifier (humidification controls and humidity sensors)",
 }
 
 # MQTT topics
