@@ -900,8 +900,11 @@ class DysonDominantPollutantSensor(DysonEntity, SensorEntity):
             old_value = self._attr_native_value
 
             # Format dominant pollutants as comma-separated string
-            if dominant_pollutants:
+            # When AQI is 0, show "None" instead of listing all pollutants
+            if dominant_pollutants and aqi_value != 0:
                 self._attr_native_value = ", ".join(dominant_pollutants)
+            elif aqi_value == 0:
+                self._attr_native_value = "None"
             else:
                 self._attr_native_value = None
 

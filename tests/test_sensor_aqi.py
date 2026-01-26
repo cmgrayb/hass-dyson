@@ -547,3 +547,25 @@ class TestDysonDominantPollutantSensor:
 
         # Should have safe state on error
         assert sensor.native_value is None or isinstance(sensor.native_value, str)
+
+    @patch("custom_components.hass_dyson.entity.DysonEntity._handle_coordinator_update")
+    def test_handle_coordinator_update_zero_aqi(
+        self, mock_parent_update, pure_mock_coordinator
+    ):
+        """Test that AQI of 0 shows 'None' instead of listing all pollutants."""
+        sensor = DysonDominantPollutantSensor(pure_mock_coordinator)
+        sensor.hass = MagicMock()  # Mock hass to prevent state write errors
+        pure_mock_coordinator.data = {
+            "environmental-data": {
+                "p25r": 0,  # Perfect air quality
+                "p10r": 0,
+                "co2r": 0,
+            }
+        }
+
+        sensor._handle_coordinator_update()
+
+        # When AQI is 0, should display "None" not a list of pollutants
+        assert sensor.native_value == "None"
+        assert sensor.extra_state_attributes["aqi"] == 0
+        assert sensor.extra_state_attributes["category"] == AQI_CATEGORY_GOOD
