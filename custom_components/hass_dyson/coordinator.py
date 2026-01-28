@@ -1415,6 +1415,45 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"Device {self.serial_number} not connected - will retry on next update"
                 )
 
+            # For initial refresh with environmental capability, explicitly request state and wait for complete response
+            # REQUEST-CURRENT-STATE triggers TWO response messages:
+            # 1. CURRENT-STATE (with product-state, scheduler, etc.)
+            # 2. ENVIRONMENTAL-CURRENT-SENSOR-DATA (with tact, hact, pact, vact, etc.)
+            # We must wait for BOTH before declaring initial refresh complete
+            if not self.data:  # Initial refresh - no cached data yet
+                capabilities = self.device_capabilities or []
+                has_environmental_capability = any(
+                    cap.lower()
+                    in [
+                        "environmentaldata",
+                        "environmental_data",
+                        "extendedaq",
+                        "extended_aq",
+                    ]
+                    for cap in capabilities
+                )
+
+                if has_environmental_capability:
+                    _LOGGER.debug(
+                        "Initial refresh for device %s with environmental capability - requesting state",
+                        self.serial_number,
+                    )
+                    # Request current state - this triggers both CURRENT-STATE and ENVIRONMENTAL-CURRENT-SENSOR-DATA
+                    await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+
+                    # Wait for both messages to arrive
+                    # Typical timing: CURRENT-STATE at ~140ms, ENVIRONMENTAL-CURRENT-SENSOR-DATA at ~250ms
+                    import asyncio
+
+                    await asyncio.sleep(
+                        0.5
+                    )  # 500ms should be sufficient for both messages
+
+                    _LOGGER.debug(
+                        "Completed wait for initial state messages from %s",
+                        self.serial_number,
+                    )
+
             # Get current device state (from last received MQTT message)
             device_state = await self.device.get_state()
 
