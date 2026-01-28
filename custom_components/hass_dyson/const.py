@@ -138,16 +138,17 @@ AQI_HCHO_RANGES: Final = [
     (0.500, 9999.0, 151, 500, AQI_CATEGORY_VERY_POOR),
 ]
 
-# VOC ranges (mg/m³) - Based on real-world testing by vershart (issue #236)
-# Device reports integer values; formula: VOC(mg/m³) = device_value × 0.01
-# Example: device value 26 = 0.26 mg/m³ (Very Poor category)
+# VOC ranges (raw device values) - Based on real-world testing by vershart (issue #236)
+# Device reports raw values 0-100+; use raw value directly for AQI calculation
+# For display: VOC(mg/m³) = device_value / 1000
+# Example: device value 52 = Fair category (AQI ~75), displays as 0.052 mg/m³
 AQI_VOC_RANGES: Final = [
-    (0.000, 0.030, 0, 50, AQI_CATEGORY_GOOD),
-    (0.031, 0.069, 51, 100, AQI_CATEGORY_FAIR),
-    (0.070, 0.089, 101, 150, AQI_CATEGORY_POOR),
-    (0.090, 0.250, 151, 200, AQI_CATEGORY_VERY_POOR),
-    (0.251, 0.500, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
-    (0.501, 9999.0, 301, 500, AQI_CATEGORY_SEVERE),
+    (0, 30, 0, 50, AQI_CATEGORY_GOOD),
+    (31, 69, 51, 100, AQI_CATEGORY_FAIR),
+    (70, 89, 101, 150, AQI_CATEGORY_POOR),
+    (90, 250, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (251, 500, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (501, 9999, 301, 500, AQI_CATEGORY_SEVERE),
 ]
 
 # NO2 ranges (ppb) - EPA AirNow guidelines

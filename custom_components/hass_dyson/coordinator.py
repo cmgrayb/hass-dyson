@@ -1056,32 +1056,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Only devices with MQTT credentials in connected_configuration can be used.
         This prevents attempting setup on non-connected devices like floor cleaners.
 
+        Note: For devices with connected_configuration but empty/invalid credentials
+        (e.g., 360 robot vacuums), this returns True to allow cloud-only connection.
+
         Args:
             device_info: Device object from libdyson-rest
 
         Returns:
-            True if device has MQTT credentials, False otherwise
+            True if device has connected_configuration (MQTT or cloud), False otherwise
         """
         try:
             connected_config = getattr(device_info, "connected_configuration", None)
             if not connected_config:
                 return False
 
-            mqtt_obj = getattr(connected_config, "mqtt", None)
-            if not mqtt_obj:
-                return False
-
-            encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
-            if not encrypted_credentials:
-                return False
-
+            # If device has connected_configuration, it can at least use cloud connection
+            # Even if local MQTT credentials are empty (e.g., 360 robot vacuums)
             return True
 
         except (AttributeError, TypeError):
             return False
 
     async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:
-        """Extract MQTT credentials from device info."""
+        """Extract MQTT credentials from device info.
+
+        For devices without local MQTT credentials (e.g., 360 robot vacuums),
+        raises error instructing user to reconfigure with cloud-only connection.
+        """
         mqtt_username = self.serial_number
         mqtt_password = ""
 
@@ -1089,12 +1090,42 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if mqtt_obj:
             mqtt_username = self._get_mqtt_username(mqtt_obj)
             mqtt_password = self._get_mqtt_password(cloud_client, mqtt_obj)
-
-        if not mqtt_password:
-            _LOGGER.error(
-                "MQTT password cannot be empty for device %s", self.serial_number
+        else:
+            _LOGGER.info(
+                "No MQTT object found for device %s - device may only support cloud connection",
+                self.serial_number,
             )
-            raise UpdateFailed("MQTT password cannot be empty")
+
+        # Distinguish between "no credentials" vs "extraction failed"
+        if not mqtt_password:
+            # Check if we at least got an MQTT object with encrypted credentials
+            has_encrypted_creds = mqtt_obj and getattr(
+                mqtt_obj, "local_broker_credentials", ""
+            )
+
+            if has_encrypted_creds:
+                # Credentials exist in API but we couldn't extract them - this is a bug
+                _LOGGER.error(
+                    "Device %s has encrypted local_broker_credentials in API response "
+                    "but extraction failed (encrypted length: %s). "
+                    "This may indicate a bug in credential decryption. "
+                    "Please report this issue with debug logs.",
+                    self.serial_number,
+                    len(has_encrypted_creds),
+                )
+                raise UpdateFailed(
+                    f"Failed to extract local MQTT credentials for device {self.serial_number}. "
+                    "Encrypted credentials found but decryption failed. "
+                    "Please enable debug logging and report this issue."
+                )
+            else:
+                # No encrypted credentials in API - device may be cloud-only by design
+                _LOGGER.warning(
+                    "No local_broker_credentials found in API response for device %s. "
+                    "Connection will use cloud fallback if cloud credentials available. "
+                    "This may be expected for cloud-only devices.",
+                    self.serial_number,
+                )
 
         self._log_mqtt_credentials(mqtt_username, mqtt_password)
 
@@ -1160,29 +1191,92 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _decrypt_mqtt_credentials(self, cloud_client, mqtt_obj) -> str:
         """Decrypt MQTT credentials from local_broker_credentials."""
         encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
+
+        _LOGGER.debug(
+            "Attempting to decrypt local_broker_credentials for %s - encrypted length: %s, value: %s",
+            self.serial_number,
+            len(encrypted_credentials) if encrypted_credentials else 0,
+            encrypted_credentials[:20] + "..."
+            if len(encrypted_credentials) > 20
+            else encrypted_credentials,
+        )
+
         if not encrypted_credentials:
+            _LOGGER.warning(
+                "No local_broker_credentials field found for device %s - device may only support cloud connection",
+                self.serial_number,
+            )
             return ""
 
         try:
             # Use libdyson-rest's decrypt method to get local MQTT password
-            mqtt_password = cloud_client.decrypt_local_credentials(
+            decrypted_result = cloud_client.decrypt_local_credentials(
                 encrypted_credentials, self.serial_number
             )
+
+            # Log what we got back for debugging multi-chunk responses
             _LOGGER.debug(
-                "Decrypted local MQTT password from local_broker_credentials (length: %s)",
-                len(mqtt_password),
+                "Decryption result for %s - type: %s, value: %s",
+                self.serial_number,
+                type(decrypted_result).__name__,
+                decrypted_result
+                if len(str(decrypted_result)) < 100
+                else str(decrypted_result)[:100] + "...",
             )
+
+            # Handle multi-chunk responses (e.g., N223 360 robot vacuums)
+            # These devices return multiple data pieces - password is in the second chunk (index 1)
+            mqtt_password = None
+
+            if isinstance(decrypted_result, (list, tuple)):
+                # Multi-chunk response - extract password from index 1
+                if len(decrypted_result) > 1:
+                    mqtt_password = decrypted_result[1]
+                    _LOGGER.debug(
+                        "Multi-chunk credentials for %s - extracted password from index 1 (length: %s)",
+                        self.serial_number,
+                        len(mqtt_password) if mqtt_password else 0,
+                    )
+                elif len(decrypted_result) == 1:
+                    # Only one chunk, use it
+                    mqtt_password = decrypted_result[0]
+                    _LOGGER.debug(
+                        "Single-chunk credentials in list for %s (length: %s)",
+                        self.serial_number,
+                        len(mqtt_password) if mqtt_password else 0,
+                    )
+            elif isinstance(decrypted_result, str):
+                # Single string response (standard format)
+                mqtt_password = decrypted_result
+                _LOGGER.debug(
+                    "String credentials for %s (length: %s)",
+                    self.serial_number,
+                    len(mqtt_password) if mqtt_password else 0,
+                )
+            else:
+                _LOGGER.warning(
+                    "Unexpected decryption result type for %s: %s",
+                    self.serial_number,
+                    type(decrypted_result).__name__,
+                )
+                mqtt_password = str(decrypted_result) if decrypted_result else ""
+
+            if not mqtt_password:
+                _LOGGER.warning(
+                    "Decryption succeeded but resulted in empty password for %s",
+                    self.serial_number,
+                )
+
             return mqtt_password
+
         except Exception as e:
             _LOGGER.error(
-                "Failed to decrypt local credentials for %s: %s", self.serial_number, e
+                "Failed to decrypt local credentials for %s: %s (encrypted length: %s)",
+                self.serial_number,
+                e,
+                len(encrypted_credentials) if encrypted_credentials else 0,
             )
-            # Fall back to using encrypted credentials directly (likely won't work)
-            _LOGGER.debug(
-                "Using encrypted local_broker_credentials as fallback (length: %s)",
-                len(encrypted_credentials),
-            )
-            return encrypted_credentials
+            return ""
 
     def _log_mqtt_credentials(self, mqtt_username: str, mqtt_password: str) -> None:
         """Log MQTT credentials for debugging (partially masked)."""
@@ -1271,13 +1365,42 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             cloud_credential_data = json.dumps(creds)
             _LOGGER.debug("Created cloud credential data structure for AWS IoT")
 
+        # Validate credentials: if no local MQTT password, must have cloud credentials
+        mqtt_password = mqtt_credentials["mqtt_password"]
+        if not mqtt_password and not cloud_credential_data:
+            _LOGGER.error(
+                "Device %s has neither local MQTT credentials nor cloud credentials. "
+                "Cannot establish any connection to this device.",
+                self.serial_number,
+            )
+            raise UpdateFailed(
+                f"Device {self.serial_number} cannot connect: "
+                "No local MQTT credentials found and cloud credentials unavailable. "
+                "This may indicate the device is not properly configured in the Dyson app, "
+                "or there may be an issue with the Dyson API. "
+                "Please check device status in the Dyson app and report if issue persists."
+            )
+
+        # Log connection strategy based on available credentials
+        if not mqtt_password and cloud_credential_data:
+            _LOGGER.info(
+                "Device %s will use cloud-only connection "
+                "(no local MQTT credentials available in API response)",
+                self.serial_number,
+            )
+        elif connection_type == "cloud_only":
+            _LOGGER.info(
+                "Device %s configured for cloud-only connection by user preference",
+                self.serial_number,
+            )
+
         from .device import DysonDevice
 
         self.device = DysonDevice(
             self.hass,
             self.serial_number,
             device_host,
-            mqtt_credentials["mqtt_password"],
+            mqtt_password,
             mqtt_prefix,
             self._device_capabilities,
             connection_type,

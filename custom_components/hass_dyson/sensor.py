@@ -582,7 +582,7 @@ def _calculate_overall_aqi(
     pollutant_configs = [
         ("pm25", "PM2.5", AQI_PM25_RANGES, 1),  # μg/m³
         ("pm10", "PM10", AQI_PM10_RANGES, 1),  # μg/m³
-        ("voc", "VOC", AQI_VOC_RANGES, 0.01),  # Convert device integer to mg/m³
+        ("voc", "VOC", AQI_VOC_RANGES, 1),  # Use raw device value directly
         ("no2", "NO2", AQI_NO2_RANGES, 1),  # ppb (EPA guidelines)
         ("co2", "CO2", AQI_CO2_RANGES, 1),  # ppm
         ("hcho", "Formaldehyde", AQI_HCHO_RANGES, 0.001),  # Convert mg/m³ to ppm
