@@ -48,6 +48,15 @@ DEVICE_CATEGORY_EC: Final = "ec"  # Environment Cleaner (fans with filters)
 DEVICE_CATEGORY_LIGHT: Final = "light"  # Desk/floor lamps
 DEVICE_CATEGORY_ROBOT: Final = "robot"  # Self-piloting devices
 DEVICE_CATEGORY_VACUUM: Final = "vacuum"  # Suction cleaning devices
+
+
+# Exceptions
+class UnsupportedDeviceError(Exception):
+    """Exception raised when device does not support required features (e.g., MQTT)."""
+
+    pass
+
+
 DEVICE_CATEGORY_FLRC: Final = "flrc"  # Floor cleaner devices
 DEVICE_CATEGORY_WEARABLE: Final = "wearable"  # Wearable devices
 DEVICE_CATEGORY_HC: Final = "hc"  # Hair care devices
@@ -86,12 +95,91 @@ AVAILABLE_CAPABILITIES: Final = {
     CAPABILITY_ADVANCE_OSCILLATION_DAY0: "Advanced Oscillation Day 0 (specific oscillation pattern)",
     CAPABILITY_ADVANCE_OSCILLATION: "Advanced Oscillation Day 1 (wide angle control)",
     CAPABILITY_SCHEDULING: "Scheduling (timer and schedule controls)",
-    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (Continuous Monitoring controls)",
-    CAPABILITY_EXTENDED_AQ: "Extended Air Quality (PM2.5, PM10 sensors)",
+    CAPABILITY_ENVIRONMENTAL_DATA: "Environmental Data (temperature, humidity, PM2.5, PM10 sensors)",
+    CAPABILITY_EXTENDED_AQ: "Extended Air Quality (CO2, NO2, VOC, HCHO sensors)",
     CAPABILITY_HEATING: "Heating (heat mode, temperature control, and temperature sensors)",
-    CAPABILITY_VOC: "VOC/NO2 Detection (VOC/NO2 sensors)",
-    CAPABILITY_FORMALDEHYDE: "Formaldehyde Detection (carbon filter, HCHO sensor)",
-    CAPABILITY_HUMIDIFIER: "Humidifier (humidification controls and humidity sensors)",
+}
+
+# AQI (Air Quality Index) Categories
+AQI_CATEGORY_GOOD: Final = "Good"
+AQI_CATEGORY_FAIR: Final = "Fair"
+AQI_CATEGORY_POOR: Final = "Poor"
+AQI_CATEGORY_VERY_POOR: Final = "Very Poor"
+AQI_CATEGORY_EXTREMELY_POOR: Final = "Extremely Poor"
+AQI_CATEGORY_SEVERE: Final = "Severe"
+
+# AQI Range definitions based on Dyson PH05 guidelines (from vershart)
+# Format: (low, high, aqi_low, aqi_high, category)
+# PM2.5 ranges (μg/m³)
+AQI_PM25_RANGES: Final = [
+    (0, 35, 0, 50, AQI_CATEGORY_GOOD),
+    (36, 53, 51, 100, AQI_CATEGORY_FAIR),
+    (54, 70, 101, 150, AQI_CATEGORY_POOR),
+    (71, 150, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (151, 250, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (251, 9999, 301, 500, AQI_CATEGORY_SEVERE),
+]
+
+# PM10 ranges (μg/m³)
+AQI_PM10_RANGES: Final = [
+    (0, 50, 0, 50, AQI_CATEGORY_GOOD),
+    (51, 75, 51, 100, AQI_CATEGORY_FAIR),
+    (76, 100, 101, 150, AQI_CATEGORY_POOR),
+    (101, 350, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (351, 420, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (421, 9999, 301, 500, AQI_CATEGORY_SEVERE),
+]
+
+# HCHO (Formaldehyde) ranges (ppm)
+AQI_HCHO_RANGES: Final = [
+    (0.000, 0.099, 0, 50, AQI_CATEGORY_GOOD),
+    (0.100, 0.299, 51, 100, AQI_CATEGORY_FAIR),
+    (0.300, 0.499, 101, 150, AQI_CATEGORY_POOR),
+    (0.500, 9999.0, 151, 500, AQI_CATEGORY_VERY_POOR),
+]
+
+# VOC ranges (raw device values) - Based on real-world testing by vershart (issue #236)
+# Device reports raw values 0-100+; use raw value directly for AQI calculation
+# For display: VOC(mg/m³) = device_value / 1000
+# Example: device value 52 = Fair category (AQI ~75), displays as 0.052 mg/m³
+AQI_VOC_RANGES: Final = [
+    (0, 30, 0, 50, AQI_CATEGORY_GOOD),
+    (31, 69, 51, 100, AQI_CATEGORY_FAIR),
+    (70, 89, 101, 150, AQI_CATEGORY_POOR),
+    (90, 250, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (251, 500, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (501, 9999, 301, 500, AQI_CATEGORY_SEVERE),
+]
+
+# NO2 ranges (ppb) - EPA AirNow guidelines
+AQI_NO2_RANGES: Final = [
+    (0, 53, 0, 50, AQI_CATEGORY_GOOD),
+    (54, 100, 51, 100, AQI_CATEGORY_FAIR),
+    (101, 360, 101, 150, AQI_CATEGORY_POOR),
+    (361, 649, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (650, 1249, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (1250, 9999, 301, 500, AQI_CATEGORY_SEVERE),
+]
+
+# CO2 ranges (ppm) - EPA AirNow guidelines
+AQI_CO2_RANGES: Final = [
+    (0, 440, 0, 50, AQI_CATEGORY_GOOD),
+    (441, 940, 51, 100, AQI_CATEGORY_FAIR),
+    (941, 1240, 101, 150, AQI_CATEGORY_POOR),
+    (1241, 1540, 151, 200, AQI_CATEGORY_VERY_POOR),
+    (1541, 3050, 201, 300, AQI_CATEGORY_EXTREMELY_POOR),
+    (3051, 9999, 301, 500, AQI_CATEGORY_SEVERE),
+]
+
+# Pollutant key mappings (newest to oldest)
+# Each pollutant may have multiple keys across different device generations
+POLLUTANT_KEYS: Final = {
+    "pm25": ["p25r", "pm25", "pact"],
+    "pm10": ["p10r", "pm10"],
+    "voc": ["va10", "vact"],
+    "no2": ["noxl"],
+    "co2": ["co2r", "co2"],
+    "hcho": ["hcho"],
 }
 
 # MQTT topics

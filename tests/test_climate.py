@@ -21,7 +21,7 @@ def mock_coordinator():
     coordinator.device.get_state_value = MagicMock(return_value="OFF")
     coordinator.device.set_target_temperature = AsyncMock()
     coordinator.device_capabilities = ["Heating"]
-    coordinator.data = {"product-state": {}}
+    coordinator.data = {"product-state": {}, "environmental-data": {}}
     coordinator.async_send_command = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
     return coordinator
@@ -227,9 +227,15 @@ class TestDysonClimateEntity:
         """Test coordinator update handling when device is available."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
+
+        # Set environmental data for current temperature
+        mock_coordinator.data = {
+            "product-state": {},
+            "environmental-data": {"tact": "2730"},  # 0°C in 0.1K (273.0K)
+        }
+
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "tmp": "2730",  # 0°C in 0.1K (273.0K)
                 "hmax": "2930",  # 20°C in 0.1K (293.0K)
                 "fpwr": "ON",
                 "hmod": "HEAT",
@@ -349,9 +355,16 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
+
+        # Set environmental data for current temperature (like temperature sensor)
+        mock_coordinator.data = {
+            "product-state": {},
+            "environmental-data": {"tact": "2980"},  # 25°C in 0.1K (298.0K)
+        }
+
+        # Set target temperature from product state
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "tmp": "2980",  # 25°C in 0.1K (298.0K)
                 "hmax": "3000",  # 26.85°C in 0.1K (300.0K)
             }.get(key, default)
         )
@@ -362,9 +375,8 @@ class TestDysonClimateEntity:
         # Assert
         assert entity._attr_current_temperature is not None
         assert entity._attr_target_temperature is not None
-        assert (
-            abs(entity._attr_current_temperature - 24.85) < 0.01
-        )  # Allow for floating point precision
+        # 298.0K = 24.85°C, rounded to 1 decimal = 24.9°C
+        assert entity._attr_current_temperature == 24.9
         assert abs(entity._attr_target_temperature - 26.85) < 0.01
 
     def test_update_temperatures_invalid_values(self, mock_coordinator):
@@ -372,9 +384,16 @@ class TestDysonClimateEntity:
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
         device_data = {"product-state": {}}
+
+        # Set invalid environmental data for current temperature
+        mock_coordinator.data = {
+            "product-state": {},
+            "environmental-data": {"tact": "invalid"},
+        }
+
+        # Set invalid target temperature from product state
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "tmp": "invalid",
                 "hmax": "also_invalid",
             }.get(key, default)
         )
@@ -847,3 +866,50 @@ class TestClimateIntegration:
 
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
         mock_coordinator.device.set_target_temperature.assert_called_once_with(20.0)
+
+    def test_climate_current_temperature_from_environmental_data(
+        self, mock_coordinator
+    ):
+        """Test that climate entity uses environmental data for current temperature.
+
+        This test verifies the fix for GitHub issue #247 where the climate entity
+        should display the current temperature on the thermostat card by reading
+        from environmental-data (tact) instead of product-state (tmp).
+
+        Applies to all heating-capable devices (HP models: Pure Hot+Cool series).
+        """
+        # Arrange - simulate HP device with heating capability
+        mock_coordinator.device_capabilities = ["Heating"]
+        entity = DysonClimateEntity(mock_coordinator)
+
+        # Set up environmental data with current temperature (like temperature sensor)
+        mock_coordinator.data = {
+            "product-state": {},
+            "environmental-data": {
+                "tact": "2950"  # 22.0°C in Kelvin * 10 (295.0K - 273.15 = 21.85°C)
+            },
+        }
+
+        # Set up product state with target temperature
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "hmax": "3000",  # 26.85°C target (300.0K - 273.15)
+                "fpwr": "ON",
+                "hmod": "HEAT",
+            }.get(key, default)
+        )
+
+        device_data = {"product-state": {}}
+
+        # Act
+        entity._update_temperatures(device_data)
+
+        # Assert - current temperature should be set from environmental data
+        assert entity._attr_current_temperature is not None
+        assert entity._attr_current_temperature == 21.9  # Rounded to 1 decimal
+        assert entity._attr_target_temperature is not None
+        assert abs(entity._attr_target_temperature - 26.85) < 0.01
+
+        # Verify that the temperature is suitable for display on thermostat card
+        assert isinstance(entity._attr_current_temperature, float)
+        assert entity.temperature_unit == UnitOfTemperature.CELSIUS

@@ -279,7 +279,7 @@ Monitor humidity levels for comfort, health management, and integration with hum
 #### Discovery Logic
 
 Humidity sensors are created when devices have BOTH:
-1. **Capability requirement**: Humidifier capability OR EnvironmentalData capability  
+1. **Capability requirement**: Humidifier capability OR EnvironmentalData capability
 2. **Data presence**: Humidity data (`hact` key) present in environmental MQTT response
 
 This ensures sensors are only created for devices that both declare the capability and actually provide humidity data.
@@ -356,6 +356,79 @@ Reports current connectivity state:
 #### Troubleshooting
 
 Use this sensor to identify connectivity issues that may affect remote control functionality or cloud-based features like scheduling and mobile app access.
+
+## Robot Vacuum Sensors
+
+### Battery Sensor
+
+#### Description
+
+The battery sensor monitors the charge level of Dyson robot vacuum cleaners, providing real-time battery percentage information for scheduling and maintenance.
+
+#### Purpose
+
+Monitor robot vacuum battery status for scheduling cleaning operations, tracking charging cycles, and ensuring the device has sufficient charge for cleaning tasks.
+
+#### Technical Specifications
+
+1. Entity ID: `sensor.{device_name}_robot_battery`
+2. Unit: % (percentage)
+3. Device Class: Battery
+4. State Class: Measurement
+5. Range: 0-100%
+6. Icon: mdi:battery
+7. Entity Category: Diagnostic
+8. Availability: Robot category devices only (Dyson 360 Eye, 360 Heurist, 360 Vis Nav)
+9. Update Frequency: Real-time with device data updates
+10. MQTT Key: `batteryChargeLevel` in product-state
+
+#### Migration Note
+
+This sensor replaces the deprecated `battery_level` property and `VacuumEntityFeature.BATTERY` feature flag on the vacuum entity. Starting with Home Assistant 2026.8, battery monitoring for vacuum devices must use a separate sensor entity with proper device class, as implemented here.
+
+#### Battery Guidelines
+
+Battery level values and typical behaviors:
+- 100%: Fully charged, ready for cleaning
+- 75-99%: Good charge level for full cleaning cycle
+- 50-74%: Moderate charge, suitable for partial cleaning
+- 25-49%: Low charge, may not complete full home cleaning
+- < 25%: Very low, robot will likely return to dock automatically
+
+#### Automation Examples
+
+Use battery level for smart scheduling and notifications:
+
+```yaml
+# Notify when battery is low
+- alias: "Robot Vacuum Low Battery Alert"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.dyson_360_vis_nav_robot_battery
+      below: 20
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Robot vacuum battery is low ({{ states('sensor.dyson_360_vis_nav_robot_battery') }}%)"
+
+# Start cleaning only if battery is sufficient
+- alias: "Smart Robot Vacuum Start"
+  trigger:
+    - platform: time
+      at: "10:00:00"
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.dyson_360_vis_nav_robot_battery
+      above: 50
+  action:
+    - service: vacuum.start
+      target:
+        entity_id: vacuum.dyson_360_vis_nav
+```
+
+#### Charging Behavior
+
+The robot vacuum automatically returns to its dock when battery level drops below a threshold (typically 15-20%). Battery sensor updates continue during charging, allowing monitoring of charging progress.
 
 ## Filter Monitoring Sensors
 
@@ -546,6 +619,16 @@ Network and connectivity sensors are available based on device category:
 - **EC (Environment Cleaner)**: Fan and filter devices with network capabilities
 - **Robot**: Robotic vacuum cleaners with WiFi connectivity
 
+### Robot Vacuum Sensors
+
+Robot-specific sensors provide device status and monitoring:
+
+| Sensor | Device Categories | Purpose |
+|--------|------------------|---------|
+| Battery | Robot | Monitor battery charge level for robot vacuums |
+
+**Note**: The battery sensor replaces the deprecated `battery_level` property on the vacuum entity. This migration ensures compliance with Home Assistant 2026.8 requirements for battery monitoring on vacuum devices.
+
 ### Filter Monitoring Sensors
 
 Filter sensors use different discovery methods based on filter type:
@@ -586,7 +669,7 @@ Device responds on `status/current` topic with:
   "time":"2025-11-17T17:22:40.000Z",
   "data":{
     "pm25":"0012",
-    "pm10":"0018", 
+    "pm10":"0018",
     "p25r":"0010",
     "p10r":"0016",
     "co2":"0450",
@@ -714,5 +797,6 @@ Sensors use appropriate Home Assistant device classes for proper integration:
 | Temperature | `SensorDeviceClass.TEMPERATURE` | Automatic unit conversion, climate integration |
 | Humidity | `SensorDeviceClass.HUMIDITY` | Climate integration, comfort tracking |
 | WiFi | `SensorDeviceClass.SIGNAL_STRENGTH` | Network monitoring, connectivity tracking |
+| Battery | `SensorDeviceClass.BATTERY` | Battery monitoring, automation integration |
 
 Device classes ensure proper handling by Home Assistant core systems, including automatic unit conversions, dashboard presentations, and integration with other climate and air quality systems.

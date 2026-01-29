@@ -237,6 +237,10 @@ class TestInitModule:
             with pytest.raises(ConfigEntryNotReady):
                 await async_setup_entry(mock_hass, mock_config_entry)
 
+    # NOTE: Automatic removal of unsupported devices is tested in integration tests
+    # Unit testing requires HA test harness. See test_coordinator_error_handling.py
+    # for validation that UnsupportedDeviceError is raised correctly.
+
     @pytest.mark.asyncio
     async def test_async_unload_entry(self, mock_hass, mock_config_entry):
         """Test async_unload_entry functionality."""
