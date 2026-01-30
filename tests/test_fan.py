@@ -210,12 +210,10 @@ class TestDysonFan:
         mock_coordinator.device.fan_power = True
         mock_coordinator.device.fan_state = "FAN"
         mock_coordinator.device.fan_speed_setting = "0005"
-        # Mock different values for different keys
+        mock_coordinator.device.auto_mode = False  # Manual mode
 
         def mockget_state_value(data, key, default):
-            if key == "auto":
-                return "OFF"  # Manual mode
-            elif key == "fdir":
+            if key == "fdir":
                 return "ON"  # Forward direction
             return default
 
@@ -233,6 +231,59 @@ class TestDysonFan:
         )  # fdir=ON means forward direction
         assert fan._attr_preset_mode == "Manual"
         assert fan._attr_oscillating is False
+
+    def test_handle_coordinator_update_fan_auto_mode_via_fmod(self, mock_coordinator):
+        """Test fan in auto mode via fmod key (TP02/HP02 devices)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "FAN"
+        mock_coordinator.device.fan_speed_setting = "AUTO"
+        mock_coordinator.device.auto_mode = True  # Auto mode via fmod
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_is_on is True
+        assert fan._attr_preset_mode == "Auto"
+
+    def test_handle_coordinator_update_fan_auto_mode_via_auto_key(
+        self, mock_coordinator
+    ):
+        """Test fan in auto mode via auto key (non-TP02 devices)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "FAN"
+        mock_coordinator.device.fan_speed_setting = "AUTO"
+        mock_coordinator.device.auto_mode = True  # Auto mode via auto key
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_is_on is True
+        assert fan._attr_preset_mode == "Auto"
+
+    def test_handle_coordinator_update_fan_manual_mode(self, mock_coordinator):
+        """Test fan in manual mode (both fmod and auto indicate manual)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "FAN"
+        mock_coordinator.device.fan_speed_setting = "0005"
+        mock_coordinator.device.auto_mode = False  # Manual mode
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_is_on is True
+        assert fan._attr_preset_mode == "Manual"
 
     def test_handle_coordinator_update_fan_off(self, mock_coordinator):
         """Test _handle_coordinator_update when fan is off."""

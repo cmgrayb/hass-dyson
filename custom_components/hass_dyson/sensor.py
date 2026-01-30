@@ -998,33 +998,9 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-            # Add PM2.5 sensor if PM2.5 data is present (p25r or pm25)
-            if "p25r" in env_data or "pm25" in env_data:
-                _LOGGER.debug(
-                    "Adding PM2.5 sensor for device %s - PM2.5 data detected",
-                    device_serial,
-                )
-                entities.append(DysonPM25Sensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping PM2.5 sensor for device %s - no PM2.5 data in environmental response",
-                    device_serial,
-                )
-
-            # Add PM10 sensor if PM10 data is present (p10r or pm10)
-            if "p10r" in env_data or "pm10" in env_data:
-                _LOGGER.debug(
-                    "Adding PM10 sensor for device %s - PM10 data detected",
-                    device_serial,
-                )
-                entities.append(DysonPM10Sensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
-                    device_serial,
-                )
-
-            # Add Particulates sensor if pact data is present (Pure Cool Link TP02 models)
+            # Pure Cool Link (TP02) models use 'pact' for particulates
+            # Newer models use 'p25r'/'pm25' and 'p10r'/'pm10'
+            # These are mutually exclusive - prioritize pact for older models
             if "pact" in env_data:
                 _LOGGER.debug(
                     "Adding Particulates sensor for device %s - pact data detected (Pure Cool Link)",
@@ -1032,10 +1008,32 @@ async def async_setup_entry(  # noqa: C901
                 )
                 entities.append(DysonParticulatesSensor(coordinator))
             else:
-                _LOGGER.debug(
-                    "Skipping Particulates sensor for device %s - no pact data in environmental response",
-                    device_serial,
-                )
+                # Only add PM2.5 and PM10 sensors if pact is NOT present
+                # Add PM2.5 sensor if PM2.5 data is present (p25r or pm25)
+                if "p25r" in env_data or "pm25" in env_data:
+                    _LOGGER.debug(
+                        "Adding PM2.5 sensor for device %s - PM2.5 data detected",
+                        device_serial,
+                    )
+                    entities.append(DysonPM25Sensor(coordinator))
+                else:
+                    _LOGGER.debug(
+                        "Skipping PM2.5 sensor for device %s - no PM2.5 data in environmental response",
+                        device_serial,
+                    )
+
+                # Add PM10 sensor if PM10 data is present (p10r or pm10)
+                if "p10r" in env_data or "pm10" in env_data:
+                    _LOGGER.debug(
+                        "Adding PM10 sensor for device %s - PM10 data detected",
+                        device_serial,
+                    )
+                    entities.append(DysonPM10Sensor(coordinator))
+                else:
+                    _LOGGER.debug(
+                        "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
+                        device_serial,
+                    )
 
             # Add VOC Link sensor if vact data is present (Pure Cool Link TP02 models)
             # Only add if va10 is not present (va10 takes priority as the newer format)

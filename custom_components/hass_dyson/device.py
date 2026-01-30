@@ -1747,8 +1747,10 @@ class DysonDevice:
         """Return if auto mode is enabled.
 
         Checks multiple keys depending on device type:
-        - fmod: "AUTO" for TP02 and similar devices (fan auto mode)
-        - wacd: !="NONE" for humidifier devices (water hardness auto-adjust)
+        - fmod: "AUTO" for TP02/HP02 devices (fan auto mode via fmod)
+        - auto: "ON" for other devices (fan auto mode via auto key)
+
+        Note: wacd is for water hardness detection, not auto operating mode.
         """
         product_state = self._state_data.get("product-state", {})
 
@@ -1757,9 +1759,9 @@ class DysonDevice:
         if fmod == "AUTO":
             return True
 
-        # Check wacd for humidifier auto mode
-        wacd = self.get_state_value(product_state, "wacd", "NONE")
-        if wacd != "NONE":
+        # Check auto key for fan auto mode (other devices)
+        auto = self.get_state_value(product_state, "auto", "OFF")
+        if auto == "ON":
             return True
 
         # Default: not in auto mode

@@ -508,14 +508,21 @@ class TestDeviceStateProperties:
         mock_device_basic._state_data = {"product-state": {"nmod": "OFF"}}
         assert mock_device_basic.night_mode is False
 
-    def test_auto_mode_enabled(self, mock_device_basic):
-        """Test auto mode when enabled."""
-        mock_device_basic._state_data = {"product-state": {"wacd": "AUTO"}}
+    def test_auto_mode_enabled_via_auto_key(self, mock_device_basic):
+        """Test auto mode when enabled via auto key."""
+        mock_device_basic._state_data = {"product-state": {"auto": "ON"}}
+        assert mock_device_basic.auto_mode is True
+
+    def test_auto_mode_enabled_via_fmod(self, mock_device_basic):
+        """Test auto mode when enabled via fmod (TP02/HP02 devices)."""
+        mock_device_basic._state_data = {"product-state": {"fmod": "AUTO"}}
         assert mock_device_basic.auto_mode is True
 
     def test_auto_mode_disabled(self, mock_device_basic):
         """Test auto mode when disabled."""
-        mock_device_basic._state_data = {"product-state": {"wacd": "NONE"}}
+        mock_device_basic._state_data = {
+            "product-state": {"auto": "OFF", "fmod": "FAN"}
+        }
         assert mock_device_basic.auto_mode is False
 
     def test_fan_speed_numeric(self, mock_device_basic):

@@ -309,9 +309,10 @@ class DysonFan(DysonEntity, FanEntity):
             else:
                 # Device doesn't support direction control
                 self._attr_current_direction = "forward"  # Default fallback
-            auto_mode = self.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
+
+            # Check if device is in auto mode using the device property
+            # This supports multiple device types (fmod-based, wacd-based, etc.)
+            is_auto_mode = self.coordinator.device.auto_mode
 
             # Update heating information if device has heating capability
             if self._has_heating:
@@ -322,13 +323,13 @@ class DysonFan(DysonEntity, FanEntity):
                 )
                 if heating_mode == "HEAT":
                     self._attr_preset_mode = "Heat"
-                elif auto_mode == "ON":
+                elif is_auto_mode:
                     self._attr_preset_mode = "Auto"
                 else:
                     self._attr_preset_mode = "Manual"
             else:
                 # Non-heating devices use simple Auto/Manual logic
-                self._attr_preset_mode = "Auto" if auto_mode == "ON" else "Manual"
+                self._attr_preset_mode = "Auto" if is_auto_mode else "Manual"
 
             # Update oscillation state from device data if supported
             if self._oscillation_supported:

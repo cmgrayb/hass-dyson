@@ -438,6 +438,44 @@ class TestSensorSetupCapabilityPaths:
         assert "DysonTemperatureSensor" in sensor_types
         assert "DysonHumiditySensor" in sensor_types
 
+    @pytest.mark.asyncio
+    async def test_setup_pact_priority_over_pm25(self):
+        """Test Particulates sensor (pact) takes priority over PM2.5 for TP02 devices."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = ["EnvironmentalData"]
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "NM7-US-TEST475"
+        # Pure Cool Link TP02 uses pact, not p25r/pm25
+        coordinator.data = {
+            "environmental-data": {
+                "pact": "15",  # TP02 Particulates key
+                "tact": "2950",
+                "hact": "55",
+            }
+        }
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        # Only Particulates sensor should be created, NOT PM2.5 or PM10
+        assert "DysonParticulatesSensor" in sensor_types
+        assert "DysonPM25Sensor" not in sensor_types
+        assert "DysonPM10Sensor" not in sensor_types
+        # Temperature and humidity should still be created
+        assert "DysonTemperatureSensor" in sensor_types
+        assert "DysonHumiditySensor" in sensor_types
+
 
 class TestSensorSetupCategoryPaths:
     """Test sensor creation based on device category."""
