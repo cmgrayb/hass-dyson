@@ -2207,9 +2207,9 @@ class DysonDevice:
 
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""
-        from datetime import datetime
+        from datetime import UTC, datetime
 
-        return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _detect_power_control_type(self) -> str:
         """Detect device power control type based on MQTT message patterns.
