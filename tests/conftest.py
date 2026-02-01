@@ -11,9 +11,11 @@ import pytest
 def _get_safe_event_loop():
     """Get event loop safely, handling RuntimeError."""
     try:
-        return asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        return loop
     except RuntimeError:
-        return None
+        # No running loop, create a new one
+        return asyncio.new_event_loop()
 
 
 def _patch_shutdown_executor(event_loop):

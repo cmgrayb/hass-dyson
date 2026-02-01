@@ -105,10 +105,8 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
         if self.coordinator.device:
             product_state = self.coordinator.data.get("product-state", {})
 
-            # Get air quality mode from device state (auto mode)
-            auto_mode = self.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
+            # Use device auto_mode property which handles both fmod="AUTO" and auto="ON"
+            auto_mode = self.coordinator.device.auto_mode
             night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
@@ -118,14 +116,14 @@ class DysonFanControlModeSelect(DysonEntity, SelectEntity):
                 "connection_type", "unknown"
             )
             if connection_type == "local_only":
-                if auto_mode == "ON":
+                if auto_mode:
                     self._attr_current_option = "Auto"
                 else:
                     self._attr_current_option = "Manual"
             else:
                 if night_mode == "ON":
                     self._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
+                elif auto_mode:
                     self._attr_current_option = "Auto"
                 else:
                     self._attr_current_option = "Manual"

@@ -147,6 +147,9 @@
       "pm10": {
         "name": "PM10"
       },
+      "pact": {
+        "name": "Partikel"
+      },
       "voc": {
         "name": "VOC"
       },
@@ -191,6 +194,15 @@
       },
       "p10r": {
         "name": "PM10 Roh"
+      },
+      "aqi": {
+        "name": "Luftqualitätsindex"
+      },
+      "aqi_category": {
+        "name": "Luftqualitätskategorie"
+      },
+      "dominant_pollutant": {
+        "name": "Dominierender Schadstoff"
       }
     },
     "switch": {

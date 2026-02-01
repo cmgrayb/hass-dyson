@@ -508,27 +508,34 @@ class TestDysonConfigFlowErrorHandling:
 
 
 class TestDysonConfigFlowConnectivityTypeFiltering:
-    """Test device filtering based on connectivity types."""
+    """Test device filtering based on MQTT credential availability."""
 
     @pytest.mark.asyncio
     async def test_unsupported_connectivity_type_handling(
         self, config_flow_with_client
     ):
-        """Test filtering of devices with unsupported connectivity types."""
-        # Mock devices with different connectivity types
+        """Test filtering of devices without MQTT credentials."""
+        # Mock device with MQTT credentials (supported)
         standard_device = MagicMock()
         standard_device.name = "Standard Device"
-        standard_device.connection_category = (
-            None  # Most existing devices have no category
-        )
+        standard_device.connection_category = None
         standard_device.serial_number = "STD123"
         standard_device.product_type = "475"
+        # Add MQTT credentials structure
+        mqtt_obj = MagicMock()
+        mqtt_obj.local_broker_credentials = "encrypted_password_here"
+        connected_config = MagicMock()
+        connected_config.mqtt = mqtt_obj
+        standard_device.connected_configuration = connected_config
 
+        # Mock device without MQTT credentials (unsupported)
         lec_only_device = MagicMock()
         lec_only_device.name = "LEC Only Device"
         lec_only_device.connection_category = "lecOnly"
         lec_only_device.serial_number = "LEC456"
         lec_only_device.product_type = "999"
+        # No connected_configuration
+        lec_only_device.connected_configuration = None
 
         config_flow_with_client._cloud_client.get_devices.return_value = [
             standard_device,
@@ -547,13 +554,19 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
 
     @pytest.mark.asyncio
     async def test_supported_connectivity_type_inclusion(self, config_flow_with_client):
-        """Test that devices with supported connectivity types are included."""
-        # Mock device with supported connectivity
+        """Test that devices with MQTT credentials are included."""
+        # Mock device with MQTT credentials
         supported_device = MagicMock()
         supported_device.name = "Supported Device"
-        supported_device.connection_category = None  # Standard category
+        supported_device.connection_category = None
         supported_device.serial_number = "SUP789"
         supported_device.product_type = "527"
+        # Add MQTT credentials
+        mqtt_obj = MagicMock()
+        mqtt_obj.local_broker_credentials = "encrypted_creds"
+        connected_config = MagicMock()
+        connected_config.mqtt = mqtt_obj
+        supported_device.connected_configuration = connected_config
 
         config_flow_with_client._cloud_client.get_devices.return_value = [
             supported_device,
@@ -571,35 +584,40 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
 
     @pytest.mark.asyncio
     async def test_mixed_connectivity_types_filtering(self, config_flow_with_client):
-        """Test filtering with mixed supported and unsupported connectivity types."""
+        """Test filtering with mixed devices - some with MQTT, some without."""
+
+        # Helper function to create device with MQTT credentials
+        def create_device_with_mqtt(name, serial, product_type, category=None):
+            device = MagicMock()
+            device.name = name
+            device.connection_category = category
+            device.serial_number = serial
+            device.product_type = product_type
+            mqtt_obj = MagicMock()
+            mqtt_obj.local_broker_credentials = f"encrypted_{serial}"
+            connected_config = MagicMock()
+            connected_config.mqtt = mqtt_obj
+            device.connected_configuration = connected_config
+            return device
+
+        # Helper function to create device without MQTT credentials
+        def create_device_without_mqtt(name, serial, product_type, category=None):
+            device = MagicMock()
+            device.name = name
+            device.connection_category = category
+            device.serial_number = serial
+            device.product_type = product_type
+            device.connected_configuration = None
+            return device
+
         # Mock mix of devices
         devices = [
-            # Supported devices
-            MagicMock(
-                name="Device 1",
-                connection_category=None,
-                serial_number="D1",
-                product_type="475",
-            ),
-            MagicMock(
-                name="Device 2",
-                connection_category="standard",
-                serial_number="D2",
-                product_type="527",
-            ),
-            # Unsupported devices
-            MagicMock(
-                name="Device 3",
-                connection_category="lecOnly",
-                serial_number="D3",
-                product_type="999",
-            ),
-            MagicMock(
-                name="Device 4",
-                connection_category="unsupported",
-                serial_number="D4",
-                product_type="888",
-            ),
+            # Supported devices (with MQTT)
+            create_device_with_mqtt("Device 1", "D1", "475", None),
+            create_device_with_mqtt("Device 2", "D2", "527", "standard"),
+            # Unsupported devices (no MQTT)
+            create_device_without_mqtt("Device 3", "D3", "999", "lecOnly"),
+            create_device_without_mqtt("Device 4", "D4", "888", None),
         ]
 
         config_flow_with_client._cloud_client.get_devices.return_value = devices
@@ -611,18 +629,19 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
         # Should proceed to cloud_preferences after filtering
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "cloud_preferences"
-        # Should show 3 supported devices (only lecOnly is filtered out)
-        assert result["description_placeholders"]["device_count"] == "3"
+        # Should show 2 supported devices (only those with MQTT credentials)
+        assert result["description_placeholders"]["device_count"] == "2"
 
     @pytest.mark.asyncio
     async def test_no_supported_devices_available(self, config_flow_with_client):
-        """Test behavior when no supported devices are available."""
-        # Mock only unsupported devices
+        """Test behavior when no devices with MQTT credentials are available."""
+        # Mock device without MQTT credentials
         unsupported_device = MagicMock()
         unsupported_device.name = "Unsupported Device"
         unsupported_device.connection_category = "lecOnly"
         unsupported_device.serial_number = "UNS123"
         unsupported_device.product_type = "999"
+        unsupported_device.connected_configuration = None
 
         config_flow_with_client._cloud_client.get_devices.return_value = [
             unsupported_device,
@@ -632,11 +651,52 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
 
         result = await config_flow_with_client.async_step_connection(user_input)
 
-        # Should still proceed to cloud_preferences but with 0 devices
+        # Should proceed to cloud_preferences but with 0 supported devices
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "cloud_preferences"
-        # The device count should show 0 supported devices
         assert result["description_placeholders"]["device_count"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_flrc_device_without_mqtt_filtered(self, config_flow_with_client):
+        """Test that floor cleaner (flrc) devices without MQTT are filtered out.
+
+        This reproduces the bug reported in issue #217 where non-connected devices
+        like floor cleaners were causing MQTT password errors.
+        """
+        # Mock a supported device with MQTT
+        mqtt_device = MagicMock()
+        mqtt_device.name = "Dyson 360 Vis Nav"
+        mqtt_device.connection_category = "connected"
+        mqtt_device.serial_number = "ROBOT123"
+        mqtt_device.product_type = "276"
+        mqtt_obj = MagicMock()
+        mqtt_obj.local_broker_credentials = "encrypted_mqtt_password"
+        connected_config = MagicMock()
+        connected_config.mqtt = mqtt_obj
+        mqtt_device.connected_configuration = connected_config
+
+        # Mock a floor cleaner without MQTT (the bug case)
+        flrc_device = MagicMock()
+        flrc_device.name = "Dyson Wash G1"
+        flrc_device.serial_number = "FLRC456"
+        flrc_device.product_type = "unknown"
+        flrc_device.connection_category = None  # No connection category
+        flrc_device.connected_configuration = None  # No MQTT credentials
+
+        config_flow_with_client._cloud_client.get_devices.return_value = [
+            mqtt_device,
+            flrc_device,
+        ]
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_connection(user_input)
+
+        # Should proceed with only the MQTT-enabled device
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "cloud_preferences"
+        # Only 1 device should be supported (floor cleaner filtered out)
+        assert result["description_placeholders"]["device_count"] == "1"
 
 
 class TestDysonConfigFlowComprehensiveAuth:

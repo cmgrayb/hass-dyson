@@ -34,42 +34,6 @@ cancel_sleep_timer:
         device:
           integration: hass_dyson
 
-schedule_operation:
-  name: Schedule Operation
-  description: Schedule a device operation (experimental)
-  fields:
-    device_id:
-      name: Device
-      description: The Dyson device to schedule operation for
-      required: true
-      selector:
-        device:
-          integration: hass_dyson
-    operation:
-      name: Operation
-      description: The operation to schedule
-      required: true
-      selector:
-        select:
-          options:
-            - "turn_on"
-            - "turn_off"
-            - "set_speed"
-            - "toggle_auto_mode"
-    schedule_time:
-      name: Schedule Time
-      description: Time to execute the operation (ISO format)
-      required: true
-      selector:
-        datetime:
-    parameters:
-      name: Parameters
-      description: JSON parameters for the operation (optional)
-      required: false
-      selector:
-        text:
-          multiline: true
-
 set_oscillation_angles:
   name: Set Oscillation Angles
   description: Set custom oscillation angles for the Dyson device

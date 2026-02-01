@@ -7,14 +7,17 @@ and provide accurate, calibrated data for home automation.
 
 Sensor Categories:
 
-Air Quality Sensors (ExtendedAQ capability):
+Air Quality Sensors (EnvironmentalData capability):
     - PM2.5: Fine particulate matter concentration (μg/m³)
     - PM10: Coarse particulate matter concentration (μg/m³)
+
+Advanced Air Quality Sensors (ExtendedAQ capability, data-dependent):
     - VOC: Volatile organic compounds index (0-10)
     - NO2: Nitrogen dioxide index (0-10)
+    - CO2: Carbon dioxide concentration (ppm)
     - Formaldehyde: HCHO concentration (mg/m³, if supported)
 
-Environmental Sensors:
+Environmental Sensors (EnvironmentalData capability):
     - Temperature: Ambient temperature in °C
     - Humidity: Relative humidity percentage
 
@@ -46,6 +49,7 @@ Sensor States:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -77,7 +81,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class DysonP25RSensor(DysonEntity, SensorEntity):
-    """PM2.5 air quality sensor for Dyson devices with ExtendedAQ capability.
+    """PM2.5 air quality sensor for Dyson devices with EnvironmentalData or ExtendedAQ capability.
 
     This sensor monitors fine particulate matter (PM2.5) concentration in
     micrograms per cubic meter. PM2.5 particles are particularly harmful
@@ -99,8 +103,8 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         updated automatically as air quality conditions change.
 
     Availability:
-        Only created for devices with "ExtendedAQ" capability that
-        support advanced air quality monitoring beyond basic PM sensors.
+        Created for devices with "EnvironmentalData" or "ExtendedAQ" capability
+        that report PM2.5 data (p25r or pm25 keys in environmental data).
 
     Example:
         Typical sensor values and automation:
@@ -140,8 +144,8 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         - Localized entity naming through translation system
 
         Note:
-            Only initialized for devices with ExtendedAQ capability
-            that support PM2.5 monitoring beyond basic air quality sensors.
+            Initialized for devices with EnvironmentalData or ExtendedAQ capability
+            that report PM2.5 data in environmental-data messages.
         """
         super().__init__(coordinator)
 
@@ -221,7 +225,16 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
 
 
 class DysonP10RSensor(DysonEntity, SensorEntity):
-    """P10R level sensor for Dyson devices with ExtendedAQ capability."""
+    """PM10 air quality sensor for Dyson devices with EnvironmentalData or ExtendedAQ capability.
+
+    This sensor monitors coarse particulate matter (PM10) concentration in
+    micrograms per cubic meter. PM10 particles can irritate airways and
+    exacerbate respiratory conditions.
+
+    Availability:
+        Created for devices with "EnvironmentalData" or "ExtendedAQ" capability
+        that report PM10 data (p10r or pm10 keys in environmental data).
+    """
 
     coordinator: DysonDataUpdateCoordinator
 
@@ -481,6 +494,457 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+def _calculate_pollutant_aqi(
+    value: float | int, ranges: list[tuple[float, float, int, int, str]]
+) -> tuple[int | None, str | None]:
+    """Calculate AQI value and category for a single pollutant.
+
+    Uses linear interpolation within range breakpoints per EPA AQI formula:
+    I_p = ((I_Hi - I_Lo) / (BP_Hi - BP_Lo)) * (C_p - BP_Lo) + I_Lo
+
+    Args:
+        value: Pollutant concentration value
+        ranges: List of (low, high, aqi_low, aqi_high, category) tuples
+
+    Returns:
+        Tuple of (aqi_value, category) or (None, None) if value is invalid
+    """
+    if value is None or value < 0:
+        return None, None
+
+    for low, high, aqi_low, aqi_high, category in ranges:
+        if low <= value <= high:
+            # Linear interpolation between breakpoints
+            if high == low:
+                # Avoid division by zero for single-value ranges
+                aqi = aqi_low
+            else:
+                aqi = ((aqi_high - aqi_low) / (high - low)) * (value - low) + aqi_low
+            return round(aqi), category
+
+    # Value exceeds all ranges - return highest category
+    if ranges:
+        _, _, _, aqi_high, category = ranges[-1]
+        return aqi_high, category
+
+    return None, None
+
+
+def _get_environmental_value(
+    env_data: dict[str, Any], keys: list[str]
+) -> float | int | None:
+    """Get environmental data value using priority key list.
+
+    Args:
+        env_data: Environmental data dictionary from device
+        keys: List of keys to check in priority order (newest to oldest)
+
+    Returns:
+        Value from first matching key, or None if no key found
+    """
+    for key in keys:
+        if key in env_data:
+            return env_data[key]
+    return None
+
+
+def _calculate_overall_aqi(
+    env_data: dict[str, Any],
+) -> tuple[int | None, str | None, list[str]]:
+    """Calculate overall AQI as the highest individual pollutant AQI.
+
+    Checks all available pollutants and returns the worst (highest) AQI value.
+    Uses Dyson ranges for PM2.5, PM10, VOC, NO2, HCHO and EPA ranges for CO2.
+
+    Args:
+        env_data: Environmental data dictionary from device
+
+    Returns:
+        Tuple of (overall_aqi, worst_category, dominant_pollutants) or (None, None, []) if no data
+        dominant_pollutants is a list of pollutant names at the maximum AQI level
+    """
+    from .const import (
+        AQI_CO2_RANGES,
+        AQI_HCHO_RANGES,
+        AQI_NO2_RANGES,
+        AQI_PM10_RANGES,
+        AQI_PM25_RANGES,
+        AQI_VOC_RANGES,
+        POLLUTANT_KEYS,
+    )
+
+    max_aqi = None
+    max_category = None
+    dominant_pollutants = []
+
+    # Define pollutant configurations: (pollutant_name, display_name, ranges, scale_factor)
+    # scale_factor converts device units to range units
+    pollutant_configs = [
+        ("pm25", "PM2.5", AQI_PM25_RANGES, 1),  # μg/m³
+        ("pm10", "PM10", AQI_PM10_RANGES, 1),  # μg/m³
+        ("voc", "VOC", AQI_VOC_RANGES, 1),  # Use raw device value directly
+        ("no2", "NO2", AQI_NO2_RANGES, 1),  # ppb (EPA guidelines)
+        ("co2", "CO2", AQI_CO2_RANGES, 1),  # ppm
+        ("hcho", "Formaldehyde", AQI_HCHO_RANGES, 0.001),  # Convert mg/m³ to ppm
+    ]
+
+    # First pass: calculate all AQI values
+    pollutant_aqis = []
+    for pollutant_name, display_name, ranges, scale_factor in pollutant_configs:
+        # Get value using priority key list
+        keys = POLLUTANT_KEYS.get(pollutant_name, [])
+        raw_value = _get_environmental_value(env_data, keys)
+
+        if raw_value is not None:
+            try:
+                # Convert to numeric and apply scale factor
+                value = float(raw_value) * scale_factor
+                aqi, category = _calculate_pollutant_aqi(value, ranges)
+
+                if aqi is not None:
+                    pollutant_aqis.append((display_name, aqi, category))
+                    _LOGGER.debug(
+                        "Pollutant %s: value=%.3f, AQI=%s, category=%s",
+                        pollutant_name,
+                        value,
+                        aqi,
+                        category,
+                    )
+            except (ValueError, TypeError) as err:
+                _LOGGER.debug(
+                    "Could not convert %s value %s: %s", pollutant_name, raw_value, err
+                )
+
+    # Second pass: find maximum AQI and all pollutants at that level
+    if pollutant_aqis:
+        max_aqi = max(aqi for _, aqi, _ in pollutant_aqis)
+        # Get category from any pollutant at max AQI (they should all have same category)
+        max_category = next(cat for _, aqi, cat in pollutant_aqis if aqi == max_aqi)
+        # Get all pollutants at max AQI level
+        dominant_pollutants = [
+            name for name, aqi, _ in pollutant_aqis if aqi == max_aqi
+        ]
+
+    return max_aqi, max_category, dominant_pollutants
+
+
+class DysonAQISensor(DysonEntity, SensorEntity):
+    """Numeric AQI sensor for Dyson devices with EnvironmentalData capability.
+
+    This sensor calculates the overall Air Quality Index (AQI) as the highest
+    individual pollutant AQI value across all available sensors. The AQI
+    provides a standardized measure of air quality from 0 (best) to 500 (worst).
+
+    Attributes:
+        device_class: SensorDeviceClass.AQI for proper Home Assistant integration
+        state_class: SensorStateClass.MEASUREMENT for long-term statistics
+        native_unit_of_measurement: None (AQI is dimensionless)
+        icon: mdi:air-filter for visual representation
+
+    AQI Scale:
+        - 0-50: Good (green)
+        - 51-100: Fair/Moderate (yellow)
+        - 101-150: Poor/Unhealthy for Sensitive Groups (orange)
+        - 151-200: Very Poor/Unhealthy (red)
+        - 201-300: Extremely Poor/Very Unhealthy (purple)
+        - 301-500: Severe/Hazardous (maroon)
+
+    Calculation Method:
+        Uses Dyson's official PH05 ranges for PM2.5, PM10, VOC, NO2, and HCHO,
+        with EPA AirNow ranges for CO2. The overall AQI is the highest value
+        across all available pollutants.
+
+    Data Source:
+        Real-time measurements from device environmental sensors, checking:
+        - PM2.5 (p25r/pm25/pact)
+        - PM10 (p10r/pm10)
+        - VOC (va10/vact)
+        - NO2 (noxl)
+        - CO2 (co2r/co2)
+        - Formaldehyde (hcho)
+
+    Availability:
+        Created for devices with "EnvironmentalData" capability that report
+        at least one air quality pollutant.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the AQI sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_aqi"
+        self._attr_translation_key = "aqi"
+        self._attr_device_class = SensorDeviceClass.AQI
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:air-filter"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+
+            # Calculate overall AQI
+            aqi_value, aqi_category, dominant_pollutants = _calculate_overall_aqi(
+                env_data
+            )
+
+            old_value = self._attr_native_value
+            self._attr_native_value = aqi_value
+
+            # Store category and dominant pollutants as extra state attributes
+            if aqi_category:
+                self._attr_extra_state_attributes = {
+                    "category": aqi_category,
+                    "dominant_pollutants": dominant_pollutants,
+                }
+            else:
+                self._attr_extra_state_attributes = {}
+
+            if aqi_value is not None:
+                _LOGGER.debug(
+                    "AQI sensor updated for %s: %s -> %s (%s)",
+                    device_serial,
+                    old_value,
+                    aqi_value,
+                    aqi_category,
+                )
+            else:
+                _LOGGER.debug("No AQI data available for device %s", device_serial)
+
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating AQI sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+
+        super()._handle_coordinator_update()
+
+
+class DysonAQICategorySensor(DysonEntity, SensorEntity):
+    """Text category AQI sensor for Dyson devices with EnvironmentalData capability.
+
+    This sensor reports the air quality category as text (Good, Fair, Poor, etc.)
+    based on the overall AQI calculation. Useful for automations that need
+    readable air quality status.
+
+    Attributes:
+        device_class: None (text sensor)
+        icon: mdi:air-filter for visual representation
+        entity_category: None (measurement sensor)
+
+    Categories:
+        - Good: Best air quality (AQI 0-50)
+        - Fair: Acceptable air quality (AQI 51-100)
+        - Poor: Unhealthy for sensitive groups (AQI 101-150)
+        - Very Poor: Unhealthy (AQI 151-200)
+        - Extremely Poor: Very unhealthy (AQI 201-300)
+        - Severe: Hazardous (AQI 301-500)
+
+    Data Source:
+        Uses same calculation as DysonAQISensor, reporting the category
+        of the worst pollutant detected.
+
+    Availability:
+        Created for devices with "EnvironmentalData" capability that report
+        at least one air quality pollutant.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the AQI category sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_aqi_category"
+        self._attr_translation_key = "aqi_category"
+        self._attr_icon = "mdi:air-filter"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+
+            # Calculate overall AQI
+            aqi_value, aqi_category, dominant_pollutants = _calculate_overall_aqi(
+                env_data
+            )
+
+            old_value = self._attr_native_value
+            self._attr_native_value = aqi_category
+
+            # Store numeric AQI and dominant pollutants as extra state attributes
+            if aqi_value is not None:
+                self._attr_extra_state_attributes = {
+                    "aqi": aqi_value,
+                    "dominant_pollutants": dominant_pollutants,
+                }
+            else:
+                self._attr_extra_state_attributes = {}
+
+            if aqi_category is not None:
+                _LOGGER.debug(
+                    "AQI category sensor updated for %s: %s -> %s (AQI: %s)",
+                    device_serial,
+                    old_value,
+                    aqi_category,
+                    aqi_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "No AQI category data available for device %s", device_serial
+                )
+
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating AQI category sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+
+        super()._handle_coordinator_update()
+
+
+class DysonDominantPollutantSensor(DysonEntity, SensorEntity):
+    """Dominant pollutant sensor for Dyson devices with EnvironmentalData capability.
+
+    This sensor reports which pollutant(s) have the worst air quality (highest AQI).
+    If multiple pollutants have the same highest AQI value, all are listed.
+
+    Attributes:
+        device_class: None (text sensor)
+        icon: mdi:molecule for visual representation
+        entity_category: None (measurement sensor)
+
+    Output Format:
+        - Single pollutant: "PM2.5"
+        - Multiple pollutants: "PM2.5, PM10"
+        - No data: None
+
+    Tracked Pollutants:
+        - PM2.5: Fine particulate matter
+        - PM10: Coarse particulate matter
+        - VOC: Volatile organic compounds
+        - NO2: Nitrogen dioxide
+        - CO2: Carbon dioxide
+        - Formaldehyde: HCHO
+
+    Use Cases:
+        - Identify which pollutant is causing poor air quality
+        - Target specific air quality issues with appropriate filters
+        - Automation triggers based on specific pollutant problems
+
+    Availability:
+        Created for devices with "EnvironmentalData" capability that report
+        at least one air quality pollutant.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the dominant pollutant sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_dominant_pollutant"
+        self._attr_translation_key = "dominant_pollutant"
+        self._attr_icon = "mdi:molecule"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+
+            # Calculate overall AQI to get dominant pollutants
+            aqi_value, aqi_category, dominant_pollutants = _calculate_overall_aqi(
+                env_data
+            )
+
+            old_value = self._attr_native_value
+
+            # Format dominant pollutants as comma-separated string
+            # When AQI is 0, show "None" instead of listing all pollutants
+            if dominant_pollutants and aqi_value != 0:
+                self._attr_native_value = ", ".join(dominant_pollutants)
+            elif aqi_value == 0:
+                self._attr_native_value = "None"
+            else:
+                self._attr_native_value = None
+
+            # Store AQI and category as extra state attributes
+            if aqi_value is not None:
+                self._attr_extra_state_attributes = {
+                    "aqi": aqi_value,
+                    "category": aqi_category,
+                    "pollutant_count": len(dominant_pollutants),
+                }
+            else:
+                self._attr_extra_state_attributes = {}
+
+            if dominant_pollutants:
+                _LOGGER.debug(
+                    "Dominant pollutant sensor updated for %s: %s -> %s (AQI: %s, %s)",
+                    device_serial,
+                    old_value,
+                    self._attr_native_value,
+                    aqi_value,
+                    aqi_category,
+                )
+            else:
+                _LOGGER.debug(
+                    "No dominant pollutant data available for device %s", device_serial
+                )
+
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating dominant pollutant sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+
+        super()._handle_coordinator_update()
+
+
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -512,8 +976,91 @@ async def async_setup_entry(  # noqa: C901
             coordinator.data.get("environmental-data", {}) if coordinator.data else {}
         )
 
-        # Add PM2.5, PM10, P25R, P10R, and gas sensors for devices with ExtendedAQ capability
-        # ExtendedAQ now supports PM2.5, PM10, CO2, NO2, and HCHO (Formaldehyde) metrics per discovery.md
+        # Add PM2.5 and PM10 sensors for devices with EnvironmentalData or ExtendedAQ capability
+        # PM2.5 and PM10 are available on older devices (e.g., TP02) with EnvironmentalData capability
+        # as well as newer devices with ExtendedAQ capability
+        # Sensors are only created if the device actually reports the data keys
+        has_environmental_aq = has_any_capability_safe(
+            capabilities,
+            [
+                "EnvironmentalData",
+                "environmental_data",
+                "environmentalData",
+                "ExtendedAQ",
+                "extended_aq",
+                "extendedAQ",
+            ],
+        )
+
+        if has_environmental_aq:
+            _LOGGER.debug(
+                "Checking for PM sensors for device %s with environmental/air quality capability",
+                device_serial,
+            )
+
+            # Pure Cool Link (TP02) models use 'pact' for particulates
+            # Newer models use 'p25r'/'pm25' and 'p10r'/'pm10'
+            # These are mutually exclusive - prioritize pact for older models
+            if "pact" in env_data:
+                _LOGGER.debug(
+                    "Adding Particulates sensor for device %s - pact data detected (Pure Cool Link)",
+                    device_serial,
+                )
+                entities.append(DysonParticulatesSensor(coordinator))
+            else:
+                # Only add PM2.5 and PM10 sensors if pact is NOT present
+                # Add PM2.5 sensor if PM2.5 data is present (p25r or pm25)
+                if "p25r" in env_data or "pm25" in env_data:
+                    _LOGGER.debug(
+                        "Adding PM2.5 sensor for device %s - PM2.5 data detected",
+                        device_serial,
+                    )
+                    entities.append(DysonPM25Sensor(coordinator))
+                else:
+                    _LOGGER.debug(
+                        "Skipping PM2.5 sensor for device %s - no PM2.5 data in environmental response",
+                        device_serial,
+                    )
+
+                # Add PM10 sensor if PM10 data is present (p10r or pm10)
+                if "p10r" in env_data or "pm10" in env_data:
+                    _LOGGER.debug(
+                        "Adding PM10 sensor for device %s - PM10 data detected",
+                        device_serial,
+                    )
+                    entities.append(DysonPM10Sensor(coordinator))
+                else:
+                    _LOGGER.debug(
+                        "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
+                        device_serial,
+                    )
+
+            # Add VOC Link sensor if vact data is present (Pure Cool Link TP02 models)
+            # Only add if va10 is not present (va10 takes priority as the newer format)
+            if "vact" in env_data and "va10" not in env_data:
+                _LOGGER.debug(
+                    "Adding VOC Link sensor for device %s - vact data detected (Pure Cool Link)",
+                    device_serial,
+                )
+                entities.append(DysonVOCLinkSensor(coordinator))
+            elif "vact" in env_data and "va10" in env_data:
+                _LOGGER.debug(
+                    "Skipping VOC Link sensor for device %s - va10 (newer format) takes priority over vact",
+                    device_serial,
+                )
+            else:
+                _LOGGER.debug(
+                    "Skipping VOC Link sensor for device %s - no vact data in environmental response",
+                    device_serial,
+                )
+        else:
+            _LOGGER.debug(
+                "Skipping PM sensors for device %s - no EnvironmentalData or ExtendedAQ capability",
+                device_serial,
+            )
+
+        # Add advanced air quality sensors for devices with ExtendedAQ capability
+        # ExtendedAQ supports CO2, NO2, VOC, and HCHO (Formaldehyde) metrics
         # Gas sensor key mappings (per cmgrayb/libdyson-neon):
         # - CO2: co2r (not co2)
         # - HCHO (VOC): va10 (not hcho)
@@ -521,16 +1068,9 @@ async def async_setup_entry(  # noqa: C901
         if has_any_capability_safe(
             capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
         ):
-            _LOGGER.debug("Adding ExtendedAQ sensors for device %s", device_serial)
-
-            # Add PM2.5 and PM10 sensors for ExtendedAQ devices
-            # These sensors now automatically use revised values (p25r, p10r) when available,
-            # falling back to legacy values (pm25, pm10) for older devices
-            entities.extend(
-                [
-                    DysonPM25Sensor(coordinator),
-                    DysonPM10Sensor(coordinator),
-                ]
+            _LOGGER.debug(
+                "Checking for advanced air quality sensors for device %s with ExtendedAQ capability",
+                device_serial,
             )
 
             # Add CO2 sensor if CO2 data is present
@@ -584,7 +1124,7 @@ async def async_setup_entry(  # noqa: C901
                 )
         else:
             _LOGGER.debug(
-                "Skipping ExtendedAQ sensors for device %s - no ExtendedAQ capability",
+                "Skipping advanced air quality sensors for device %s - no ExtendedAQ capability",
                 device_serial,
             )
 
@@ -604,9 +1144,18 @@ async def async_setup_entry(  # noqa: C901
                 device_category,
             )
 
-        # Add HEPA filter sensors only for devices with ExtendedAQ capability
+        # Add HEPA filter sensors for devices with EnvironmentalData or ExtendedAQ capability
+        # These capabilities indicate the device has air filtration with PM monitoring
         if has_any_capability_safe(
-            capabilities, ["ExtendedAQ", "extended_aq", "extendedAQ"]
+            capabilities,
+            [
+                "EnvironmentalData",
+                "environmental_data",
+                "environmentalData",
+                "ExtendedAQ",
+                "extended_aq",
+                "extendedAQ",
+            ],
         ):
             _LOGGER.debug("Adding HEPA filter sensors for device %s", device_serial)
             entities.extend(
@@ -617,7 +1166,7 @@ async def async_setup_entry(  # noqa: C901
             )
         else:
             _LOGGER.debug(
-                "Skipping HEPA filter sensors for device %s - no ExtendedAQ capability",
+                "Skipping HEPA filter sensors for device %s - no EnvironmentalData or ExtendedAQ capability",
                 device_serial,
             )
 
@@ -782,14 +1331,36 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-        # Add battery sensor only for devices with robot category
-        # Robot devices report battery level via the vacuum entity battery_level property
-        # No separate battery sensor needed - vacuum entity handles both control and battery monitoring
-        if any(cat in ["robot"] for cat in device_category):
+        # Add AQI (Air Quality Index) sensors for devices with EnvironmentalData capability
+        # AQI sensors provide overall air quality assessment based on all available pollutants
+        if has_environmental_aq:
             _LOGGER.debug(
-                "Robot device %s battery level available via vacuum entity",
+                "Adding AQI sensors for device %s - EnvironmentalData capability detected",
                 device_serial,
             )
+            # Add numeric AQI, text category, and dominant pollutant sensors
+            entities.extend(
+                [
+                    DysonAQISensor(coordinator),
+                    DysonAQICategorySensor(coordinator),
+                    DysonDominantPollutantSensor(coordinator),
+                ]
+            )
+        else:
+            _LOGGER.debug(
+                "Skipping AQI sensors for device %s - no EnvironmentalData capability",
+                device_serial,
+            )
+
+        # Add battery sensor for devices with robot category
+        # Battery sensor replaces the deprecated battery_level property and
+        # VacuumEntityFeature.BATTERY on the vacuum entity (deprecated in HA 2026.8)
+        if any(cat in ["robot"] for cat in device_category):
+            _LOGGER.debug(
+                "Adding battery sensor for robot device %s",
+                device_serial,
+            )
+            entities.append(DysonRobotBatterySensor(coordinator))
 
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
@@ -1298,6 +1869,246 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error updating PM10 sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonParticulatesSensor(DysonEntity, SensorEntity):
+    """Particulates sensor for Dyson Pure Cool Link devices (TP02).
+
+    This sensor monitors particulate matter using the 'pact' key from older
+    Pure Cool Link models. Unlike PM2.5/PM10 sensors that report specific
+    particle size ranges, this reports general particulate levels in an
+    unknown unit specific to Pure Cool Link devices.
+
+    Key Differences from PM2.5:
+        - Uses 'pact' key instead of 'p25r'/'pm25'
+        - Only present on Pure Cool Link models (device type 475)
+        - Unit is micrograms per cubic meter for consistency
+        - Different measurement methodology than PM2.5
+
+    Attributes:
+        device_class: SensorDeviceClass.PM25 (closest match for particulates)
+        state_class: SensorStateClass.MEASUREMENT for statistics
+        unit_of_measurement: μg/m³ (micrograms per cubic meter)
+        icon: mdi:air-filter for visual representation
+
+    Data Source:
+        Environmental sensor data from device MQTT 'pact' key
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Particulates sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_pact"
+        self._attr_translation_key = "pact"
+        self._attr_device_class = SensorDeviceClass.PM25
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_icon = "mdi:air-filter"
+
+        _LOGGER.debug(
+            "Initialized Particulates sensor for %s with initial value: %s",
+            coordinator.serial_number,
+            self._attr_native_value,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            pact_raw = env_data.get("pact")
+
+            if pact_raw is not None:
+                try:
+                    # Convert and validate the particulates value
+                    new_value = int(pact_raw)
+                    if not (0 <= new_value <= 9999):
+                        _LOGGER.warning(
+                            "Invalid particulates value for device %s: %s (expected 0-9999)",
+                            device_serial,
+                            new_value,
+                        )
+                        new_value = None
+                except (ValueError, TypeError):
+                    _LOGGER.warning(
+                        "Invalid particulates value format for device %s: %s",
+                        device_serial,
+                        pact_raw,
+                    )
+                    new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "Particulates sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "No particulates data available for device %s", device_serial
+                )
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Particulates data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid particulates data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating particulates sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonVOCLinkSensor(DysonEntity, SensorEntity):
+    """VOC sensor for Dyson Pure Cool Link devices (TP02).
+
+    This sensor monitors volatile organic compounds using the 'vact' key from
+    older Pure Cool Link models. Unlike the newer 'va10' sensor that reports
+    VOC index values, this reports raw VOC levels.
+
+    Key Differences from va10 VOC:
+        - Uses 'vact' key instead of 'va10'
+        - Only present on Pure Cool Link models (device type 475)
+        - Reports raw values without division by 10
+        - Different measurement methodology than newer models
+
+    Attributes:
+        device_class: SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
+        state_class: SensorStateClass.MEASUREMENT for statistics
+        unit_of_measurement: mg/m³ (milligrams per cubic meter)
+        icon: mdi:air-filter for visual representation
+
+    Data Source:
+        Environmental sensor data from device MQTT 'vact' key
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the VOC Link sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_vact"
+        self._attr_translation_key = "voc"
+        self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_icon = "mdi:air-filter"
+
+        _LOGGER.debug(
+            "Initialized VOC Link sensor for %s with initial value: %s",
+            coordinator.serial_number,
+            self._attr_native_value,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = None
+
+            # Get environmental data from coordinator
+            env_data = (
+                self.coordinator.data.get("environmental-data", {})
+                if self.coordinator.data
+                else {}
+            )
+            vact_raw = env_data.get("vact")
+
+            if vact_raw is not None:
+                # Handle initialization state where device reports "INIT"
+                if vact_raw == "INIT":
+                    _LOGGER.debug(
+                        "VOC Link sensor initializing for device %s", device_serial
+                    )
+                    new_value = None
+                else:
+                    try:
+                        # Convert and validate the VOC value
+                        raw_value = int(vact_raw)
+                        if not (0 <= raw_value <= 9999):
+                            _LOGGER.warning(
+                                "Invalid VOC Link value for device %s: %s (expected 0-9999)",
+                                device_serial,
+                                raw_value,
+                            )
+                            new_value = None
+                        else:
+                            # Convert from raw value to mg/m³ (same conversion as va10)
+                            # Range 0-9999 raw becomes 0.000-9.999 mg/m³
+                            new_value = round(raw_value / 1000.0, 3)
+                            _LOGGER.debug(
+                                "VOC Link conversion for %s: %d raw -> %.3f mg/m³",
+                                device_serial,
+                                raw_value,
+                                new_value,
+                            )
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid VOC Link value format for device %s: %s",
+                            device_serial,
+                            vact_raw,
+                        )
+                        new_value = None
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "VOC Link sensor updated for %s: %s -> %s",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug("No VOC Link data available for device %s", device_serial)
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "VOC Link data not available for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid VOC Link data format for device %s: %s", device_serial, err
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating VOC Link sensor for device %s: %s",
                 device_serial,
                 err,
             )
@@ -2021,6 +2832,141 @@ class DysonCleaningTimeRemainingSensor(DysonEntity, SensorEntity):
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error updating cleaning time remaining sensor for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+
+        super()._handle_coordinator_update()
+
+
+class DysonRobotBatterySensor(DysonEntity, SensorEntity):
+    """Battery sensor for Dyson robot vacuum devices.
+
+    This sensor provides battery level monitoring for Dyson robot vacuum cleaners,
+    replacing the deprecated battery_level property on the vacuum entity.
+
+    Attributes:
+        device_class: SensorDeviceClass.BATTERY for proper Home Assistant integration
+        state_class: SensorStateClass.MEASUREMENT for long-term statistics
+        unit_of_measurement: PERCENTAGE (0-100%)
+        entity_category: EntityCategory.DIAGNOSTIC for diagnostic information
+        icon: mdi:battery for visual representation
+
+    Data Source:
+        Battery level from robot vacuum device state (batteryChargeLevel field),
+        updated automatically via MQTT as battery state changes.
+
+    Availability:
+        Only created for devices with "robot" device category (Dyson 360 Eye,
+        360 Heurist, 360 Vis Nav models).
+
+    Migration:
+        This sensor replaces the deprecated battery_level property and
+        VacuumEntityFeature.BATTERY feature flag on the vacuum entity,
+        which will be removed in Home Assistant 2026.8.
+
+    Example:
+        Typical sensor values and automation:
+
+        >>> # Battery at 85%
+        >>> sensor.native_value = 85
+        >>>
+        >>> # Low battery - send notification
+        >>> if sensor.native_value < 20:
+        >>>     await notify.async_send_message("Robot vacuum battery low")
+
+    Note:
+        Battery percentage is reported directly from the robot device without
+        additional processing or calibration.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the robot battery sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+
+        Configuration:
+        - unique_id: {serial_number}_robot_battery for entity registry
+        - translation_key: "robot_battery" for localized naming
+        - device_class: BATTERY for proper sensor categorization
+        - state_class: MEASUREMENT for long-term statistics
+        - unit: PERCENTAGE for battery level display
+        - entity_category: DIAGNOSTIC for diagnostic information
+        - icon: battery for visual representation
+
+        Integration Features:
+        - Automatic device registry linking via parent DysonEntity
+        - Long-term statistics support for trend analysis
+        - Proper sensor categorization in Home Assistant UI
+        - Localized entity naming through translation system
+
+        Note:
+            Only initialized for devices with "robot" device category.
+        """
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_battery"
+        self._attr_translation_key = "robot_battery"
+        self._attr_device_class = SensorDeviceClass.BATTERY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:battery"
+
+        _LOGGER.debug(
+            "Initialized robot battery sensor for %s",
+            coordinator.serial_number,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_native_value = None
+            super()._handle_coordinator_update()
+            return
+
+        device_serial = self.coordinator.serial_number
+
+        try:
+            old_value = self._attr_native_value
+            new_value = self.coordinator.device.robot_battery_level
+
+            self._attr_native_value = new_value
+
+            if new_value is not None:
+                _LOGGER.debug(
+                    "Robot battery sensor updated for %s: %s -> %s%%",
+                    device_serial,
+                    old_value,
+                    new_value,
+                )
+            else:
+                _LOGGER.debug(
+                    "Robot battery sensor update: no battery data for device %s",
+                    device_serial,
+                )
+
+        except (KeyError, AttributeError) as err:
+            _LOGGER.debug(
+                "Robot battery data not available for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Invalid robot battery data format for device %s: %s",
+                device_serial,
+                err,
+            )
+            self._attr_native_value = None
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error updating robot battery sensor for device %s: %s",
                 device_serial,
                 err,
             )
