@@ -1211,6 +1211,10 @@ class TestCoordinatorErrorHandling:
             coordinator.device.is_connected = False
             coordinator._listeners = {}
             coordinator.async_update_listeners = MagicMock()
+            coordinator.data = (
+                None  # Initialize data attribute that parent class normally sets
+            )
+            coordinator._device_capabilities = []
 
             # First attempt should fail due to disconnection
             with pytest.raises(UpdateFailed, match="not connected"):

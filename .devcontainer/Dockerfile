@@ -1,6 +1,9 @@
 # Use the official Python devcontainer image as base
 FROM mcr.microsoft.com/devcontainers/python:3.14-bookworm
 
+# Remove Yarn repository to avoid GPG key errors
+RUN rm -f /etc/apt/sources.list.d/yarn.list
+
 # Install system dependencies needed for Home Assistant
 RUN apt-get update && apt-get install -y \
     build-essential \

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.27.0"
+version = "0.28.0-beta.10"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["home-assistant", "dyson", "integration", "custom-component"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -34,7 +34,7 @@ dependencies = [
     "aiohttp>=3.13.3",
     "cryptography>=45.0.7",
     "requests>=2.32.5",
-    "libdyson-rest==0.11.0",
+    "libdyson-rest==0.11.1",
     "paho-mqtt>=2.1.0",
 ]
 
@@ -56,9 +56,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cmgrayb/ha-dyson-alt"
-Repository = "https://github.com/cmgrayb/ha-dyson-alt"
-Issues = "https://github.com/cmgrayb/ha-dyson-alt/issues"
+Homepage = "https://github.com/cmgrayb/hass-dyson"
+Repository = "https://github.com/cmgrayb/hass-dyson"
+Issues = "https://github.com/cmgrayb/hass-dyson/issues"
 
 [tool.setuptools.packages.find]
 where = ["custom_components"]
