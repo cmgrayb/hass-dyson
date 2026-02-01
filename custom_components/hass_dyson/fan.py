@@ -655,9 +655,8 @@ class DysonFan(DysonEntity, FanEntity):
             fan_speed_setting = self.coordinator.device.get_state_value(
                 product_state, "fnsp", "0001"
             )
-            auto_mode = self.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
+            # Use device auto_mode property which handles both fmod="AUTO" and auto="ON"
+            auto_mode = self.coordinator.device.auto_mode
             night_mode = self.coordinator.device.get_state_value(
                 product_state, "nmod", "OFF"
             )
@@ -665,7 +664,7 @@ class DysonFan(DysonEntity, FanEntity):
             attributes["fan_power"] = fan_power == "ON"
             attributes["fan_state"] = fan_state  # type: ignore[assignment]
             attributes["fan_speed_setting"] = fan_speed_setting  # type: ignore[assignment]
-            attributes["auto_mode"] = auto_mode == "ON"
+            attributes["auto_mode"] = auto_mode
             attributes["night_mode"] = night_mode == "ON"
 
             # Oscillation information
@@ -869,13 +868,14 @@ class DysonFan(DysonEntity, FanEntity):
             device_data, "hmod", "OFF"
         )
         fan_power = self.coordinator.device.get_state_value(device_data, "fpwr", "OFF")
-        auto_mode = self.coordinator.device.get_state_value(device_data, "auto", "OFF")
+        # Use device auto_mode property which handles both fmod="AUTO" and auto="ON"
+        auto_mode = self.coordinator.device.auto_mode
 
         if fan_power == "OFF":
             self._attr_hvac_mode = HVACMode.OFF
         elif heating_mode == "HEAT":
             self._attr_hvac_mode = HVACMode.HEAT
-        elif auto_mode == "ON":
+        elif auto_mode:
             self._attr_hvac_mode = HVACMode.AUTO
         else:
             self._attr_hvac_mode = HVACMode.FAN_ONLY

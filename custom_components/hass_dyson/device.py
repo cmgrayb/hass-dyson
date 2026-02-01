@@ -1747,19 +1747,20 @@ class DysonDevice:
         """Return if auto mode is enabled.
 
         Checks multiple keys depending on device type:
-        - fmod: "AUTO" for TP02/HP02 devices (fan auto mode via fmod)
-        - auto: "ON" for other devices (fan auto mode via auto key)
+        - fmod: "AUTO" for TP02/HP02 "Link" devices (fan mode)
+        - auto: "ON" for newer devices (dedicated auto mode key)
 
         Note: wacd is for water hardness detection, not auto operating mode.
         """
         product_state = self._state_data.get("product-state", {})
 
-        # Check fmod for fan auto mode (TP02, HP02, etc.)
-        fmod = self.get_state_value(product_state, "fmod", "MISSING")
+        # Check fmod for fan auto mode (TP02, HP02 "Link" devices)
+        # These devices use fmod="AUTO" for auto mode
+        fmod = self.get_state_value(product_state, "fmod", "OFF")
         if fmod == "AUTO":
             return True
 
-        # Check auto key for fan auto mode (other devices)
+        # Check auto key for fan auto mode (newer devices)
         auto = self.get_state_value(product_state, "auto", "OFF")
         if auto == "ON":
             return True
@@ -2522,9 +2523,30 @@ class DysonDevice:
         await self.send_command("STATE-SET", command_data)
 
     async def set_auto_mode(self, enabled: bool) -> None:
-        """Set auto mode on/off."""
-        auto_value = "ON" if enabled else "OFF"
-        await self.send_command("STATE-SET", {"auto": auto_value})
+        """Set auto mode on/off using appropriate method for device type."""
+        # Determine power control type if not yet detected
+        power_control_type = (
+            self._power_control_type or self._detect_power_control_type()
+        )
+
+        if power_control_type == "fmod":
+            # TP02/HP02 "Link" devices: use fmod for auto mode control
+            fmod_value = "AUTO" if enabled else "FAN"
+            _LOGGER.debug(
+                "Device %s setting auto mode via fmod (TP02/HP02 Link): %s",
+                self.serial_number,
+                fmod_value,
+            )
+            await self.send_command("STATE-SET", {"fmod": fmod_value})
+        else:
+            # Modern devices (TP04+): use dedicated auto key
+            auto_value = "ON" if enabled else "OFF"
+            _LOGGER.debug(
+                "Device %s setting auto mode via auto key: %s",
+                self.serial_number,
+                auto_value,
+            )
+            await self.send_command("STATE-SET", {"auto": auto_value})
 
     async def set_oscillation(self, enabled: bool, angle: int | None = None) -> None:
         """Control fan oscillation with optional angle specification.

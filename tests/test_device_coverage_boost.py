@@ -514,7 +514,7 @@ class TestDeviceStateProperties:
         assert mock_device_basic.auto_mode is True
 
     def test_auto_mode_enabled_via_fmod(self, mock_device_basic):
-        """Test auto mode when enabled via fmod (TP02/HP02 devices)."""
+        """Test auto mode when enabled via fmod (TP02/HP02 Link devices)."""
         mock_device_basic._state_data = {"product-state": {"fmod": "AUTO"}}
         assert mock_device_basic.auto_mode is True
 

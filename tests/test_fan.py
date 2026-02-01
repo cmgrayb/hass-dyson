@@ -233,13 +233,13 @@ class TestDysonFan:
         assert fan._attr_oscillating is False
 
     def test_handle_coordinator_update_fan_auto_mode_via_fmod(self, mock_coordinator):
-        """Test fan in auto mode via fmod key (TP02/HP02 devices)."""
+        """Test fan in auto mode via fmod key (TP02/HP02 Link devices)."""
         # Arrange
         fan = DysonFan(mock_coordinator)
         mock_coordinator.device.fan_power = True
         mock_coordinator.device.fan_state = "FAN"
         mock_coordinator.device.fan_speed_setting = "AUTO"
-        mock_coordinator.device.auto_mode = True  # Auto mode via fmod
+        mock_coordinator.device.auto_mode = True  # Auto mode via fmod="AUTO"
 
         # Act
         with patch.object(fan, "async_write_ha_state"):
