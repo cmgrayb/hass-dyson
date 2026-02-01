@@ -2049,33 +2049,40 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
             vact_raw = env_data.get("vact")
 
             if vact_raw is not None:
-                try:
-                    # Convert and validate the VOC value
-                    raw_value = int(vact_raw)
-                    if not (0 <= raw_value <= 9999):
-                        _LOGGER.warning(
-                            "Invalid VOC Link value for device %s: %s (expected 0-9999)",
-                            device_serial,
-                            raw_value,
-                        )
-                        new_value = None
-                    else:
-                        # Convert from raw value to mg/m³ (same conversion as va10)
-                        # Range 0-9999 raw becomes 0.000-9.999 mg/m³
-                        new_value = round(raw_value / 1000.0, 3)
-                        _LOGGER.debug(
-                            "VOC Link conversion for %s: %d raw -> %.3f mg/m³",
-                            device_serial,
-                            raw_value,
-                            new_value,
-                        )
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid VOC Link value format for device %s: %s",
-                        device_serial,
-                        vact_raw,
+                # Handle initialization state where device reports "INIT"
+                if vact_raw == "INIT":
+                    _LOGGER.debug(
+                        "VOC Link sensor initializing for device %s", device_serial
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the VOC value
+                        raw_value = int(vact_raw)
+                        if not (0 <= raw_value <= 9999):
+                            _LOGGER.warning(
+                                "Invalid VOC Link value for device %s: %s (expected 0-9999)",
+                                device_serial,
+                                raw_value,
+                            )
+                            new_value = None
+                        else:
+                            # Convert from raw value to mg/m³ (same conversion as va10)
+                            # Range 0-9999 raw becomes 0.000-9.999 mg/m³
+                            new_value = round(raw_value / 1000.0, 3)
+                            _LOGGER.debug(
+                                "VOC Link conversion for %s: %d raw -> %.3f mg/m³",
+                                device_serial,
+                                raw_value,
+                                new_value,
+                            )
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid VOC Link value format for device %s: %s",
+                            device_serial,
+                            vact_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
