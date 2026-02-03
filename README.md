@@ -272,6 +272,10 @@ hass_dyson:
 - **Home Assistant** - Amazing home automation platform
 - **Dyson** - For making great products worth putting in the work for
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=cmgrayb/hass-dyson&type=date&legend=top-left)](https://www.star-history.com/#cmgrayb/hass-dyson&type=date&legend=top-left)
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

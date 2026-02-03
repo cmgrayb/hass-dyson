@@ -117,22 +117,24 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if not self.coordinator.device:
             return
 
-        # Current temperature
-        current_temp = self.coordinator.device.get_state_value(
-            device_data, "tmp", "0000"
-        )
-        try:
-            temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
-            # Only set temperature if we have a valid reading (not default 0000)
-            if current_temp != "0000" and temp_kelvin > 0:
-                self._attr_current_temperature = (
-                    temp_kelvin - 273.15
-                )  # Convert to Celsius
-            else:
-                self._attr_current_temperature = (
-                    None  # No temperature sensor or invalid reading
-                )
-        except (ValueError, TypeError):
+        # Current temperature from environmental data (same source as temperature sensor)
+        environmental_data = self.coordinator.data.get("environmental-data", {})
+        current_temp = environmental_data.get("tact")
+
+        if current_temp is not None and current_temp != "OFF":
+            try:
+                # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
+                temp_kelvin = float(current_temp) / 10
+                # Only set temperature if we have a valid reading
+                if temp_kelvin > 0:
+                    self._attr_current_temperature = round(
+                        temp_kelvin - 273.15, 1
+                    )  # Convert to Celsius
+                else:
+                    self._attr_current_temperature = None
+            except (ValueError, TypeError):
+                self._attr_current_temperature = None
+        else:
             self._attr_current_temperature = None
 
         # Target temperature

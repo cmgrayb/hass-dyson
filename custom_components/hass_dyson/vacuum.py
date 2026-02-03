@@ -7,7 +7,7 @@ monitoring, battery management, and device-specific features.
 Key Features:
     - Start, pause, resume, and stop cleaning operations
     - Real-time state tracking (cleaning, docked, returning, error, etc.)
-    - Battery level monitoring and charging status
+    - Battery level monitoring via separate battery sensor entity
     - Position tracking during cleaning operations
     - Error and fault condition reporting
     - Cleaning session management with unique identifiers
@@ -108,7 +108,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         - STOP: Abort current cleaning and return to dock
         - RETURN_HOME: Not directly supported (use stop to abort and return)
         - STATE: Real-time state reporting with detailed status information
-        - BATTERY: Battery level monitoring and charging status
+        - Battery monitoring is provided by a separate battery sensor entity
 
     State Mapping:
         Dyson robot states are mapped to Home Assistant vacuum states using
@@ -117,7 +117,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
 
     Device Information:
         - Model: Determined from device capabilities and category
-        - Battery: Percentage level with charging status
+        - Battery: Monitored via separate battery sensor entity
         - Position: Global coordinates when available
         - Cleaning Session: Unique identifier for current cleaning operation
     """
@@ -135,11 +135,12 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_vacuum"
 
         # Set supported features based on robot capabilities
+        # Note: Battery monitoring is now handled by a separate battery sensor
+        # to comply with Home Assistant deprecation (HA 2026.8)
         self._attr_supported_features = (
             VacuumEntityFeature.PAUSE
             | VacuumEntityFeature.STOP
             | VacuumEntityFeature.STATE
-            | VacuumEntityFeature.BATTERY
         )
 
         _LOGGER.debug(
@@ -177,26 +178,6 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             ha_activity,
         )
         return ha_activity
-
-    @property
-    def battery_level(self) -> int | None:
-        """Return the battery level of the vacuum.
-
-        Provides battery percentage from 0-100 if available. Returns None
-        if device is not available or battery level is not reported.
-
-        Returns:
-            Battery percentage (0-100) or None if unavailable
-        """
-        if not self.available or not self.coordinator.device:
-            return None
-
-        battery = self.coordinator.device.robot_battery_level
-        if battery is not None:
-            _LOGGER.debug(
-                "Robot %s battery level: %d%%", self.coordinator.serial_number, battery
-            )
-        return battery
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
