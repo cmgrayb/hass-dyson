@@ -1,7 +1,7 @@
 # Production dependencies only
 cryptography>=45.0.7
 aiohttp>=3.13.3
-homeassistant>=2026.2.0b2
+homeassistant>=2026.2.0b5
 requests>=2.32.5
 
 # Dyson communication libraries

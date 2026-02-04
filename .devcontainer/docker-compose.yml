@@ -22,7 +22,7 @@ services:
 
   # Home Assistant test instance
   homeassistant:
-    image: homeassistant/home-assistant:2026.2.0b2
+    image: homeassistant/home-assistant:2026.2.0b5
     container_name: ha-dyson-homeassistant-dev
     restart: unless-stopped
     privileged: true
