@@ -5,7 +5,7 @@ homeassistant>=2026.2.0
 requests>=2.32.5
 
 # Dyson communication libraries
-libdyson-rest==0.11.2
+libdyson-rest==0.12.0b1
 
 # Cloud MQTT communication
 paho-mqtt[websockets]>=2.1.0

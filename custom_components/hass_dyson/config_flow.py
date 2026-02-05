@@ -186,6 +186,33 @@ async def _discover_device_via_mdns(
         return None
 
 
+def _is_mobile_number(credential: str) -> bool:
+    """Check if the credential is a mobile number (starts with +).
+
+    Args:
+        credential: Email or mobile number string
+
+    Returns:
+        True if it appears to be a mobile number, False otherwise
+    """
+    return credential.strip().startswith("+")
+
+
+def _is_cn_mobile_auth(country: str, credential: str) -> bool:
+    """Check if mobile authentication should be used (CN region only).
+
+    CN region users must use mobile number authentication and cannot use email.
+
+    Args:
+        country: Country code (e.g., "CN", "US")
+        credential: Email or mobile number (unused, kept for API compatibility)
+
+    Returns:
+        True if mobile authentication should be used (CN region), False otherwise
+    """
+    return country.upper() == "CN"
+
+
 class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Dyson."""
 
@@ -201,6 +228,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._challenge_id: str | None = None
         self._discovered_devices = None  # type: ignore
         self._connection_type: str | None = None
+        self._country: str | None = None  # Store country for mobile auth detection
 
     def _device_has_mqtt_support(self, device) -> bool:
         """Check if a device has MQTT connection support.
@@ -314,9 +342,21 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise
 
     async def _initiate_otp_with_dyson_api(
-        self, email: str, country: str = "US", culture: str = "en-US"
+        self, credential: str, country: str = "US", culture: str = "en-US"
     ) -> tuple[str | None, dict[str, str]]:
-        """Initiate OTP with Dyson API using only email and return challenge ID and any errors."""
+        """Initiate OTP with Dyson API using email or mobile number.
+
+        For CN region with mobile number (starting with +), uses mobile authentication.
+        Otherwise uses standard email authentication.
+
+        Args:
+            credential: Email address or mobile number (with + prefix for mobile)
+            country: Country code (e.g., "CN", "US")
+            culture: Culture code (e.g., "zh-CN", "en-US")
+
+        Returns:
+            Tuple of (challenge_id, errors_dict)
+        """
         # Import here to avoid scoping issues
         from libdyson_rest import AsyncDysonClient
         from libdyson_rest.exceptions import (
@@ -326,19 +366,24 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         errors = {}
+        is_mobile = _is_cn_mobile_auth(country, credential)
 
         try:
+            auth_type = "mobile" if is_mobile else "email"
             _LOGGER.info(
-                "Initiating OTP with Dyson API using email: %s, country: %s, culture: %s",
-                email,
+                "Initiating OTP with Dyson API using %s: %s, country: %s, culture: %s",
+                auth_type,
+                credential,
                 country,
                 culture,
             )
 
-            # Initialize libdyson-rest client with only email for OTP initiation
-            # Following proper OAuth/2FA pattern: Step 1 only requires email
+            # Initialize libdyson-rest client
+            # For mobile auth, still pass the mobile number as email parameter
             self._cloud_client = await self.hass.async_add_executor_job(
-                lambda: AsyncDysonClient(email=email, country=country, culture=culture)
+                lambda: AsyncDysonClient(
+                    email=credential, country=country, culture=culture
+                )
             )  # type: ignore[func-returns-value]
 
             if self._cloud_client is None:
@@ -351,17 +396,36 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Step 2: Check user status (validates account before auth)
             _LOGGER.debug("Checking account status...")
-            user_status = await self._cloud_client.get_user_status()
-            _LOGGER.debug(
-                "Account status: %s, Auth method: %s",
-                user_status.account_status.value,
-                user_status.authentication_method.value,
-            )
+            if is_mobile:
+                # Use mobile-specific get_user_status
+                user_status = await self._cloud_client.get_user_status_mobile(
+                    credential
+                )
+                _LOGGER.debug(
+                    "Mobile account status: %s, Auth method: %s",
+                    user_status.account_status.value,
+                    user_status.authentication_method.value,
+                )
+            else:
+                # Use standard email get_user_status
+                user_status = await self._cloud_client.get_user_status(credential)
+                _LOGGER.debug(
+                    "Email account status: %s, Auth method: %s",
+                    user_status.account_status.value,
+                    user_status.authentication_method.value,
+                )
 
-            # Step 3: Begin the login process to get challenge_id - this triggers the OTP email
-            # According to libdyson-rest developers, begin_login only requires email
+            # Step 3: Begin the login process to get challenge_id
+            # This triggers the OTP (email or SMS depending on auth type)
             _LOGGER.debug("Beginning login process (OTP initiation)...")
-            challenge = await self._cloud_client.begin_login(email)
+            if is_mobile:
+                # Use mobile-specific begin_login (sends SMS OTP)
+                challenge = await self._cloud_client.begin_login_mobile(credential)
+                _LOGGER.info("SMS OTP sent to mobile number")
+            else:
+                # Use standard email begin_login (sends email OTP)
+                challenge = await self._cloud_client.begin_login(credential)
+                _LOGGER.info("Email OTP sent")
 
             # Validate and store challenge ID for verification step
             if challenge is None or challenge.challenge_id is None:
@@ -451,9 +515,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     country = country or default_country
                     culture = culture or default_culture
 
-                # Ensure we have valid email before initiating OTP
+                # Store country for use in complete_login (mobile auth detection)
+                self._country = country
+
+                # Ensure we have valid email/mobile before initiating OTP
                 if self._email:
-                    # Initiate OTP with Dyson API (Step 1: email only)
+                    # Initiate OTP with Dyson API (Step 1: email or mobile)
                     challenge_id, errors = await self._initiate_otp_with_dyson_api(
                         self._email, country, culture
                     )
@@ -665,12 +732,25 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     "Missing required authentication parameters"
                                 )
 
-                            await self._cloud_client.complete_login(
-                                self._challenge_id,
-                                verification_code,
-                                self._email,
-                                password,
-                            )
+                            # Use mobile authentication for CN region with mobile numbers
+                            if _is_cn_mobile_auth(self._country or "US", self._email):
+                                _LOGGER.info(
+                                    "Using mobile authentication for CN region"
+                                )
+                                await self._cloud_client.complete_login_mobile(
+                                    self._challenge_id,
+                                    verification_code,
+                                    self._email,
+                                    password,
+                                )
+                            else:
+                                _LOGGER.info("Using standard email authentication")
+                                await self._cloud_client.complete_login(
+                                    self._challenge_id,
+                                    verification_code,
+                                    self._email,
+                                    password,
+                                )
                             _LOGGER.info(
                                 "Successfully authenticated with Dyson API, got auth token"
                             )
