@@ -10,7 +10,7 @@
       },
       "cloud_account": {
         "title": "Dyson-Konto-Authentifizierung",
-        "description": "Geben Sie Ihre Dyson-Konto-Anmeldedaten ein, um Ihre Geräte zu entdecken und einzurichten. Für CN-Konten können Sie eine Mobilnummer mit Ländervorwahl verwenden (z.B. +8613800000000).",
+        "description": "Geben Sie Ihre Dyson-Konto-Anmeldedaten ein, um Ihre Geräte zu entdecken und einzurichten. Für die Region China (CN) verwenden Sie bitte eine Mobilnummer mit Ländervorwahl (z.B. +8613800000000).",
         "data": {
           "email": "E-Mail oder Mobilnummer (CN: +8613800000000)"
         }

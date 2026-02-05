@@ -10,7 +10,7 @@
       },
       "cloud_account": {
         "title": "Authentification du compte Dyson",
-        "description": "Entrez vos identifiants de compte Dyson pour découvrir et configurer vos appareils. Pour les comptes CN, vous pouvez utiliser un numéro de mobile avec l'indicatif du pays (ex. +8613800000000).",
+        "description": "Entrez vos identifiants de compte Dyson pour découvrir et configurer vos appareils. Pour la région Chine (CN), veuillez utiliser un numéro de mobile avec l'indicatif du pays (ex. +8613800000000).",
         "data": {
           "email": "E-mail ou mobile (CN: +8613800000000)"
         }
