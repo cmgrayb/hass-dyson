@@ -1406,6 +1406,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             connection_type,
             cloud_host,
             cloud_credential_data,
+            self._device_category,
         )
 
         # Set firmware version in the device for proper device info
@@ -1477,6 +1478,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 connection_type,
                 None,  # No cloud host for manual setup
                 None,  # No cloud credential for manual setup
+                self._device_category,
             )
 
             # Set unknown firmware version since we don't get it from cloud
