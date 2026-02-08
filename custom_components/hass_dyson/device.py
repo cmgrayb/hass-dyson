@@ -2112,9 +2112,16 @@ class DysonDevice:
             Robot state string or None if not available or not a robot device
         """
         try:
+            # Robot vacuum messages: data at top level (360eye)
+            # Air purifier messages: data nested under product-state
+            # Try both locations
             product_state = self._state_data.get("product-state", {})
-            # Robot state may be in 'state' or 'newstate' field depending on model
             robot_state = product_state.get("state") or product_state.get("newstate")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if not robot_state:
+                robot_state = self._state_data.get("state") or self._state_data.get("newstate")
+
             if robot_state:
                 _LOGGER.debug("Robot state for %s: %s", self.serial_number, robot_state)
             return robot_state
@@ -2130,8 +2137,14 @@ class DysonDevice:
             Battery level (0-100) or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             battery = product_state.get("batteryChargeLevel")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if battery is None:
+                battery = self._state_data.get("batteryChargeLevel")
+
             if battery is not None:
                 battery_int = int(battery)
                 _LOGGER.debug(
@@ -2152,8 +2165,14 @@ class DysonDevice:
             List of [x, y] coordinates or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             position = product_state.get("globalPosition")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if position is None:
+                position = self._state_data.get("globalPosition")
+
             if position and isinstance(position, list) and len(position) == 2:
                 pos_coords = [int(position[0]), int(position[1])]
                 _LOGGER.debug(
@@ -2174,8 +2193,14 @@ class DysonDevice:
             Clean type (immediate, scheduled, manual) or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             clean_type = product_state.get("fullCleanType")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if not clean_type:
+                clean_type = self._state_data.get("fullCleanType")
+
             if clean_type:
                 _LOGGER.debug(
                     "Robot clean type for %s: %s", self.serial_number, clean_type
@@ -2195,8 +2220,13 @@ class DysonDevice:
             Unique clean session identifier or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             clean_id = product_state.get("cleanId")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if not clean_id:
+                clean_id = self._state_data.get("cleanId")
             if clean_id:
                 _LOGGER.debug("Robot clean ID for %s: %s", self.serial_number, clean_id)
             return clean_id
