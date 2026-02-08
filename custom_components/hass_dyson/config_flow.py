@@ -229,6 +229,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_devices = None  # type: ignore
         self._connection_type: str | None = None
         self._country: str | None = None  # Store country for mobile auth detection
+        self._culture: str | None = None  # Store culture for complete_login
 
     def _device_has_mqtt_support(self, device) -> bool:
         """Check if a device has MQTT connection support.
@@ -515,8 +516,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     country = country or default_country
                     culture = culture or default_culture
 
-                # Store country for use in complete_login (mobile auth detection)
+                # Store country and culture for use in complete_login (mobile auth detection)
                 self._country = country
+                self._culture = culture
 
                 # Ensure we have valid email/mobile before initiating OTP
                 if self._email:
@@ -742,6 +744,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     verification_code,
                                     self._email,
                                     password,
+                                    self._country or "CN",
+                                    self._culture or "zh-CN",
                                 )
                             else:
                                 _LOGGER.info("Using standard email authentication")
