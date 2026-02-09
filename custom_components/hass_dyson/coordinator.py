@@ -2048,10 +2048,41 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Don't raise - capability refinement is optional
 
     def _get_device_host(self, device_info: Any) -> str:
-        """Get device host/IP address from device info."""
-        # For cloud devices, try to get the local IP if available
-        # Otherwise use the device serial number for mDNS resolution
-        return getattr(device_info, "hostname", f"{self.serial_number}.local")
+        """Get device host/IP address from device info or config.
+
+        Priority order:
+        1. User-provided static IP/hostname from config entry (bypasses mDNS)
+        2. Hostname from device_info (cloud API)
+        3. Fall back to {serial}.local for mDNS resolution
+        """
+        # Check if user provided a static IP/hostname in config entry
+        configured_hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
+        if configured_hostname:
+            _LOGGER.info(
+                "Using configured hostname for device %s: %s",
+                self.serial_number,
+                configured_hostname,
+            )
+            return configured_hostname
+
+        # For cloud devices, try to get the local IP from API if available
+        api_hostname = getattr(device_info, "hostname", None)
+        if api_hostname:
+            _LOGGER.debug(
+                "Using hostname from cloud API for device %s: %s",
+                self.serial_number,
+                api_hostname,
+            )
+            return api_hostname
+
+        # Fall back to mDNS resolution using {serial}.local
+        fallback_hostname = f"{self.serial_number}.local"
+        _LOGGER.debug(
+            "Using fallback hostname for device %s: %s",
+            self.serial_number,
+            fallback_hostname,
+        )
+        return fallback_hostname
 
     def _get_mqtt_prefix(self, device_info: Any) -> str:
         """Get MQTT prefix from device info using API-first approach.

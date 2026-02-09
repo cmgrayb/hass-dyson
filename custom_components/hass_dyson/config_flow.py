@@ -1270,41 +1270,92 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.info("User declined to add discovered device")
             return self.async_abort(reason="user_declined")
 
-        # User confirmed, create the device entry
+        # User confirmed, proceed to connection configuration
+        _LOGGER.info("User confirmed device addition, showing connection configuration")
+        return await self.async_step_discovery_connection()
+
+    async def async_step_discovery_connection(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle connection configuration for discovered device."""
         discovery_info = self.init_data
         if not discovery_info:
-            _LOGGER.error("No discovery info available for device creation")
+            _LOGGER.error("No discovery info available for connection configuration")
             return self.async_abort(reason="no_discovery_info")
 
         device_serial = discovery_info["serial_number"]
         device_name = discovery_info.get("name", f"Dyson {device_serial}")
 
-        _LOGGER.info(
-            "User confirmed device addition: %s (%s)", device_name, device_serial
-        )
+        if user_input is not None:
+            # User submitted connection configuration
+            connection_type = user_input.get("connection_type", "local_cloud_fallback")
+            hostname = user_input.get(CONF_HOSTNAME, "").strip()
 
-        # Create proper device config using the same method as auto-add
-        from .device_utils import create_cloud_device_config
+            _LOGGER.info(
+                "User configured device %s with connection type: %s, hostname: %s",
+                device_serial,
+                connection_type,
+                hostname if hostname else "(automatic discovery)",
+            )
 
-        device_info = {
-            "serial_number": device_serial,
-            "name": device_name,
-            "product_type": discovery_info.get("product_type", "unknown"),
-            "category": discovery_info.get("category", "unknown"),
-        }
+            # Create proper device config using the same method as auto-add
+            from .device_utils import create_cloud_device_config
 
-        config_data = create_cloud_device_config(
-            serial_number=device_serial,
-            username=discovery_info["email"],
-            device_info=device_info,
-            auth_token=discovery_info["auth_token"],
-            parent_entry_id=discovery_info["parent_entry_id"],
-        )
+            device_info = {
+                "serial_number": device_serial,
+                "name": device_name,
+                "product_type": discovery_info.get("product_type", "unknown"),
+                "category": discovery_info.get("category", "unknown"),
+            }
 
-        _LOGGER.info("Creating config entry for discovered device: %s", device_name)
-        return self.async_create_entry(
-            title=device_name,
-            data=config_data,
+            config_data = create_cloud_device_config(
+                serial_number=device_serial,
+                username=discovery_info["email"],
+                device_info=device_info,
+                auth_token=discovery_info["auth_token"],
+                parent_entry_id=discovery_info["parent_entry_id"],
+                connection_type=connection_type,
+                hostname=hostname if hostname else None,
+            )
+
+            _LOGGER.info("Creating config entry for discovered device: %s", device_name)
+            return self.async_create_entry(
+                title=device_name,
+                data=config_data,
+            )
+
+        # Show connection configuration form
+        # Get parent account's connection type as default
+        parent_entry_id = discovery_info.get("parent_entry_id")
+        default_connection_type = "local_cloud_fallback"
+        if parent_entry_id:
+            parent_entries = [
+                entry
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+                if entry.entry_id == parent_entry_id
+            ]
+            if parent_entries:
+                default_connection_type = parent_entries[0].data.get(
+                    "connection_type", "local_cloud_fallback"
+                )
+
+        return self.async_show_form(
+            step_id="discovery_connection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "connection_type", default=default_connection_type
+                    ): vol.In(_get_connection_type_options_detailed()),
+                    vol.Optional(
+                        CONF_HOSTNAME,
+                        description="Leave blank for automatic discovery",
+                    ): str,
+                }
+            ),
+            description_placeholders={
+                "device_name": device_name,
+                "device_serial": device_serial,
+            },
         )
 
     async def async_step_device_auto_create(
@@ -1598,8 +1649,9 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         """Handle individual device connection reconfiguration."""
         if user_input is not None:
             connection_type = user_input.get("connection_type")
+            hostname = user_input.get(CONF_HOSTNAME, "").strip()
 
-            # Update this device's connection type
+            # Update this device's connection type and hostname
             updated_data = dict(self._config_entry.data)
 
             if connection_type == "use_account_default":
@@ -1608,6 +1660,13 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             else:
                 # Set device-specific override
                 updated_data["connection_type"] = connection_type
+
+            # Update hostname (empty string means automatic discovery)
+            if hostname:
+                updated_data[CONF_HOSTNAME] = hostname
+            else:
+                # Remove hostname to return to automatic discovery
+                updated_data.pop(CONF_HOSTNAME, None)
 
             self.hass.config_entries.async_update_entry(
                 self._config_entry, data=updated_data
@@ -1619,6 +1678,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
 
         # Get current settings
         device_connection_type = self._config_entry.data.get("connection_type")
+        current_hostname = self._config_entry.data.get(CONF_HOSTNAME, "")
         parent_entry_id = self._config_entry.data.get("parent_entry_id")
 
         # Get account-level connection type
@@ -1650,7 +1710,12 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Required("connection_type", default=current_selection): vol.In(
                         connection_options
-                    )
+                    ),
+                    vol.Optional(
+                        CONF_HOSTNAME,
+                        default=current_hostname,
+                        description="Leave blank for automatic discovery",
+                    ): str,
                 }
             ),
             description_placeholders={
@@ -1661,6 +1726,9 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 "current_setting": "Override"
                 if device_connection_type
                 else "Account Default",
+                "hostname_status": f"Static IP: {current_hostname}"
+                if current_hostname
+                else "Automatic Discovery (mDNS)",
             },
         )
 

@@ -31,6 +31,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 
 - **Cloud Discovery** - Automatic device detection via Dyson API
 - **Manual Setup** - Sticker-based or network-isolated configuration for local devices
+- **Static IP Configuration** - Bypass mDNS with static IP/hostname for reliable connectivity
 - **Capability Based Detection** - Automatic platform setup based on device features
 
 ### Environmental Cleaners (Fans/Purifiers)
