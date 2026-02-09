@@ -69,6 +69,8 @@ def _get_default_country_culture(hass) -> tuple[str, str]:
             - country: 2-letter uppercase ISO 3166-1 alpha-2 code
             - culture: IETF language tag format (e.g., 'en-US')
     """
+    import re
+
     # Handle test mocks that might not have config attribute
     try:
         hass_config = getattr(hass, "config", None)
@@ -83,13 +85,35 @@ def _get_default_country_culture(hass) -> tuple[str, str]:
         # Get language from HA config, default to en if not set
         ha_language = getattr(hass_config, "language", None) or "en"
 
-        # Format culture as language-COUNTRY (e.g., 'en-US', 'en-NZ')
-        # If language already includes country (e.g., 'en-US'), use as-is
-        if "-" in ha_language and len(ha_language) == 5:
+        # Normalize culture format to xx-YY (e.g., 'en-US', 'zh-CN')
+        # Replace underscores with hyphens (e.g., 'zh_CN' -> 'zh-CN')
+        ha_language = ha_language.replace("_", "-")
+
+        # Validate culture format: must be exactly 5 characters in xx-YY format
+        culture_pattern = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+
+        # Extended BCP 47 format pattern (e.g., 'zh-Hans-CN', 'zh-Hant-TW')
+        extended_pattern = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
+
+        if culture_pattern.match(ha_language):
+            # Already in correct format (e.g., 'en-US')
             culture = ha_language
+        elif extended_match := extended_pattern.match(ha_language):
+            # Extended format like 'zh-Hans-CN' - extract language and country
+            language_code = extended_match.group(1)
+            country_code = extended_match.group(2)
+            culture = f"{language_code}-{country_code}"
+        elif len(ha_language) == 2:
+            # Just a language code (e.g., 'en'), combine with country
+            culture = f"{ha_language.lower()}-{country.upper()}"
+        elif len(ha_language) == 5 and "-" in ha_language:
+            # Has hyphen but wrong case, fix it
+            parts = ha_language.split("-")
+            culture = f"{parts[0].lower()}-{parts[1].upper()}"
         else:
-            # Combine language with country
-            culture = f"{ha_language}-{country}"
+            # Invalid format, use language code + country
+            lang_code = ha_language[:2].lower() if len(ha_language) >= 2 else "en"
+            culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
     except (AttributeError, TypeError):
