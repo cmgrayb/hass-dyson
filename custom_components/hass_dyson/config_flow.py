@@ -420,24 +420,22 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("API provisioned successfully")
 
             # Step 2: Check user status (validates account before auth)
+            # Note: get_user_status accepts any credential type (email or mobile)
             _LOGGER.debug("Checking account status...")
-            if is_mobile:
-                # Use mobile-specific get_user_status
-                user_status = await self._cloud_client.get_user_status_mobile(
-                    credential
-                )
-                _LOGGER.debug(
-                    "Mobile account status: %s, Auth method: %s",
-                    user_status.account_status.value,
-                    user_status.authentication_method.value,
-                )
-            else:
-                # Use standard email get_user_status
+            try:
+                # Use standard get_user_status for all credential types
+                # The endpoint determines auth method based on credential format
                 user_status = await self._cloud_client.get_user_status(credential)
                 _LOGGER.debug(
-                    "Email account status: %s, Auth method: %s",
+                    "Account status: %s, Auth method: %s",
                     user_status.account_status.value,
                     user_status.authentication_method.value,
+                )
+            except Exception as status_error:
+                # Some regions/endpoints may not support user status check
+                # Log warning but continue with authentication flow
+                _LOGGER.warning(
+                    "User status check failed (continuing anyway): %s", status_error
                 )
 
             # Step 3: Begin the login process to get challenge_id

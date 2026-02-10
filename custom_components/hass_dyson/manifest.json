@@ -12,7 +12,7 @@
   "loggers": ["custom_components.hass_dyson"],
   "quality_scale": "gold",
   "requirements": [
-    "libdyson-rest==0.12.0b1"
+    "libdyson-rest==0.12.0b2"
   ],
-  "version": "0.29.0-beta.5"
+  "version": "0.29.0-beta.6"
 }
