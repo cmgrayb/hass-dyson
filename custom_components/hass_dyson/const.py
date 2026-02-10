@@ -4,6 +4,10 @@ from typing import Final
 
 from homeassistant.components.vacuum import VacuumActivity
 
+# Type alias for AQI ranges: (low, high, aqi_low, aqi_high, category)
+# First two can be int or float depending on pollutant measurement units
+AQIRange = tuple[float | int, float | int, int, int, str]
+
 # Integration domain
 DOMAIN: Final = "hass_dyson"
 
@@ -111,7 +115,7 @@ AQI_CATEGORY_SEVERE: Final = "Severe"
 # AQI Range definitions based on Dyson PH05 guidelines (from vershart)
 # Format: (low, high, aqi_low, aqi_high, category)
 # PM2.5 ranges (μg/m³)
-AQI_PM25_RANGES: Final = [
+AQI_PM25_RANGES: Final[list[AQIRange]] = [
     (0, 35, 0, 50, AQI_CATEGORY_GOOD),
     (36, 53, 51, 100, AQI_CATEGORY_FAIR),
     (54, 70, 101, 150, AQI_CATEGORY_POOR),
@@ -121,7 +125,7 @@ AQI_PM25_RANGES: Final = [
 ]
 
 # PM10 ranges (μg/m³)
-AQI_PM10_RANGES: Final = [
+AQI_PM10_RANGES: Final[list[AQIRange]] = [
     (0, 50, 0, 50, AQI_CATEGORY_GOOD),
     (51, 75, 51, 100, AQI_CATEGORY_FAIR),
     (76, 100, 101, 150, AQI_CATEGORY_POOR),
@@ -131,7 +135,7 @@ AQI_PM10_RANGES: Final = [
 ]
 
 # HCHO (Formaldehyde) ranges (ppm)
-AQI_HCHO_RANGES: Final = [
+AQI_HCHO_RANGES: Final[list[AQIRange]] = [
     (0.000, 0.099, 0, 50, AQI_CATEGORY_GOOD),
     (0.100, 0.299, 51, 100, AQI_CATEGORY_FAIR),
     (0.300, 0.499, 101, 150, AQI_CATEGORY_POOR),
@@ -142,7 +146,7 @@ AQI_HCHO_RANGES: Final = [
 # Device reports raw values 0-100+; use raw value directly for AQI calculation
 # For display: VOC(mg/m³) = device_value / 1000
 # Example: device value 52 = Fair category (AQI ~75), displays as 0.052 mg/m³
-AQI_VOC_RANGES: Final = [
+AQI_VOC_RANGES: Final[list[AQIRange]] = [
     (0, 30, 0, 50, AQI_CATEGORY_GOOD),
     (31, 69, 51, 100, AQI_CATEGORY_FAIR),
     (70, 89, 101, 150, AQI_CATEGORY_POOR),
@@ -152,7 +156,7 @@ AQI_VOC_RANGES: Final = [
 ]
 
 # NO2 ranges (ppb) - EPA AirNow guidelines
-AQI_NO2_RANGES: Final = [
+AQI_NO2_RANGES: Final[list[AQIRange]] = [
     (0, 53, 0, 50, AQI_CATEGORY_GOOD),
     (54, 100, 51, 100, AQI_CATEGORY_FAIR),
     (101, 360, 101, 150, AQI_CATEGORY_POOR),
@@ -162,7 +166,7 @@ AQI_NO2_RANGES: Final = [
 ]
 
 # CO2 ranges (ppm) - EPA AirNow guidelines
-AQI_CO2_RANGES: Final = [
+AQI_CO2_RANGES: Final[list[AQIRange]] = [
     (0, 440, 0, 50, AQI_CATEGORY_GOOD),
     (441, 940, 51, 100, AQI_CATEGORY_FAIR),
     (941, 1240, 101, 150, AQI_CATEGORY_POOR),
