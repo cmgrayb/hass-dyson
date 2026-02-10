@@ -6,6 +6,10 @@ echo "🚀 Setting up Dyson Home Assistant Integration development environment..
 WORKSPACE_DIR=$(pwd)
 echo "📁 Working in workspace: $WORKSPACE_DIR"
 
+# Install development dependencies
+echo "📦 Installing development dependencies..."
+pip install -r requirements-dev.txt
+
 # Install the package in development mode
 echo "🔧 Installing package in development mode..."
 pip install -e .
@@ -19,9 +23,9 @@ fi
 echo "✅ Development environment setup complete!"
 echo ""
 echo "🎯 Quick commands:"
-echo "   Format code:     python -m black ."
-echo "   Lint code:       python -m flake8 ."
-echo "   Sort imports:    python -m isort ."
+echo "   Format code:     python -m ruff format ."
+echo "   Lint code:       python -m ruff check ."
+echo "   Fix linting:     python -m ruff check . --fix"
 echo "   Type check:      python -m mypy custom_components/hass_dyson"
 echo "   Run tests:       python -m pytest"
 echo "   Run unit tests:  python -m pytest tests/ -m 'not integration'"

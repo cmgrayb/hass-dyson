@@ -51,7 +51,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
@@ -64,7 +68,12 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CAPABILITY_EXTENDED_AQ, CAPABILITY_FORMALDEHYDE, CAPABILITY_VOC, DOMAIN
+from .const import (
+    CAPABILITY_EXTENDED_AQ,
+    CAPABILITY_FORMALDEHYDE,
+    CAPABILITY_VOC,
+    DOMAIN,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -510,7 +519,11 @@ def _calculate_pollutant_aqi(
                 # Avoid division by zero for single-value ranges
                 calculated_aqi: int = aqi_low
             else:
-                calculated_aqi = int(round(((aqi_high - aqi_low) / (high - low)) * (value - low) + aqi_low))
+                calculated_aqi = int(
+                    round(
+                        ((aqi_high - aqi_low) / (high - low)) * (value - low) + aqi_low
+                    )
+                )
             return calculated_aqi, category
 
     # Value exceeds all ranges - return highest category
@@ -571,7 +584,9 @@ def _calculate_overall_aqi(
     # Define pollutant configurations: (pollutant_name, display_name, ranges, scale_factor)
     # scale_factor converts device units to range units
     pollutant_configs: list[
-        tuple[str, str, list[tuple[float | int, float | int, int, int, str]], float | int]
+        tuple[
+            str, str, list[tuple[float | int, float | int, int, int, str]], float | int
+        ]
     ] = [
         ("pm25", "PM2.5", AQI_PM25_RANGES, 1),  # μg/m³
         ("pm10", "PM10", AQI_PM10_RANGES, 1),  # μg/m³
