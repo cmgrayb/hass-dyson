@@ -866,14 +866,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                             # Use mobile authentication for CN region
                             _LOGGER.info("Using mobile authentication for CN region")
-                            # Mobile authentication doesn't require password
-                            # Pass empty string until libdyson-rest updates to remove password parameter
+                            # Mobile authentication: only challenge_id, otp_code, and mobile number
                             await self._cloud_client.complete_login_mobile(
                                 self._challenge_id,
                                 verification_code,
-                                self._email,
-                                self._country or "CN",
-                                self._culture or "zh-CN",
+                                self._email,  # Mobile phone number
                             )
                             _LOGGER.info(
                                 "Successfully authenticated with Dyson API via mobile, got auth token"
