@@ -29,11 +29,18 @@
         }
       },
       "verify": {
-        "title": "OTP Verification",
-        "description": "A verification code has been sent to {email}. Please check your email or SMS (for CN mobile numbers) and enter the code below.",
+        "title": "Email OTP Verification",
+        "description": "A verification code has been sent to {email}. Please check your email and enter the code below.",
         "data": {
           "verification_code": "Verification Code",
           "password": "Password"
+        }
+      },
+      "verify_mobile": {
+        "title": "Mobile OTP Verification",
+        "description": "A verification code has been sent to {phone_number} via text message. Please enter the code below.",
+        "data": {
+          "verification_code": "Verification Code"
         }
       },
       "connection": {

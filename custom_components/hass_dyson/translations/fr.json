@@ -29,11 +29,18 @@
         }
       },
       "verify": {
-        "title": "Vérification OTP",
-        "description": "Un code de vérification a été envoyé à {email}. Veuillez consulter votre e-mail (ou SMS pour les numéros mobiles CN) et saisir le code ci-dessous.",
+        "title": "Vérification OTP par e-mail",
+        "description": "Un code de vérification a été envoyé à {email}. Veuillez consulter votre e-mail et saisir le code ci-dessous.",
         "data": {
           "verification_code": "Code de vérification",
           "password": "Mot de passe"
+        }
+      },
+      "verify_mobile": {
+        "title": "Vérification OTP mobile",
+        "description": "Un code de vérification a été envoyé à {phone_number} par SMS. Veuillez saisir le code ci-dessous.",
+        "data": {
+          "verification_code": "Code de vérification"
         }
       },
       "connection": {

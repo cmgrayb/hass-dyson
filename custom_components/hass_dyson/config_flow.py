@@ -550,8 +550,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
 
                     if challenge_id is not None:
+                        # Store challenge_id for verification step
                         self._challenge_id = challenge_id
-                        return await self.async_step_verify()
+
+                        # Route to appropriate verification step based on auth type
+                        if _is_cn_mobile_auth(country, self._email):
+                            _LOGGER.info("Routing to mobile verification step for CN")
+                            return await self.async_step_verify_mobile()
+                        else:
+                            _LOGGER.info("Routing to email verification step")
+                            return await self.async_step_verify()
                 else:
                     errors["base"] = "auth_failed"
 
@@ -715,9 +723,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_verify(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:  # noqa: C901
-        """Handle the verification code and password step."""
+        """Handle the email verification code and password step."""
         try:
-            _LOGGER.info("Starting async_step_verify with user_input: %s", user_input)
+            _LOGGER.info(
+                "Starting async_step_verify (email) with user_input: %s", user_input
+            )
             errors = {}
 
             if user_input is not None:
@@ -725,7 +735,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     verification_code = user_input.get("verification_code", "")
                     password = user_input.get("password", "")
                     _LOGGER.info(
-                        "Received verification code and password for authentication"
+                        "Received verification code and password for email authentication"
                     )
 
                     if not self._cloud_client or not self._challenge_id:
@@ -737,8 +747,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         _LOGGER.error("Missing verification code or password")
                         errors["base"] = "auth_failed"
                     else:
-                        # Complete authentication with libdyson-rest using challenge_id, verification code, and password
-                        # This follows the proper OAuth/2FA pattern: Step 2 requires OTP + password together
+                        # Complete email authentication with libdyson-rest
                         _LOGGER.debug(
                             "Attempting complete_login with challenge_id=%s, verification_code=%s",
                             self._challenge_id,
@@ -756,27 +765,14 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     "Missing required authentication parameters"
                                 )
 
-                            # Use mobile authentication for CN region with mobile numbers
-                            if _is_cn_mobile_auth(self._country or "US", self._email):
-                                _LOGGER.info(
-                                    "Using mobile authentication for CN region"
-                                )
-                                await self._cloud_client.complete_login_mobile(
-                                    self._challenge_id,
-                                    verification_code,
-                                    self._email,
-                                    password,
-                                    self._country or "CN",
-                                    self._culture or "zh-CN",
-                                )
-                            else:
-                                _LOGGER.info("Using standard email authentication")
-                                await self._cloud_client.complete_login(
-                                    self._challenge_id,
-                                    verification_code,
-                                    self._email,
-                                    password,
-                                )
+                            # Use standard email authentication
+                            _LOGGER.info("Using standard email authentication")
+                            await self._cloud_client.complete_login(
+                                self._challenge_id,
+                                verification_code,
+                                self._email,
+                                password,
+                            )
                             _LOGGER.info(
                                 "Successfully authenticated with Dyson API, got auth token"
                             )
@@ -801,11 +797,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 errors["base"] = "verification_failed"
 
                 except Exception as e:
-                    _LOGGER.exception("Error during verification: %s", e)
+                    _LOGGER.exception("Error during email verification: %s", e)
                     errors["base"] = "verification_failed"
 
-            # Show the verification code and password form
-            _LOGGER.info("Showing verification code and password form")
+            # Show the email verification code and password form
+            _LOGGER.info("Showing email verification code and password form")
             try:
                 data_schema = vol.Schema(
                     {
@@ -813,7 +809,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Required("verification_code"): str,
                     }
                 )
-                _LOGGER.info("Verification form schema created successfully")
+                _LOGGER.info("Email verification form schema created successfully")
 
                 return self.async_show_form(
                     step_id="verify",
@@ -824,10 +820,111 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
             except Exception as e:
-                _LOGGER.exception("Error creating verification form: %s", e)
+                _LOGGER.exception("Error creating email verification form: %s", e)
                 raise
         except Exception as e:
             _LOGGER.exception("Top-level exception in async_step_verify: %s", e)
+            raise
+
+    async def async_step_verify_mobile(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:  # noqa: C901
+        """Handle the mobile verification code step (no password required)."""
+        try:
+            _LOGGER.info(
+                "Starting async_step_verify_mobile with user_input: %s", user_input
+            )
+            errors = {}
+
+            if user_input is not None:
+                try:
+                    verification_code = user_input.get("verification_code", "")
+                    _LOGGER.info("Received verification code for mobile authentication")
+
+                    if not self._cloud_client or not self._challenge_id:
+                        _LOGGER.error(
+                            "Missing cloud client or challenge ID for verification"
+                        )
+                        errors["base"] = "verification_failed"
+                    elif not verification_code:
+                        _LOGGER.error("Missing verification code")
+                        errors["base"] = "auth_failed"
+                    else:
+                        # Complete mobile authentication (no password required)
+                        _LOGGER.debug(
+                            "Attempting complete_login_mobile with challenge_id=%s, verification_code=%s",
+                            self._challenge_id,
+                            verification_code,
+                        )
+
+                        try:
+                            # Ensure we have all required values
+                            if not self._email or not self._challenge_id:
+                                raise ValueError(
+                                    "Missing required authentication parameters"
+                                )
+
+                            # Use mobile authentication for CN region
+                            _LOGGER.info("Using mobile authentication for CN region")
+                            # Mobile authentication doesn't require password
+                            # Pass empty string until libdyson-rest updates to remove password parameter
+                            await self._cloud_client.complete_login_mobile(
+                                self._challenge_id,
+                                verification_code,
+                                self._email,
+                                self._country or "CN",
+                                self._culture or "zh-CN",
+                            )
+                            _LOGGER.info(
+                                "Successfully authenticated with Dyson API via mobile, got auth token"
+                            )
+                            # Store empty password for consistency (mobile auth doesn't use password)
+                            self._password = ""
+                            return await self.async_step_connection()
+                        except Exception as complete_error:
+                            _LOGGER.error(
+                                "complete_login_mobile failed: %s (Type: %s)",
+                                complete_error,
+                                type(complete_error).__name__,
+                            )
+                            # Check if it's specifically an auth error vs other errors
+                            if "401" in str(complete_error) or "Unauthorized" in str(
+                                complete_error
+                            ):
+                                _LOGGER.error(
+                                    "Authentication failed - invalid verification code or expired challenge"
+                                )
+                                errors["base"] = "auth_failed"
+                            else:
+                                errors["base"] = "verification_failed"
+
+                except Exception as e:
+                    _LOGGER.exception("Error during mobile verification: %s", e)
+                    errors["base"] = "verification_failed"
+
+            # Show the mobile verification code form (no password field)
+            _LOGGER.info("Showing mobile verification code form")
+            try:
+                data_schema = vol.Schema(
+                    {
+                        vol.Required("verification_code"): str,
+                    }
+                )
+                _LOGGER.info("Mobile verification form schema created successfully")
+
+                return self.async_show_form(
+                    step_id="verify_mobile",
+                    data_schema=data_schema,
+                    errors=errors,
+                    description_placeholders={
+                        "phone_number": getattr(self, "_email", "your phone number")
+                    },
+                )
+            except Exception as e:
+                _LOGGER.exception("Error creating mobile verification form: %s", e)
+                raise
+        except Exception as e:
+            _LOGGER.exception("Top-level exception in async_step_verify_mobile: %s", e)
             raise
 
     async def async_step_connection(
