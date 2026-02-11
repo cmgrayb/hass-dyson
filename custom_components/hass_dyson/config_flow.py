@@ -1169,6 +1169,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "connection_type": self._connection_type,
                 "devices": device_list,
                 "auth_token": auth_token,
+                CONF_COUNTRY: self._country,
+                CONF_CULTURE: self._culture,
                 CONF_POLL_FOR_DEVICES: poll_for_devices,
                 CONF_AUTO_ADD_DEVICES: auto_add_devices,
                 CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,

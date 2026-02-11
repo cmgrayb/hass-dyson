@@ -30,7 +30,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CONF_AUTO_ADD_DEVICES,
+    CONF_COUNTRY,
     CONF_CREDENTIAL,
+    CONF_CULTURE,
     CONF_DEVICE_NAME,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
@@ -755,31 +757,44 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from libdyson_rest import AsyncDysonClient
 
         auth_token = self.config_entry.data.get("auth_token")
-        username = self.config_entry.data.get("username")
+        # Get credential (email or phone number) from config entry
+        credential = self.config_entry.data.get("email")
         password = self.config_entry.data.get("password")
 
         _LOGGER.debug(
-            "Cloud authentication for %s - username: %s, auth_token: %s",
+            "Cloud authentication for %s - credential: %s, auth_token: %s",
             self.serial_number,
-            username,
+            credential,
             "***" if auth_token else "None",
         )
 
         # Initialize cloud client
         if auth_token:
             # Use existing auth token from config flow (in executor to avoid blocking SSL calls)
+            # Get country and culture from config entry for CN API support
+            country = self.config_entry.data.get(CONF_COUNTRY, "US")
+            culture = self.config_entry.data.get(CONF_CULTURE, "en-US")
+
             def create_client_with_token():
-                return AsyncDysonClient(email=username, auth_token=auth_token)
+                return AsyncDysonClient(
+                    email=credential,
+                    auth_token=auth_token,
+                    country=country,
+                    culture=culture,
+                )
 
             return await self.hass.async_add_executor_job(create_client_with_token)
-        elif username and password:
+        elif credential and password:
             # Legacy authentication method - follow same pattern as config_flow
             # Get country and culture from HA config
             country, culture = _get_default_country_culture_for_coordinator(self.hass)
 
             def create_client():
                 return AsyncDysonClient(
-                    email=username, password=password, country=country, culture=culture
+                    email=credential,
+                    password=password,
+                    country=country,
+                    culture=culture,
                 )
 
             cloud_client = await self.hass.async_add_executor_job(create_client)
@@ -801,7 +816,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Step 3: Authenticate using proper flow
                 challenge = await cloud_client.begin_login()
                 await cloud_client.complete_login(
-                    str(challenge.challenge_id), "", username, password
+                    str(challenge.challenge_id), "", credential, password
                 )
                 return cloud_client
             except Exception as e:
@@ -811,7 +826,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ) from e
         else:
             raise UpdateFailed(
-                "Missing cloud credentials (auth_token or username/password)"
+                "Missing cloud credentials (auth_token or email/password)"
             )
 
     async def _find_cloud_device(self, cloud_client):
@@ -2182,6 +2197,8 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.config_entry = config_entry
         self._email = config_entry.data.get("email")
         self._auth_token = config_entry.data.get("auth_token")
+        self._country = config_entry.data.get(CONF_COUNTRY, "US")
+        self._culture = config_entry.data.get(CONF_CULTURE, "en-US")
         self._last_known_devices = set()
 
         # Get polling settings with backward-compatible defaults
@@ -2256,8 +2273,13 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("No auth token available for cloud account %s", self._email)
             return []
 
-        # Create client with auth token
-        async with AsyncDysonClient(auth_token=self._auth_token) as client:
+        # Create client with auth token and country/culture for CN API support
+        async with AsyncDysonClient(
+            email=self._email,
+            auth_token=self._auth_token,
+            country=self._country,
+            culture=self._culture,
+        ) as client:
             # Get devices from cloud API
             devices = await client.get_devices()
 
