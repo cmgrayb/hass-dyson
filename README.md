@@ -254,6 +254,7 @@ hass_dyson:
 
 - **[API Documentation](docs/API.md)** - Comprehensive API documentation with code examples and usage patterns for developers
 - **[Developers Guide](docs/DEVELOPERS_GUIDE.md)** - See something you can help with?  This is where to start!
+- **[Integration Flow Diagrams](docs/INTEGRATION_FLOW.md)** - Visual flow diagrams showing the integration architecture and operation
 
 ## Requirements
 
