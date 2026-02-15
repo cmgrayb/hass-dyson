@@ -7,7 +7,7 @@
 
 <!-- Badge Links -->
 
-[releases-shield]: https://img.shields.io/github/release/cmgrayb/hass-dyson.svg
+[releases-shield]: https://img.shields.io/github/release/cmgrayb/hass-dyson.svg?style=for-the-badge
 [releases]: https://github.com/cmgrayb/hass-dyson/releases
 [commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/hass-dyson.svg?style=for-the-badge
 [commits]: https://github.com/cmgrayb/hass-dyson/commits/main
@@ -283,4 +283,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **⚠️ Disclaimer**: This is an unofficial integration not affiliated with Dyson Ltd. Use at your own risk.
+
 
