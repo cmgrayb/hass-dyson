@@ -460,33 +460,42 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
             hcho_raw = env_data.get("va10")
 
             if hcho_raw is not None:
-                try:
-                    # Convert and validate the VOC value
-                    raw_value = int(hcho_raw)
-                    if not (0 <= raw_value <= 9999):
-                        _LOGGER.warning(
-                            "Invalid VOC raw value for device %s: %s (expected 0-9999)",
-                            device_serial,
-                            raw_value,
-                        )
-                        new_value = None
-                    else:
-                        # Convert from raw index to mg/m³ (matches libdyson-neon implementation)
-                        # Range 0-9999 raw becomes 0.000-9.999 mg/m³ (reports actual conditions)
-                        new_value = round(raw_value / 1000.0, 3)
-                        _LOGGER.debug(
-                            "VOC conversion for %s: %d raw -> %.3f mg/m³",
-                            device_serial,
-                            raw_value,
-                            new_value,
-                        )
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid VOC value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if hcho_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "VOC sensor %s for device %s",
+                        "inactive" if hcho_raw == "OFF" else "initializing",
                         device_serial,
-                        hcho_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the VOC value
+                        raw_value = int(hcho_raw)
+                        if not (0 <= raw_value <= 9999):
+                            _LOGGER.warning(
+                                "Invalid VOC raw value for device %s: %s (expected 0-9999)",
+                                device_serial,
+                                raw_value,
+                            )
+                            new_value = None
+                        else:
+                            # Convert from raw index to mg/m³ (matches libdyson-neon implementation)
+                            # Range 0-9999 raw becomes 0.000-9.999 mg/m³ (reports actual conditions)
+                            new_value = round(raw_value / 1000.0, 3)
+                            _LOGGER.debug(
+                                "VOC conversion for %s: %d raw -> %.3f mg/m³",
+                                device_serial,
+                                raw_value,
+                                new_value,
+                            )
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid VOC value format for device %s: %s",
+                            device_serial,
+                            hcho_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -631,6 +640,15 @@ def _calculate_overall_aqi(
         raw_value = _get_environmental_value(env_data, keys)
 
         if raw_value is not None:
+            # Skip "OFF" and "INIT" values - sensors are inactive or initializing
+            if raw_value in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "%s sensor %s, skipping AQI calculation",
+                    display_name,
+                    "inactive" if raw_value == "OFF" else "initializing",
+                )
+                continue
+
             try:
                 # Convert to numeric and apply scale factor
                 value = float(raw_value) * scale_factor

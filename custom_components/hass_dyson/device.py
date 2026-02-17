@@ -1875,6 +1875,15 @@ class DysonDevice:
                 )
                 return None
 
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if pm25_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "PM2.5 sensor %s for %s",
+                    "inactive" if pm25_raw == "OFF" else "initializing",
+                    self.serial_number,
+                )
+                return None
+
             value = int(pm25_raw)
             import datetime
 
@@ -1908,6 +1917,15 @@ class DysonDevice:
                 )
                 return None
 
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if pm10_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "PM10 sensor %s for %s",
+                    "inactive" if pm10_raw == "OFF" else "initializing",
+                    self.serial_number,
+                )
+                return None
+
             value = int(pm10_raw)
             import datetime
 
@@ -1938,6 +1956,15 @@ class DysonDevice:
             if voc_raw is None:
                 _LOGGER.debug(
                     "VOC property for %s: no data available", self.serial_number
+                )
+                return None
+
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if voc_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "VOC sensor %s for %s",
+                    "inactive" if voc_raw == "OFF" else "initializing",
+                    self.serial_number,
                 )
                 return None
 
@@ -1975,6 +2002,15 @@ class DysonDevice:
                 )
                 return None
 
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if no2_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "NO2 sensor for %s is %s, returning None",
+                    self.serial_number,
+                    "inactive" if no2_raw == "OFF" else "initializing",
+                )
+                return None
+
             # Convert from index to ppb (divide by 10 as per libdyson-neon)
             value = float(no2_raw) / 10.0
             import datetime
@@ -2006,6 +2042,15 @@ class DysonDevice:
             if formaldehyde_raw is None:
                 _LOGGER.debug(
                     "Formaldehyde property for %s: no data available",
+                    self.serial_number,
+                )
+                return None
+
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if formaldehyde_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "Formaldehyde sensor %s for %s",
+                    "inactive" if formaldehyde_raw == "OFF" else "initializing",
                     self.serial_number,
                 )
                 return None

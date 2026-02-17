@@ -19,6 +19,7 @@ from custom_components.hass_dyson.sensor import (
     DysonPM10Sensor,
     DysonPM25Sensor,
     DysonVOCLinkSensor,
+    DysonVOCSensor,
 )
 
 
@@ -116,6 +117,20 @@ class TestSensorOFFHandling:
         # Arrange
         pure_mock_coordinator.data = {"environmental-data": {"vact": "OFF"}}
         sensor = pure_mock_sensor_entity(DysonVOCLinkSensor, pure_mock_coordinator)
+
+        # Act
+        sensor._handle_coordinator_update()
+
+        # Assert - Should be None, not raise ValueError
+        assert sensor._attr_native_value is None
+
+    def test_voc_sensor_handles_off(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test VOC sensor (va10) handles OFF value when continuous monitoring disabled (issue #277)."""
+        # Arrange
+        pure_mock_coordinator.data = {"environmental-data": {"va10": "OFF"}}
+        sensor = pure_mock_sensor_entity(DysonVOCSensor, pure_mock_coordinator)
 
         # Act
         sensor._handle_coordinator_update()
@@ -234,6 +249,20 @@ class TestSensorINITHandling:
         # Arrange
         pure_mock_coordinator.data = {"environmental-data": {"vact": "INIT"}}
         sensor = pure_mock_sensor_entity(DysonVOCLinkSensor, pure_mock_coordinator)
+
+        # Act
+        sensor._handle_coordinator_update()
+
+        # Assert - Should be None, not raise ValueError
+        assert sensor._attr_native_value is None
+
+    def test_voc_sensor_handles_init(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test VOC sensor (va10) handles INIT value when initializing (issue #277)."""
+        # Arrange
+        pure_mock_coordinator.data = {"environmental-data": {"va10": "INIT"}}
+        sensor = pure_mock_sensor_entity(DysonVOCSensor, pure_mock_coordinator)
 
         # Act
         sensor._handle_coordinator_update()
