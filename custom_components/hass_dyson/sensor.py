@@ -173,23 +173,32 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
             p25r_raw = env_data.get("p25r")
 
             if p25r_raw is not None:
-                try:
-                    # Convert and validate the P25R value
-                    new_value = int(p25r_raw)
-                    if not (0 <= new_value <= 999):
-                        _LOGGER.warning(
-                            "Invalid P25R value for device %s: %s (expected 0-999)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid P25R value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if p25r_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "P25R sensor %s for device %s",
+                        "inactive" if p25r_raw == "OFF" else "initializing",
                         device_serial,
-                        p25r_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the P25R value
+                        new_value = int(p25r_raw)
+                        if not (0 <= new_value <= 999):
+                            _LOGGER.warning(
+                                "Invalid P25R value for device %s: %s (expected 0-999)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid P25R value format for device %s: %s",
+                            device_serial,
+                            p25r_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -265,23 +274,32 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
             p10r_raw = env_data.get("p10r")
 
             if p10r_raw is not None:
-                try:
-                    # Convert and validate the P10R value
-                    new_value = int(p10r_raw)
-                    if not (0 <= new_value <= 999):
-                        _LOGGER.warning(
-                            "Invalid P10R value for device %s: %s (expected 0-999)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid P10R value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if p10r_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "P10R sensor %s for device %s",
+                        "inactive" if p10r_raw == "OFF" else "initializing",
                         device_serial,
-                        p10r_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the P10R value
+                        new_value = int(p10r_raw)
+                        if not (0 <= new_value <= 999):
+                            _LOGGER.warning(
+                                "Invalid P10R value for device %s: %s (expected 0-999)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid P10R value format for device %s: %s",
+                            device_serial,
+                            p10r_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -349,23 +367,32 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
             co2_raw = env_data.get("co2r")
 
             if co2_raw is not None:
-                try:
-                    # Convert and validate the CO2 value
-                    new_value = int(co2_raw)
-                    if not (0 <= new_value <= 5000):
-                        _LOGGER.warning(
-                            "Invalid CO2 value for device %s: %s (expected 0-5000)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid CO2 value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if co2_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "CO2 sensor %s for device %s",
+                        "inactive" if co2_raw == "OFF" else "initializing",
                         device_serial,
-                        co2_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the CO2 value
+                        new_value = int(co2_raw)
+                        if not (0 <= new_value <= 5000):
+                            _LOGGER.warning(
+                                "Invalid CO2 value for device %s: %s (expected 0-5000)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid CO2 value format for device %s: %s",
+                            device_serial,
+                            co2_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -1721,23 +1748,32 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
             pm25_raw = env_data.get("p25r") or env_data.get("pm25")
 
             if pm25_raw is not None:
-                try:
-                    # Convert and validate the PM2.5 value
-                    new_value = int(pm25_raw)
-                    if not (0 <= new_value <= 999):
-                        _LOGGER.warning(
-                            "Invalid PM2.5 value for device %s: %s (expected 0-999)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid PM2.5 value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if pm25_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "PM2.5 sensor %s for device %s",
+                        "inactive" if pm25_raw == "OFF" else "initializing",
                         device_serial,
-                        pm25_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the PM2.5 value
+                        new_value = int(pm25_raw)
+                        if not (0 <= new_value <= 999):
+                            _LOGGER.warning(
+                                "Invalid PM2.5 value for device %s: %s (expected 0-999)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid PM2.5 value format for device %s: %s",
+                            device_serial,
+                            pm25_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -1834,23 +1870,32 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
             pm10_raw = env_data.get("p10r") or env_data.get("pm10")
 
             if pm10_raw is not None:
-                try:
-                    # Convert and validate the PM10 value
-                    new_value = int(pm10_raw)
-                    if not (0 <= new_value <= 999):
-                        _LOGGER.warning(
-                            "Invalid PM10 value for device %s: %s (expected 0-999)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid PM10 value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if pm10_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "PM10 sensor %s for device %s",
+                        "inactive" if pm10_raw == "OFF" else "initializing",
                         device_serial,
-                        pm10_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the PM10 value
+                        new_value = int(pm10_raw)
+                        if not (0 <= new_value <= 999):
+                            _LOGGER.warning(
+                                "Invalid PM10 value for device %s: %s (expected 0-999)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid PM10 value format for device %s: %s",
+                            device_serial,
+                            pm10_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -1945,23 +1990,32 @@ class DysonParticulatesSensor(DysonEntity, SensorEntity):
             pact_raw = env_data.get("pact")
 
             if pact_raw is not None:
-                try:
-                    # Convert and validate the particulates value
-                    new_value = int(pact_raw)
-                    if not (0 <= new_value <= 9999):
-                        _LOGGER.warning(
-                            "Invalid particulates value for device %s: %s (expected 0-9999)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid particulates value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if pact_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "Particulates sensor %s for device %s",
+                        "inactive" if pact_raw == "OFF" else "initializing",
                         device_serial,
-                        pact_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the particulates value
+                        new_value = int(pact_raw)
+                        if not (0 <= new_value <= 9999):
+                            _LOGGER.warning(
+                                "Invalid particulates value for device %s: %s (expected 0-9999)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid particulates value format for device %s: %s",
+                            device_serial,
+                            pact_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -2057,10 +2111,12 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
             vact_raw = env_data.get("vact")
 
             if vact_raw is not None:
-                # Handle initialization state where device reports "INIT"
-                if vact_raw == "INIT":
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if vact_raw in ("OFF", "INIT"):
                     _LOGGER.debug(
-                        "VOC Link sensor initializing for device %s", device_serial
+                        "VOC Link sensor %s for device %s",
+                        "inactive" if vact_raw == "OFF" else "initializing",
+                        device_serial,
                     )
                     new_value = None
                 else:
@@ -2158,23 +2214,32 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
             no2_raw = env_data.get("noxl")
 
             if no2_raw is not None:
-                try:
-                    # Convert and validate the NO2 value
-                    new_value = int(no2_raw)
-                    if not (0 <= new_value <= 200):
-                        _LOGGER.warning(
-                            "Invalid NO2 value for device %s: %s (expected 0-200)",
-                            device_serial,
-                            new_value,
-                        )
-                        new_value = None
-                except (ValueError, TypeError):
-                    _LOGGER.warning(
-                        "Invalid NO2 value format for device %s: %s",
+                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
+                if no2_raw in ("OFF", "INIT"):
+                    _LOGGER.debug(
+                        "NO2 sensor %s for device %s",
+                        "inactive" if no2_raw == "OFF" else "initializing",
                         device_serial,
-                        no2_raw,
                     )
                     new_value = None
+                else:
+                    try:
+                        # Convert and validate the NO2 value
+                        new_value = int(no2_raw)
+                        if not (0 <= new_value <= 200):
+                            _LOGGER.warning(
+                                "Invalid NO2 value for device %s: %s (expected 0-200)",
+                                device_serial,
+                                new_value,
+                            )
+                            new_value = None
+                    except (ValueError, TypeError):
+                        _LOGGER.warning(
+                            "Invalid NO2 value format for device %s: %s",
+                            device_serial,
+                            no2_raw,
+                        )
+                        new_value = None
 
             self._attr_native_value = new_value
 
@@ -2244,9 +2309,9 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
             hcho_raw = env_data.get("hcho")
 
             # Use hchr if available and not 'NONE', otherwise fall back to hcho
-            if hchr_raw and hchr_raw != "NONE":
+            if hchr_raw and hchr_raw not in ("NONE", "OFF", "INIT"):
                 hcho_raw = hchr_raw
-            elif hcho_raw and hcho_raw != "NONE":
+            elif hcho_raw and hcho_raw not in ("NONE", "OFF", "INIT"):
                 hcho_raw = hcho_raw
             else:
                 hcho_raw = None

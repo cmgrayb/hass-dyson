@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.29.0-beta.10"
+version = "0.29.0-beta.11"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
