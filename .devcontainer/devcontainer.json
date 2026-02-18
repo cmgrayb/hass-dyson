@@ -10,11 +10,8 @@
     "vscode": {
       "extensions": [
         "ms-python.python",
-        "ms-python.flake8",
-        "ms-python.black-formatter",
-        "ms-python.isort",
+        "charliermarsh.ruff",
         "ms-python.mypy-type-checker",
-        "ms-python.pylint",
         "ms-vscode.vscode-json",
         "redhat.vscode-yaml",
         "GitHub.copilot",
@@ -25,16 +22,15 @@
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "python.linting.enabled": true,
-        "python.linting.flake8Enabled": true,
-        "python.linting.pylintEnabled": false,
-        "python.formatting.provider": "black",
-        "python.formatting.blackArgs": ["--line-length=120"],
-        "python.sortImports.args": ["--profile", "black"],
-        "editor.formatOnSave": true,
-        "editor.codeActionsOnSave": {
-          "source.organizeImports": "explicit"
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+          }
         },
+        "ruff.lineLength": 88,
         "files.exclude": {
           "**/__pycache__": true,
           "**/*.pyc": true,

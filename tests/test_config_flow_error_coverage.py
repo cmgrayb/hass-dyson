@@ -211,7 +211,11 @@ class TestInitiateOTPErrorPaths:
 
     @pytest.mark.asyncio
     async def test_initiate_otp_dyson_connection_error(self, config_flow):
-        """Test DysonConnectionError handling during get_user_status."""
+        """Test DysonConnectionError handling during get_user_status.
+
+        Note: get_user_status errors are now logged but don't block authentication,
+        allowing the flow to continue to begin_login.
+        """
         from libdyson_rest.exceptions import DysonConnectionError
 
         mock_client = AsyncMock()
@@ -219,15 +223,19 @@ class TestInitiateOTPErrorPaths:
         mock_client.get_user_status = AsyncMock(
             side_effect=DysonConnectionError("Network error")
         )
+        # Mock begin_login to provide valid challenge
+        mock_challenge = MagicMock()
+        mock_challenge.challenge_id = "test-challenge-id"
+        mock_client.begin_login = AsyncMock(return_value=mock_challenge)
         config_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
         challenge_id, errors = await config_flow._initiate_otp_with_dyson_api(
             "test@example.com", "US", "en-US"
         )
 
-        assert challenge_id is None
-        assert errors["base"] == "connection_failed"
-        assert config_flow._cloud_client is None
+        # With optional user status check, should continue and succeed
+        assert challenge_id == "test-challenge-id"
+        assert not errors
 
     @pytest.mark.asyncio
     async def test_initiate_otp_dyson_api_error(self, config_flow):

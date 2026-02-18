@@ -69,6 +69,8 @@ def _get_default_country_culture(hass) -> tuple[str, str]:
             - country: 2-letter uppercase ISO 3166-1 alpha-2 code
             - culture: IETF language tag format (e.g., 'en-US')
     """
+    import re
+
     # Handle test mocks that might not have config attribute
     try:
         hass_config = getattr(hass, "config", None)
@@ -83,13 +85,35 @@ def _get_default_country_culture(hass) -> tuple[str, str]:
         # Get language from HA config, default to en if not set
         ha_language = getattr(hass_config, "language", None) or "en"
 
-        # Format culture as language-COUNTRY (e.g., 'en-US', 'en-NZ')
-        # If language already includes country (e.g., 'en-US'), use as-is
-        if "-" in ha_language and len(ha_language) == 5:
+        # Normalize culture format to xx-YY (e.g., 'en-US', 'zh-CN')
+        # Replace underscores with hyphens (e.g., 'zh_CN' -> 'zh-CN')
+        ha_language = ha_language.replace("_", "-")
+
+        # Validate culture format: must be exactly 5 characters in xx-YY format
+        culture_pattern = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+
+        # Extended BCP 47 format pattern (e.g., 'zh-Hans-CN', 'zh-Hant-TW')
+        extended_pattern = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
+
+        if culture_pattern.match(ha_language):
+            # Already in correct format (e.g., 'en-US')
             culture = ha_language
+        elif extended_match := extended_pattern.match(ha_language):
+            # Extended format like 'zh-Hans-CN' - extract language and country
+            language_code = extended_match.group(1)
+            country_code = extended_match.group(2)
+            culture = f"{language_code}-{country_code}"
+        elif len(ha_language) == 2:
+            # Just a language code (e.g., 'en'), combine with country
+            culture = f"{ha_language.lower()}-{country.upper()}"
+        elif len(ha_language) == 5 and "-" in ha_language:
+            # Has hyphen but wrong case, fix it
+            parts = ha_language.split("-")
+            culture = f"{parts[0].lower()}-{parts[1].upper()}"
         else:
-            # Combine language with country
-            culture = f"{ha_language}-{country}"
+            # Invalid format, use language code + country
+            lang_code = ha_language[:2].lower() if len(ha_language) >= 2 else "en"
+            culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
     except (AttributeError, TypeError):
@@ -186,6 +210,33 @@ async def _discover_device_via_mdns(
         return None
 
 
+def _is_mobile_number(credential: str) -> bool:
+    """Check if the credential is a mobile number (starts with +).
+
+    Args:
+        credential: Email or mobile number string
+
+    Returns:
+        True if it appears to be a mobile number, False otherwise
+    """
+    return credential.strip().startswith("+")
+
+
+def _is_cn_mobile_auth(country: str, credential: str) -> bool:
+    """Check if mobile authentication should be used (CN region only).
+
+    CN region users must use mobile number authentication and cannot use email.
+
+    Args:
+        country: Country code (e.g., "CN", "US")
+        credential: Email or mobile number (unused, kept for API compatibility)
+
+    Returns:
+        True if mobile authentication should be used (CN region), False otherwise
+    """
+    return country.upper() == "CN"
+
+
 class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Dyson."""
 
@@ -201,6 +252,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._challenge_id: str | None = None
         self._discovered_devices = None  # type: ignore
         self._connection_type: str | None = None
+        self._country: str | None = None  # Store country for mobile auth detection
+        self._culture: str | None = None  # Store culture for complete_login
 
     def _device_has_mqtt_support(self, device) -> bool:
         """Check if a device has MQTT connection support.
@@ -314,9 +367,21 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             raise
 
     async def _initiate_otp_with_dyson_api(
-        self, email: str, country: str = "US", culture: str = "en-US"
+        self, credential: str, country: str = "US", culture: str = "en-US"
     ) -> tuple[str | None, dict[str, str]]:
-        """Initiate OTP with Dyson API using only email and return challenge ID and any errors."""
+        """Initiate OTP with Dyson API using email or mobile number.
+
+        For CN region with mobile number (starting with +), uses mobile authentication.
+        Otherwise uses standard email authentication.
+
+        Args:
+            credential: Email address or mobile number (with + prefix for mobile)
+            country: Country code (e.g., "CN", "US")
+            culture: Culture code (e.g., "zh-CN", "en-US")
+
+        Returns:
+            Tuple of (challenge_id, errors_dict)
+        """
         # Import here to avoid scoping issues
         from libdyson_rest import AsyncDysonClient
         from libdyson_rest.exceptions import (
@@ -326,19 +391,24 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         errors = {}
+        is_mobile = _is_cn_mobile_auth(country, credential)
 
         try:
+            auth_type = "mobile" if is_mobile else "email"
             _LOGGER.info(
-                "Initiating OTP with Dyson API using email: %s, country: %s, culture: %s",
-                email,
+                "Initiating OTP with Dyson API using %s: %s, country: %s, culture: %s",
+                auth_type,
+                credential,
                 country,
                 culture,
             )
 
-            # Initialize libdyson-rest client with only email for OTP initiation
-            # Following proper OAuth/2FA pattern: Step 1 only requires email
+            # Initialize libdyson-rest client
+            # For mobile auth, still pass the mobile number as email parameter
             self._cloud_client = await self.hass.async_add_executor_job(
-                lambda: AsyncDysonClient(email=email, country=country, culture=culture)
+                lambda: AsyncDysonClient(
+                    email=credential, country=country, culture=culture
+                )
             )  # type: ignore[func-returns-value]
 
             if self._cloud_client is None:
@@ -350,18 +420,35 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("API provisioned successfully")
 
             # Step 2: Check user status (validates account before auth)
+            # Note: get_user_status accepts any credential type (email or mobile)
             _LOGGER.debug("Checking account status...")
-            user_status = await self._cloud_client.get_user_status()
-            _LOGGER.debug(
-                "Account status: %s, Auth method: %s",
-                user_status.account_status.value,
-                user_status.authentication_method.value,
-            )
+            try:
+                # Use standard get_user_status for all credential types
+                # The endpoint determines auth method based on credential format
+                user_status = await self._cloud_client.get_user_status(credential)
+                _LOGGER.debug(
+                    "Account status: %s, Auth method: %s",
+                    user_status.account_status.value,
+                    user_status.authentication_method.value,
+                )
+            except Exception as status_error:
+                # Some regions/endpoints may not support user status check
+                # Log warning but continue with authentication flow
+                _LOGGER.warning(
+                    "User status check failed (continuing anyway): %s", status_error
+                )
 
-            # Step 3: Begin the login process to get challenge_id - this triggers the OTP email
-            # According to libdyson-rest developers, begin_login only requires email
+            # Step 3: Begin the login process to get challenge_id
+            # This triggers the OTP (email or SMS depending on auth type)
             _LOGGER.debug("Beginning login process (OTP initiation)...")
-            challenge = await self._cloud_client.begin_login(email)
+            if is_mobile:
+                # Use mobile-specific begin_login (sends SMS OTP)
+                challenge = await self._cloud_client.begin_login_mobile(credential)
+                _LOGGER.info("SMS OTP sent to mobile number")
+            else:
+                # Use standard email begin_login (sends email OTP)
+                challenge = await self._cloud_client.begin_login(credential)
+                _LOGGER.info("Email OTP sent")
 
             # Validate and store challenge ID for verification step
             if challenge is None or challenge.challenge_id is None:
@@ -451,16 +538,28 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     country = country or default_country
                     culture = culture or default_culture
 
-                # Ensure we have valid email before initiating OTP
+                # Store country and culture for use in complete_login (mobile auth detection)
+                self._country = country
+                self._culture = culture
+
+                # Ensure we have valid email/mobile before initiating OTP
                 if self._email:
-                    # Initiate OTP with Dyson API (Step 1: email only)
+                    # Initiate OTP with Dyson API (Step 1: email or mobile)
                     challenge_id, errors = await self._initiate_otp_with_dyson_api(
                         self._email, country, culture
                     )
 
                     if challenge_id is not None:
+                        # Store challenge_id for verification step
                         self._challenge_id = challenge_id
-                        return await self.async_step_verify()
+
+                        # Route to appropriate verification step based on auth type
+                        if _is_cn_mobile_auth(country, self._email):
+                            _LOGGER.info("Routing to mobile verification step for CN")
+                            return await self.async_step_verify_mobile()
+                        else:
+                            _LOGGER.info("Routing to email verification step")
+                            return await self.async_step_verify()
                 else:
                     errors["base"] = "auth_failed"
 
@@ -624,9 +723,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_verify(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:  # noqa: C901
-        """Handle the verification code and password step."""
+        """Handle the email verification code and password step."""
         try:
-            _LOGGER.info("Starting async_step_verify with user_input: %s", user_input)
+            _LOGGER.info(
+                "Starting async_step_verify (email) with user_input: %s", user_input
+            )
             errors = {}
 
             if user_input is not None:
@@ -634,7 +735,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     verification_code = user_input.get("verification_code", "")
                     password = user_input.get("password", "")
                     _LOGGER.info(
-                        "Received verification code and password for authentication"
+                        "Received verification code and password for email authentication"
                     )
 
                     if not self._cloud_client or not self._challenge_id:
@@ -646,8 +747,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         _LOGGER.error("Missing verification code or password")
                         errors["base"] = "auth_failed"
                     else:
-                        # Complete authentication with libdyson-rest using challenge_id, verification code, and password
-                        # This follows the proper OAuth/2FA pattern: Step 2 requires OTP + password together
+                        # Complete email authentication with libdyson-rest
                         _LOGGER.debug(
                             "Attempting complete_login with challenge_id=%s, verification_code=%s",
                             self._challenge_id,
@@ -665,6 +765,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     "Missing required authentication parameters"
                                 )
 
+                            # Use standard email authentication
+                            _LOGGER.info("Using standard email authentication")
                             await self._cloud_client.complete_login(
                                 self._challenge_id,
                                 verification_code,
@@ -695,11 +797,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 errors["base"] = "verification_failed"
 
                 except Exception as e:
-                    _LOGGER.exception("Error during verification: %s", e)
+                    _LOGGER.exception("Error during email verification: %s", e)
                     errors["base"] = "verification_failed"
 
-            # Show the verification code and password form
-            _LOGGER.info("Showing verification code and password form")
+            # Show the email verification code and password form
+            _LOGGER.info("Showing email verification code and password form")
             try:
                 data_schema = vol.Schema(
                     {
@@ -707,7 +809,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Required("verification_code"): str,
                     }
                 )
-                _LOGGER.info("Verification form schema created successfully")
+                _LOGGER.info("Email verification form schema created successfully")
 
                 return self.async_show_form(
                     step_id="verify",
@@ -718,10 +820,108 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
             except Exception as e:
-                _LOGGER.exception("Error creating verification form: %s", e)
+                _LOGGER.exception("Error creating email verification form: %s", e)
                 raise
         except Exception as e:
             _LOGGER.exception("Top-level exception in async_step_verify: %s", e)
+            raise
+
+    async def async_step_verify_mobile(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:  # noqa: C901
+        """Handle the mobile verification code step (no password required)."""
+        try:
+            _LOGGER.info(
+                "Starting async_step_verify_mobile with user_input: %s", user_input
+            )
+            errors = {}
+
+            if user_input is not None:
+                try:
+                    verification_code = user_input.get("verification_code", "")
+                    _LOGGER.info("Received verification code for mobile authentication")
+
+                    if not self._cloud_client or not self._challenge_id:
+                        _LOGGER.error(
+                            "Missing cloud client or challenge ID for verification"
+                        )
+                        errors["base"] = "verification_failed"
+                    elif not verification_code:
+                        _LOGGER.error("Missing verification code")
+                        errors["base"] = "auth_failed"
+                    else:
+                        # Complete mobile authentication (no password required)
+                        _LOGGER.debug(
+                            "Attempting complete_login_mobile with challenge_id=%s, verification_code=%s",
+                            self._challenge_id,
+                            verification_code,
+                        )
+
+                        try:
+                            # Ensure we have all required values
+                            if not self._email or not self._challenge_id:
+                                raise ValueError(
+                                    "Missing required authentication parameters"
+                                )
+
+                            # Use mobile authentication for CN region
+                            _LOGGER.info("Using mobile authentication for CN region")
+                            # Mobile authentication: only challenge_id, otp_code, and mobile number
+                            await self._cloud_client.complete_login_mobile(
+                                self._challenge_id,
+                                verification_code,
+                                self._email,  # Mobile phone number
+                            )
+                            _LOGGER.info(
+                                "Successfully authenticated with Dyson API via mobile, got auth token"
+                            )
+                            # Store empty password for consistency (mobile auth doesn't use password)
+                            self._password = ""
+                            return await self.async_step_connection()
+                        except Exception as complete_error:
+                            _LOGGER.error(
+                                "complete_login_mobile failed: %s (Type: %s)",
+                                complete_error,
+                                type(complete_error).__name__,
+                            )
+                            # Check if it's specifically an auth error vs other errors
+                            if "401" in str(complete_error) or "Unauthorized" in str(
+                                complete_error
+                            ):
+                                _LOGGER.error(
+                                    "Authentication failed - invalid verification code or expired challenge"
+                                )
+                                errors["base"] = "auth_failed"
+                            else:
+                                errors["base"] = "verification_failed"
+
+                except Exception as e:
+                    _LOGGER.exception("Error during mobile verification: %s", e)
+                    errors["base"] = "verification_failed"
+
+            # Show the mobile verification code form (no password field)
+            _LOGGER.info("Showing mobile verification code form")
+            try:
+                data_schema = vol.Schema(
+                    {
+                        vol.Required("verification_code"): str,
+                    }
+                )
+                _LOGGER.info("Mobile verification form schema created successfully")
+
+                return self.async_show_form(
+                    step_id="verify_mobile",
+                    data_schema=data_schema,
+                    errors=errors,
+                    description_placeholders={
+                        "phone_number": getattr(self, "_email", "your phone number")
+                    },
+                )
+            except Exception as e:
+                _LOGGER.exception("Error creating mobile verification form: %s", e)
+                raise
+        except Exception as e:
+            _LOGGER.exception("Top-level exception in async_step_verify_mobile: %s", e)
             raise
 
     async def async_step_connection(
@@ -969,6 +1169,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "connection_type": self._connection_type,
                 "devices": device_list,
                 "auth_token": auth_token,
+                CONF_COUNTRY: self._country,
+                CONF_CULTURE: self._culture,
                 CONF_POLL_FOR_DEVICES: poll_for_devices,
                 CONF_AUTO_ADD_DEVICES: auto_add_devices,
                 CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
@@ -1186,41 +1388,92 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.info("User declined to add discovered device")
             return self.async_abort(reason="user_declined")
 
-        # User confirmed, create the device entry
+        # User confirmed, proceed to connection configuration
+        _LOGGER.info("User confirmed device addition, showing connection configuration")
+        return await self.async_step_discovery_connection()
+
+    async def async_step_discovery_connection(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle connection configuration for discovered device."""
         discovery_info = self.init_data
         if not discovery_info:
-            _LOGGER.error("No discovery info available for device creation")
+            _LOGGER.error("No discovery info available for connection configuration")
             return self.async_abort(reason="no_discovery_info")
 
         device_serial = discovery_info["serial_number"]
         device_name = discovery_info.get("name", f"Dyson {device_serial}")
 
-        _LOGGER.info(
-            "User confirmed device addition: %s (%s)", device_name, device_serial
-        )
+        if user_input is not None:
+            # User submitted connection configuration
+            connection_type = user_input.get("connection_type", "local_cloud_fallback")
+            hostname = user_input.get(CONF_HOSTNAME, "").strip()
 
-        # Create proper device config using the same method as auto-add
-        from .device_utils import create_cloud_device_config
+            _LOGGER.info(
+                "User configured device %s with connection type: %s, hostname: %s",
+                device_serial,
+                connection_type,
+                hostname if hostname else "(automatic discovery)",
+            )
 
-        device_info = {
-            "serial_number": device_serial,
-            "name": device_name,
-            "product_type": discovery_info.get("product_type", "unknown"),
-            "category": discovery_info.get("category", "unknown"),
-        }
+            # Create proper device config using the same method as auto-add
+            from .device_utils import create_cloud_device_config
 
-        config_data = create_cloud_device_config(
-            serial_number=device_serial,
-            username=discovery_info["email"],
-            device_info=device_info,
-            auth_token=discovery_info["auth_token"],
-            parent_entry_id=discovery_info["parent_entry_id"],
-        )
+            device_info = {
+                "serial_number": device_serial,
+                "name": device_name,
+                "product_type": discovery_info.get("product_type", "unknown"),
+                "category": discovery_info.get("category", "unknown"),
+            }
 
-        _LOGGER.info("Creating config entry for discovered device: %s", device_name)
-        return self.async_create_entry(
-            title=device_name,
-            data=config_data,
+            config_data = create_cloud_device_config(
+                serial_number=device_serial,
+                username=discovery_info["email"],
+                device_info=device_info,
+                auth_token=discovery_info["auth_token"],
+                parent_entry_id=discovery_info["parent_entry_id"],
+                connection_type=connection_type,
+                hostname=hostname if hostname else None,
+            )
+
+            _LOGGER.info("Creating config entry for discovered device: %s", device_name)
+            return self.async_create_entry(
+                title=device_name,
+                data=config_data,
+            )
+
+        # Show connection configuration form
+        # Get parent account's connection type as default
+        parent_entry_id = discovery_info.get("parent_entry_id")
+        default_connection_type = "local_cloud_fallback"
+        if parent_entry_id:
+            parent_entries = [
+                entry
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+                if entry.entry_id == parent_entry_id
+            ]
+            if parent_entries:
+                default_connection_type = parent_entries[0].data.get(
+                    "connection_type", "local_cloud_fallback"
+                )
+
+        return self.async_show_form(
+            step_id="discovery_connection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "connection_type", default=default_connection_type
+                    ): vol.In(_get_connection_type_options_detailed()),
+                    vol.Optional(
+                        CONF_HOSTNAME,
+                        description="Leave blank for automatic discovery",
+                    ): str,
+                }
+            ),
+            description_placeholders={
+                "device_name": device_name,
+                "device_serial": device_serial,
+            },
         )
 
     async def async_step_device_auto_create(
@@ -1514,8 +1767,9 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
         """Handle individual device connection reconfiguration."""
         if user_input is not None:
             connection_type = user_input.get("connection_type")
+            hostname = user_input.get(CONF_HOSTNAME, "").strip()
 
-            # Update this device's connection type
+            # Update this device's connection type and hostname
             updated_data = dict(self._config_entry.data)
 
             if connection_type == "use_account_default":
@@ -1524,6 +1778,13 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
             else:
                 # Set device-specific override
                 updated_data["connection_type"] = connection_type
+
+            # Update hostname (empty string means automatic discovery)
+            if hostname:
+                updated_data[CONF_HOSTNAME] = hostname
+            else:
+                # Remove hostname to return to automatic discovery
+                updated_data.pop(CONF_HOSTNAME, None)
 
             self.hass.config_entries.async_update_entry(
                 self._config_entry, data=updated_data
@@ -1535,6 +1796,7 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
 
         # Get current settings
         device_connection_type = self._config_entry.data.get("connection_type")
+        current_hostname = self._config_entry.data.get(CONF_HOSTNAME, "")
         parent_entry_id = self._config_entry.data.get("parent_entry_id")
 
         # Get account-level connection type
@@ -1566,7 +1828,12 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 {
                     vol.Required("connection_type", default=current_selection): vol.In(
                         connection_options
-                    )
+                    ),
+                    vol.Optional(
+                        CONF_HOSTNAME,
+                        default=current_hostname,
+                        description="Leave blank for automatic discovery",
+                    ): str,
                 }
             ),
             description_placeholders={
@@ -1577,6 +1844,9 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 "current_setting": "Override"
                 if device_connection_type
                 else "Account Default",
+                "hostname_status": f"Static IP: {current_hostname}"
+                if current_hostname
+                else "Automatic Discovery (mDNS)",
             },
         )
 

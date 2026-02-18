@@ -10,9 +10,9 @@
       },
       "cloud_account": {
         "title": "Dyson-Konto-Authentifizierung",
-        "description": "Geben Sie Ihre Dyson-Konto-Anmeldedaten ein, um Ihre Geräte zu entdecken und einzurichten.",
+        "description": "Geben Sie Ihre Dyson-Konto-Anmeldedaten ein, um Ihre Geräte zu entdecken und einzurichten. Für die Region China (CN) verwenden Sie bitte eine Mobilnummer mit Ländervorwahl (z.B. +8613800000000).",
         "data": {
-          "email": "E-Mail-Adresse"
+          "email": "E-Mail oder Mobilnummer (CN: +8613800000000)"
         }
       },
       "manual_device": {
@@ -29,11 +29,18 @@
         }
       },
       "verify": {
-        "title": "E-Mail-Verifizierung",
+        "title": "E-Mail-OTP-Verifizierung",
         "description": "Ein Verifizierungscode wurde an {email} gesendet. Bitte überprüfen Sie Ihre E-Mail und geben Sie den Code unten ein.",
         "data": {
           "verification_code": "Verifizierungscode",
           "password": "Passwort"
+        }
+      },
+      "verify_mobile": {
+        "title": "Mobile OTP-Verifizierung",
+        "description": "Ein Verifizierungscode wurde per SMS an {phone_number} gesendet. Bitte geben Sie den Code unten ein.",
+        "data": {
+          "verification_code": "Verifizierungscode"
         }
       },
       "connection": {

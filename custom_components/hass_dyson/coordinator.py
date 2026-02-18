@@ -30,7 +30,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     CONF_AUTO_ADD_DEVICES,
+    CONF_COUNTRY,
     CONF_CREDENTIAL,
+    CONF_CULTURE,
     CONF_DEVICE_NAME,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
@@ -62,6 +64,8 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
             - country: 2-letter uppercase ISO 3166-1 alpha-2 code
             - culture: IETF language tag format (e.g., 'en-US')
     """
+    import re
+
     # Handle test mocks that might not have config attribute
     try:
         hass_config = getattr(hass, "config", None)
@@ -76,13 +80,35 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
         # Get language from HA config, default to en if not set
         ha_language = getattr(hass_config, "language", None) or "en"
 
-        # Format culture as language-COUNTRY (e.g., 'en-US', 'en-NZ')
-        # If language already includes country (e.g., 'en-US'), use as-is
-        if "-" in ha_language and len(ha_language) == 5:
+        # Normalize culture format to xx-YY (e.g., 'en-US', 'zh-CN')
+        # Replace underscores with hyphens (e.g., 'zh_CN' -> 'zh-CN')
+        ha_language = ha_language.replace("_", "-")
+
+        # Validate culture format: must be exactly 5 characters in xx-YY format
+        culture_pattern = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+
+        # Extended BCP 47 format pattern (e.g., 'zh-Hans-CN', 'zh-Hant-TW')
+        extended_pattern = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
+
+        if culture_pattern.match(ha_language):
+            # Already in correct format (e.g., 'en-US')
             culture = ha_language
+        elif extended_match := extended_pattern.match(ha_language):
+            # Extended format like 'zh-Hans-CN' - extract language and country
+            language_code = extended_match.group(1)
+            country_code = extended_match.group(2)
+            culture = f"{language_code}-{country_code}"
+        elif len(ha_language) == 2:
+            # Just a language code (e.g., 'en'), combine with country
+            culture = f"{ha_language.lower()}-{country.upper()}"
+        elif len(ha_language) == 5 and "-" in ha_language:
+            # Has hyphen but wrong case, fix it
+            parts = ha_language.split("-")
+            culture = f"{parts[0].lower()}-{parts[1].upper()}"
         else:
-            # Combine language with country
-            culture = f"{ha_language}-{country}"
+            # Invalid format, use language code + country
+            lang_code = ha_language[:2].lower() if len(ha_language) >= 2 else "en"
+            culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
     except (AttributeError, TypeError):
@@ -755,31 +781,59 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         from libdyson_rest import AsyncDysonClient
 
         auth_token = self.config_entry.data.get("auth_token")
-        username = self.config_entry.data.get("username")
+        # Get credential (email or phone number) from config entry
+        credential = self.config_entry.data.get("email")
         password = self.config_entry.data.get("password")
 
         _LOGGER.debug(
-            "Cloud authentication for %s - username: %s, auth_token: %s",
+            "Cloud authentication for %s - credential: %s, auth_token: %s",
             self.serial_number,
-            username,
+            credential,
             "***" if auth_token else "None",
         )
 
         # Initialize cloud client
         if auth_token:
             # Use existing auth token from config flow (in executor to avoid blocking SSL calls)
+            # Get country and culture from config entry for CN API support
+            country = self.config_entry.data.get(CONF_COUNTRY, "US")
+            culture = self.config_entry.data.get(CONF_CULTURE, "en-US")
+
+            _LOGGER.debug(
+                "Authenticating with token for %s - country: %s, culture: %s, credential: %s",
+                self.serial_number,
+                country,
+                culture,
+                credential,
+            )
+
             def create_client_with_token():
-                return AsyncDysonClient(email=username, auth_token=auth_token)
+                return AsyncDysonClient(
+                    email=credential,
+                    auth_token=auth_token,
+                    country=country,
+                    culture=culture,
+                )
 
             return await self.hass.async_add_executor_job(create_client_with_token)
-        elif username and password:
+        elif credential and password:
             # Legacy authentication method - follow same pattern as config_flow
             # Get country and culture from HA config
             country, culture = _get_default_country_culture_for_coordinator(self.hass)
 
+            _LOGGER.debug(
+                "Authenticating with password for %s - country: %s, culture: %s",
+                self.serial_number,
+                country,
+                culture,
+            )
+
             def create_client():
                 return AsyncDysonClient(
-                    email=username, password=password, country=country, culture=culture
+                    email=credential,
+                    password=password,
+                    country=country,
+                    culture=culture,
                 )
 
             cloud_client = await self.hass.async_add_executor_job(create_client)
@@ -801,7 +855,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Step 3: Authenticate using proper flow
                 challenge = await cloud_client.begin_login()
                 await cloud_client.complete_login(
-                    str(challenge.challenge_id), "", username, password
+                    str(challenge.challenge_id), "", credential, password
                 )
                 return cloud_client
             except Exception as e:
@@ -811,7 +865,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ) from e
         else:
             raise UpdateFailed(
-                "Missing cloud credentials (auth_token or username/password)"
+                "Missing cloud credentials (auth_token or email/password)"
             )
 
     async def _find_cloud_device(self, cloud_client):
@@ -1406,6 +1460,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             connection_type,
             cloud_host,
             cloud_credential_data,
+            self._device_category,
         )
 
         # Set firmware version in the device for proper device info
@@ -1477,6 +1532,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 connection_type,
                 None,  # No cloud host for manual setup
                 None,  # No cloud credential for manual setup
+                self._device_category,
             )
 
             # Set unknown firmware version since we don't get it from cloud
@@ -2046,10 +2102,41 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Don't raise - capability refinement is optional
 
     def _get_device_host(self, device_info: Any) -> str:
-        """Get device host/IP address from device info."""
-        # For cloud devices, try to get the local IP if available
-        # Otherwise use the device serial number for mDNS resolution
-        return getattr(device_info, "hostname", f"{self.serial_number}.local")
+        """Get device host/IP address from device info or config.
+
+        Priority order:
+        1. User-provided static IP/hostname from config entry (bypasses mDNS)
+        2. Hostname from device_info (cloud API)
+        3. Fall back to {serial}.local for mDNS resolution
+        """
+        # Check if user provided a static IP/hostname in config entry
+        configured_hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
+        if configured_hostname:
+            _LOGGER.info(
+                "Using configured hostname for device %s: %s",
+                self.serial_number,
+                configured_hostname,
+            )
+            return configured_hostname
+
+        # For cloud devices, try to get the local IP from API if available
+        api_hostname = getattr(device_info, "hostname", None)
+        if api_hostname:
+            _LOGGER.debug(
+                "Using hostname from cloud API for device %s: %s",
+                self.serial_number,
+                api_hostname,
+            )
+            return api_hostname
+
+        # Fall back to mDNS resolution using {serial}.local
+        fallback_hostname = f"{self.serial_number}.local"
+        _LOGGER.debug(
+            "Using fallback hostname for device %s: %s",
+            self.serial_number,
+            fallback_hostname,
+        )
+        return fallback_hostname
 
     def _get_mqtt_prefix(self, device_info: Any) -> str:
         """Get MQTT prefix from device info using API-first approach.
@@ -2149,6 +2236,8 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.config_entry = config_entry
         self._email = config_entry.data.get("email")
         self._auth_token = config_entry.data.get("auth_token")
+        self._country = config_entry.data.get(CONF_COUNTRY, "US")
+        self._culture = config_entry.data.get(CONF_CULTURE, "en-US")
         self._last_known_devices = set()
 
         # Get polling settings with backward-compatible defaults
@@ -2223,8 +2312,20 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("No auth token available for cloud account %s", self._email)
             return []
 
-        # Create client with auth token
-        async with AsyncDysonClient(auth_token=self._auth_token) as client:
+        _LOGGER.debug(
+            "Fetching cloud devices for %s - country: %s, culture: %s",
+            self._email,
+            self._country,
+            self._culture,
+        )
+
+        # Create client with auth token and country/culture for CN API support
+        async with AsyncDysonClient(
+            email=self._email,
+            auth_token=self._auth_token,
+            country=self._country,
+            culture=self._culture,
+        ) as client:
             # Get devices from cloud API
             devices = await client.get_devices()
 

@@ -229,11 +229,14 @@ class TestEntityCreationIntegration:
         ]
         mock_coordinator.device_category = ["ec"]
         mock_coordinator.config_entry = config_entry
-        mock_coordinator.has_capability = lambda cap: cap in [
-            "ExtendedAQ",
-            "Heating",
-            "EnvironmentalData",
-        ]
+        mock_coordinator.has_capability = lambda cap: (
+            cap
+            in [
+                "ExtendedAQ",
+                "Heating",
+                "EnvironmentalData",
+            ]
+        )
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -451,12 +454,15 @@ class TestRealDeviceEntityCreationScenarios:
         mock_coordinator.device_category = ["purifier"]
         mock_coordinator.config_entry = config_entry
         mock_coordinator.serial_number = "PURIFIER-REAL-001"
-        mock_coordinator.has_capability = lambda cap: cap in [
-            "EnvironmentalData",
-            "ExtendedAQ",
-            "FanControl",
-            "Oscillation",
-        ]
+        mock_coordinator.has_capability = lambda cap: (
+            cap
+            in [
+                "EnvironmentalData",
+                "ExtendedAQ",
+                "FanControl",
+                "Oscillation",
+            ]
+        )
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -510,11 +516,14 @@ class TestRealDeviceEntityCreationScenarios:
         ]  # Heating devices are Environment Cleaners
         mock_coordinator.config_entry = config_entry
         mock_coordinator.serial_number = "HEATER-REAL-002"
-        mock_coordinator.has_capability = lambda cap: cap in [
-            "EnvironmentalData",
-            "Heating",
-            "FanControl",
-        ]
+        mock_coordinator.has_capability = lambda cap: (
+            cap
+            in [
+                "EnvironmentalData",
+                "Heating",
+                "FanControl",
+            ]
+        )
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN
@@ -568,11 +577,14 @@ class TestRealDeviceEntityCreationScenarios:
         mock_coordinator.device_category = ["robot"]
         mock_coordinator.config_entry = config_entry
         mock_coordinator.serial_number = "ROBOT-REAL-003"
-        mock_coordinator.has_capability = lambda cap: cap in [
-            "Navigation",
-            "Cleaning",
-            "BatteryStatus",
-        ]
+        mock_coordinator.has_capability = lambda cap: (
+            cap
+            in [
+                "Navigation",
+                "Cleaning",
+                "BatteryStatus",
+            ]
+        )
 
         # Set up hass.data structure that the platforms expect
         from custom_components.hass_dyson.const import DOMAIN

@@ -540,6 +540,8 @@ def create_cloud_device_config(
     device_info: dict[str, Any] | Any,
     auth_token: str | None = None,
     parent_entry_id: str | None = None,
+    connection_type: str | None = None,
+    hostname: str | None = None,
 ) -> dict[str, Any]:
     """Create config data for cloud-discovered device.
 
@@ -549,6 +551,8 @@ def create_cloud_device_config(
         device_info: Device information from cloud API (dict or object)
         auth_token: Authentication token
         parent_entry_id: Parent account entry ID
+        connection_type: Connection preference (optional)
+        hostname: Static IP/hostname for local connection (optional)
 
     Returns:
         Dictionary of config entry data for cloud device
@@ -590,4 +594,6 @@ def create_cloud_device_config(
         device_category=category,
         capabilities=capabilities,  # Now properly extracted from device_info
         parent_entry_id=parent_entry_id,
+        connection_type=connection_type,
+        hostname=hostname,
     )

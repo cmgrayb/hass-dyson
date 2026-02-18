@@ -32,10 +32,46 @@ Most common solutions:
 
 ## **Device Connection Issues**
 
-```bash
-# Check device network connectivity
-ping 192.168.1.100  # Your device IP
+### **Device Not Found / mDNS Issues**
 
+**Problem**: Device not discovered automatically, "device not found" errors
+
+**Common Causes**:
+- Network doesn't support multicast DNS (mDNS)
+- VLANs or network segregation blocking mDNS traffic
+- WiFi mesh system not forwarding mDNS properly
+- Router firmware issues with multicast traffic
+- Container networking (Docker) isolating mDNS
+
+**Solution: Use Static IP Address**
+
+1. **Find your device's IP address**:
+   ```bash
+   # Check device network connectivity
+   ping 192.168.1.100  # Your device IP
+
+   # Or use network scanner
+   sudo nmap -sn 192.168.1.0/24
+   ```
+
+2. **Configure static IP in integration**:
+   - **For new cloud-discovered devices**: Enter IP in "Connection Configuration" step
+   - **For existing devices**: Go to device Configure → enter IP in hostname field
+   - **For manual setup**: Enter IP in "IP Address or Hostname" field
+
+3. **Verify connection**:
+   ```bash
+   # Test MQTT port is accessible
+   telnet 192.168.1.100 1883
+   # or
+   nc -zv 192.168.1.100 1883
+   ```
+
+**See also**: [Static IP Configuration Guide](SETUP.md#static-ip--hostname-configuration)
+
+### **MQTT Connection Failed**
+
+```bash
 # Verify MQTT prefix in logs
 grep "MQTT prefix" /config/home-assistant.log
 ```
