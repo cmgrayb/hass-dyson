@@ -46,6 +46,7 @@ from .const import (
     CONNECTION_STATUS_CLOUD,
     CONNECTION_STATUS_DISCONNECTED,
     CONNECTION_STATUS_LOCAL,
+    DEVICE_CATEGORY_ROBOT,
     DOMAIN,
     FAULT_TRANSLATIONS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
@@ -150,6 +151,7 @@ class DysonDevice:
         connection_type: str = "local_cloud_fallback",
         cloud_host: str | None = None,
         cloud_credential: str | None = None,
+        device_category: list[str] | None = None,
     ) -> None:
         """Initialize the device wrapper."""
         self.hass = hass
@@ -158,6 +160,7 @@ class DysonDevice:
         self.credential = credential  # Local credential
         self.mqtt_prefix = mqtt_prefix
         self.capabilities = capabilities or []
+        self.device_category = device_category or ["ec"]
         self.connection_type = connection_type
         self.cloud_host = cloud_host
         self.cloud_credential = cloud_credential
@@ -207,6 +210,14 @@ class DysonDevice:
         # Device info from successful connection
         self._device_info: dict[str, Any] | None = None
         self._firmware_version: str = "Unknown"
+
+    def _is_robot_vacuum(self) -> bool:
+        """Check if device is a robot vacuum that requires MQTT 3.1.
+
+        Robot vacuums (360 Eye, 360 Heurist) require MQTT protocol version 3.1.
+        Other devices (fans, purifiers) work with newer protocol versions.
+        """
+        return DEVICE_CATEGORY_ROBOT in self.device_category
 
     def _get_preferred_connection_type(self) -> str:
         """Determine the preferred connection type based on connection_type setting."""
@@ -550,10 +561,21 @@ class DysonDevice:
             _LOGGER.debug("Using MQTT client ID: %s", client_id)
             _LOGGER.debug("Using MQTT username: %s", username)
 
-            mqtt_client = mqtt.Client(
-                client_id=client_id,
-                callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            )
+            # Robot vacuums require MQTT protocol version 3.1
+            # Other devices (fans, purifiers) work with default protocol (3.1.1/5.0)
+            if self._is_robot_vacuum():
+                mqtt_client = mqtt.Client(
+                    client_id=client_id,
+                    callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                    protocol=mqtt.MQTTv31,
+                )
+                _LOGGER.debug("Using MQTT 3.1 for robot vacuum %s", self.serial_number)
+            else:
+                mqtt_client = mqtt.Client(
+                    client_id=client_id,
+                    callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                )
+                _LOGGER.debug("Using default MQTT protocol for %s", self.serial_number)
             self._mqtt_client = mqtt_client
 
             # Disable automatic reconnection - we handle reconnection ourselves
@@ -1853,6 +1875,15 @@ class DysonDevice:
                 )
                 return None
 
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if pm25_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "PM2.5 sensor %s for %s",
+                    "inactive" if pm25_raw == "OFF" else "initializing",
+                    self.serial_number,
+                )
+                return None
+
             value = int(pm25_raw)
             import datetime
 
@@ -1886,6 +1917,15 @@ class DysonDevice:
                 )
                 return None
 
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if pm10_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "PM10 sensor %s for %s",
+                    "inactive" if pm10_raw == "OFF" else "initializing",
+                    self.serial_number,
+                )
+                return None
+
             value = int(pm10_raw)
             import datetime
 
@@ -1916,6 +1956,15 @@ class DysonDevice:
             if voc_raw is None:
                 _LOGGER.debug(
                     "VOC property for %s: no data available", self.serial_number
+                )
+                return None
+
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if voc_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "VOC sensor %s for %s",
+                    "inactive" if voc_raw == "OFF" else "initializing",
+                    self.serial_number,
                 )
                 return None
 
@@ -1953,6 +2002,15 @@ class DysonDevice:
                 )
                 return None
 
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if no2_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "NO2 sensor for %s is %s, returning None",
+                    self.serial_number,
+                    "inactive" if no2_raw == "OFF" else "initializing",
+                )
+                return None
+
             # Convert from index to ppb (divide by 10 as per libdyson-neon)
             value = float(no2_raw) / 10.0
             import datetime
@@ -1984,6 +2042,15 @@ class DysonDevice:
             if formaldehyde_raw is None:
                 _LOGGER.debug(
                     "Formaldehyde property for %s: no data available",
+                    self.serial_number,
+                )
+                return None
+
+            # Handle OFF (continuous monitoring disabled) and INIT (initializing) states
+            if formaldehyde_raw in ("OFF", "INIT"):
+                _LOGGER.debug(
+                    "Formaldehyde sensor %s for %s",
+                    "inactive" if formaldehyde_raw == "OFF" else "initializing",
                     self.serial_number,
                 )
                 return None
@@ -2112,9 +2179,18 @@ class DysonDevice:
             Robot state string or None if not available or not a robot device
         """
         try:
+            # Robot vacuum messages: data at top level (360eye)
+            # Air purifier messages: data nested under product-state
+            # Try both locations
             product_state = self._state_data.get("product-state", {})
-            # Robot state may be in 'state' or 'newstate' field depending on model
             robot_state = product_state.get("state") or product_state.get("newstate")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if not robot_state:
+                robot_state = self._state_data.get("state") or self._state_data.get(
+                    "newstate"
+                )
+
             if robot_state:
                 _LOGGER.debug("Robot state for %s: %s", self.serial_number, robot_state)
             return robot_state
@@ -2130,8 +2206,14 @@ class DysonDevice:
             Battery level (0-100) or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             battery = product_state.get("batteryChargeLevel")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if battery is None:
+                battery = self._state_data.get("batteryChargeLevel")
+
             if battery is not None:
                 battery_int = int(battery)
                 _LOGGER.debug(
@@ -2152,8 +2234,14 @@ class DysonDevice:
             List of [x, y] coordinates or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             position = product_state.get("globalPosition")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if position is None:
+                position = self._state_data.get("globalPosition")
+
             if position and isinstance(position, list) and len(position) == 2:
                 pos_coords = [int(position[0]), int(position[1])]
                 _LOGGER.debug(
@@ -2174,8 +2262,14 @@ class DysonDevice:
             Clean type (immediate, scheduled, manual) or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             clean_type = product_state.get("fullCleanType")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if not clean_type:
+                clean_type = self._state_data.get("fullCleanType")
+
             if clean_type:
                 _LOGGER.debug(
                     "Robot clean type for %s: %s", self.serial_number, clean_type
@@ -2195,8 +2289,13 @@ class DysonDevice:
             Unique clean session identifier or None if not available
         """
         try:
+            # Try product-state first (air purifiers), then top level (robot vacuums)
             product_state = self._state_data.get("product-state", {})
             clean_id = product_state.get("cleanId")
+
+            # If not in product-state, check top level (robot vacuum format)
+            if not clean_id:
+                clean_id = self._state_data.get("cleanId")
             if clean_id:
                 _LOGGER.debug("Robot clean ID for %s: %s", self.serial_number, clean_id)
             return clean_id

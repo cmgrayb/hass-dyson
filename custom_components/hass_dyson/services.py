@@ -72,6 +72,8 @@ from homeassistant.helpers import device_registry as dr
 from libdyson_rest import DysonAPIError, DysonAuthError, DysonConnectionError
 
 from .const import (
+    CONF_COUNTRY,
+    CONF_CULTURE,
     CONF_DISCOVERY_METHOD,
     DISCOVERY_CLOUD,
     DOMAIN,
@@ -817,7 +819,11 @@ async def _get_cloud_device_data_from_coordinator(
             # Enhance devices with decrypted MQTT credentials using the coordinator's auth token
             from libdyson_rest import AsyncDysonClient
 
-            async with AsyncDysonClient(auth_token=coordinator._auth_token) as client:
+            async with AsyncDysonClient(
+                auth_token=coordinator._auth_token,
+                country=coordinator._country,
+                culture=coordinator._culture,
+            ) as client:
                 enhanced_devices = await _enhance_devices_with_mqtt_credentials(
                     client, devices
                 )
@@ -910,6 +916,8 @@ async def _fetch_live_cloud_devices(config_entry):
 
     auth_token = config_entry.data.get("auth_token")
     email = config_entry.data.get("email")
+    country = config_entry.data.get(CONF_COUNTRY, "US")
+    culture = config_entry.data.get(CONF_CULTURE, "en-US")
 
     if not auth_token:
         raise HomeAssistantError(f"No auth token available for cloud account {email}")
@@ -919,7 +927,9 @@ async def _fetch_live_cloud_devices(config_entry):
     )
 
     # Create client with auth token and fetch devices
-    async with AsyncDysonClient(auth_token=auth_token) as client:
+    async with AsyncDysonClient(
+        auth_token=auth_token, country=country, culture=culture
+    ) as client:
         devices = await client.get_devices()
 
         if not devices:

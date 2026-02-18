@@ -111,7 +111,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
    Serial Number: MOCK-SERIAL-TEST123
    Device Password: AAAABBBB
    Product Type: 438
-   Device IP (optional): 192.168.1.100
+   Device IP or Hostname (optional): 192.168.1.100
    Device Name: Home Assistant name for the device
    Device Category:
       - `ec` for Environment Cleaners (air purifiers, fans with filters, heaters, and humidifiers)
@@ -176,6 +176,95 @@ hass-dyson:
       mqtt_prefix: "360"
       capabilities: ["Scheduling", "ChangeWifi"]
 ```
+
+## Static IP / Hostname Configuration
+
+### **When to Use Static IP Address**
+
+Configure a static IP address or hostname when:
+- Your network has unreliable mDNS (multicast DNS) support
+- You're experiencing "device not found" issues
+- Your network uses VLANs or network segregation
+- Your WiFi mesh system doesn't properly forward mDNS traffic
+- You prefer predictable device addressing
+- You've configured DHCP reservations for your devices
+
+### **How to Configure Static IP**
+
+#### **During Cloud Device Discovery**
+1. After confirming a discovered device, you'll see the **Connection Configuration** screen
+2. Select your preferred **Connection Type**
+3. In the **IP Address or Hostname** field, enter:
+   - IP address (e.g., `192.168.1.100`)
+   - Hostname (e.g., `dyson-fan` or `dyson-fan.local`)
+   - Leave blank for automatic mDNS discovery
+4. Click **Submit**
+
+#### **During Manual Device Setup**
+1. The manual setup form includes an **IP Address or Hostname** field
+2. Enter your device's static IP or hostname
+3. Leave blank to use automatic mDNS discovery
+4. Complete other required fields and click **Submit**
+
+#### **For Existing Devices (Reconfiguration)**
+1. Go to **Settings** → **Devices & Services** → **Dyson**
+2. Click **Configure** on the device you want to modify
+3. Update the **IP Address or Hostname** field:
+   - Add a static IP to enable it
+   - Change to a different IP/hostname
+   - Clear the field to return to automatic mDNS discovery
+4. Click **Submit** - the device will reload with new settings
+
+### **Finding Your Device's IP Address**
+
+**Method 1: Router Admin Panel**
+- Log into your router's admin interface
+- Look for "Connected Devices" or "DHCP Client List"
+- Find your Dyson device by name or MAC address
+
+**Method 2: Dyson Mobile App**
+- Some Dyson models show their IP address in the app settings
+- Look under device information or network settings
+
+**Method 3: Network Scanning Tools**
+- Use tools like `nmap`, `arp-scan`, or Home Assistant Network Scanner
+- Look for devices on port 1883 (MQTT)
+
+**Method 4: Router DHCP Reservations**
+- Configure a DHCP reservation in your router
+- Assigns the same IP to your device every time
+
+### **Valid Hostname Formats**
+
+- **IPv4 Address**: `192.168.1.100`
+- **Hostname**: `dyson-fan`
+- **FQDN**: `dyson-fan.local` or `dyson-fan.mydomain.com`
+- **Do not include**: `http://`, `https://`, or any URL scheme
+
+### **Connection Type Behavior**
+
+| Connection Type | Hostname Usage | Behavior |
+|----------------|----------------|----------|
+| **Local Only** | Used for all connections | Connection fails if hostname unreachable |
+| **Local with Cloud Fallback** | Used for initial local connection | Falls back to cloud if local connection fails |
+| **Cloud with Local Fallback** | Used when falling back to local | Cloud tried first, then local with hostname |
+| **Cloud Only** | Not used | Hostname ignored; only cloud MQTT used |
+
+### **Troubleshooting Static IP Configuration**
+
+**Device still not connecting with static IP**:
+- Verify the IP address is correct and device responds to ping
+- Ensure device is powered on and connected to WiFi
+- Check that firewall rules allow MQTT traffic (port 1883)
+- Try restarting the device (power cycle)
+
+**Want to switch back to automatic discovery**:
+- Reconfigure the device and clear the hostname field
+- Device will automatically use mDNS discovery
+
+**Multiple devices on same network**:
+- Each device needs its own unique IP address or hostname
+- Use router DHCP reservations for consistent addressing
 
 ## Device Information Guide
 

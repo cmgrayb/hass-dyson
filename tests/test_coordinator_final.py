@@ -6,7 +6,9 @@ import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.hass_dyson.const import (
+    CONF_COUNTRY,
     CONF_CREDENTIAL,
+    CONF_CULTURE,
     CONF_DEVICE_NAME,
     CONF_DISCOVERY_METHOD,
     CONF_MQTT_PREFIX,
@@ -34,8 +36,25 @@ def mock_config_entry_cloud():
     config_entry.data = {
         CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
         CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
-        "username": "test@example.com",
+        "email": "test@example.com",
         "auth_token": "test_auth_token_123",
+        CONF_COUNTRY: "US",
+        CONF_CULTURE: "en-US",
+    }
+    return config_entry
+
+
+@pytest.fixture
+def mock_config_entry_cloud_cn():
+    """Mock config entry for cloud discovery in CN region."""
+    config_entry = MagicMock()
+    config_entry.data = {
+        CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+        CONF_SERIAL_NUMBER: "VS6-CN-ABC1234A",
+        "email": "+8613800000000",
+        "auth_token": "test_auth_token_cn_456",
+        CONF_COUNTRY: "CN",
+        CONF_CULTURE: "zh-CN",
     }
     return config_entry
 
@@ -765,7 +784,9 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             mock_config_entry.data = {
                 CONF_SERIAL_NUMBER: "TEST123456",
                 "auth_token": "test_token",
-                "username": "test@example.com",
+                "email": "test@example.com",
+                CONF_COUNTRY: "US",
+                CONF_CULTURE: "en-US",
             }
             coordinator.config_entry = mock_config_entry
 
@@ -776,7 +797,10 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
                 result = await coordinator._authenticate_cloud_client()
 
                 mock_client_class.assert_called_once_with(
-                    email="test@example.com", auth_token="test_token"
+                    email="test@example.com",
+                    auth_token="test_token",
+                    country="US",
+                    culture="en-US",
                 )
                 assert result == mock_client
 
@@ -807,7 +831,7 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             mock_config_entry = MagicMock()
             mock_config_entry.data = {
                 CONF_SERIAL_NUMBER: "TEST123456",
-                "username": "test@example.com",
+                "email": "test@example.com",
                 "password": "testpass",
             }
             coordinator.config_entry = mock_config_entry
@@ -1371,11 +1395,11 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
 
     @pytest.mark.asyncio
     async def test_authenticate_cloud_client_with_username_password(self, mock_hass):
-        """Test cloud authentication with username and password."""
+        """Test cloud authentication with email and password."""
         config_entry = MagicMock()
         config_entry.data = {
             CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
-            "username": "test@example.com",
+            "email": "test@example.com",
             "password": "testpass123",
         }
 
@@ -1439,7 +1463,7 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
         config_entry = MagicMock()
         config_entry.data = {
             CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
-            "username": "test@example.com",
+            "email": "test@example.com",
             "password": "wrong_password",
         }
 
@@ -1466,6 +1490,39 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
                 await coordinator._authenticate_cloud_client()
 
             mock_client.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_authenticate_cloud_client_cn_region(
+        self, mock_hass, mock_config_entry_cloud_cn
+    ):
+        """Test cloud authentication with auth token for CN region."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+
+            # Mock hass with async_add_executor_job
+            async def mock_executor_job(func):
+                return func()
+
+            mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_executor_job)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry_cloud_cn
+
+        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            result = await coordinator._authenticate_cloud_client()
+
+            # Verify CN-specific parameters are passed
+            mock_client_class.assert_called_once_with(
+                email="+8613800000000",
+                auth_token="test_auth_token_cn_456",
+                country="CN",
+                culture="zh-CN",
+            )
+            assert result == mock_client
 
 
 class TestDysonDataUpdateCoordinatorCloudDeviceDiscovery:
@@ -1611,3 +1668,91 @@ class TestDysonDataUpdateCoordinatorManualSetup:
                 UpdateFailed, match="Failed to connect to manual device VS6-EU-HJA1234A"
             ):
                 await coordinator._async_setup_manual_device()
+
+
+class TestDysonCloudAccountCoordinatorCNRegion:
+    """Test cloud account coordinator with CN region."""
+
+    @pytest.mark.asyncio
+    async def test_cloud_account_coordinator_cn_initialization(
+        self, mock_hass, mock_config_entry_cloud_cn
+    ):
+        """Test cloud account coordinator initialization for CN region."""
+        from custom_components.hass_dyson.coordinator import (
+            DysonCloudAccountCoordinator,
+        )
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonCloudAccountCoordinator.__new__(
+                DysonCloudAccountCoordinator
+            )
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry_cloud_cn
+            coordinator._country = mock_config_entry_cloud_cn.data[CONF_COUNTRY]
+            coordinator._culture = mock_config_entry_cloud_cn.data[CONF_CULTURE]
+
+            # Verify CN region attributes are stored correctly
+            assert coordinator._country == "CN"
+            assert coordinator._culture == "zh-CN"
+
+    @pytest.mark.asyncio
+    async def test_fetch_cloud_devices_cn_region(
+        self, mock_hass, mock_config_entry_cloud_cn
+    ):
+        """Test fetching cloud devices with CN region parameters."""
+        from custom_components.hass_dyson.coordinator import (
+            DysonCloudAccountCoordinator,
+        )
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonCloudAccountCoordinator.__new__(
+                DysonCloudAccountCoordinator
+            )
+
+            # Mock hass with async_add_executor_job
+            async def mock_executor_job(func):
+                return func()
+
+            mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_executor_job)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry_cloud_cn
+            coordinator._email = mock_config_entry_cloud_cn.data.get("email")
+            coordinator._auth_token = mock_config_entry_cloud_cn.data.get("auth_token")
+            coordinator._country = mock_config_entry_cloud_cn.data[CONF_COUNTRY]
+            coordinator._culture = mock_config_entry_cloud_cn.data[CONF_CULTURE]
+            coordinator._last_known_devices = set()
+
+            # Mock device data returned from cloud
+            mock_device_data = [
+                {
+                    "Serial": "VS6-CN-ABC1234D",
+                    "Name": "Test CN Device",
+                    "ProductType": "438",
+                }
+            ]
+
+            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+                # Mock the context manager behavior
+                mock_client = AsyncMock()
+                mock_client.get_devices = AsyncMock(return_value=mock_device_data)
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = await coordinator._fetch_cloud_devices()
+
+                # Verify AsyncDysonClient was called with CN region parameters
+                mock_client_class.assert_called_once_with(
+                    email="+8613800000000",
+                    auth_token="test_auth_token_cn_456",
+                    country="CN",
+                    culture="zh-CN",
+                )
+
+                # Verify device data was returned correctly
+                assert result == mock_device_data
+                mock_client.get_devices.assert_called_once()

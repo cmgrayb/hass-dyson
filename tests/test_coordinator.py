@@ -6,7 +6,9 @@ import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.hass_dyson.const import (
+    CONF_COUNTRY,
     CONF_CREDENTIAL,
+    CONF_CULTURE,
     CONF_DEVICE_NAME,
     CONF_DISCOVERY_METHOD,
     CONF_SERIAL_NUMBER,
@@ -33,7 +35,7 @@ def mock_config_entry_cloud():
     config_entry.data = {
         CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
         CONF_SERIAL_NUMBER: "TEST123456",
-        "username": "test@example.com",
+        "email": "test@example.com",
         "password": "testpassword",
     }
     return config_entry
@@ -746,7 +748,9 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             mock_config_entry.data = {
                 CONF_SERIAL_NUMBER: "TEST123456",
                 "auth_token": "test_token",
-                "username": "test@example.com",
+                "email": "test@example.com",
+                CONF_COUNTRY: "US",
+                CONF_CULTURE: "en-US",
             }
             coordinator.config_entry = mock_config_entry
 
@@ -757,13 +761,59 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
                 result = await coordinator._authenticate_cloud_client()
 
                 mock_client_class.assert_called_once_with(
-                    email="test@example.com", auth_token="test_token"
+                    email="test@example.com",
+                    auth_token="test_token",
+                    country="US",
+                    culture="en-US",
+                )
+                assert result == mock_client
+
+    @pytest.mark.asyncio
+    async def test_authenticate_cloud_client_with_token_cn_region(self):
+        """Test cloud client authentication with auth token for CN region."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+
+            # Mock hass with async_add_executor_job
+            mock_hass = AsyncMock()
+
+            async def mock_executor_job(func):
+                return func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
+            coordinator.hass = mock_hass
+
+            # Config entry with CN country and culture
+            mock_config_entry = MagicMock()
+            mock_config_entry.data = {
+                CONF_SERIAL_NUMBER: "TEST123456",
+                "auth_token": "test_token_cn",
+                "email": "+8613800000000",
+                CONF_COUNTRY: "CN",
+                CONF_CULTURE: "zh-CN",
+            }
+            coordinator.config_entry = mock_config_entry
+
+            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client_class.return_value = mock_client
+
+                result = await coordinator._authenticate_cloud_client()
+
+                # Verify CN-specific parameters are passed
+                mock_client_class.assert_called_once_with(
+                    email="+8613800000000",
+                    auth_token="test_token_cn",
+                    country="CN",
+                    culture="zh-CN",
                 )
                 assert result == mock_client
 
     @pytest.mark.asyncio
     async def test_authenticate_cloud_client_with_password(self):
-        """Test cloud client authentication with username/password."""
+        """Test cloud client authentication with email/password."""
         with patch(
             "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
         ):
@@ -788,7 +838,7 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             mock_config_entry = MagicMock()
             mock_config_entry.data = {
                 CONF_SERIAL_NUMBER: "TEST123456",
-                "username": "test@example.com",
+                "email": "test@example.com",
                 "password": "testpass",
             }
             coordinator.config_entry = mock_config_entry
