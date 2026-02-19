@@ -79,6 +79,8 @@ jobs:
             --cov-report=term-missing \
             --cov-branch \
             --cov-fail-under=75 \
+            --junitxml=junit.xml \
+            -o junit_family=legacy \
             -v \
             --tb=short
 
