@@ -79,6 +79,8 @@ jobs:
             --cov-report=term-missing \
             --cov-branch \
             --cov-fail-under=75 \
+            --junitxml=junit.xml \
+            -o junit_family=legacy \
             -v \
             --tb=short
 
@@ -97,6 +99,11 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
       - name: Test summary
         if: always()
         run: |
