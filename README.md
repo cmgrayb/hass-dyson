@@ -13,15 +13,15 @@
 [commits]: https://github.com/cmgrayb/hass-dyson/commits/main
 [hacs]: https://github.com/hacs/integration
 [hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
-[forum]: https://community.home-assistant.io/
 [license-shield]: https://img.shields.io/github/license/cmgrayb/hass-dyson.svg?style=for-the-badge
+[codecov-shield]: https://img.shields.io/codecov/c/github/cmgrayb/hass-dyson?token=AG0CK5SE4R&style=for-the-badge
+[codecov]: https://codecov.io/github/cmgrayb/hass-dyson
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
 [![License][license-shield]](LICENSE)
 [![hacs][hacsbadge]][hacs]
-[![Community Forum][forum-shield]][forum]
+[![Codecov][codecov-shield]][codecov]
 
 A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, and robotic vacuums featuring real-time MQTT communication and complete platform coverage.
 
