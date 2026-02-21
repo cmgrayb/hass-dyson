@@ -188,6 +188,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_translation_key = "oscillation_mode"
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "45°", "90°", "180°", "350°", "Custom"]
+        # Breeze mode is only available on devices that also have Humidifier capability
+        if "Humidifier" in coordinator.device_capabilities:
+            self._attr_options.insert(self._attr_options.index("Custom"), "Breeze")
         # Hybrid approach: event-driven + state-based center preservation
         self._saved_center_angle: int | None = None
         self._last_known_mode: str | None = (
@@ -240,6 +243,11 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         if oson == "OFF":
             return "Off"
+
+        # Check ancp first — named presets take priority over angle-span inference
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        if ancp == "BRZE" and "Breeze" in self._attr_options:
+            return "Breeze"
 
         try:
             lower_data = self.coordinator.device.get_state_value(
@@ -443,6 +451,10 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         try:
             if option == "Off":
                 await self.coordinator.device.set_oscillation(False)
+                return
+
+            if option == "Breeze":
+                await self.coordinator.device.set_oscillation_breeze()
                 return
 
             if option == "Custom":

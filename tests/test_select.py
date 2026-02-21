@@ -609,6 +609,102 @@ class TestDysonOscillationModeSelect:
 
         assert should_save is False
 
+    # -------------------------------------------------------------------
+    # Breeze mode tests
+    # -------------------------------------------------------------------
+
+    def test_initialization_without_humidifier_excludes_breeze(self, mock_coordinator):
+        """Test that Breeze option is absent on non-humidifier devices."""
+        mock_coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        assert "Breeze" not in entity._attr_options
+        assert entity._attr_options == ["Off", "45°", "90°", "180°", "350°", "Custom"]
+
+    def test_initialization_with_humidifier_includes_breeze(self, mock_coordinator):
+        """Test that Breeze option is present when device has Humidifier capability."""
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        assert "Breeze" in entity._attr_options
+        assert entity._attr_options == [
+            "Off",
+            "45°",
+            "90°",
+            "180°",
+            "350°",
+            "Breeze",
+            "Custom",
+        ]
+
+    def test_detect_mode_breeze_via_ancp(self, mock_coordinator):
+        """Test that ancp=BRZE is detected as Breeze on humidifier devices."""
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "ancp": "BRZE",
+                "osal": "0180",
+                "osau": "0180",
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        mode = entity._detect_mode_from_angles()
+
+        assert mode == "Breeze"
+
+    def test_detect_mode_breeze_ancp_falls_back_on_non_humidifier(
+        self, mock_coordinator
+    ):
+        """Test that ancp=BRZE on a non-humidifier device falls through to Custom."""
+        mock_coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "ancp": "BRZE",
+                "osal": "0180",
+                "osau": "0180",
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        mode = entity._detect_mode_from_angles()
+
+        # "Breeze" is not in options for this device, so falls through to Custom
+        assert mode == "Custom"
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_breeze(self, mock_coordinator):
+        """Test selecting Breeze mode calls set_oscillation_breeze."""
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        mock_coordinator.device.set_oscillation_breeze = AsyncMock()
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        await entity.async_select_option("Breeze")
+
+        mock_coordinator.device.set_oscillation_breeze.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_breeze_no_device(self, mock_coordinator):
+        """Test selecting Breeze with no device returns silently."""
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        mock_coordinator.device = None
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        # Should not raise
+        await entity.async_select_option("Breeze")
+
 
 class TestDysonHeatingModeSelect:
     """Test heating mode select entity."""
@@ -960,6 +1056,7 @@ class TestDysonOscillationModeSelectCoverage:
         coordinator.serial_number = "NK6-EU-MHA0000A"
         coordinator.device_name = "Test Device"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.data = {
             "product-state": {
                 "oson": "ON",

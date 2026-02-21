@@ -257,6 +257,22 @@ class TestOscillationAngles:
 
         mock_device_basic.send_command.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_set_oscillation_breeze(self, mock_device_basic):
+        """Test Breeze oscillation mode sends correct MQTT payload."""
+        mock_device_basic._connected = True
+        mock_device_basic.send_command = AsyncMock()
+
+        await mock_device_basic.set_oscillation_breeze()
+
+        mock_device_basic.send_command.assert_called_once()
+        call_args = mock_device_basic.send_command.call_args[0]
+        assert call_args[0] == "STATE-SET"
+        assert call_args[1].get("ancp") == "BRZE"
+        assert call_args[1].get("oson") == "ON"
+        assert "osal" not in call_args[1]
+        assert "osau" not in call_args[1]
+
 
 class TestEnvironmentalSensors:
     """Test environmental sensor data handling and edge cases."""

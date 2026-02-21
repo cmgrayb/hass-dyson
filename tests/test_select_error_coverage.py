@@ -125,6 +125,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=ConnectionError("Device unreachable")
         )
@@ -142,6 +143,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=TimeoutError("Operation timeout")
         )
@@ -159,6 +161,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=ValueError("Invalid angle range")
         )
@@ -176,6 +179,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=AttributeError("Missing device attribute")
         )
@@ -193,6 +197,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation = AsyncMock(
             side_effect=ConnectionError("Device disconnected")
         )
@@ -209,6 +214,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation = AsyncMock(
             side_effect=TimeoutError("Custom mode timeout")
         )
@@ -223,6 +229,7 @@ class TestOscillationModeSelectErrorHandling:
         """Test _calculate_current_center with ValueError in angle parsing."""
         coordinator = Mock()
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.get_state_value = Mock(
             side_effect=["INVALID", "INVALID", "BAD"]
         )
@@ -238,6 +245,7 @@ class TestOscillationModeSelectErrorHandling:
         """Test _calculate_current_center with TypeError in angle calculations."""
         coordinator = Mock()
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         # Empty strings cause int() conversion to fail with ValueError, triggering fallback
         coordinator.device.get_state_value = Mock(side_effect=["", "", ""])
         coordinator.data = {"product-state": {}}
@@ -251,7 +259,11 @@ class TestOscillationModeSelectErrorHandling:
         """Test _detect_mode_from_angles with ValueError in parsing."""
         coordinator = Mock()
         coordinator.device = Mock()
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "INVALID", "BAD"])
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # oson, ancp, osal, osau — ancp is checked before angle-span inference
+        coordinator.device.get_state_value = Mock(
+            side_effect=["ON", "", "INVALID", "BAD"]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -263,8 +275,11 @@ class TestOscillationModeSelectErrorHandling:
         """Test _detect_mode_from_angles with non-matching angles."""
         coordinator = Mock()
         coordinator.device = Mock()
-        # Angles that don't match any preset (small non-standard span)
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "0100", "0120"])
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # oson, ancp, osal, osau — span of 20 doesn't match any preset → Custom
+        coordinator.device.get_state_value = Mock(
+            side_effect=["ON", "", "0100", "0120"]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -277,6 +292,7 @@ class TestOscillationModeSelectErrorHandling:
         """Test extra_state_attributes with ValueError in angle parsing."""
         coordinator = Mock()
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.get_state_value = Mock(
             side_effect=["ON", "INVALID", "0350", "0175"]
         )
@@ -296,6 +312,7 @@ class TestOscillationModeSelectErrorHandling:
         """Test extra_state_attributes with TypeError in calculations."""
         coordinator = Mock()
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         # Empty strings trigger ValueError in int() conversion
         coordinator.device.get_state_value = Mock(side_effect=["ON", "", "", ""])
         coordinator.data = {"product-state": {}}

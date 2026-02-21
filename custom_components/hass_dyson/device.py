@@ -2571,6 +2571,27 @@ class DysonDevice:
             },
         )
 
+    async def set_oscillation_breeze(self) -> None:
+        """Set Breeze oscillation mode.
+
+        Breeze mode activates the device's built-in randomised oscillation
+        pattern.  The device selects its own angle excursions; no osal/osau
+        values are required.  Only available on devices that have both
+        AdvanceOscillationDay1 and Humidifier capabilities.
+        """
+        await self.send_command(
+            "STATE-SET",
+            {
+                "ancp": "BRZE",  # Breeze oscillation preset
+                "oson": "ON",  # Enable oscillation
+            },
+        )
+
+        _LOGGER.debug(
+            "Set Breeze oscillation mode for %s",
+            self.serial_number,
+        )
+
     async def set_oscillation_angles_day0(
         self, lower_angle: int, upper_angle: int, ancp_value: int | None = None
     ) -> None:
