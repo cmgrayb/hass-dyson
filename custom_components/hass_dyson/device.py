@@ -2592,6 +2592,11 @@ class DysonDevice:
             self.serial_number,
         )
 
+        _LOGGER.debug(
+            "Set Breeze oscillation mode for %s",
+            self.serial_number,
+        )
+
     async def set_oscillation_angles_day0(
         self, lower_angle: int, upper_angle: int, ancp_value: int | None = None
     ) -> None:

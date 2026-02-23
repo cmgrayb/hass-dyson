@@ -331,12 +331,17 @@ class DysonFan(DysonEntity, FanEntity):
                 # Non-heating devices use simple Auto/Manual logic
                 self._attr_preset_mode = "Auto" if is_auto_mode else "Manual"
 
-            # Update oscillation state from device data if supported
+            # Update oscillation state from device data if supported.
+            # ancp=BRZE (Breeze) is a form of oscillation and takes priority:
+            # the device transiently clears oson while switching to the preset.
             if self._oscillation_supported:
                 oson = self.coordinator.device.get_state_value(
                     product_state, "oson", "OFF"
                 )
-                self._attr_oscillating = oson == "ON"
+                ancp = self.coordinator.device.get_state_value(
+                    product_state, "ancp", ""
+                )
+                self._attr_oscillating = oson == "ON" or ancp == "BRZE"
             else:
                 # Device doesn't support oscillation
                 self._attr_oscillating = False

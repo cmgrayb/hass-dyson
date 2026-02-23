@@ -914,6 +914,35 @@ class TestFanCoverageEnhancement:
         # Assert
         assert fan._attr_oscillating is True
 
+    def test_handle_coordinator_update_breeze_mode_oscillating(self, mock_coordinator):
+        """Test that ancp=BRZE reports oscillating=True even when oson=OFF.
+
+        During the Dyson device's Breeze preset transition the firmware
+        transiently clears oson/oscs.  Breeze is a form of oscillation so
+        _attr_oscillating must remain True while ancp=BRZE.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "OFF",  # transiently cleared by firmware
+                "ancp": "BRZE",
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+
+        def mockget_state_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
+
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_oscillating is True
+
     def test_handle_coordinator_update_without_oscillation_support(
         self, mock_coordinator
     ):

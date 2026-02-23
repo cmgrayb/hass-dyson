@@ -658,6 +658,29 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "Breeze"
 
+    def test_detect_mode_breeze_oson_off_still_breeze(self, mock_coordinator):
+        """Test that ancp=BRZE returns Breeze even when oson is transiently OFF.
+
+        The Dyson firmware clears oson/oscs while switching to the Breeze
+        preset.  Because Breeze is a form of oscillation, ancp=BRZE takes
+        priority over the oson=OFF early-return.
+        """
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "OFF",  # transiently cleared by firmware
+                "ancp": "BRZE",
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        mode = entity._detect_mode_from_angles()
+
+        assert mode == "Breeze"
+
     def test_detect_mode_breeze_ancp_falls_back_on_non_humidifier(
         self, mock_coordinator
     ):

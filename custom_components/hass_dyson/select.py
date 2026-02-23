@@ -239,15 +239,17 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             return "Off"
 
         product_state = self.coordinator.data.get("product-state", {})
+
+        # Check ancp=BRZE *before* oson: Breeze is a form of oscillation and
+        # the device transiently clears oson/oscs while switching to the preset.
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        if ancp == "BRZE" and "Breeze" in self._attr_options:
+            return "Breeze"
+
         oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
 
         if oson == "OFF":
             return "Off"
-
-        # Check ancp first — named presets take priority over angle-span inference
-        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
-        if ancp == "BRZE" and "Breeze" in self._attr_options:
-            return "Breeze"
 
         try:
             lower_data = self.coordinator.device.get_state_value(
@@ -566,9 +568,12 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # Current oscillation mode for scene support
         attributes["oscillation_mode"] = self._attr_current_option
 
-        # Oscillation state details
+        # Oscillation state details.
+        # ancp=BRZE (Breeze) is a form of oscillation and takes priority:
+        # the device transiently clears oson while switching to the preset.
         oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
-        oscillation_enabled: bool = oson == "ON"
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        oscillation_enabled: bool = oson == "ON" or ancp == "BRZE"
         attributes["oscillation_enabled"] = oscillation_enabled  # type: ignore[assignment]
 
         # Current angle configuration
@@ -579,9 +584,8 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
-            center_data = self.coordinator.device.get_state_value(
-                product_state, "ancp", "0175"
-            )
+            # Reuse the already-fetched ancp value for center angle
+            center_data = ancp if ancp else "0175"
 
             lower_angle: int = int(lower_data.lstrip("0") or "0")
             upper_angle: int = int(upper_data.lstrip("0") or "350")

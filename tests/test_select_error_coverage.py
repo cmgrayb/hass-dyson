@@ -260,9 +260,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # oson, ancp, osal, osau — ancp is checked before angle-span inference
+        # ancp, oson, osal, osau — ancp is now checked first
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "", "INVALID", "BAD"]
+            side_effect=["", "ON", "INVALID", "BAD"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -276,9 +276,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # oson, ancp, osal, osau — span of 20 doesn't match any preset → Custom
+        # ancp, oson, osal, osau — ancp is now checked first; span of 20 → Custom
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "", "0100", "0120"]
+            side_effect=["", "ON", "0100", "0120"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -293,8 +293,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # oson, ancp (early), osal, osau — osal=INVALID triggers ValueError
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "INVALID", "0350", "0175"]
+            side_effect=["ON", "", "INVALID", "0350"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -313,7 +314,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # Empty strings trigger ValueError in int() conversion
+        # oson, ancp (early), osal, osau — empty strings cause int() to use fallback defaults
         coordinator.device.get_state_value = Mock(side_effect=["ON", "", "", ""])
         coordinator.data = {"product-state": {}}
 
