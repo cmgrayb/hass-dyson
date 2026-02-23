@@ -915,11 +915,10 @@ class TestFanCoverageEnhancement:
         assert fan._attr_oscillating is True
 
     def test_handle_coordinator_update_breeze_mode_oscillating(self, mock_coordinator):
-        """Test that ancp=BRZE reports oscillating=True even when oson=OFF.
+        """Test that ancp=BRZE reports oscillating=True in the firmware-settled Breeze state.
 
-        During the Dyson device's Breeze preset transition the firmware
-        transiently clears oson/oscs.  Breeze is a form of oscillation so
-        _attr_oscillating must remain True while ancp=BRZE.
+        The Dyson firmware intentionally settles at ancp=BRZE, oson=OFF,
+        oscs=OFF when Breeze is running.  _attr_oscillating must be True.
         """
         mock_coordinator.data = {
             "product-state": {
@@ -927,7 +926,7 @@ class TestFanCoverageEnhancement:
                 "fnst": "FAN",
                 "fnsp": "0005",
                 "auto": "OFF",
-                "oson": "OFF",  # transiently cleared by firmware
+                "oson": "OFF",  # firmware-settled state — Breeze manages its own oscillation
                 "ancp": "BRZE",
             }
         }
@@ -990,7 +989,7 @@ class TestFanCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_async_oscillate_turn_off_success(self, mock_coordinator):
         """Test successful oscillation turn off via native fan service."""
-        # Arrange - Device with oscillation support
+        # Arrange - Device with oscillation support, not in Breeze mode
         mock_coordinator.data = {
             "product-state": {
                 "fpwr": "ON",
@@ -1006,6 +1005,40 @@ class TestFanCoverageEnhancement:
 
         # Assert
         mock_coordinator.device.set_oscillation.assert_called_once_with(False)
+        assert fan._attr_oscillating is False
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_off_from_breeze(self, mock_coordinator):
+        """Test that turning off oscillation in Breeze passes osal/osau angles.
+
+        set_oscillation_off_from_breeze() must receive the current osal/osau
+        so it can restore the correct ancp preset rather than always using CUST.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",  # Breeze settled state
+                "ancp": "BRZE",
+                "osal": "0157",
+                "osau": "0202",
+            }
+        }
+        mock_coordinator.device.set_oscillation_off_from_breeze = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        def mockget(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget
+        fan = DysonFan(mock_coordinator)
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(False)
+
+        mock_coordinator.device.set_oscillation_off_from_breeze.assert_called_once_with(
+            157, 202
+        )
+        mock_coordinator.device.set_oscillation.assert_not_called()
         assert fan._attr_oscillating is False
 
     @pytest.mark.asyncio

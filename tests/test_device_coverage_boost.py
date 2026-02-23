@@ -273,6 +273,65 @@ class TestOscillationAngles:
         assert "osal" not in call_args[1]
         assert "osau" not in call_args[1]
 
+    @pytest.mark.asyncio
+    async def test_set_oscillation_off_from_breeze_no_angles(self, mock_device_basic):
+        """Test exiting Breeze with no prior angles falls back to ancp=CUST."""
+        mock_device_basic._connected = True
+        mock_device_basic.send_command = AsyncMock()
+
+        await mock_device_basic.set_oscillation_off_from_breeze()
+
+        call_args = mock_device_basic.send_command.call_args[0]
+        assert call_args[0] == "STATE-SET"
+        assert call_args[1].get("oson") == "OFF"
+        assert call_args[1].get("ancp") == "CUST"
+        assert "osal" not in call_args[1]
+        assert "osau" not in call_args[1]
+
+    @pytest.mark.asyncio
+    async def test_set_oscillation_off_from_breeze_with_preset_angles(
+        self, mock_device_basic
+    ):
+        """Test exiting Breeze with a 45°-span prior state restores ancp=0045."""
+        mock_device_basic._connected = True
+        mock_device_basic.send_command = AsyncMock()
+
+        # span = 202 - 157 = 45 → ancp should be "0045"
+        await mock_device_basic.set_oscillation_off_from_breeze(157, 202)
+
+        call_args = mock_device_basic.send_command.call_args[0]
+        assert call_args[0] == "STATE-SET"
+        assert call_args[1].get("oson") == "OFF"
+        assert call_args[1].get("osal") == "0157"
+        assert call_args[1].get("osau") == "0202"
+        assert call_args[1].get("ancp") == "0045"
+
+    @pytest.mark.asyncio
+    async def test_set_oscillation_off_from_breeze_with_custom_angles(
+        self, mock_device_basic
+    ):
+        """Test exiting Breeze with a non-preset span restores ancp=CUST."""
+        mock_device_basic._connected = True
+        mock_device_basic.send_command = AsyncMock()
+
+        # span = 187 - 150 = 37 → no matching preset → ancp="CUST"
+        await mock_device_basic.set_oscillation_off_from_breeze(150, 187)
+
+        call_args = mock_device_basic.send_command.call_args[0]
+        assert call_args[1].get("oson") == "OFF"
+        assert call_args[1].get("osal") == "0150"
+        assert call_args[1].get("osau") == "0187"
+        assert call_args[1].get("ancp") == "CUST"
+
+    def test_resolve_ancp_from_span(self, mock_device_basic):
+        """Test _resolve_ancp_from_span returns the correct preset code."""
+        assert mock_device_basic._resolve_ancp_from_span(0, 350) == "0350"
+        assert mock_device_basic._resolve_ancp_from_span(88, 268) == "0180"  # span=180
+        assert mock_device_basic._resolve_ancp_from_span(130, 220) == "0090"  # span=90
+        assert mock_device_basic._resolve_ancp_from_span(157, 202) == "0045"  # span=45
+        assert mock_device_basic._resolve_ancp_from_span(100, 200) == "CUST"  # span=100
+        assert mock_device_basic._resolve_ancp_from_span(0, 37) == "CUST"  # span=37
+
 
 class TestEnvironmentalSensors:
     """Test environmental sensor data handling and edge cases."""
