@@ -77,22 +77,29 @@ jobs:
             --cov-report=html \
             --cov-report=json \
             --cov-report=term-missing \
+            --cov-report=term \
             --cov-branch \
             --cov-fail-under=75 \
             --junitxml=junit.xml \
             -o junit_family=legacy \
             -v \
-            --tb=short
+            --tb=short \
+            2>&1 | tee pytest-output.txt
+          # Generate standalone plain-text coverage report
+          python -m coverage report --show-missing > coverage.txt 2>&1 || true
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-reports
+          name: coverage-reports-${{ github.run_number }}
           path: |
             coverage.xml
             coverage.json
+            coverage.txt
             htmlcov/
-          retention-days: 7
+            junit.xml
+            pytest-output.txt
+          retention-days: 30
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -104,13 +111,20 @@ jobs:
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Test summary
         if: always()
         run: |
           echo "## Test & Coverage Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All tests executed with coverage analysis" >> $GITHUB_STEP_SUMMARY
-          echo "📊 Coverage reports available in artifacts" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage.txt ]; then
+            echo "### Coverage Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat coverage.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 Coverage reports uploaded as artifact \`coverage-reports-${GITHUB_RUN_NUMBER}\` (retained 30 days)" >> $GITHUB_STEP_SUMMARY
 
   # Run quality checks in parallel with tests
   quality:
