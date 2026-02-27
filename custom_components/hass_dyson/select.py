@@ -231,7 +231,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             lower_angle = int(lower_data.lstrip("0") or "0")
             upper_angle = int(upper_data.lstrip("0") or "350")
             return (lower_angle + upper_angle) // 2
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return 175  # Cannot read osal/osau; use midpoint of full range
 
     # Maps ``ancp`` (Angle Current Preset) values to HA option strings.
@@ -504,7 +504,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                             self._saved_pre_breeze_osau,
                             self.coordinator.serial_number,
                         )
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         self._saved_pre_breeze_osal = None
                         self._saved_pre_breeze_osau = None
                 await self.coordinator.device.set_oscillation_breeze()
