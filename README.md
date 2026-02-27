@@ -12,7 +12,7 @@
 [commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/hass-dyson.svg?style=for-the-badge
 [commits]: https://github.com/cmgrayb/hass-dyson/commits/main
 [hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
+[hacsbadge]: https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge
 [license-shield]: https://img.shields.io/github/license/cmgrayb/hass-dyson.svg?style=for-the-badge
 [codecov-shield]: https://img.shields.io/codecov/c/github/cmgrayb/hass-dyson?token=AG0CK5SE4R&style=for-the-badge
 [codecov]: https://codecov.io/github/cmgrayb/hass-dyson
@@ -60,19 +60,18 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 
 ### Installation
 
-1. **Add Custom Repository to HACS**
-
+1. **Install Integration via HACS**
    - Open **HACS** in Home Assistant
-   - Go to **Settings** (three dots menu)
-   - Select **Custom repositories**
-   - Add repository URL: `https://github.com/cmgrayb/hass-dyson`
-   - Select category: **Integration**
-   - Click **Add**
-
-2. **Install Integration**
-   - Search for "**Dyson**" in HACS
+   - Search for "**Dyson**"
    - Click **Download**
    - Restart Home Assistant
+
+   > **Can't find it?** If the integration does not appear in HACS search, you can add it manually as a custom repository:
+   > - Go to **Settings** (three dots menu) in HACS
+   > - Select **Custom repositories**
+   > - Add repository URL: `https://github.com/cmgrayb/hass-dyson`
+   > - Select category: **Integration**
+   > - Click **Add**, then search for and download **Dyson** as above
 
 ### Setup
 
@@ -277,6 +276,8 @@ hass_dyson:
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=cmgrayb/hass-dyson&type=date&legend=top-left)](https://www.star-history.com/#cmgrayb/hass-dyson&type=date&legend=top-left)
+
+If you like our work, please give us a star!
 
 ## License
 
