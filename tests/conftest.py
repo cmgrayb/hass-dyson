@@ -45,7 +45,7 @@ def _cleanup_tasks(event_loop, tasks_before, expected_lingering_tasks):
     if tasks:
         try:
             event_loop.run_until_complete(asyncio.wait(tasks, timeout=0.1))
-        except (TimeoutError, RuntimeError, OSError):
+        except TimeoutError, RuntimeError, OSError:
             pass  # Ignore cleanup errors
 
 

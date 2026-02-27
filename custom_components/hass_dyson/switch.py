@@ -330,7 +330,7 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
             target_celsius: float = temp_kelvin - 273.15
             attributes["target_temperature"] = round(target_celsius, 1)  # type: ignore[assignment]
             attributes["target_temperature_kelvin"] = hmax
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
         return attributes
