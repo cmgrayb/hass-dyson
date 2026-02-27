@@ -117,9 +117,8 @@ The following tasks should be available:
 ### Home Assistant Integration Testing Patterns
 
 #### Required Testing Infrastructure
-The project includes comprehensive Home Assistant testing setup:
+The project uses a pure pytest infrastructure without any HA-specific plugins:
 
-- **`pytest-homeassistant-custom-component==0.13.277`**: HA-specific pytest fixtures
 - **Comprehensive `conftest.py`**: Event loop cleanup and warning suppression
 - **Mock patterns**: Proper mocking for HA components and async operations
 
@@ -143,7 +142,7 @@ def mock_hass():
     return hass
 
 # 2. Mock Config Entry
-@pytest.fixture  
+@pytest.fixture
 def mock_config_entry():
     """Create a mock config entry."""
     config_entry = MagicMock()
@@ -169,13 +168,13 @@ async def test_coordinator_method(mock_hass, mock_config_entry):
     """Test coordinator method with patched initialization."""
     with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
         coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
-        
+
         # Manually set required attributes normally set by parent __init__
         coordinator.hass = mock_hass
         coordinator.config_entry = mock_config_entry
         coordinator._listeners = {}  # Set by HA DataUpdateCoordinator parent
         coordinator.async_update_listeners = MagicMock()
-        
+
         # Test the specific method logic
         result = coordinator.some_method()
         assert result == expected_value
@@ -207,7 +206,7 @@ async def test_coordinator_method(mock_hass, mock_config_entry):
    ```python
    # ❌ This will fail - requires full HA context
    coordinator = DysonDataUpdateCoordinator(hass, config_entry)
-   
+
    # ✅ This works - patches parent initialization
    with patch("...DataUpdateCoordinator.__init__"):
        coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
@@ -219,7 +218,7 @@ async def test_coordinator_method(mock_hass, mock_config_entry):
    with patch("...DataUpdateCoordinator.__init__"):
        coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
        result = coordinator.some_method()  # May fail
-   
+
    # ✅ Set required attributes manually
    with patch("...DataUpdateCoordinator.__init__"):
        coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
@@ -259,7 +258,6 @@ async def test_coordinator_method(mock_hass, mock_config_entry):
 The development environment includes all necessary Home Assistant testing infrastructure:
 
 - **Home Assistant Core**: Pre-installed in devcontainer
-- **pytest-homeassistant-custom-component**: HA-specific testing utilities and fixtures
 - **Comprehensive conftest.py**: Handles async teardown, warning suppression, event loop cleanup
 - **Mock libraries**: pytest-mock, unittest.mock, aioresponses, responses
 - **MQTT testing**: paho-mqtt for MQTT protocol testing
@@ -278,7 +276,7 @@ with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__ini
 ```
 
 **Issue: "Event loop is closed" warnings**
-- Handled automatically by `conftest.py` 
+- Handled automatically by `conftest.py`
 - Comprehensive warning suppression already configured
 - Event loop cleanup patches applied
 
@@ -354,7 +352,6 @@ When updating development tool versions, ensure consistency across all configura
 - pytest: 8.4.1
 - pytest-cov: 6.2.1
 - pytest-asyncio: 1.1.0
-- pytest-homeassistant-custom-component: 0.13.277
 - pytest-mock: 3.15.0
 - mypy: 1.17.1
 - pre-commit: 4.3.0
