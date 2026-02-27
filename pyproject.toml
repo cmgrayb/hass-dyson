@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.29.0"
+version = "0.29.1"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -23,16 +23,17 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.3",
-    "homeassistant>=2026.2.3",
+    "homeassistant==2026.3.0b1",
     "cryptography>=45.0.7",
     "requests>=2.32.5",
-    "libdyson-rest==0.12.0",
+    "libdyson-rest==0.12.1",
     "paho-mqtt>=2.1.0",
 ]
 
@@ -64,7 +65,7 @@ include = ["hass_dyson*"]
 
 [tool.black]
 line-length = 120
-target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313', 'py314']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -83,7 +84,7 @@ extend-exclude = '''
 [tool.ruff]
 # Home Assistant Core compliance settings
 line-length = 88  # Home Assistant standard
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.format]
 # Use double quotes for strings
@@ -132,7 +133,7 @@ known_first_party = ["custom_components.hass_dyson"]
 known_third_party = ["homeassistant"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 show_error_codes = true
 follow_imports = "silent"
 ignore_missing_imports = true

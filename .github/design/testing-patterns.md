@@ -6,10 +6,9 @@ This document provides comprehensive testing patterns, mock setups, and developm
 
 ### Testing Framework Setup
 
-The project includes comprehensive testing infrastructure for Home Assistant integration development:
+The project uses a pure pytest infrastructure for Home Assistant integration development:
 
-- **`pytest-homeassistant-custom-component==0.13.277`**: HA-specific pytest fixtures
-- **Comprehensive `conftest.py`**: Event loop cleanup and warning suppression  
+- **Comprehensive `conftest.py`**: Event loop cleanup and warning suppression
 - **Mock patterns**: Proper mocking for HA components and async operations
 
 ### Essential Mock Patterns for HA Integration Tests
@@ -34,7 +33,7 @@ def mock_hass():
 
 #### Config Entry Mocking
 ```python
-@pytest.fixture  
+@pytest.fixture
 def mock_config_entry():
     """Create a mock config entry."""
     config_entry = MagicMock()
@@ -52,13 +51,13 @@ async def test_coordinator_method(mock_hass, mock_config_entry):
     """Test coordinator method with patched initialization."""
     with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
         coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
-        
+
         # Manually set required attributes normally set by parent __init__
         coordinator.hass = mock_hass
         coordinator.config_entry = mock_config_entry
         coordinator._listeners = {}  # Set by HA DataUpdateCoordinator parent
         coordinator.async_update_listeners = MagicMock()
-        
+
         # Test the specific method logic
         result = coordinator.some_method()
         assert result == expected_value
@@ -233,7 +232,6 @@ python -m pytest -k "test_coordinator and not integration"
 The development environment includes all necessary Home Assistant testing infrastructure:
 
 - **Home Assistant Core**: Pre-installed in devcontainer
-- **pytest-homeassistant-custom-component**: HA-specific testing utilities and fixtures
 - **Comprehensive conftest.py**: Handles async teardown, warning suppression, event loop cleanup
 - **Mock libraries**: pytest-mock, unittest.mock, aioresponses, responses
 - **MQTT testing**: paho-mqtt for MQTT protocol testing
