@@ -220,14 +220,14 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             lower_angle = int(lower_data.lstrip("0") or "0")
             upper_angle = int(upper_data.lstrip("0") or "350")
             return (lower_angle + upper_angle) // 2
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             # Fallback to ancp if available
             try:
                 angle_data = self.coordinator.device.get_state_value(
                     product_state, "ancp", "0175"
                 )
                 return int(angle_data.lstrip("0") or "175")
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 return 175  # Ultimate fallback
 
     def _detect_mode_from_angles(self) -> str:
@@ -264,7 +264,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 return "45°"
             else:
                 return "Custom"
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return "Custom"
 
     def _should_save_center_on_state_change(self, new_mode: str) -> bool:
@@ -580,7 +580,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
             attributes["oscillation_center"] = center_angle  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
 
         return attributes
@@ -644,7 +644,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             )
 
             return detected_mode
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return "Off"
 
     def _get_day0_angles_and_ancp(self, preset_angle: int) -> tuple[int, int, int]:
@@ -773,7 +773,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             attributes["oscillation_center"] = self._center_angle  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
             attributes["oscillation_day0_mode"] = True  # type: ignore[assignment]
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
 
         return attributes
@@ -874,7 +874,7 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
             target_celsius: float = temp_kelvin - 273.15
             attributes["target_temperature"] = round(target_celsius, 1)  # type: ignore[assignment]
             attributes["target_temperature_kelvin"] = hmax
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
 
         return attributes
@@ -1031,7 +1031,7 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
         self.async_write_ha_state()
 
@@ -1116,7 +1116,7 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
 
@@ -1201,7 +1201,7 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
         self.async_write_ha_state()
 
@@ -1287,7 +1287,7 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
 

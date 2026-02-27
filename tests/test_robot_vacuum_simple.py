@@ -40,7 +40,7 @@ class TestRobotVacuumProperties:
 
         try:
             result = int(battery_level) if battery_level else None
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             result = None
 
         assert result == 85
@@ -67,7 +67,7 @@ class TestRobotVacuumProperties:
                     result = None
             else:
                 result = None
-        except json.JSONDecodeError, ValueError, TypeError, IndexError:
+        except (json.JSONDecodeError, ValueError, TypeError, IndexError):
             result = None
 
         assert result == (1.5, 2.3)
@@ -110,7 +110,7 @@ class TestRobotVacuumProperties:
         battery_level = device_data.get("batteryLevel")
         try:
             battery_result = int(battery_level) if battery_level else None
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             battery_result = None
         assert battery_result is None
 
@@ -129,7 +129,7 @@ class TestRobotVacuumProperties:
                     position_result = None
             else:
                 position_result = None
-        except json.JSONDecodeError, ValueError, TypeError, IndexError:
+        except (json.JSONDecodeError, ValueError, TypeError, IndexError):
             position_result = None
         assert position_result is None
 
@@ -157,7 +157,7 @@ class TestRobotVacuumProperties:
         battery_level = device_data.get("batteryLevel")
         try:
             battery_result = int(battery_level) if battery_level else None
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             battery_result = None
         assert battery_result is None
 
@@ -176,7 +176,7 @@ class TestRobotVacuumProperties:
                     position_result = None
             else:
                 position_result = None
-        except json.JSONDecodeError, ValueError, TypeError, IndexError:
+        except (json.JSONDecodeError, ValueError, TypeError, IndexError):
             position_result = None
         assert position_result is None
 
