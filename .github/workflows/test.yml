@@ -32,10 +32,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.14
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Cache pip dependencies
         uses: actions/cache@v4
@@ -43,9 +43,9 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.local/lib/python*/site-packages
-          key: ${{ runner.os }}-pip-3.13-${{ hashFiles('requirements-dev.txt', 'requirements.txt', 'pyproject.toml') }}
+          key: ${{ runner.os }}-pip-3.14-${{ hashFiles('requirements-dev.txt', 'requirements.txt', 'pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-pip-3.13-
+            ${{ runner.os }}-pip-3.14-
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
@@ -60,9 +60,9 @@ jobs:
           path: |
             .pytest_cache
             .coverage
-          key: ${{ runner.os }}-pytest-3.13-${{ github.sha }}
+          key: ${{ runner.os }}-pytest-3.14-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pytest-3.13-
+            ${{ runner.os }}-pytest-3.14-
 
       - name: Verify installation
         run: |
@@ -137,10 +137,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.14
         uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Cache pip dependencies
         uses: actions/cache@v4
@@ -171,9 +171,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .mypy_cache
-          key: ${{ runner.os }}-mypy-3.13-${{ github.sha }}
+          key: ${{ runner.os }}-mypy-3.14-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-mypy-3.13-
+            ${{ runner.os }}-mypy-3.14-
 
       - name: Run MyPy type checking
         continue-on-error: true
