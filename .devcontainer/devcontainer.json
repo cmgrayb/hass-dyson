@@ -18,7 +18,6 @@
         "ms-vscode.test-adapter-converter",
         "littlefoxteam.vscode-python-test-adapter",
         "redhat.vscode-yaml",
-        "GitHub.copilot",
         "GitHub.copilot-chat",
         "github.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
@@ -48,7 +47,7 @@
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
   "forwardPorts": [8123, 1883, 9001],
   "containerEnv": {
-    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}",
+    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}/.venv/bin/python",
     "HASS_SERVER": "http://homeassistant:8123",
     "MQTT_BROKER": "mosquitto"
   },
