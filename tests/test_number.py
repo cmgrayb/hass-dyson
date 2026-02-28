@@ -645,7 +645,7 @@ class TestOscillationAngleNumberEntities:
         )
         try:
             entity._attr_native_value = int(angle_data.lstrip("0") or "0")
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             entity._attr_native_value = 0
 
         assert entity.native_value == 0
@@ -765,7 +765,7 @@ class TestOscillationAngleNumberEntities:
             lower_angle = int(lower_data.lstrip("0") or "0")
             upper_angle = int(upper_data.lstrip("0") or "350")
             entity._attr_native_value = upper_angle - lower_angle
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             entity._attr_native_value = 350
 
         # Span should be calculated as upper - lower = 315 - 45 = 270
