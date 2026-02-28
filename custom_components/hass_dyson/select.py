@@ -295,7 +295,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 return "45°"
             else:
                 return "Custom"
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return "Custom"
 
     def _should_save_midpoint_on_state_change(self, new_mode: str) -> bool:
@@ -632,7 +632,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
             attributes["oscillation_center"] = sweep_midpoint  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
 
         return attributes
@@ -807,7 +807,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
             attributes["oscillation_center"] = self._center_angle  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
             attributes["oscillation_day0_mode"] = True  # type: ignore[assignment]
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
 
         return attributes
@@ -908,7 +908,7 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
             target_celsius: float = temp_kelvin - 273.15
             attributes["target_temperature"] = round(target_celsius, 1)  # type: ignore[assignment]
             attributes["target_temperature_kelvin"] = hmax
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             pass
 
         return attributes
@@ -1065,7 +1065,7 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
         self.async_write_ha_state()
 
@@ -1150,7 +1150,7 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
 
@@ -1235,7 +1235,7 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
         self.async_write_ha_state()
 
@@ -1321,7 +1321,7 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
                 self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[
                     0
                 ]
-        except AttributeError, KeyError:
+        except (AttributeError, KeyError):
             self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
         self.async_write_ha_state()
 

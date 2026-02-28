@@ -132,7 +132,7 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
                 self._attr_current_humidity = humidity_percent
             else:
                 self._attr_current_humidity = None
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             self._attr_current_humidity = None
 
         # Target humidity
@@ -146,7 +146,7 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
                 self._attr_target_humidity = humidity_percent
             else:
                 self._attr_target_humidity = 40  # Default to 40%
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             self._attr_target_humidity = 40  # Default to 40%
 
     async def async_turn_on(self, **kwargs: Any) -> None:

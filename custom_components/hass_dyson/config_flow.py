@@ -116,7 +116,7 @@ def _get_default_country_culture(hass) -> tuple[str, str]:
             culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
-    except AttributeError, TypeError:
+    except (AttributeError, TypeError):
         # Fallback for any unexpected issues (e.g., during testing)
         return "US", "en-US"
 
