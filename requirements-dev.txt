@@ -1,5 +1,5 @@
 # Development dependencies - exact versions for reproducibility
-ruff==0.14.14
+ruff==0.15.4
 bandit==1.9.3
 codecov==2.1.13
 pytest==9.0.2
