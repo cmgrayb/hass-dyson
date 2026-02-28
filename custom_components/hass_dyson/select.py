@@ -188,29 +188,40 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_translation_key = "oscillation_mode"
         self._attr_icon = "mdi:rotate-3d-variant"
         self._attr_options = ["Off", "45°", "90°", "180°", "350°", "Custom"]
-        # Hybrid approach: event-driven + state-based center preservation
-        self._saved_center_angle: int | None = None
-        self._last_known_mode: str | None = (
-            None  # Track transitions for event-driven logic
-        )
-        # Store preferred center points for each preset mode
-        self._preferred_centers = {
-            "45°": 175,  # Default centers
-            "90°": 175,
-            "180°": 175,
-        }
-        # Track the last known non-350° mode for center restoration
-        self._last_preset_mode = None
+        # Breeze mode is only available on devices that also have Humidifier capability
+        if "Humidifier" in coordinator.device_capabilities:
+            self._attr_options.insert(self._attr_options.index("Custom"), "Breeze")
+        # ``_saved_sweep_midpoint`` stores the HA-computed midpoint of osal/osau
+        # (i.e. (osal + osau) / 2) before entering 350° mode so that the fan's
+        # pointing direction can be restored when the user leaves 350° mode.
+        # This is entirely a HA-side concept and has NO relation to ``ancp``
+        # (Angle Current Preset), which is a device/app preset identifier.
+        self._saved_sweep_midpoint: int | None = None
+        self._last_known_mode: str | None = None  # Track mode transitions
+        # ``_saved_pre_breeze_osal/_osau`` store the angle boundaries that were
+        # active before Breeze mode was selected.  They are restored when the
+        # user turns oscillation off from Breeze, so the device returns to the
+        # previous named preset (or CUST) rather than always landing on CUST.
+        self._saved_pre_breeze_osal: int | None = None
+        self._saved_pre_breeze_osau: int | None = None
 
-    def _calculate_current_center(self) -> int:
-        """Calculate current center point from device state."""
+    def _calculate_sweep_midpoint(self) -> int:
+        """Calculate the midpoint of the current sweep range from osal/osau.
+
+        This is a HA-side concept used to preserve the fan's pointing direction
+        when switching between preset modes.  It is computed as ``(osal + osau)
+        // 2`` and has no relation to ``ancp`` (Angle Current Preset), which is
+        a device/app label for the active named preset.
+
+        Returns:
+            The midpoint in degrees, or 175 if osal/osau cannot be read.
+        """
         if not self.coordinator.device:
-            return 175  # Default center
+            return 175
 
         product_state = self.coordinator.data.get("product-state", {})
 
         try:
-            # Try to get lower/upper angles first
             lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
@@ -221,25 +232,45 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             upper_angle = int(upper_data.lstrip("0") or "350")
             return (lower_angle + upper_angle) // 2
         except (ValueError, TypeError):
-            # Fallback to ancp if available
-            try:
-                angle_data = self.coordinator.device.get_state_value(
-                    product_state, "ancp", "0175"
-                )
-                return int(angle_data.lstrip("0") or "175")
-            except (ValueError, TypeError):
-                return 175  # Ultimate fallback
+            return 175  # Cannot read osal/osau; use midpoint of full range
+
+    # Maps ``ancp`` (Angle Current Preset) values to HA option strings.
+    # The device and MyDyson app use these codes when a named preset is active.
+    _PRESET_ANCP_MAP: dict[str, str] = {
+        "0045": "45°",
+        "0090": "90°",
+        "0180": "180°",
+        "0350": "350°",
+    }
 
     def _detect_mode_from_angles(self) -> str:
-        """Detect current oscillation mode from device angles."""
+        """Detect current oscillation mode from device state."""
         if not self.coordinator.device:
             return "Off"
 
         product_state = self.coordinator.data.get("product-state", {})
+
+        # ancp=BRZE is the authoritative indicator for Breeze mode.  The Dyson
+        # firmware intentionally settles at ancp=BRZE, oson=OFF, oscs=OFF when
+        # Breeze is running — oson alone cannot be used to detect Breeze.
+        # When the user turns oscillation OFF while in Breeze mode, the select
+        # entity calls set_oscillation_off_from_breeze() which also resets ancp
+        # to CUST, giving a clean ancp≠BRZE, oson=OFF settled state.
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        if ancp == "BRZE" and "Breeze" in self._attr_options:
+            return "Breeze"
+
         oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
 
         if oson == "OFF":
             return "Off"
+
+        # Check ancp for known Angle Current Preset values.  The device and
+        # MyDyson app report these codes when a named preset is active (e.g.
+        # "0045" for 45°).  "CUST" or any unrecognised value means custom
+        # angles were set via osal/osau and we fall through to span detection.
+        if ancp in self._PRESET_ANCP_MAP:
+            return self._PRESET_ANCP_MAP[ancp]
 
         try:
             lower_data = self.coordinator.device.get_state_value(
@@ -252,9 +283,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             upper_angle = int(upper_data.lstrip("0") or "350")
             angle_span = upper_angle - lower_angle
 
-            # Check for preset matches with tolerance
-            # 350° mode is detected by near-maximum span (340-350°) regardless of exact position
-            if angle_span >= 340 and angle_span <= 350:
+            # Fallback span-based detection for devices/firmware that report
+            # osal/osau instead of a named ancp preset.
+            if 340 <= angle_span <= 350:
                 return "350°"
             elif abs(angle_span - 180) <= 5:
                 return "180°"
@@ -267,77 +298,77 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         except (ValueError, TypeError):
             return "Custom"
 
-    def _should_save_center_on_state_change(self, new_mode: str) -> bool:
-        """Check if we should save center due to external state change to 350° mode."""
+    def _should_save_midpoint_on_state_change(self, new_mode: str) -> bool:
+        """Return True when an external device change just entered 350° mode.
+
+        On that transition we capture the current sweep midpoint so it can be
+        restored if the user later picks a non-350° preset via HA.
+        """
         return (
             new_mode == "350°"
             and self._last_known_mode != "350°"
             and self._last_known_mode is not None
-            and self._saved_center_angle
-            is None  # Only save if we haven't already saved
+            and self._saved_sweep_midpoint is None  # Only save once per entry
         )
 
-    def _should_restore_center_on_state_change(self, new_mode: str) -> bool:
-        """Check if we should restore center due to external state change from 350° mode."""
+    def _should_restore_midpoint_on_state_change(self, new_mode: str) -> bool:
+        """Return True when an external device change just left 350° mode.
+
+        This signals that a previously saved sweep midpoint is now stale and
+        should be cleared (the device itself chose the new position).
+        """
         return (
             self._last_known_mode == "350°"
             and new_mode != "350°"
             and new_mode != "Off"
-            and self._saved_center_angle is not None
+            and self._saved_sweep_midpoint is not None
         )
 
     def _calculate_angles_for_preset(
-        self, preset_angle: int, current_center: int = 175
+        self, preset_angle: int, sweep_midpoint: int = 175
     ) -> tuple[int, int]:
-        """Calculate lower and upper angles for a preset mode, with center point as authoritative."""
+        """Return (lower, upper) angles for *preset_angle* centred on *sweep_midpoint*.
+
+        *sweep_midpoint* is the HA-computed midpoint of the current osal/osau
+        range (see ``_calculate_sweep_midpoint``).  It is used purely as a
+        positioning hint and is unrelated to ``ancp``.
+        """
         if preset_angle == 350:
-            # Full range oscillation
             return 0, 350
 
-        # Calculate initial angles from center point
-        lower, upper = self._calculate_initial_angles(preset_angle, current_center)
-
-        # Apply boundary constraints
+        lower, upper = self._calculate_initial_angles(preset_angle, sweep_midpoint)
         return self._apply_boundary_constraints(
-            lower, upper, preset_angle, current_center
+            lower, upper, preset_angle, sweep_midpoint
         )
 
     def _calculate_initial_angles(
-        self, preset_angle: int, current_center: int
+        self, preset_angle: int, sweep_midpoint: int
     ) -> tuple[int, int]:
-        """Calculate initial lower and upper angles from center point."""
-        # Center point is authoritative - calculate angles to preserve it exactly
-        half_span = preset_angle / 2.0  # Use float division for precision
+        """Calculate initial lower and upper angles centred on *sweep_midpoint*."""
+        half_span = preset_angle / 2.0
+        ideal_lower = sweep_midpoint - half_span
+        ideal_upper = sweep_midpoint + half_span
 
-        # Calculate ideal lower and upper angles
-        ideal_lower = current_center - half_span
-        ideal_upper = current_center + half_span
-
-        # Round to integers while preserving the center as much as possible
         lower = int(round(ideal_lower))
         upper = int(round(ideal_upper))
 
         # Ensure the span is exactly the preset angle
-        actual_span = upper - lower
-        if actual_span != preset_angle:
-            # Adjust upper to get exact span while keeping center as close as possible
+        if upper - lower != preset_angle:
             upper = lower + preset_angle
 
         return lower, upper
 
     def _apply_boundary_constraints(
-        self, lower: int, upper: int, preset_angle: int, current_center: int
+        self, lower: int, upper: int, preset_angle: int, sweep_midpoint: int
     ) -> tuple[int, int]:
-        """Apply boundary constraints to angle range."""
-        # Handle boundary constraints - center point wins
+        """Clamp (lower, upper) to the 0-350° range, keeping midpoint as close as possible."""
         if lower < 0:
             lower, upper = self._handle_lower_boundary_violation(preset_angle)
         elif upper > 350:
             lower, upper = self._handle_upper_boundary_violation(preset_angle)
 
-        # Final verification and centering within constraints
         return self._optimize_centering_within_bounds(
-            lower, upper, preset_angle, current_center
+            lower, upper, preset_angle, sweep_midpoint
         )
 
     def _handle_lower_boundary_violation(self, preset_angle: int) -> tuple[int, int]:
@@ -359,41 +390,34 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         return lower, upper
 
     def _optimize_centering_within_bounds(
-        self, lower: int, upper: int, preset_angle: int, current_center: int
+        self, lower: int, upper: int, preset_angle: int, sweep_midpoint: int
     ) -> tuple[int, int]:
-        """Optimize centering within boundary constraints."""
-        # Final verification: if we had to compress due to bounds,
-        # ensure we're still as centered as possible within constraints
+        """Shift (lower, upper) as close to *sweep_midpoint* as boundary allows."""
         if lower == 0 or upper == 350:
-            # We hit a boundary - calculate best centered position within constraints
             available_span = upper - lower
             if available_span >= preset_angle:
-                # We have room to center better
                 lower, upper = self._recenter_within_available_space(
-                    lower, upper, current_center
+                    lower, upper, sweep_midpoint
                 )
 
         return int(lower), int(upper)
 
     def _recenter_within_available_space(
-        self, lower: int, upper: int, current_center: int
+        self, lower: int, upper: int, sweep_midpoint: int
     ) -> tuple[int, int]:
-        """Recenter the angle range within available space."""
-        actual_center = (lower + upper) / 2.0
-        if actual_center != current_center:
-            # Try to shift to get closer to target center
-            center_diff = current_center - actual_center
+        """Shift (lower, upper) toward *sweep_midpoint* within available travel."""
+        actual_midpoint = (lower + upper) / 2.0
+        if actual_midpoint != sweep_midpoint:
+            diff = sweep_midpoint - actual_midpoint
             max_shift_left = lower
             max_shift_right = 350 - upper
 
-            if center_diff > 0 and max_shift_right > 0:
-                # Need to shift right
-                shift = min(center_diff, max_shift_right)
+            if diff > 0 and max_shift_right > 0:
+                shift = min(diff, max_shift_right)
                 lower += int(shift)
                 upper += int(shift)
-            elif center_diff < 0 and max_shift_left > 0:
-                # Need to shift left
-                shift = min(-center_diff, max_shift_left)
+            elif diff < 0 and max_shift_left > 0:
+                shift = min(-diff, max_shift_left)
                 lower -= int(shift)
                 upper -= int(shift)
 
@@ -409,23 +433,28 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # Detect current mode from device state
         detected_mode = self._detect_mode_from_angles()
 
-        # Hybrid approach: Handle state-based center preservation for external changes
-        if self._should_save_center_on_state_change(detected_mode):
-            current_center = self._calculate_current_center()
-            self._saved_center_angle = current_center
-            _LOGGER.info(
-                "STATE-BASED: SAVING center angle %s on external change to 350° mode (from %s)",
-                current_center,
+        # Save the sweep midpoint when an external event moves the device into
+        # 350° mode so we can restore it if the user later picks a preset via HA.
+        if self._should_save_midpoint_on_state_change(detected_mode):
+            midpoint = self._calculate_sweep_midpoint()
+            self._saved_sweep_midpoint = midpoint
+            _LOGGER.debug(
+                "Saving sweep midpoint %s° before external switch to 350° (from %s) for %s",
+                midpoint,
                 self._last_known_mode,
+                self.coordinator.serial_number,
             )
-        elif self._should_restore_center_on_state_change(detected_mode):
-            _LOGGER.info(
-                "STATE-BASED: External change detected from 350° mode to %s with saved center %s",
+        elif self._should_restore_midpoint_on_state_change(detected_mode):
+            # Device changed out of 350° without going via HA (e.g. app/remote).
+            # The saved midpoint is now stale; discard it so a future HA-driven
+            # preset selection doesn't restore an outdated position.
+            _LOGGER.debug(
+                "Discarding stale saved midpoint %s° after external exit from 350° to %s for %s",
+                self._saved_sweep_midpoint,
                 detected_mode,
-                self._saved_center_angle,
+                self.coordinator.serial_number,
             )
-            # Note: We don't automatically restore here - we just log it
-            # The user would need to use the entity to get the restoration behavior
+            self._saved_sweep_midpoint = None
 
         # Update the current option
         self._attr_current_option = detected_mode
@@ -436,78 +465,100 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         super()._handle_coordinator_update()
 
     async def async_select_option(self, option: str) -> None:
-        """Select the oscillation mode with event-driven center preservation."""
+        """Select the oscillation mode with center-point preservation."""
         if not self.coordinator.device:
             return
 
         try:
             if option == "Off":
-                await self.coordinator.device.set_oscillation(False)
+                # When leaving Breeze mode, restore the angle span that was
+                # active before Breeze was selected so the device returns to a
+                # recognised preset (or CUST) rather than always landing on CUST.
+                if self._attr_current_option == "Breeze":
+                    await self.coordinator.device.set_oscillation_off_from_breeze(
+                        self._saved_pre_breeze_osal,
+                        self._saved_pre_breeze_osau,
+                    )
+                    self._saved_pre_breeze_osal = None
+                    self._saved_pre_breeze_osau = None
+                else:
+                    await self.coordinator.device.set_oscillation(False)
+                return
+
+            if option == "Breeze":
+                # Save current osal/osau so we can restore them when leaving Breeze.
+                if self.coordinator.device and self.coordinator.data:
+                    product_state = self.coordinator.data.get("product-state", {})
+                    try:
+                        osal_raw = self.coordinator.device.get_state_value(
+                            product_state, "osal", "0000"
+                        )
+                        osau_raw = self.coordinator.device.get_state_value(
+                            product_state, "osau", "0350"
+                        )
+                        self._saved_pre_breeze_osal = int(osal_raw.lstrip("0") or "0")
+                        self._saved_pre_breeze_osau = int(osau_raw.lstrip("0") or "350")
+                        _LOGGER.debug(
+                            "Saving pre-Breeze angles osal=%s osau=%s for %s",
+                            self._saved_pre_breeze_osal,
+                            self._saved_pre_breeze_osau,
+                            self.coordinator.serial_number,
+                        )
+                    except (ValueError, TypeError):
+                        self._saved_pre_breeze_osal = None
+                        self._saved_pre_breeze_osau = None
+                await self.coordinator.device.set_oscillation_breeze()
                 return
 
             if option == "Custom":
-                # For Custom, just turn on oscillation with current angle settings
+                # For Custom, enable oscillation while leaving osal/osau unchanged.
                 await self.coordinator.device.set_oscillation(True)
                 return
 
-            # EVENT-DRIVEN: Handle center preservation for entity-driven changes
+            # Named preset modes: 45°, 90°, 180°, 350°.
+            # Use set_oscillation_angles so osal/osau are included in the
+            # command — this keeps the number entities in sync AND ensures the
+            # MyDyson app receives the correct ancp preset label (derived
+            # automatically by set_oscillation_angles from the span).
+
             current_mode = self._attr_current_option or "Off"
 
-            # Save center point when entering 350° mode via entity
+            # Save the sweep midpoint (HA-computed (osal+osau)/2) when entering
+            # 350° mode so it can be restored on exit.  This is unrelated to ancp.
             if option == "350°" and current_mode != "350°":
-                current_center = self._calculate_current_center()
-                self._saved_center_angle = current_center
-                _LOGGER.info(
-                    "EVENT-DRIVEN: SAVING center angle %s when selecting 350° mode (from %s)",
-                    current_center,
+                midpoint = self._calculate_sweep_midpoint()
+                self._saved_sweep_midpoint = midpoint
+                _LOGGER.debug(
+                    "Saving sweep midpoint %s° before entering 350° mode (from %s) for %s",
+                    midpoint,
                     current_mode,
+                    self.coordinator.serial_number,
                 )
 
-            # Calculate angles for the selected preset
             preset_angle = int(option.replace("°", ""))
 
             if preset_angle == 350:
-                # Full range oscillation
                 lower_angle, upper_angle = 0, 350
             else:
-                # Determine center to use for angle calculation
-                center_to_use = (
-                    self._calculate_current_center()
-                )  # Default: current center
-
-                # EVENT-DRIVEN: Restore center when leaving 350° mode via entity
-                if current_mode == "350°" and self._saved_center_angle is not None:
-                    center_to_use = self._saved_center_angle
-                    _LOGGER.info(
-                        "EVENT-DRIVEN: RESTORING saved center angle %s when leaving 350° mode (target: %s°)",
-                        center_to_use,
+                # Restore the saved sweep midpoint when leaving 350° so the fan
+                # returns to its previous pointing direction.  Otherwise keep the
+                # current midpoint (fan stays pointed the same way).
+                if current_mode == "350°" and self._saved_sweep_midpoint is not None:
+                    midpoint_to_use = self._saved_sweep_midpoint
+                    self._saved_sweep_midpoint = None
+                    _LOGGER.debug(
+                        "Restoring sweep midpoint %s° when leaving 350° (target %s°) for %s",
+                        midpoint_to_use,
                         preset_angle,
+                        self.coordinator.serial_number,
                     )
-                    self._saved_center_angle = None  # Clear after use
                 else:
-                    _LOGGER.info(
-                        "EVENT-DRIVEN: Using current center angle %s for preset %s° (from %s)",
-                        center_to_use,
-                        preset_angle,
-                        current_mode,
-                    )
+                    midpoint_to_use = self._calculate_sweep_midpoint()
 
-                # Calculate coordinated angles
                 lower_angle, upper_angle = self._calculate_angles_for_preset(
-                    preset_angle, center_to_use
-                )
-                calculated_center = (lower_angle + upper_angle) / 2.0
-                _LOGGER.info(
-                    "Calculated angles for %s°: lower=%s, upper=%s, resulting_center=%.1f (target_center=%s, diff=%.1f)",
-                    preset_angle,
-                    lower_angle,
-                    upper_angle,
-                    calculated_center,
-                    center_to_use,
-                    calculated_center - center_to_use,
+                    preset_angle, midpoint_to_use
                 )
 
-            # Apply the calculated angles
             await self.coordinator.device.set_oscillation_angles(
                 lower_angle, upper_angle
             )
@@ -554,9 +605,12 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # Current oscillation mode for scene support
         attributes["oscillation_mode"] = self._attr_current_option
 
-        # Oscillation state details
+        # Oscillation state details.
+        # ancp=BRZE means Breeze is running even when oson=OFF (firmware-settled
+        # state).  Include it as an active oscillation indicator.
         oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
-        oscillation_enabled: bool = oson == "ON"
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        oscillation_enabled: bool = oson == "ON" or ancp == "BRZE"
         attributes["oscillation_enabled"] = oscillation_enabled  # type: ignore[assignment]
 
         # Current angle configuration
@@ -567,18 +621,16 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             upper_data = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
-            center_data = self.coordinator.device.get_state_value(
-                product_state, "ancp", "0175"
-            )
-
             lower_angle: int = int(lower_data.lstrip("0") or "0")
             upper_angle: int = int(upper_data.lstrip("0") or "350")
-            center_angle: int = int(center_data.lstrip("0") or "175")
+            # sweep_midpoint is our HA-computed midpoint of osal/osau.
+            # It is NOT related to ancp (Angle Current Preset).
+            sweep_midpoint: int = (lower_angle + upper_angle) // 2
             span: int = upper_angle - lower_angle
 
             attributes["oscillation_angle_low"] = lower_angle  # type: ignore[assignment]
             attributes["oscillation_angle_high"] = upper_angle  # type: ignore[assignment]
-            attributes["oscillation_center"] = center_angle  # type: ignore[assignment]
+            attributes["oscillation_center"] = sweep_midpoint  # type: ignore[assignment]
             attributes["oscillation_span"] = span  # type: ignore[assignment]
         except (ValueError, TypeError):
             pass
@@ -590,6 +642,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
     """Select entity for oscillation mode (AdvanceOscillationDay0 capability)."""
 
     coordinator: DysonDataUpdateCoordinator
+    _PRESET_ANCP_MAP: dict[str, str] = {"0015": "15°", "0040": "40°", "0070": "70°"}
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation mode select for Day0."""
@@ -613,58 +666,39 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
         if oson == "OFF":
             return "Off"
 
-        try:
-            # Day0 devices use ancp (angle center point) to indicate the preset mode
-            ancp_data = self.coordinator.device.get_state_value(
-                product_state, "ancp", "0040"
-            )
-            ancp_value = int(ancp_data.lstrip("0") or "40")
+        # Day0 devices use ancp as a zero-padded preset code ("0015", "0040", "0070")
+        ancp_raw = self.coordinator.device.get_state_value(
+            product_state, "ancp", "0040"
+        )
+        detected_mode = self._PRESET_ANCP_MAP.get(ancp_raw, "40°")
 
-            # Map ancp values to preset modes
-            if ancp_value == 15:
-                detected_mode = "15°"
-            elif ancp_value == 40:
-                detected_mode = "40°"
-            elif ancp_value == 70:
-                detected_mode = "70°"
-            else:
-                # Default to closest preset
-                if ancp_value < 27:
-                    detected_mode = "15°"
-                elif ancp_value < 55:
-                    detected_mode = "40°"
-                else:
-                    detected_mode = "70°"
+        _LOGGER.debug(
+            "Day0: Detected mode from ancp=%s -> '%s' for %s",
+            ancp_raw,
+            detected_mode,
+            self.coordinator.serial_number,
+        )
 
-            _LOGGER.debug(
-                "Day0: Detected mode from ancp=%s -> '%s' for %s",
-                ancp_value,
-                detected_mode,
-                self.coordinator.serial_number,
-            )
+        return detected_mode
 
-            return detected_mode
-        except (ValueError, TypeError):
-            return "Off"
-
-    def _get_day0_angles_and_ancp(self, preset_angle: int) -> tuple[int, int, int]:
-        """Get fixed angles and ancp value for Day0 preset mode."""
+    def _get_day0_angles_and_ancp(self, preset_angle: int) -> tuple[int, int, str]:
+        """Get fixed angles and ancp code for Day0 preset mode."""
         # Day0 devices use fixed physical angles but variable ancp
-        # Based on MQTT trace: osal=157, osau=197, ancp=preset_value
+        # Based on MQTT trace: osal=0157, osau=0197, ancp=zero-padded preset code
         lower_angle = 157
         upper_angle = 197
-        ancp_value = preset_angle
+        ancp_code = f"{preset_angle:04d}"
 
         _LOGGER.debug(
             "Day0: Fixed angles for %s° preset: %s°-%s° with ancp=%s for %s",
             preset_angle,
             lower_angle,
             upper_angle,
-            ancp_value,
+            ancp_code,
             self.coordinator.serial_number,
         )
 
-        return lower_angle, upper_angle, ancp_value
+        return lower_angle, upper_angle, ancp_code
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -692,7 +726,7 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
 
             # Get Day0 angles and ancp for the selected preset
             preset_angle = int(option.replace("°", ""))
-            lower_angle, upper_angle, ancp_value = self._get_day0_angles_and_ancp(
+            lower_angle, upper_angle, ancp_code = self._get_day0_angles_and_ancp(
                 preset_angle
             )
 
@@ -702,12 +736,12 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
                 lower_angle,
                 upper_angle,
-                ancp_value,
+                ancp_code,
             )
 
             # Apply the fixed angles and ancp using Day0-specific method
             await self.coordinator.device.set_oscillation_angles_day0(
-                lower_angle, upper_angle, ancp_value
+                lower_angle, upper_angle, ancp_code
             )
 
             _LOGGER.debug(

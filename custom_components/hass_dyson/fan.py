@@ -336,7 +336,12 @@ class DysonFan(DysonEntity, FanEntity):
                 oson = self.coordinator.device.get_state_value(
                     product_state, "oson", "OFF"
                 )
-                self._attr_oscillating = oson == "ON"
+                ancp = self.coordinator.device.get_state_value(
+                    product_state, "ancp", ""
+                )
+                # ancp=BRZE is the firmware-settled state for Breeze mode;
+                # oson is intentionally OFF when Breeze is running.
+                self._attr_oscillating = oson == "ON" or ancp == "BRZE"
             else:
                 # Device doesn't support oscillation
                 self._attr_oscillating = False
@@ -765,7 +770,32 @@ class DysonFan(DysonEntity, FanEntity):
             return
 
         try:
-            await self.coordinator.device.set_oscillation(oscillating)
+            if not oscillating:
+                # When turning off while in Breeze mode, restore the pre-Breeze
+                # angle span so the device returns to a recognised preset.
+                product_state = self.coordinator.data.get("product-state", {})
+                ancp = self.coordinator.device.get_state_value(
+                    product_state, "ancp", ""
+                )
+                if ancp == "BRZE":
+                    try:
+                        osal_raw = self.coordinator.device.get_state_value(
+                            product_state, "osal", "0000"
+                        )
+                        osau_raw = self.coordinator.device.get_state_value(
+                            product_state, "osau", "0350"
+                        )
+                        lower = int(osal_raw.lstrip("0") or "0")
+                        upper = int(osau_raw.lstrip("0") or "350")
+                    except (ValueError, TypeError):
+                        lower = upper = None  # type: ignore[assignment]
+                    await self.coordinator.device.set_oscillation_off_from_breeze(
+                        lower, upper
+                    )
+                else:
+                    await self.coordinator.device.set_oscillation(oscillating)
+            else:
+                await self.coordinator.device.set_oscillation(oscillating)
 
             # Update state immediately for responsive UI
             self._attr_oscillating = oscillating

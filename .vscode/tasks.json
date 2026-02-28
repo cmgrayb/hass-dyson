@@ -244,6 +244,22 @@
             "problemMatcher": []
         },
         {
+            "label": "Download Coverage Report",
+            "type": "shell",
+            "command": "gh run download $(gh run list --repo cmgrayb/hass-dyson --workflow test.yml --branch $(git branch --show-current) --status success --limit 1 --json databaseId -q '.[0].databaseId') --repo cmgrayb/hass-dyson --dir ./coverage-download && echo '' && echo '✅ Coverage report downloaded to ./coverage-download'",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Check All",
             "dependsOrder": "sequence",
             "dependsOn": [

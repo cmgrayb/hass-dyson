@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.29.2"
+version = "0.30.0-beta.4"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -13,7 +13,7 @@ authors = [
 ]
 keywords = ["home-assistant", "dyson", "integration", "custom-component"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -30,7 +30,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.3",
-    "homeassistant>=2026.2.3",
+    "homeassistant==2026.3.0b1",
     "cryptography>=45.0.7",
     "requests>=2.32.5",
     "libdyson-rest==0.12.1",
@@ -39,7 +39,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.14.14",
+    "ruff==0.15.4",
     "pytest==9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-asyncio==1.3.0",
@@ -84,7 +84,7 @@ extend-exclude = '''
 [tool.ruff]
 # Home Assistant Core compliance settings
 line-length = 88  # Home Assistant standard
-target-version = "py314"
+target-version = "py39"  # Must match minimum supported version. Python 3.14 reintroduces the Python 2 multi-exception syntax (except A, B:), which Ruff correctly formats when targeting py314 — but that output is incompatible with Python 3.9–3.13.
 
 [tool.ruff.format]
 # Use double quotes for strings

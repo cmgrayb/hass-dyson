@@ -125,10 +125,12 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=ConnectionError("Device unreachable")
         )
-        coordinator.data = {"product-state": {"osal": "0000", "osau": "0350"}}
+        coordinator.device.get_state_value.return_value = "0175"
+        coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
         select._attr_current_option = "Off"
@@ -142,10 +144,12 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=TimeoutError("Operation timeout")
         )
-        coordinator.data = {"product-state": {"osal": "0100", "osau": "0250"}}
+        coordinator.device.get_state_value.return_value = "0175"
+        coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
         select._attr_current_option = "90°"
@@ -159,10 +163,12 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=ValueError("Invalid angle range")
         )
-        coordinator.data = {"product-state": {"osal": "0090", "osau": "0270"}}
+        coordinator.device.get_state_value.return_value = "0175"
+        coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
         select._attr_current_option = "180°"
@@ -176,10 +182,12 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=AttributeError("Missing device attribute")
         )
-        coordinator.data = {"product-state": {"osal": "0000", "osau": "0350"}}
+        coordinator.device.get_state_value.return_value = "0175"
+        coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
         select._attr_current_option = "90°"
@@ -193,6 +201,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation = AsyncMock(
             side_effect=ConnectionError("Device disconnected")
         )
@@ -209,6 +218,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.serial_number = "TEST-SERIAL-456"
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         coordinator.device.set_oscillation = AsyncMock(
             side_effect=TimeoutError("Custom mode timeout")
         )
@@ -219,39 +229,41 @@ class TestOscillationModeSelectErrorHandling:
         with patch.object(select, "async_write_ha_state"):
             await select.async_select_option("Custom")
 
-    def test_calculate_current_center_value_error(self):
-        """Test _calculate_current_center with ValueError in angle parsing."""
+    def test_calculate_sweep_midpoint_value_error(self):
+        """Test _calculate_sweep_midpoint returns 175 when osal/osau cannot be parsed."""
         coordinator = Mock()
         coordinator.device = Mock()
-        coordinator.device.get_state_value = Mock(
-            side_effect=["INVALID", "INVALID", "BAD"]
-        )
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        coordinator.device.get_state_value = Mock(side_effect=["INVALID", "INVALID"])
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
 
-        # Should return default 175
-        center = select._calculate_current_center()
-        assert center == 175
+        midpoint = select._calculate_sweep_midpoint()
+        assert midpoint == 175
 
-    def test_calculate_current_center_type_error(self):
-        """Test _calculate_current_center with TypeError in angle calculations."""
+    def test_calculate_sweep_midpoint_empty_strings(self):
+        """Test _calculate_sweep_midpoint returns 175 when osal/osau are empty strings."""
         coordinator = Mock()
         coordinator.device = Mock()
-        # Empty strings cause int() conversion to fail with ValueError, triggering fallback
-        coordinator.device.get_state_value = Mock(side_effect=["", "", ""])
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        coordinator.device.get_state_value = Mock(side_effect=["", ""])
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
 
-        center = select._calculate_current_center()
-        assert center == 175
+        midpoint = select._calculate_sweep_midpoint()
+        assert midpoint == 175
 
     def test_detect_mode_from_angles_value_error(self):
         """Test _detect_mode_from_angles with ValueError in parsing."""
         coordinator = Mock()
         coordinator.device = Mock()
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "INVALID", "BAD"])
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # ancp, oson, osal, osau — ancp is checked first (not BRZE so falls through)
+        coordinator.device.get_state_value = Mock(
+            side_effect=["", "ON", "INVALID", "BAD"]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -263,8 +275,11 @@ class TestOscillationModeSelectErrorHandling:
         """Test _detect_mode_from_angles with non-matching angles."""
         coordinator = Mock()
         coordinator.device = Mock()
-        # Angles that don't match any preset (small non-standard span)
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "0100", "0120"])
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # ancp, oson, osal, osau — ancp first; span of 20 → Custom
+        coordinator.device.get_state_value = Mock(
+            side_effect=["", "ON", "0100", "0120"]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -277,8 +292,10 @@ class TestOscillationModeSelectErrorHandling:
         """Test extra_state_attributes with ValueError in angle parsing."""
         coordinator = Mock()
         coordinator.device = Mock()
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # oson, ancp (early), osal, osau — osal=INVALID triggers ValueError
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "INVALID", "0350", "0175"]
+            side_effect=["ON", "", "INVALID", "0350"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -296,7 +313,8 @@ class TestOscillationModeSelectErrorHandling:
         """Test extra_state_attributes with TypeError in calculations."""
         coordinator = Mock()
         coordinator.device = Mock()
-        # Empty strings trigger ValueError in int() conversion
+        coordinator.device_capabilities = ["AdvanceOscillationDay1"]
+        # oson, ancp (early), osal, osau — empty strings cause int() to use fallback defaults
         coordinator.device.get_state_value = Mock(side_effect=["ON", "", "", ""])
         coordinator.data = {"product-state": {}}
 
