@@ -787,7 +787,7 @@ class DysonFan(DysonEntity, FanEntity):
                         )
                         lower = int(osal_raw.lstrip("0") or "0")
                         upper = int(osau_raw.lstrip("0") or "350")
-                    except ValueError, TypeError:
+                    except (ValueError, TypeError):
                         lower = upper = None  # type: ignore[assignment]
                     await self.coordinator.device.set_oscillation_off_from_breeze(
                         lower, upper
