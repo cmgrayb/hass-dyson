@@ -10,10 +10,13 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "bierner.markdown-mermaid",
         "ms-python.python",
         "charliermarsh.ruff",
         "ms-python.mypy-type-checker",
         "ms-vscode.vscode-json",
+        "ms-vscode.test-adapter-converter",
+        "littlefoxteam.vscode-python-test-adapter",
         "redhat.vscode-yaml",
         "GitHub.copilot",
         "GitHub.copilot-chat",
