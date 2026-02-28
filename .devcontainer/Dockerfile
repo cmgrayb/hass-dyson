@@ -1,5 +1,5 @@
-# Use the official Python devcontainer image as base
-FROM mcr.microsoft.com/devcontainers/python:3.14-bookworm
+# Use the official Python devcontainer image as base - image format is patch-major.minor-OS
+FROM mcr.microsoft.com/devcontainers/python:3-3.14-bookworm
 
 # Remove Yarn repository to avoid GPG key errors
 RUN rm -f /etc/apt/sources.list.d/yarn.list
