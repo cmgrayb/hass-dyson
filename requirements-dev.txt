@@ -1,6 +1,6 @@
 # Development dependencies - exact versions for reproducibility
-ruff==0.14.14
-bandit==1.9.3
+ruff==0.15.4
+bandit==1.9.4
 pytest==9.0.2
 pytest-cov>=7.0.0
 pytest-asyncio==1.3.0
