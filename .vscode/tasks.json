@@ -4,7 +4,7 @@
         {
             "label": "Setup Dev Environment",
             "type": "shell",
-            "command": "python -m venv .venv && .venv\\Scripts\\activate && pip install --upgrade pip",
+            "command": "pip install --upgrade pip && pip install -r requirements-dev.txt && pip install -e .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -36,7 +36,7 @@
         {
             "label": "Format Code",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff format .",
+            "command": "python -m ruff format .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -55,7 +55,7 @@
         {
             "label": "Ruff Check",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff format --check --diff . && .venv/bin/python -m ruff check .",
+            "command": "python -m ruff format --check --diff . && python -m ruff check .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -96,7 +96,7 @@
         {
             "label": "Ruff Fix",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff check . --fix",
+            "command": "python -m ruff check . --fix",
             "group": "build",
             "presentation": {
                 "echo": true,

@@ -25,6 +25,7 @@
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.useEnvironmentsExtension": false,
         "[python]": {
           "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true,
@@ -47,7 +48,7 @@
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
   "forwardPorts": [8123, 1883, 9001],
   "containerEnv": {
-    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}/.venv/bin/python",
+    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}",
     "HASS_SERVER": "http://homeassistant:8123",
     "MQTT_BROKER": "mosquitto"
   },
