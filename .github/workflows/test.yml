@@ -43,7 +43,7 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.local/lib/python*/site-packages
-          key: ${{ runner.os }}-pip-3.14-${{ hashFiles('requirements-dev.txt', 'requirements.txt', 'pyproject.toml') }}
+          key: ${{ runner.os }}-pip-3.14-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-pip-3.14-
             ${{ runner.os }}-pip-

@@ -214,23 +214,7 @@
         {
             "label": "Security Scan (Bandit)",
             "type": "shell",
-            "command": "docker run --rm -v \"${workspaceFolder}:/src\" pyupio/safety:latest safety check --json --file=/src/requirements.txt || echo 'Security scan completed'",
-            "group": "test",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Security Scan (Safety)",
-            "type": "shell",
-            "command": "docker run --rm -v \"${workspaceFolder}:/src\" securecodewarrior/bandit:latest bandit -r /src/custom_components -f json || echo 'Security scan completed'",
+            "command": "python -m bandit -r custom_components/hass_dyson || echo 'Security scan completed'",
             "group": "test",
             "presentation": {
                 "echo": true,
