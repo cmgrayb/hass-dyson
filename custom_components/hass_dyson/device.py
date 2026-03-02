@@ -2664,63 +2664,6 @@ class DysonDevice:
             self.serial_number,
         )
 
-    async def set_oscillation_off_from_breeze(
-        self,
-        lower_angle: int | None = None,
-        upper_angle: int | None = None,
-    ) -> None:
-        """Turn off oscillation and clear the Breeze mode sticky state.
-
-        When the device is in Breeze mode its firmware settles at
-        ``ancp=BRZE, oson=OFF, oscs=OFF``.  Sending only ``{oson: OFF}``
-        leaves ``ancp=BRZE`` on the device, so the next state snapshot
-        is indistinguishable from "Breeze running" and HA cannot re-send
-        the Breeze command.
-
-        By also restoring the previous angle span (and deriving a matching
-        ``ancp`` via :meth:`_resolve_ancp_from_span`) we return the device to
-        exactly the state it was in before Breeze was selected.  When no prior
-        angles are available ``ancp`` falls back to ``"CUST"``.
-
-        Args:
-            lower_angle: The lower oscillation angle (osal) that was active
-                before Breeze mode was entered, or ``None`` if unknown.
-            upper_angle: The upper oscillation angle (osau) that was active
-                before Breeze mode was entered, or ``None`` if unknown.
-        """
-        if (
-            lower_angle is not None
-            and upper_angle is not None
-            and lower_angle < upper_angle
-        ):
-            ancp = self._resolve_ancp_from_span(lower_angle, upper_angle)
-            lower_str = f"{lower_angle:04d}"
-            upper_str = f"{upper_angle:04d}"
-            command: dict[str, str] = {
-                "oson": "OFF",
-                "osal": lower_str,
-                "osau": upper_str,
-                "ancp": ancp,
-            }
-            _LOGGER.debug(
-                "Exited Breeze mode, restored osal=%s osau=%s ancp=%s for %s",
-                lower_str,
-                upper_str,
-                ancp,
-                self.serial_number,
-            )
-        else:
-            command = {
-                "oson": "OFF",
-                "ancp": "CUST",  # No prior angles to restore; use safe fallback
-            }
-            _LOGGER.debug(
-                "Exited Breeze mode (no prior angles; reset ancp to CUST) for %s",
-                self.serial_number,
-            )
-
-        await self.send_command("STATE-SET", command)
-
     async def set_oscillation_angles_day0(
         self, lower_angle: int, upper_angle: int, ancp_value: str | None = None
     ) -> None:

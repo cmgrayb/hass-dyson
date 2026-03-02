@@ -750,12 +750,13 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "Breeze"
 
-    def test_detect_mode_breeze_oson_off_still_breeze(self, mock_coordinator):
-        """Test that ancp=BRZE returns Breeze even when oson/oscs are OFF.
+    def test_detect_mode_breeze_oson_off_is_off(self, mock_coordinator):
+        """Test that ancp=BRZE with oson=OFF is correctly detected as Off.
 
-        The Dyson firmware intentionally settles at ancp=BRZE, oson=OFF,
-        oscs=OFF when Breeze is running.  ancp=BRZE is the authoritative
-        indicator; oson alone cannot be used to detect Breeze oscillation.
+        After turning oscillation off while in Breeze mode the device leaves
+        ancp=BRZE sticky but sets oson=OFF.  The vendor app also reports the
+        device as not oscillating in this state.  oson=OFF is the authoritative
+        gate so this must return 'Off', not 'Breeze'.
         """
         mock_coordinator.device_capabilities = [
             "AdvanceOscillationDay1",
@@ -763,15 +764,15 @@ class TestDysonOscillationModeSelect:
         ]
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
-                "oson": "OFF",  # firmware-settled state in Breeze mode
-                "ancp": "BRZE",
+                "oson": "OFF",  # oscillation disabled
+                "ancp": "BRZE",  # sticky leftover
             }.get(key, default)
         )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
 
-        assert mode == "Breeze"
+        assert mode == "Off"
 
     def test_detect_mode_breeze_ancp_falls_back_on_non_humidifier(
         self, mock_coordinator
@@ -795,51 +796,62 @@ class TestDysonOscillationModeSelect:
 
     @pytest.mark.asyncio
     async def test_async_select_option_breeze(self, mock_coordinator):
-        """Test selecting Breeze saves current osal/osau then calls set_oscillation_breeze."""
+        """Test selecting Breeze calls set_oscillation_breeze and sets transition flag."""
         mock_coordinator.device_capabilities = [
             "AdvanceOscillationDay1",
             "Humidifier",
         ]
         mock_coordinator.device.set_oscillation_breeze = AsyncMock()
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "osal": "0157",
-                "osau": "0202",
-                "ancp": "0045",
-                "oson": "ON",
-            }.get(key, default)
-        )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         await entity.async_select_option("Breeze")
 
         mock_coordinator.device.set_oscillation_breeze.assert_called_once()
-        assert entity._saved_pre_breeze_osal == 157
-        assert entity._saved_pre_breeze_osau == 202
+        # Flag must be set so the transient oson=OFF doesn't flicker the UI.
+        assert entity._breeze_transition_pending is True
 
-    @pytest.mark.asyncio
-    async def test_async_select_option_off_from_breeze(self, mock_coordinator):
-        """Test that selecting Off from Breeze passes the saved angles."""
+    def test_detect_mode_breeze_transition_pending_oson_off(self, mock_coordinator):
+        """Test that oson=OFF, ancp=BRZE returns Breeze when transition flag is set.
+
+        During the two-step Breeze entry the device briefly reports oson=OFF
+        before re-engaging.  When _breeze_transition_pending is True the
+        detection must return 'Breeze' rather than 'Off' to prevent a UI flicker.
+        """
         mock_coordinator.device_capabilities = [
             "AdvanceOscillationDay1",
             "Humidifier",
         ]
-        mock_coordinator.device.set_oscillation_off_from_breeze = AsyncMock()
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "OFF",  # transient mid-transition
+                "ancp": "BRZE",
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        entity._breeze_transition_pending = True
+        mode = entity._detect_mode_from_angles()
+
+        assert mode == "Breeze"
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_off_from_breeze(self, mock_coordinator):
+        """Test that selecting Off from Breeze calls set_oscillation(False).
+
+        The vendor app sends only {oson: OFF} when turning off from Breeze.
+        No special ancp override is needed.
+        """
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
         mock_coordinator.device.set_oscillation = AsyncMock()
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         entity._attr_current_option = "Breeze"
-        entity._saved_pre_breeze_osal = 157
-        entity._saved_pre_breeze_osau = 202
         await entity.async_select_option("Off")
 
-        mock_coordinator.device.set_oscillation_off_from_breeze.assert_called_once_with(
-            157, 202
-        )
-        mock_coordinator.device.set_oscillation.assert_not_called()
-        # Saved angles cleared after use
-        assert entity._saved_pre_breeze_osal is None
-        assert entity._saved_pre_breeze_osau is None
+        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_async_select_option_breeze_no_device(self, mock_coordinator):

@@ -260,9 +260,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # ancp, oson, osal, osau — ancp is checked first (not BRZE so falls through)
+        # oson is checked first, then ancp, then osal/osau
         coordinator.device.get_state_value = Mock(
-            side_effect=["", "ON", "INVALID", "BAD"]
+            side_effect=["ON", "", "INVALID", "BAD"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -276,9 +276,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # ancp, oson, osal, osau — ancp first; span of 20 → Custom
+        # oson first, then ancp, then osal/osau; span of 20 → Custom
         coordinator.device.get_state_value = Mock(
-            side_effect=["", "ON", "0100", "0120"]
+            side_effect=["ON", "", "0100", "0120"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -293,10 +293,8 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # oson, ancp (early), osal, osau — osal=INVALID triggers ValueError
-        coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "", "INVALID", "0350"]
-        )
+        # oson, osal, osau — osal=INVALID triggers ValueError
+        coordinator.device.get_state_value = Mock(side_effect=["ON", "INVALID", "0350"])
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -314,8 +312,8 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        # oson, ancp (early), osal, osau — empty strings cause int() to use fallback defaults
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "", "", ""])
+        # oson, osal, osau — empty strings cause int() to use fallback defaults
+        coordinator.device.get_state_value = Mock(side_effect=["ON", "", ""])
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)

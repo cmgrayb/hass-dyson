@@ -248,6 +248,14 @@ class DysonFan(DysonEntity, FanEntity):
         self._attr_preset_mode = None
         self._attr_oscillating = False
 
+        # Saves the oscillation mode in effect when the toggle was turned OFF so
+        # that turning it back ON can restore the same mode (e.g. re-enter Breeze
+        # rather than falling back to generic oscillation).
+        self._saved_oscillation_mode_for_restore: str | None = None
+        # Set when we send a Breeze command; prevents the transient oson=OFF
+        # mid-transition from briefly reporting oscillating=False in the HA UI.
+        self._breeze_transition_pending: bool = False
+
         # Initialize command pending attributes to prevent linting errors
         self._command_pending = False
         self._command_end_time: float | None = None
@@ -339,9 +347,37 @@ class DysonFan(DysonEntity, FanEntity):
                 ancp = self.coordinator.device.get_state_value(
                     product_state, "ancp", ""
                 )
-                # ancp=BRZE is the firmware-settled state for Breeze mode;
-                # oson is intentionally OFF when Breeze is running.
-                self._attr_oscillating = oson == "ON" or ancp == "BRZE"
+                # Settled Breeze state is oson=ON + ancp=BRZE.
+                # oson=OFF normally means oscillation is off, but during the
+                # two-step Breeze transition the device briefly reports oson=OFF
+                # before re-engaging.  Honour _breeze_transition_pending so the
+                # fan entity doesn't flicker to oscillating=False mid-transition.
+                if oson == "ON":
+                    self._attr_oscillating = True
+                    # Settled Breeze state reached — clear pending flag.
+                    if self._breeze_transition_pending and ancp == "BRZE":
+                        self._breeze_transition_pending = False
+                        _LOGGER.debug(
+                            "Breeze transition complete (fan) for %s — flag cleared",
+                            self.coordinator.serial_number,
+                        )
+                elif self._breeze_transition_pending and ancp == "BRZE":
+                    # Transient oson=OFF mid-Breeze transition — keep True.
+                    self._attr_oscillating = True
+                else:
+                    self._attr_oscillating = False
+                # If oscillation was turned on externally (app/remote) while we
+                # had a saved restore mode, that saved state is now stale.
+                if (
+                    self._attr_oscillating
+                    and self._saved_oscillation_mode_for_restore is not None
+                ):
+                    _LOGGER.debug(
+                        "Clearing stale saved oscillation mode '%s' — device is now oscillating externally for %s",
+                        self._saved_oscillation_mode_for_restore,
+                        self.coordinator.serial_number,
+                    )
+                    self._saved_oscillation_mode_for_restore = None
             else:
                 # Device doesn't support oscillation
                 self._attr_oscillating = False
@@ -771,31 +807,27 @@ class DysonFan(DysonEntity, FanEntity):
 
         try:
             if not oscillating:
-                # When turning off while in Breeze mode, restore the pre-Breeze
-                # angle span so the device returns to a recognised preset.
+                # Save the current mode so toggling back on can restore it.
+                # Detect active Breeze via ancp=BRZE (oson=ON is implied when
+                # the user can press the off toggle).
                 product_state = self.coordinator.data.get("product-state", {})
                 ancp = self.coordinator.device.get_state_value(
                     product_state, "ancp", ""
                 )
-                if ancp == "BRZE":
-                    try:
-                        osal_raw = self.coordinator.device.get_state_value(
-                            product_state, "osal", "0000"
-                        )
-                        osau_raw = self.coordinator.device.get_state_value(
-                            product_state, "osau", "0350"
-                        )
-                        lower = int(osal_raw.lstrip("0") or "0")
-                        upper = int(osau_raw.lstrip("0") or "350")
-                    except (ValueError, TypeError):
-                        lower = upper = None  # type: ignore[assignment]
-                    await self.coordinator.device.set_oscillation_off_from_breeze(
-                        lower, upper
-                    )
-                else:
-                    await self.coordinator.device.set_oscillation(oscillating)
-            else:
+                self._saved_oscillation_mode_for_restore = (
+                    "Breeze" if ancp == "BRZE" else None
+                )
+                # Vendor app sends only {oson: OFF} — no ancp override needed.
                 await self.coordinator.device.set_oscillation(oscillating)
+            else:
+                # Restore the mode that was active when oscillation was turned off.
+                if self._saved_oscillation_mode_for_restore == "Breeze":
+                    self._saved_oscillation_mode_for_restore = None
+                    self._breeze_transition_pending = True
+                    await self.coordinator.device.set_oscillation_breeze()
+                else:
+                    self._saved_oscillation_mode_for_restore = None
+                    await self.coordinator.device.set_oscillation(oscillating)
 
             # Update state immediately for responsive UI
             self._attr_oscillating = oscillating

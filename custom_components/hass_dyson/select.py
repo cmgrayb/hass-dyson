@@ -198,12 +198,11 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # (Angle Current Preset), which is a device/app preset identifier.
         self._saved_sweep_midpoint: int | None = None
         self._last_known_mode: str | None = None  # Track mode transitions
-        # ``_saved_pre_breeze_osal/_osau`` store the angle boundaries that were
-        # active before Breeze mode was selected.  They are restored when the
-        # user turns oscillation off from Breeze, so the device returns to the
-        # previous named preset (or CUST) rather than always landing on CUST.
-        self._saved_pre_breeze_osal: int | None = None
-        self._saved_pre_breeze_osau: int | None = None
+        # Set when we send a Breeze command; cleared once the device settles at
+        # oson=ON, ancp=BRZE.  During the spin-down transition the device
+        # briefly reports oson=OFF — without this flag that would flicker the
+        # select to "Off" and fire a spurious HA state-change event.
+        self._breeze_transition_pending: bool = False
 
     def _calculate_sweep_midpoint(self) -> int:
         """Calculate the midpoint of the current sweep range from osal/osau.
@@ -250,20 +249,30 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         product_state = self.coordinator.data.get("product-state", {})
 
-        # ancp=BRZE is the authoritative indicator for Breeze mode.  The Dyson
-        # firmware intentionally settles at ancp=BRZE, oson=OFF, oscs=OFF when
-        # Breeze is running — oson alone cannot be used to detect Breeze.
-        # When the user turns oscillation OFF while in Breeze mode, the select
-        # entity calls set_oscillation_off_from_breeze() which also resets ancp
-        # to CUST, giving a clean ancp≠BRZE, oson=OFF settled state.
-        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
-        if ancp == "BRZE" and "Breeze" in self._attr_options:
-            return "Breeze"
-
+        # oson is the primary gate — if oscillation is disabled, mode is Off.
+        # After a Breeze turn-off the device leaves ancp=BRZE sticky but sets
+        # oson=OFF, which is correctly read as "Off" by checking oson first.
+        # Settled Breeze state is oson=ON + ancp=BRZE (matching vendor app
+        # behaviour where the device settles to oson=ON after the two-step
+        # STATE-CHANGE transition).
         oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
 
         if oson == "OFF":
+            # If we recently sent a Breeze command the device briefly reports
+            # oson=OFF while its motor spins down before re-engaging in Breeze
+            # mode.  During that window honour the pending flag so the UI stays
+            # on "Breeze" rather than flickering to "Off".
+            if self._breeze_transition_pending:
+                ancp_check = self.coordinator.device.get_state_value(
+                    product_state, "ancp", ""
+                )
+                if ancp_check == "BRZE":
+                    return "Breeze"
             return "Off"
+
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        if ancp == "BRZE" and "Breeze" in self._attr_options:
+            return "Breeze"
 
         # Check ancp for known Angle Current Preset values.  The device and
         # MyDyson app report these codes when a named preset is active (e.g.
@@ -433,6 +442,17 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # Detect current mode from device state
         detected_mode = self._detect_mode_from_angles()
 
+        # Clear the Breeze transition flag once the device has settled into the
+        # confirmed oson=ON, ancp=BRZE state.  The flag is set by
+        # async_select_option("Breeze") so we know the transient oson=OFF
+        # mid-transition is expected rather than a genuine turn-off.
+        if detected_mode == "Breeze" and self._breeze_transition_pending:
+            self._breeze_transition_pending = False
+            _LOGGER.debug(
+                "Breeze transition complete for %s — flag cleared",
+                self.coordinator.serial_number,
+            )
+
         # Save the sweep midpoint when an external event moves the device into
         # 350° mode so we can restore it if the user later picks a preset via HA.
         if self._should_save_midpoint_on_state_change(detected_mode):
@@ -471,42 +491,15 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         try:
             if option == "Off":
-                # When leaving Breeze mode, restore the angle span that was
-                # active before Breeze was selected so the device returns to a
-                # recognised preset (or CUST) rather than always landing on CUST.
-                if self._attr_current_option == "Breeze":
-                    await self.coordinator.device.set_oscillation_off_from_breeze(
-                        self._saved_pre_breeze_osal,
-                        self._saved_pre_breeze_osau,
-                    )
-                    self._saved_pre_breeze_osal = None
-                    self._saved_pre_breeze_osau = None
-                else:
-                    await self.coordinator.device.set_oscillation(False)
+                await self.coordinator.device.set_oscillation(False)
                 return
 
             if option == "Breeze":
-                # Save current osal/osau so we can restore them when leaving Breeze.
-                if self.coordinator.device and self.coordinator.data:
-                    product_state = self.coordinator.data.get("product-state", {})
-                    try:
-                        osal_raw = self.coordinator.device.get_state_value(
-                            product_state, "osal", "0000"
-                        )
-                        osau_raw = self.coordinator.device.get_state_value(
-                            product_state, "osau", "0350"
-                        )
-                        self._saved_pre_breeze_osal = int(osal_raw.lstrip("0") or "0")
-                        self._saved_pre_breeze_osau = int(osau_raw.lstrip("0") or "350")
-                        _LOGGER.debug(
-                            "Saving pre-Breeze angles osal=%s osau=%s for %s",
-                            self._saved_pre_breeze_osal,
-                            self._saved_pre_breeze_osau,
-                            self.coordinator.serial_number,
-                        )
-                    except (ValueError, TypeError):
-                        self._saved_pre_breeze_osal = None
-                        self._saved_pre_breeze_osau = None
+                # Matches vendor app command exactly: {ancp: BRZE, oson: ON}.
+                # Device handles its own two-step transition (transient oson=OFF
+                # then settled oson=ON).  Set the pending flag first so the
+                # transient oson=OFF does not flicker the select to "Off".
+                self._breeze_transition_pending = True
                 await self.coordinator.device.set_oscillation_breeze()
                 return
 
@@ -606,11 +599,10 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         attributes["oscillation_mode"] = self._attr_current_option
 
         # Oscillation state details.
-        # ancp=BRZE means Breeze is running even when oson=OFF (firmware-settled
-        # state).  Include it as an active oscillation indicator.
+        # Settled Breeze state is oson=ON (device manages its own oscillation
+        # internally); oson=OFF always means oscillation is genuinely disabled.
         oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
-        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
-        oscillation_enabled: bool = oson == "ON" or ancp == "BRZE"
+        oscillation_enabled: bool = oson == "ON"
         attributes["oscillation_enabled"] = oscillation_enabled  # type: ignore[assignment]
 
         # Current angle configuration
