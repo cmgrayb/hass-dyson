@@ -299,11 +299,13 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 return "90°"
             elif abs(angle_span - 45) <= 5:
                 return "45°"
-            # Span doesn't match a named preset — fall through to ancp check.
+            # osal/osau are present but span doesn't match any preset — Custom.
+            # Do NOT fall through to ancp as it may be stale.
+            return "Custom"
         except (ValueError, TypeError):
             pass
 
-        # Check ancp for known Angle Current Preset values as a fallback.
+        # osal/osau were missing or unparseable — fall back to ancp.
         # Handles devices/firmware that report ancp without osal/osau.
         if ancp in self._PRESET_ANCP_MAP:
             return self._PRESET_ANCP_MAP[ancp]

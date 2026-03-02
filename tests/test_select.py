@@ -503,51 +503,51 @@ class TestDysonOscillationModeSelect:
     # ------------------------------------------------------------------
 
     def test_detect_mode_ancp_45(self, mock_coordinator):
-        """Test ancp='0045' is detected as 45°."""
+        """Test 45° span is detected as 45°."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "0045",
-                "osal": "0180",  # These are unchanged from last custom cmd
-                "osau": "0180",
+                "osal": "0157",  # span = 45°
+                "osau": "0202",
             }.get(key, default)
         )
         entity = DysonOscillationModeSelect(mock_coordinator)
         assert entity._detect_mode_from_angles() == "45°"
 
     def test_detect_mode_ancp_90(self, mock_coordinator):
-        """Test ancp='0090' is detected as 90°."""
+        """Test 90° span is detected as 90°."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "0090",
-                "osal": "0180",
-                "osau": "0180",
+                "osal": "0130",  # span = 90°
+                "osau": "0220",
             }.get(key, default)
         )
         entity = DysonOscillationModeSelect(mock_coordinator)
         assert entity._detect_mode_from_angles() == "90°"
 
     def test_detect_mode_ancp_180(self, mock_coordinator):
-        """Test ancp='0180' is detected as 180°."""
+        """Test 180° span is detected as 180°."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "0180",
-                "osal": "0180",
-                "osau": "0180",
+                "osal": "0085",  # span = 180°
+                "osau": "0265",
             }.get(key, default)
         )
         entity = DysonOscillationModeSelect(mock_coordinator)
         assert entity._detect_mode_from_angles() == "180°"
 
     def test_detect_mode_ancp_350(self, mock_coordinator):
-        """Test ancp='0350' is detected as 350°."""
+        """Test 350° span is detected as 350°."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "0350",
-                "osal": "0000",
+                "osal": "0000",  # span = 350°
                 "osau": "0350",
             }.get(key, default)
         )
