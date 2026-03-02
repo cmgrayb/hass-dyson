@@ -274,13 +274,12 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         if ancp == "BRZE" and "Breeze" in self._attr_options:
             return "Breeze"
 
-        # Check ancp for known Angle Current Preset values.  The device and
-        # MyDyson app report these codes when a named preset is active (e.g.
-        # "0045" for 45°).  "CUST" or any unrecognised value means custom
-        # angles were set via osal/osau and we fall through to span detection.
-        if ancp in self._PRESET_ANCP_MAP:
-            return self._PRESET_ANCP_MAP[ancp]
-
+        # Prefer span-based detection over ancp for angle presets.
+        # The device always includes osal/osau in STATE-CHANGE confirmations,
+        # but may omit ancp, leaving it stale in the coordinator's merged state.
+        # Reading span from osal/osau is therefore more reliable.  ancp is only
+        # used as a fallback when the span does not match any named preset
+        # (e.g. the device reported a preset via ancp without sending osal/osau).
         try:
             lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
@@ -292,8 +291,6 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             upper_angle = int(upper_data.lstrip("0") or "350")
             angle_span = upper_angle - lower_angle
 
-            # Fallback span-based detection for devices/firmware that report
-            # osal/osau instead of a named ancp preset.
             if 340 <= angle_span <= 350:
                 return "350°"
             elif abs(angle_span - 180) <= 5:
@@ -302,10 +299,16 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 return "90°"
             elif abs(angle_span - 45) <= 5:
                 return "45°"
-            else:
-                return "Custom"
+            # Span doesn't match a named preset — fall through to ancp check.
         except (ValueError, TypeError):
-            return "Custom"
+            pass
+
+        # Check ancp for known Angle Current Preset values as a fallback.
+        # Handles devices/firmware that report ancp without osal/osau.
+        if ancp in self._PRESET_ANCP_MAP:
+            return self._PRESET_ANCP_MAP[ancp]
+
+        return "Custom"
 
     def _should_save_midpoint_on_state_change(self, new_mode: str) -> bool:
         """Return True when an external device change just entered 350° mode.
