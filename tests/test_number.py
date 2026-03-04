@@ -283,11 +283,35 @@ class TestDysonOscillationAngleSpanNumber:
         assert entity._attr_translation_key == "oscillation_angle_span"
         assert entity._attr_icon == "mdi:angle-acute"
 
-    def test_handle_coordinator_update_with_device(self, mock_coordinator):
-        """Test handling coordinator update with device."""
+    def test_handle_coordinator_update_ancp_preset(self, mock_coordinator):
+        """Test that a known ancp preset returns the canonical span — ignoring stale osal/osau."""
         entity = DysonOscillationAngleSpanNumber(mock_coordinator)
-        # Mock lower and upper angles to create 270° span (45° to 315°)
-        mock_coordinator.device.get_state_value.side_effect = ["0045", "0315"]
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "ancp": "0090",
+                # osal/osau intentionally stale (not updated by device for preset modes)
+                "osal": "0100",
+                "osau": "0100",
+            }.get(key, default)
+        )
+
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+
+        assert entity._attr_native_value == 90  # canonical span for 90° preset
+
+    def test_handle_coordinator_update_custom_mode_uses_osal_osau(
+        self, mock_coordinator
+    ):
+        """Test that ancp=CUST falls back to osal/osau span calculation."""
+        entity = DysonOscillationAngleSpanNumber(mock_coordinator)
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "ancp": "CUST",
+                "osal": "0045",
+                "osau": "0315",
+            }.get(key, default)
+        )
 
         with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
