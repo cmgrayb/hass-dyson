@@ -274,12 +274,17 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         if ancp == "BRZE" and "Breeze" in self._attr_options:
             return "Breeze"
 
-        # Prefer span-based detection over ancp for angle presets.
-        # The device always includes osal/osau in STATE-CHANGE confirmations,
-        # but may omit ancp, leaving it stale in the coordinator's merged state.
-        # Reading span from osal/osau is therefore more reliable.  ancp is only
-        # used as a fallback when the span does not match any named preset
-        # (e.g. the device reported a preset via ancp without sending osal/osau).
+        # Trust ancp for named presets first.  The vendor app sends only
+        # {ancp:X, oson:ON} without osal/osau for preset selections, and the
+        # device does NOT update osal/osau in the STATE-CHANGE confirmation —
+        # they retain their previous values.  Span detection on stale osal/osau
+        # would therefore give the wrong result (e.g. span=0 → "Custom").
+        # ancp is always freshly stamped in the device's STATE-CHANGE reply.
+        if ancp in self._PRESET_ANCP_MAP:
+            return self._PRESET_ANCP_MAP[ancp]
+
+        # ancp is "CUST", unknown, or absent — fall back to span detection.
+        # This covers custom angles set directly via the number entities.
         try:
             lower_data = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
@@ -299,16 +304,9 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 return "90°"
             elif abs(angle_span - 45) <= 5:
                 return "45°"
-            # osal/osau are present but span doesn't match any preset — Custom.
-            # Do NOT fall through to ancp as it may be stale.
             return "Custom"
         except (ValueError, TypeError):
             pass
-
-        # osal/osau were missing or unparseable — fall back to ancp.
-        # Handles devices/firmware that report ancp without osal/osau.
-        if ancp in self._PRESET_ANCP_MAP:
-            return self._PRESET_ANCP_MAP[ancp]
 
         return "Custom"
 
@@ -514,58 +512,18 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
                 return
 
             # Named preset modes: 45°, 90°, 180°, 350°.
-            # Use set_oscillation_angles so osal/osau are included in the
-            # command — this keeps the number entities in sync AND ensures the
-            # MyDyson app receives the correct ancp preset label (derived
-            # automatically by set_oscillation_angles from the span).
-
-            current_mode = self._attr_current_option or "Off"
-
-            # Save the sweep midpoint (HA-computed (osal+osau)/2) when entering
-            # 350° mode so it can be restored on exit.  This is unrelated to ancp.
-            if option == "350°" and current_mode != "350°":
-                midpoint = self._calculate_sweep_midpoint()
-                self._saved_sweep_midpoint = midpoint
-                _LOGGER.debug(
-                    "Saving sweep midpoint %s° before entering 350° mode (from %s) for %s",
-                    midpoint,
-                    current_mode,
-                    self.coordinator.serial_number,
-                )
-
+            # Match vendor app exactly: send only {ancp:X, oson:ON} with no
+            # osal/osau.  The device manages its own physical angle positioning
+            # for preset modes and does NOT update osal/osau in the STATE-CHANGE
+            # confirmation — sending osal/osau is therefore redundant and causes
+            # the span-based detection to see stale / mismatched values.
             preset_angle = int(option.replace("°", ""))
-
-            if preset_angle == 350:
-                lower_angle, upper_angle = 0, 350
-            else:
-                # Restore the saved sweep midpoint when leaving 350° so the fan
-                # returns to its previous pointing direction.  Otherwise keep the
-                # current midpoint (fan stays pointed the same way).
-                if current_mode == "350°" and self._saved_sweep_midpoint is not None:
-                    midpoint_to_use = self._saved_sweep_midpoint
-                    self._saved_sweep_midpoint = None
-                    _LOGGER.debug(
-                        "Restoring sweep midpoint %s° when leaving 350° (target %s°) for %s",
-                        midpoint_to_use,
-                        preset_angle,
-                        self.coordinator.serial_number,
-                    )
-                else:
-                    midpoint_to_use = self._calculate_sweep_midpoint()
-
-                lower_angle, upper_angle = self._calculate_angles_for_preset(
-                    preset_angle, midpoint_to_use
-                )
-
-            await self.coordinator.device.set_oscillation_angles(
-                lower_angle, upper_angle
-            )
+            await self.coordinator.device.set_oscillation_preset(preset_angle)
 
             _LOGGER.debug(
-                "Set oscillation mode to %s (lower: %s, upper: %s) for %s",
-                option,
-                lower_angle,
-                upper_angle,
+                "Set oscillation preset to %s° (ancp=%04d) for %s",
+                preset_angle,
+                preset_angle,
                 self.coordinator.serial_number,
             )
 

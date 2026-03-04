@@ -1370,86 +1370,56 @@ class TestDysonOscillationModeSelectCoverage:
         mock_coordinator.device.set_oscillation.assert_called_once_with(True)
 
     @pytest.mark.asyncio
-    async def test_async_select_option_350_degree_saves_midpoint_and_sends_full_range(
+    async def test_async_select_option_350_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 350° saves midpoint and calls set_oscillation_angles(0, 350)."""
-        mock_coordinator.device.set_oscillation_angles = AsyncMock()
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda state, key, default: {
-                "osal": "0130",
-                "osau": "0220",  # current midpoint = 175
-            }.get(key, default)
-        )
+        """Test selecting 350° calls set_oscillation_preset(350) — no osal/osau (vendor match)."""
+        mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
         select._attr_current_option = "90°"
 
         await select.async_select_option("350°")
 
-        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(0, 350)
-        assert select._saved_sweep_midpoint == 175  # midpoint captured before 350°
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(350)
 
     @pytest.mark.asyncio
-    async def test_async_select_option_90_degree_from_350_restores_midpoint(
+    async def test_async_select_option_90_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test leaving 350° mode restores the saved sweep midpoint."""
-        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        """Test selecting 90° calls set_oscillation_preset(90) — no osal/osau (vendor match)."""
+        mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
         select._attr_current_option = "350°"
-        select._saved_sweep_midpoint = 200  # Previously saved when entering 350°
 
         await select.async_select_option("90°")
 
-        # Midpoint must be cleared after use
-        assert select._saved_sweep_midpoint is None
-        # Angles must straddle saved midpoint (200° ± 45°)
-        call_args = mock_coordinator.device.set_oscillation_angles.call_args[0]
-        lower, upper = call_args
-        assert lower == 155
-        assert upper == 245
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(90)
 
     @pytest.mark.asyncio
-    async def test_async_select_option_45_degree_calls_set_oscillation_angles(
+    async def test_async_select_option_45_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 45° calls set_oscillation_angles with span-45 bounds."""
-        mock_coordinator.device.set_oscillation_angles = AsyncMock()
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda state, key, default: {
-                "osal": "0155",
-                "osau": "0200",  # current midpoint = 177
-            }.get(key, default)
-        )
+        """Test selecting 45° calls set_oscillation_preset(45) — no osal/osau (vendor match)."""
+        mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
         await select.async_select_option("45°")
 
-        call_args = mock_coordinator.device.set_oscillation_angles.call_args[0]
-        lower, upper = call_args
-        assert upper - lower == 45
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(45)
 
     @pytest.mark.asyncio
-    async def test_async_select_option_180_degree_calls_set_oscillation_angles(
+    async def test_async_select_option_180_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 180° calls set_oscillation_angles with span-180 bounds."""
-        mock_coordinator.device.set_oscillation_angles = AsyncMock()
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda state, key, default: {
-                "osal": "0090",
-                "osau": "0270",  # current midpoint = 180
-            }.get(key, default)
-        )
+        """Test selecting 180° calls set_oscillation_preset(180) — no osal/osau (vendor match)."""
+        mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
         await select.async_select_option("180°")
 
-        call_args = mock_coordinator.device.set_oscillation_angles.call_args[0]
-        lower, upper = call_args
-        assert upper - lower == 180
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(180)
 
 
 class TestDysonHeatingModeSelectCoverage:
