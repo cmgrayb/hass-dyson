@@ -834,6 +834,65 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "Breeze"
 
+    def test_breeze_transition_flag_not_cleared_during_transient_oson_off(
+        self, mock_coordinator
+    ):
+        """Test that _breeze_transition_pending is NOT cleared on a transient oson=OFF.
+
+        The device fires multiple STATE-CHANGEs with oson=OFF during the Breeze
+        spin-down.  Clearing the flag on the first update leaves the second one
+        unguarded, causing 'Off' to appear.  The flag must only be cleared once
+        oson=ON is confirmed (genuine settled Breeze state).
+        """
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        # Simulate transient STATE-CHANGE: oson=OFF, ancp=BRZE
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "OFF",
+                "ancp": "BRZE",
+            }.get(key, default)
+        )
+        mock_coordinator.data = {"product-state": {}}
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        entity._breeze_transition_pending = True
+
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+
+        # Mode must show Breeze (via the guard) — not Off
+        assert entity._attr_current_option == "Breeze"
+        # Flag must still be set — oson was OFF (transient), not settled yet
+        assert entity._breeze_transition_pending is True
+
+    def test_breeze_transition_flag_cleared_on_settled_oson_on(self, mock_coordinator):
+        """Test that _breeze_transition_pending IS cleared once oson=ON is confirmed."""
+        mock_coordinator.device_capabilities = [
+            "AdvanceOscillationDay1",
+            "Humidifier",
+        ]
+        # Simulate settled STATE-CHANGE: oson=ON, ancp=BRZE
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "oson": "ON",
+                "ancp": "BRZE",
+            }.get(key, default)
+        )
+        mock_coordinator.data = {"product-state": {}}
+
+        entity = DysonOscillationModeSelect(mock_coordinator)
+        entity._breeze_transition_pending = True
+
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+
+        assert entity._attr_current_option == "Breeze"
+        # Flag must be cleared now that oson=ON confirms settled Breeze
+        assert entity._breeze_transition_pending is False
+
     @pytest.mark.asyncio
     async def test_async_select_option_off_from_breeze(self, mock_coordinator):
         """Test that selecting Off from Breeze calls set_oscillation(False).

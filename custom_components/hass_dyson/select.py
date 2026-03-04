@@ -445,16 +445,28 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # Detect current mode from device state
         detected_mode = self._detect_mode_from_angles()
 
-        # Clear the Breeze transition flag once the device has settled into the
-        # confirmed oson=ON, ancp=BRZE state.  The flag is set by
-        # async_select_option("Breeze") so we know the transient oson=OFF
-        # mid-transition is expected rather than a genuine turn-off.
+        # Clear the Breeze transition flag ONLY once the device has settled into
+        # the genuine oson=ON, ancp=BRZE state.  During the spin-down transition
+        # the device may fire multiple STATE-CHANGEs with oson=OFF; each of
+        # those returns "Breeze" via the _breeze_transition_pending guard.
+        # Clearing the flag on the FIRST transient update causes the SECOND
+        # transient update (still oson=OFF) to slip through as "Off".
+        # Checking oson=ON here ensures the flag persists for every transient
+        # STATE-CHANGE and is cleared only on the genuine settled confirmation.
         if detected_mode == "Breeze" and self._breeze_transition_pending:
-            self._breeze_transition_pending = False
-            _LOGGER.debug(
-                "Breeze transition complete for %s — flag cleared",
-                self.coordinator.serial_number,
-            )
+            product_state = self.coordinator.data.get("product-state", {})
+            oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
+            if oson == "ON":
+                self._breeze_transition_pending = False
+                _LOGGER.debug(
+                    "Breeze transition complete (oson=ON confirmed) for %s — flag cleared",
+                    self.coordinator.serial_number,
+                )
+            else:
+                _LOGGER.debug(
+                    "Breeze transition still pending (oson=OFF) for %s — flag kept",
+                    self.coordinator.serial_number,
+                )
 
         # Save the sweep midpoint when an external event moves the device into
         # 350° mode so we can restore it if the user later picks a preset via HA.
