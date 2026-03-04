@@ -640,24 +640,42 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         self._attr_native_step = 5
         self._attr_native_unit_of_measurement = "°"
 
+    # Map ancp preset codes to their canonical span in degrees.
+    # The vendor app sends only {ancp:X, oson:ON} for named presets and the
+    # device does NOT update osal/osau in the STATE-CHANGE reply, so osal/osau
+    # are stale whenever a named preset is active.  Derive the span from ancp
+    # first; only fall back to osal/osau for ancp=CUST / unknown.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Calculate span from lower and upper angles
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
-            )
-            upper_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            try:
-                lower_angle = int(lower_data.lstrip("0") or "0")
-                upper_angle = int(upper_data.lstrip("0") or "350")
-                # Span is the difference between upper and lower
-                self._attr_native_value = upper_angle - lower_angle
-            except (ValueError, TypeError):
-                self._attr_native_value = 350  # Default full span
+
+            # Prefer ancp for named presets — osal/osau are not updated by the
+            # device when a named preset command is received.
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                self._attr_native_value = self._ANCP_SPAN_MAP[ancp]
+            else:
+                # Custom mode — derive span from osal/osau.
+                lower_data = self.coordinator.device.get_state_value(
+                    product_state, "osal", "0000"
+                )
+                upper_data = self.coordinator.device.get_state_value(
+                    product_state, "osau", "0350"
+                )
+                try:
+                    lower_angle = int(lower_data.lstrip("0") or "0")
+                    upper_angle = int(upper_data.lstrip("0") or "350")
+                    self._attr_native_value = upper_angle - lower_angle
+                except (ValueError, TypeError):
+                    self._attr_native_value = 350  # Default full span
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()

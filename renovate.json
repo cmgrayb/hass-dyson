@@ -7,8 +7,12 @@
     ":automergeBranch"
   ],
   "timezone": "UTC",
-  "labels": ["dependencies"],
-  "assignees": ["cmgrayb"],
+  "labels": [
+    "dependencies"
+  ],
+  "assignees": [
+    "cmgrayb"
+  ],
   "dependencyDashboard": false,
   "commitMessagePrefix": "deps:",
   "commitMessageAction": "update",
@@ -22,7 +26,9 @@
   "separateMinorPatch": false,
   "prCreation": "immediate",
   "platformCommit": "enabled",
-  "gitIgnoredAuthors": ["Renovate Bot <bot@renovateapp.com>"],
+  "gitIgnoredAuthors": [
+    "Renovate Bot <bot@renovateapp.com>"
+  ],
   "branchConcurrentLimit": 0,
   "ignorePaths": [],
   "lockFileMaintenance": {
@@ -36,10 +42,17 @@
   "packageRules": [
     {
       "description": "Production dependencies - conservative updates",
-      "matchFileNames": ["requirements.txt", "custom_components/hass_dyson/manifest.json"],
-      "matchDepTypes": ["dependencies"],
+      "matchFileNames": [
+        "custom_components/hass_dyson/manifest.json"
+      ],
+      "matchDepTypes": [
+        "dependencies"
+      ],
       "prPriority": 5,
-      "labels": ["dependencies", "production"],
+      "labels": [
+        "dependencies",
+        "production"
+      ],
       "groupName": "production dependencies",
       "groupSlug": "production-deps",
       "semanticCommitType": "deps",
@@ -47,10 +60,17 @@
     },
     {
       "description": "Development dependencies - faster updates",
-      "matchFileNames": ["requirements-dev.txt"],
-      "matchDepTypes": ["devDependencies"],
+      "matchFileNames": [
+        "requirements-dev.txt"
+      ],
+      "matchDepTypes": [
+        "devDependencies"
+      ],
       "prPriority": 3,
-      "labels": ["dependencies", "development"],
+      "labels": [
+        "dependencies",
+        "development"
+      ],
       "groupName": "development dependencies",
       "groupSlug": "dev-deps",
       "semanticCommitType": "deps",
@@ -65,11 +85,13 @@
         "pytest-cov",
         "pytest-asyncio",
         "pytest-mock",
-        "mypy",
-        "safety"
+        "mypy"
       ],
       "prPriority": 4,
-      "labels": ["dependencies", "code-quality"],
+      "labels": [
+        "dependencies",
+        "code-quality"
+      ],
       "groupName": "code quality tools",
       "groupSlug": "code-quality",
       "semanticCommitType": "deps",
@@ -77,10 +99,17 @@
     },
     {
       "description": "Docker base images and system dependencies",
-      "matchFileNames": [".devcontainer/Dockerfile"],
-      "matchDepTypes": ["dockerfile"],
+      "matchFileNames": [
+        ".devcontainer/Dockerfile"
+      ],
+      "matchDepTypes": [
+        "dockerfile"
+      ],
       "prPriority": 2,
-      "labels": ["dependencies", "docker"],
+      "labels": [
+        "dependencies",
+        "docker"
+      ],
       "groupName": "Docker dependencies",
       "groupSlug": "docker-deps",
       "semanticCommitType": "deps",
@@ -92,7 +121,10 @@
         "homeassistant"
       ],
       "prPriority": 6,
-      "labels": ["dependencies", "homeassistant"],
+      "labels": [
+        "dependencies",
+        "homeassistant"
+      ],
       "groupName": "Home Assistant dependencies",
       "groupSlug": "ha-deps",
       "semanticCommitType": "deps",
@@ -106,7 +138,10 @@
         "paho-mqtt"
       ],
       "prPriority": 10,
-      "labels": ["dependencies", "security"],
+      "labels": [
+        "dependencies",
+        "security"
+      ],
       "groupName": "security updates",
       "groupSlug": "security-deps",
       "semanticCommitType": "deps",
@@ -114,10 +149,16 @@
     },
     {
       "description": "Cryptography - version range follows Home Assistant compatibility. Update allowedVersions when HA updates their cryptography pin. Check: https://github.com/home-assistant/core/blob/dev/requirements.txt",
-      "matchPackageNames": ["cryptography"],
+      "matchPackageNames": [
+        "cryptography"
+      ],
       "allowedVersions": ">=45.0.3 <46.0.0",
       "prPriority": 10,
-      "labels": ["dependencies", "security", "homeassistant-constrained"],
+      "labels": [
+        "dependencies",
+        "security",
+        "homeassistant-constrained"
+      ],
       "groupName": "cryptography updates",
       "groupSlug": "cryptography-deps",
       "semanticCommitType": "deps",
@@ -131,7 +172,10 @@
         "libdyson-rest"
       ],
       "prPriority": 8,
-      "labels": ["dependencies", "dyson"],
+      "labels": [
+        "dependencies",
+        "dyson"
+      ],
       "groupName": "Dyson libraries",
       "groupSlug": "dyson-libs",
       "semanticCommitType": "deps",

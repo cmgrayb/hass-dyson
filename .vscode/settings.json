@@ -1,6 +1,6 @@
 {
-  "python.defaultInterpreterPath": ".venv/bin/python",
-  "python.terminal.activateEnvironment": true,
+  "python.defaultInterpreterPath": "/usr/local/bin/python",
+  "python.terminal.activateEnvironment": false,
 
   "editor.formatOnSave": true,
   "editor.formatOnPaste": true,
@@ -15,7 +15,7 @@
   },
 
   "ruff.configuration": "./pyproject.toml",
-  "ruff.interpreter": [".venv/bin/python"],
+  "ruff.interpreter": ["/usr/local/bin/python"],
 
   "files.associations": {
     "*.py": "python"

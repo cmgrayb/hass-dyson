@@ -257,6 +257,31 @@ class TestOscillationAngles:
 
         mock_device_basic.send_command.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_set_oscillation_breeze(self, mock_device_basic):
+        """Test Breeze oscillation mode sends correct MQTT payload."""
+        mock_device_basic._connected = True
+        mock_device_basic.send_command = AsyncMock()
+
+        await mock_device_basic.set_oscillation_breeze()
+
+        mock_device_basic.send_command.assert_called_once()
+        call_args = mock_device_basic.send_command.call_args[0]
+        assert call_args[0] == "STATE-SET"
+        assert call_args[1].get("ancp") == "BRZE"
+        assert call_args[1].get("oson") == "ON"
+        assert "osal" not in call_args[1]
+        assert "osau" not in call_args[1]
+
+    def test_resolve_ancp_from_span(self, mock_device_basic):
+        """Test _resolve_ancp_from_span returns the correct preset code."""
+        assert mock_device_basic._resolve_ancp_from_span(0, 350) == "0350"
+        assert mock_device_basic._resolve_ancp_from_span(88, 268) == "0180"  # span=180
+        assert mock_device_basic._resolve_ancp_from_span(130, 220) == "0090"  # span=90
+        assert mock_device_basic._resolve_ancp_from_span(157, 202) == "0045"  # span=45
+        assert mock_device_basic._resolve_ancp_from_span(100, 200) == "CUST"  # span=100
+        assert mock_device_basic._resolve_ancp_from_span(0, 37) == "CUST"  # span=37
+
 
 class TestEnvironmentalSensors:
     """Test environmental sensor data handling and edge cases."""

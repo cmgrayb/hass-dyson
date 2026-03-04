@@ -2546,8 +2546,44 @@ class DysonDevice:
 
         await self.send_command("STATE-SET", {"sltm": timer_value})
 
+    @staticmethod
+    def _resolve_ancp_from_span(lower_angle: int, upper_angle: int) -> str:
+        """Derive the Angle Current Preset (ancp) code from an angle span.
+
+        Spans that match a named preset within a small tolerance (±5°) are
+        mapped to the corresponding device code; all others are labelled
+        ``"CUST"``.
+
+        Args:
+            lower_angle: Lower oscillation angle in degrees.
+            upper_angle: Upper oscillation angle in degrees.
+
+        Returns:
+            One of ``"0045"``, ``"0090"``, ``"0180"``, ``"0350"``, or ``"CUST"``.
+        """
+        span = upper_angle - lower_angle
+        if 340 <= span <= 350:
+            return "0350"
+        if abs(span - 180) <= 5:
+            return "0180"
+        if abs(span - 90) <= 5:
+            return "0090"
+        if abs(span - 45) <= 5:
+            return "0045"
+        return "CUST"  # Non-preset custom span
+
     async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
-        """Set custom oscillation angles."""
+        """Set oscillation to a specific angle range.
+
+        Automatically derives the ``ancp`` (Angle Current Preset) value from
+        the span so both the device firmware and the MyDyson app display the
+        correct preset label.  Spans that match a named preset within a small
+        tolerance are given the corresponding preset code ("0045", "0090",
+        "0180", "0350"); all others are labelled "CUST".
+
+        Sending explicit ``osal``/``osau`` values keeps the number entities in
+        Home Assistant in sync, regardless of whether a named preset is active.
+        """
 
         # Ensure angles are within valid range (0-350 degrees)
         lower_angle = max(0, min(350, lower_angle))
@@ -2561,18 +2597,75 @@ class DysonDevice:
         lower_str = f"{lower_angle:04d}"
         upper_str = f"{upper_angle:04d}"
 
+        ancp = self._resolve_ancp_from_span(lower_angle, upper_angle)
+
         await self.send_command(
             "STATE-SET",
             {
                 "osal": lower_str,  # Oscillation angle lower
                 "osau": upper_str,  # Oscillation angle upper
                 "oson": "ON",  # Enable oscillation
-                "ancp": "CUST",  # Custom angles
+                "ancp": ancp,  # Angle Current Preset (or "CUST")
             },
         )
 
+    async def set_oscillation_preset(self, preset_angle: int) -> None:
+        """Set oscillation to a named preset angle.
+
+        Uses ``ancp`` (Angle Current Preset) to select the pre-defined
+        oscillation angle.  The device firmware handles the actual angle
+        positioning internally; no ``osal``/``osau`` values are sent.
+
+        Args:
+            preset_angle: One of 45, 90, 180, or 350 degrees.
+
+        Raises:
+            ValueError: If *preset_angle* is not one of the supported values.
+        """
+        if preset_angle not in (45, 90, 180, 350):
+            raise ValueError(
+                f"Invalid preset angle {preset_angle}°. Must be 45, 90, 180, or 350."
+            )
+
+        ancp_str = f"{preset_angle:04d}"
+        await self.send_command(
+            "STATE-SET",
+            {
+                "oson": "ON",  # Enable oscillation
+                "ancp": ancp_str,  # Angle Current Preset (e.g. "0045")
+            },
+        )
+
+        _LOGGER.debug(
+            "Set oscillation preset to %s° (ancp=%s) for %s",
+            preset_angle,
+            ancp_str,
+            self.serial_number,
+        )
+
+    async def set_oscillation_breeze(self) -> None:
+        """Set Breeze oscillation mode.
+
+        Breeze mode activates the device's built-in randomised oscillation
+        pattern.  The device selects its own angle excursions; no osal/osau
+        values are required.  Only available on devices that have both
+        AdvanceOscillationDay1 and Humidifier capabilities.
+        """
+        await self.send_command(
+            "STATE-SET",
+            {
+                "ancp": "BRZE",  # Breeze oscillation preset
+                "oson": "ON",  # Enable oscillation
+            },
+        )
+
+        _LOGGER.debug(
+            "Set Breeze oscillation mode for %s",
+            self.serial_number,
+        )
+
     async def set_oscillation_angles_day0(
-        self, lower_angle: int, upper_angle: int, ancp_value: int | None = None
+        self, lower_angle: int, upper_angle: int, ancp_value: str | None = None
     ) -> None:
         """Set oscillation angles for AdvanceOscillationDay0 capability.
 
@@ -2599,14 +2692,12 @@ class DysonDevice:
 
         # Add ancp parameter if provided (preset pattern control)
         if ancp_value is not None:
-            ancp_str = f"{ancp_value:04d}"
-            command_data["ancp"] = ancp_str
+            command_data["ancp"] = ancp_value
 
             _LOGGER.debug(
-                "Setting Day0 oscillation: angles %s°-%s°, ancp=%s (preset %s°) for %s",
+                "Setting Day0 oscillation: angles %s°-%s°, ancp=%s for %s",
                 lower_angle,
                 upper_angle,
-                ancp_value,
                 ancp_value,
                 self.serial_number,
             )
