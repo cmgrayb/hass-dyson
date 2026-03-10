@@ -65,6 +65,7 @@ coverage.xml
 *.cover
 *.py.cover
 .hypothesis/
+coverage-download/**
 
 # Docker development environment (contains sensitive credentials)
 docker-compose.override.yml

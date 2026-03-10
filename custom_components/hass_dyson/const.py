@@ -224,7 +224,9 @@ STATE_KEY_CONTINUOUS_MONITORING: Final = "rhtm"  # Continuous monitoring
 STATE_KEY_OSCILLATION_ON: Final = "oson"  # Oscillation on/off
 STATE_KEY_OSCILLATION_UPPER: Final = "osau"  # Upper oscillation angle
 STATE_KEY_OSCILLATION_LOWER: Final = "osal"  # Lower oscillation angle
-STATE_KEY_OSCILLATION_CENTER: Final = "ancp"  # Angle control preset
+STATE_KEY_OSCILLATION_CENTER: Final = (
+    "ancp"  # Angle custom preset (e.g. "CUST", "BRZE", or numeric center)
+)
 
 # Humidifier state keys
 STATE_KEY_HUMIDITY_ENABLED: Final = "hume"  # Humidity mode (HUMD/OFF)

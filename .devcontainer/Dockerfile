@@ -1,5 +1,5 @@
-# Use the official Python devcontainer image as base
-FROM mcr.microsoft.com/devcontainers/python:3.14-bookworm
+# Use the official Python devcontainer image as base - image format is patch-major.minor-OS
+FROM mcr.microsoft.com/devcontainers/python:3-3.14-bookworm
 
 # Remove Yarn repository to avoid GPG key errors
 RUN rm -f /etc/apt/sources.list.d/yarn.list
@@ -31,7 +31,6 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements to temporary location for installation
 COPY requirements-dev.txt /tmp/
-COPY requirements.txt /tmp/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -42,8 +41,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 RUN pip install --no-cache-dir \
     pytest-asyncio \
     pytest-mock \
-    bandit \
-    safety
+    bandit
 
 # Create workspace directory but don't set it as WORKDIR during build
 RUN mkdir -p /workspaces

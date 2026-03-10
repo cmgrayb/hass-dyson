@@ -914,6 +914,69 @@ class TestFanCoverageEnhancement:
         # Assert
         assert fan._attr_oscillating is True
 
+    def test_handle_coordinator_update_breeze_mode_oscillating(self, mock_coordinator):
+        """Test that oson=ON + ancp=BRZE reports oscillating=True (settled Breeze state).
+
+        The Dyson firmware settles at oson=ON, ancp=BRZE after the two-step
+        STATE-CHANGE transition when entering Breeze.  _attr_oscillating must
+        be True.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "ON",  # settled Breeze state
+                "ancp": "BRZE",
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+
+        def mockget_state_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
+
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_oscillating is True
+
+    def test_handle_coordinator_update_clears_stale_saved_oscillation_mode(
+        self, mock_coordinator
+    ):
+        """Test that a saved Breeze restore mode is cleared when the device comes ON externally.
+
+        If the user turns oscillation off via HA (saving "Breeze" as the restore
+        mode) and then turns oscillation back on via the app or remote before
+        toggling in HA, the saved restore mode is stale and must be discarded so
+        a subsequent HA toggle-on does not unexpectedly re-enter Breeze.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "ON",  # Device turned on externally
+                "ancp": "0045",
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+        fan._saved_oscillation_mode_for_restore = "Breeze"  # Simulate stale save
+
+        def mockget_state_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
+
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_oscillating is True
+        assert fan._saved_oscillation_mode_for_restore is None
+
     def test_handle_coordinator_update_without_oscillation_support(
         self, mock_coordinator
     ):
@@ -961,7 +1024,7 @@ class TestFanCoverageEnhancement:
     @pytest.mark.asyncio
     async def test_async_oscillate_turn_off_success(self, mock_coordinator):
         """Test successful oscillation turn off via native fan service."""
-        # Arrange - Device with oscillation support
+        # Arrange - Device with oscillation support, not in Breeze mode
         mock_coordinator.data = {
             "product-state": {
                 "fpwr": "ON",
@@ -978,6 +1041,127 @@ class TestFanCoverageEnhancement:
         # Assert
         mock_coordinator.device.set_oscillation.assert_called_once_with(False)
         assert fan._attr_oscillating is False
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_off_from_breeze(self, mock_coordinator):
+        """Test that turning off oscillation in Breeze calls set_oscillation(False).
+
+        The vendor app sends only {oson: OFF} when turning off from Breeze.
+        The saved mode is set to Breeze so toggling back on will re-enter Breeze.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "ON",  # settled Breeze state
+                "ancp": "BRZE",
+            }
+        }
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        def mockget(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget
+        fan = DysonFan(mock_coordinator)
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(False)
+
+        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
+        assert fan._attr_oscillating is False
+        # Mode saved so toggling back on will restore Breeze
+        assert fan._saved_oscillation_mode_for_restore == "Breeze"
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_restores_breeze(self, mock_coordinator):
+        """Test that turning on oscillation when Breeze was the last mode re-enters Breeze.
+
+        If the user turns the oscillation toggle OFF while in Breeze mode and
+        then turns it back ON, the integration should restore Breeze rather than
+        falling back to generic oscillation.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",
+                "ancp": "0045",  # Device is now in angle mode after Breeze exit
+            }
+        }
+        mock_coordinator.device.set_oscillation_breeze = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+        fan = DysonFan(mock_coordinator)
+        # Simulate state saved during a previous turn-off-from-Breeze
+        fan._saved_oscillation_mode_for_restore = "Breeze"
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        mock_coordinator.device.set_oscillation_breeze.assert_called_once()
+        mock_coordinator.device.set_oscillation.assert_not_called()
+        assert fan._attr_oscillating is True
+        # Saved mode cleared after use
+        assert fan._saved_oscillation_mode_for_restore is None
+        # Pending flag set so transient oson=OFF doesn't flicker oscillating=False
+        assert fan._breeze_transition_pending is True
+
+    @pytest.mark.asyncio
+    async def test_handle_coordinator_update_breeze_transient_oson_off(
+        self, mock_coordinator
+    ):
+        """Test that oson=OFF, ancp=BRZE with transition flag keeps oscillating=True.
+
+        During the two-step Breeze entry the device briefly reports oson=OFF
+        before re-engaging.  With _breeze_transition_pending=True the fan entity
+        must keep _attr_oscillating=True rather than flickering to False.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "fnst": "FAN",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "OFF",  # transient mid-transition
+                "ancp": "BRZE",
+            }
+        }
+        fan = DysonFan(mock_coordinator)
+        fan._breeze_transition_pending = True  # simulates just-sent Breeze command
+
+        def mockget_state_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
+
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Must remain True — the oson=OFF is transient, not a real turn-off
+        assert fan._attr_oscillating is True
+        # Flag stays set until the settled oson=ON, ancp=BRZE state arrives
+        assert fan._breeze_transition_pending is True
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_no_saved_mode_uses_generic(
+        self, mock_coordinator
+    ):
+        """Test that turning on oscillation with no saved mode calls generic set_oscillation."""
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",
+            }
+        }
+        mock_coordinator.device.set_oscillation_breeze = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+        fan = DysonFan(mock_coordinator)
+        # No saved mode
+        assert fan._saved_oscillation_mode_for_restore is None
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
+        mock_coordinator.device.set_oscillation_breeze.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_async_oscillate_without_support_logs_warning(self, mock_coordinator):

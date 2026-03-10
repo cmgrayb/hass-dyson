@@ -4,17 +4,20 @@
   "service": "devcontainer",
   "workspaceFolder": "/workspaces/",
   "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "customizations": {
     "vscode": {
       "extensions": [
+        "bierner.markdown-mermaid",
         "ms-python.python",
         "charliermarsh.ruff",
         "ms-python.mypy-type-checker",
         "ms-vscode.vscode-json",
+        "ms-vscode.test-adapter-converter",
+        "littlefoxteam.vscode-python-test-adapter",
         "redhat.vscode-yaml",
-        "GitHub.copilot",
         "GitHub.copilot-chat",
         "github.vscode-github-actions",
         "GitHub.vscode-pull-request-github",
@@ -22,6 +25,7 @@
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.useEnvironmentsExtension": false,
         "[python]": {
           "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true,
