@@ -59,7 +59,7 @@ This devcontainer provides a complete development environment for the Dyson Home
 # Format code
 python -m black .
 
-# Lint code  
+# Lint code
 python -m flake8 .
 
 # Sort imports
@@ -123,8 +123,6 @@ python -m pytest --cov=custom_components.hass_dyson
 # Security scan with Bandit
 python -m bandit -r custom_components/
 
-# Dependency vulnerability check
-safety check
 ```
 
 ### Home Assistant Development

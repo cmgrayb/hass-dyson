@@ -2,7 +2,6 @@
     "recommendations": [
         "charliermarsh.ruff",
         "ms-python.python",
-        "ms-python.pylint",
         "ms-python.mypy-type-checker",
         "GitHub.vscode-pull-request-github",
         "ms-vscode.test-adapter-converter",

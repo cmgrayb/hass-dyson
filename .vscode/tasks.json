@@ -4,7 +4,7 @@
         {
             "label": "Setup Dev Environment",
             "type": "shell",
-            "command": "python -m venv .venv && .venv\\Scripts\\activate && pip install --upgrade pip",
+            "command": "pip install --upgrade pip && pip install -r requirements-dev.txt && pip install -e .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -36,7 +36,7 @@
         {
             "label": "Format Code",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff format .",
+            "command": "python -m ruff format .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -55,7 +55,7 @@
         {
             "label": "Ruff Check",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff format --check --diff . && .venv/bin/python -m ruff check .",
+            "command": "python -m ruff format --check --diff . && python -m ruff check .",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -96,7 +96,7 @@
         {
             "label": "Ruff Fix",
             "type": "shell",
-            "command": ".venv/bin/python -m ruff check . --fix",
+            "command": "python -m ruff check . --fix",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -214,7 +214,7 @@
         {
             "label": "Security Scan (Bandit)",
             "type": "shell",
-            "command": "docker run --rm -v \"${workspaceFolder}:/src\" pyupio/safety:latest safety check --json --file=/src/requirements.txt || echo 'Security scan completed'",
+            "command": "python -m bandit -r custom_components/hass_dyson || echo 'Security scan completed'",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -228,14 +228,14 @@
             "problemMatcher": []
         },
         {
-            "label": "Security Scan (Safety)",
+            "label": "Download Coverage Report",
             "type": "shell",
-            "command": "docker run --rm -v \"${workspaceFolder}:/src\" securecodewarrior/bandit:latest bandit -r /src/custom_components -f json || echo 'Security scan completed'",
+            "command": "gh run download $(gh run list --repo cmgrayb/hass-dyson --workflow test.yml --branch $(git branch --show-current) --status success --limit 1 --json databaseId -q '.[0].databaseId') --repo cmgrayb/hass-dyson --dir ./coverage-download && echo '' && echo '✅ Coverage report downloaded to ./coverage-download'",
             "group": "test",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
-                "focus": false,
+                "focus": true,
                 "panel": "shared"
             },
             "options": {
