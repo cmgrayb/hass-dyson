@@ -1,7 +1,7 @@
 # Dyson Integration for Home Assistant
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/image_assets/logo.png" alt="Dyson Logo" width="400"/>
+  <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/custom_components/hass_dyson/brand/logo.png" alt="Dyson Logo" width="400"/>
 </p>
 
 
