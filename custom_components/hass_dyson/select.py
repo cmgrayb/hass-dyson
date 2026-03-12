@@ -73,6 +73,17 @@ async def async_setup_entry(
             )
             entities.append(DysonRobotPowerGenericSelect(coordinator))
 
+    # Add tilt oscillation select for ec devices that report the oton key in state.
+    # These devices (e.g. BP04) have no dedicated capability flag; presence of oton
+    # in the first STATE-CHANGE product-state is the sole gating criterion.
+    device_categories = getattr(coordinator, "device_category", [])
+    if isinstance(device_categories, list) and "ec" in device_categories:
+        product_state = {}
+        if coordinator.data:
+            product_state = coordinator.data.get("product-state", {})
+        if "oton" in product_state:
+            entities.append(DysonTiltOscillationModeSelect(coordinator))
+
     # Note: Heating mode control is now integrated into the fan entity's preset modes
     # No separate heating mode select needed
 
@@ -1332,6 +1343,106 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
         except Exception as err:
             _LOGGER.error(
                 "Error setting generic robot power to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
+    """Select entity for tilt (vertical) oscillation mode.
+
+    Supports devices such as the Dyson BP04 (product type 664) that expose
+    the ``oton``/``otal``/``otau``/``anct`` state keys for vertical tilt control.
+    The device has no dedicated capability flag; support is detected by the
+    presence of ``oton`` in the first ``product-state`` reported by the device.
+
+    Options and their MQTT payloads:
+        Off    → {oton: OFF}
+        25°    → {anct: CUST, otal: 0025, otau: 0025}
+        50°    → {anct: CUST, otal: 0050, otau: 0050}
+        Breeze → {oton: ON,  anct: BRZE, otal: 0359, otau: 0359}
+
+    State reading uses ``oton`` as the primary gate (``ON`` → Breeze) then
+    ``otal`` for the angle (``0025`` → 25°, ``0050`` → 50°, ``0000`` → Off).
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the tilt oscillation mode select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_tilt_oscillation_mode"
+        self._attr_translation_key = "tilt_oscillation_mode"
+        self._attr_icon = "mdi:angle-acute"
+        self._attr_options = ["Off", "25°", "50°", "Breeze"]
+
+    def _detect_tilt_mode(self) -> str:
+        """Detect the current tilt oscillation mode from device state.
+
+        Returns:
+            One of "Off", "25°", "50°", "Breeze".
+        """
+        if not self.coordinator.device:
+            return "Off"
+
+        product_state = self.coordinator.data.get("product-state", {})
+        oton = self.coordinator.device.get_state_value(product_state, "oton", "OFF")
+
+        if oton == "ON":
+            return "Breeze"
+
+        otal = self.coordinator.device.get_state_value(product_state, "otal", "0000")
+        if otal == "0025":
+            return "25°"
+        if otal == "0050":
+            return "50°"
+        return "Off"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_current_option = None
+            super()._handle_coordinator_update()
+            return
+
+        self._attr_current_option = self._detect_tilt_mode()
+        super()._handle_coordinator_update()
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle a tilt oscillation mode selection."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            await self.coordinator.device.set_tilt_oscillation(option)
+
+            # Optimistic update for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set tilt oscillation to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting tilt oscillation to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid tilt oscillation option '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting tilt oscillation to '%s' for %s: %s",
                 option,
                 self.coordinator.serial_number,
                 err,

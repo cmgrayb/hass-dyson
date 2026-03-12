@@ -2664,6 +2664,47 @@ class DysonDevice:
             self.serial_number,
         )
 
+    async def set_tilt_oscillation(self, option: str) -> None:
+        """Set tilt (vertical) oscillation mode.
+
+        Handles the four tilt modes observed on devices with the ``oton`` state
+        key (e.g. Dyson BP04 product type 664).
+
+        Args:
+            option: One of ``"Off"``, ``"25°"``, ``"50°"``, or ``"Breeze"``.
+
+        Raises:
+            ValueError: If *option* is not one of the supported values.
+        """
+        if option == "Off":
+            await self.send_command("STATE-SET", {"oton": "OFF"})
+        elif option == "25°":
+            await self.send_command(
+                "STATE-SET",
+                {"anct": "CUST", "otal": "0025", "otau": "0025"},
+            )
+        elif option == "50°":
+            await self.send_command(
+                "STATE-SET",
+                {"anct": "CUST", "otal": "0050", "otau": "0050"},
+            )
+        elif option == "Breeze":
+            await self.send_command(
+                "STATE-SET",
+                {"oton": "ON", "anct": "BRZE", "otal": "0359", "otau": "0359"},
+            )
+        else:
+            raise ValueError(
+                f"Invalid tilt oscillation option '{option}'. "
+                "Must be one of: 'Off', '25°', '50°', 'Breeze'."
+            )
+
+        _LOGGER.debug(
+            "Set tilt oscillation to '%s' for %s",
+            option,
+            self.serial_number,
+        )
+
     async def set_oscillation_angles_day0(
         self, lower_angle: int, upper_angle: int, ancp_value: str | None = None
     ) -> None:

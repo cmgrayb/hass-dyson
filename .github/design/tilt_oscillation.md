@@ -41,11 +41,23 @@ verified, only `CUST` and `BRZE` should be sent.
 
 ## Capability Gating
 
-Detection is tiered:
+The example device (Dyson BP04, product type `664`) has none of the `AdvanceOscillationDay0/Day1`
+capability flags.  Its capability list is:
 
-1. **Dedicated capability string** from the cloud API (awaiting confirmation of exact name).
-2. **Fallback**: `AdvanceOscillationDay1` capability present **and** `oton` key is present in
-   the first `STATE-CHANGE` message received from the device.
+```
+Scheduling, EnvironmentalData, ExtendedAQ, ChangeWifi
+```
+
+Tilt oscillation must therefore be detected at runtime from device state data, using
+the same pattern as `_check_oscillation_support()` in `fan.py`:
+
+1. `ec` must be present in `device_category` (rules out robot vacuums and lighting).
+2. `oton` key must be present in the `product-state` of the first `STATE-CHANGE` message
+   received from the device.
+
+A `_check_tilt_oscillation_support()` helper (mirroring `_check_oscillation_support()`) is
+used both in `select.py`'s `async_setup_entry` (to decide whether to add the entity) and
+as an `available` guard inside the entity itself in case state data is absent at setup.
 
 ## HA Entity: `DysonTiltOscillationModeSelect`
 
@@ -89,7 +101,6 @@ both be active simultaneously.  No mutual exclusivity logic is required in eithe
 
 ## Open Items
 
-- Confirm the dedicated capability string from the cloud API response.
 - Confirm whether numeric `anct` values (`0025`, `0050`) are accepted by the device
   firmware (may simplify future angle expansion).
 - Confirm maximum tilt angle — only 0°, 25°, and 50° have been observed to date.

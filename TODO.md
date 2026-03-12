@@ -1,20 +1,20 @@
 # TO DO
 
-## ⏳ TODO: Tilt Oscillation Support
+## ✅ COMPLETED: Tilt Oscillation Support
 
 Implement tilt (vertical) oscillation for devices that expose the `oton`/`otal`/`otau`/`anct`
 state keys.  Full design specification: [`.github/design/tilt_oscillation.md`](.github/design/tilt_oscillation.md)
 
-**Pending before implementation**:
-- [ ] Confirm dedicated capability string from cloud API response (fallback: `AdvanceOscillationDay1` + `oton` key present)
-- [ ] Confirm whether numeric `anct` values (`0025`, `0050`) are accepted by the device
+**Open item (post-release)**:
+- [ ] Confirm whether numeric `anct` values (`0025`, `0050`) are accepted by the device firmware (may simplify future angle expansion)
 
-**Implementation tasks**:
-- [ ] Add `STATE_KEY_TILT_OSCILLATION_ON`, `STATE_KEY_TILT_OSCILLATION_LOWER`, `STATE_KEY_TILT_OSCILLATION_UPPER`, `STATE_KEY_TILT_ANGLE_CONTROL`, `STATE_KEY_TILT_OSCILLATION_STATUS` to `const.py`
-- [ ] Add `DysonTiltOscillationModeSelect` entity to `select.py`
-- [ ] Gate entity on tilt capability in `select.py` `async_setup_entry`
-- [ ] Add translations for new select entity and its options
-- [ ] Add unit tests for the new select entity
+**Completed**:
+- ✅ Added `STATE_KEY_TILT_OSCILLATION_ON/LOWER/UPPER`, `STATE_KEY_TILT_ANGLE_CONTROL`, `STATE_KEY_TILT_OSCILLATION_STATUS` to `const.py`
+- ✅ Added `DysonTiltOscillationModeSelect` entity to `select.py`, gated on `ec` in `device_category` + `oton` key present in product state
+- ✅ Added `set_tilt_oscillation()` to `device.py` with correct payloads for Off / 25° / 50° / Breeze
+- ✅ Added translations (`en.json`, `fr.json`, `de.json`)
+- ✅ Added unit tests in `tests/test_tilt_oscillation.py`
+- ✅ All tests passing at 76.73% coverage
 
 ---
 
