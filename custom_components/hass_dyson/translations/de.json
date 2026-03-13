@@ -239,10 +239,15 @@
       "oscillation_mode": {
         "name": "Oszillation"
       },
+      "tilt_oscillation_mode": {
+        "name": "Neigung"
+      },
       "heating_mode": {
-        "name": "Heizmodus"      },
+        "name": "Heizmodus"
+      },
       "water_hardness": {
-        "name": "Wasserhärte"      }
+        "name": "Wasserhärte"
+      }
     },
     "number": {
       "sleep_timer": {

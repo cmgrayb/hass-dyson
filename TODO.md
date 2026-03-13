@@ -1,5 +1,23 @@
 # TO DO
 
+## ✅ COMPLETED: Tilt Oscillation Support
+
+Implement tilt (vertical) oscillation for devices that expose the `oton`/`otal`/`otau`/`anct`
+state keys.  Full design specification: [`.github/design/tilt_oscillation.md`](.github/design/tilt_oscillation.md)
+
+**Open item (post-release)**:
+- [ ] Confirm whether numeric `anct` values (`0025`, `0050`) are accepted by the device firmware (may simplify future angle expansion)
+
+**Completed**:
+- ✅ Added `STATE_KEY_TILT_OSCILLATION_ON/LOWER/UPPER`, `STATE_KEY_TILT_ANGLE_CONTROL`, `STATE_KEY_TILT_OSCILLATION_STATUS` to `const.py`
+- ✅ Added `DysonTiltOscillationModeSelect` entity to `select.py`, gated on `ec` in `device_category` + `oton` key present in product state
+- ✅ Added `set_tilt_oscillation()` to `device.py` with correct payloads for Off / 25° / 50° / Breeze
+- ✅ Added translations (`en.json`, `fr.json`, `de.json`)
+- ✅ Added unit tests in `tests/test_tilt_oscillation.py`
+- ✅ All tests passing at 76.73% coverage
+
+---
+
 ## ✅ COMPLETED: Code Coverage Recovery Plan
 
 **Final Status**: 🎉 **76% coverage** - TARGET EXCEEDED! 🎉
