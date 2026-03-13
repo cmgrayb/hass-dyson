@@ -239,6 +239,9 @@
       "oscillation_mode": {
         "name": "Oscillation"
       },
+      "tilt_oscillation_mode": {
+        "name": "Inclinaison"
+      },
       "heating_mode": {
         "name": "Mode de chauffage"
       },
