@@ -909,13 +909,20 @@ class DysonDevice:
                 _LOGGER.debug(
                     "Heartbeat loop cancelled for device %s", self.serial_number
                 )
-                break
+                raise
             except Exception as err:
                 _LOGGER.error(
                     "Error in heartbeat loop for %s: %s", self.serial_number, err
                 )
-                # Continue the loop despite errors
-                await asyncio.sleep(5)  # Brief pause before retry
+                # Brief pause before retry, but allow cancellation to propagate cleanly
+                try:
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    _LOGGER.debug(
+                        "Heartbeat retry sleep cancelled for device %s",
+                        self.serial_number,
+                    )
+                    raise
 
     async def force_reconnect(self) -> bool:
         """Force a reconnection attempt with preferred connection priority."""

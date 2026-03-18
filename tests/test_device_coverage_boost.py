@@ -217,6 +217,80 @@ class TestHeartbeatAndStartup:
             or device._request_current_state.call_count >= 1
         )
 
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_cancellation_propagates(self, mock_hass_running):
+        """Test that cancelling _heartbeat_loop raises CancelledError (not swallowed).
+
+        Regression test for issue #308: the loop previously used 'break' on
+        CancelledError, which suppressed the cancellation signal and caused
+        asyncio to emit 'Task was destroyed but it is pending' warnings.
+        """
+        device = DysonDevice(
+            hass=mock_hass_running,
+            serial_number="TEST-123",
+            host="192.168.1.100",
+            credential="test",
+            mqtt_prefix="475",
+        )
+        device._connected = True
+        device._request_current_state = AsyncMock()
+        device._request_current_faults = AsyncMock()
+        device._last_heartbeat = time.time()
+        device._heartbeat_interval = 10.0  # Long interval so it sits in sleep
+
+        loop_task = asyncio.create_task(device._heartbeat_loop())
+
+        # Give the task a moment to enter asyncio.sleep
+        await asyncio.sleep(0.01)
+
+        loop_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await loop_task
+
+        # Task must be done (cancelled), not still pending
+        assert loop_task.done()
+        assert loop_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_loop_cancellation_during_retry_sleep(
+        self, mock_hass_running
+    ):
+        """Test that cancellation during the 5-second retry sleep propagates cleanly.
+
+        Regression test for issue #308: if a non-CancelledError exception fires
+        inside the loop and cancel() arrives while the 5-second retry sleep is
+        running, the CancelledError must propagate out rather than being swallowed
+        by the outer 'except Exception' handler on the next iteration.
+        """
+        device = DysonDevice(
+            hass=mock_hass_running,
+            serial_number="TEST-123",
+            host="192.168.1.100",
+            credential="test",
+            mqtt_prefix="475",
+        )
+        device._connected = True
+        device._last_heartbeat = 0.0  # Force heartbeat to fire immediately
+        device._heartbeat_interval = 0.01  # Very short so the check runs
+
+        # Make _request_current_state raise to trigger the except Exception path
+        device._request_current_state = AsyncMock(
+            side_effect=RuntimeError("simulated device error")
+        )
+        device._request_current_faults = AsyncMock()
+
+        loop_task = asyncio.create_task(device._heartbeat_loop())
+
+        # Wait long enough for the error to be hit and the retry sleep to start
+        await asyncio.sleep(0.05)
+
+        loop_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await loop_task
+
+        assert loop_task.done()
+        assert loop_task.cancelled()
+
 
 class TestOscillationAngles:
     """Test oscillation angle handling and validation."""
