@@ -39,7 +39,7 @@ from collections.abc import Callable
 from typing import Any
 
 import paho.mqtt.client as mqtt
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 
 from .const import (
@@ -187,6 +187,7 @@ class DysonDevice:
         self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
         self._heartbeat_task: asyncio.Task | None = None
         self._last_heartbeat = 0.0
+        self._ha_stop_unsub: Callable[[], None] | None = None
         self._state_data: dict[str, Any] = {}
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
@@ -875,8 +876,22 @@ class DysonDevice:
         self._last_heartbeat = time.time()  # Initialize heartbeat time
         self._heartbeat_task = self.hass.async_create_task(self._heartbeat_loop())
 
+        # Cancel heartbeat on HA shutdown so the task doesn't outlive the
+        # 'final writes' stage and trigger the 'Task still running' warning.
+        def _stop_on_ha_stop(event: Any) -> None:  # noqa: ARG001
+            if self._heartbeat_task and not self._heartbeat_task.done():
+                self._heartbeat_task.cancel()
+
+        self._ha_stop_unsub = self.hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STOP, _stop_on_ha_stop
+        )
+
     async def _stop_heartbeat(self) -> None:
         """Stop the heartbeat task."""
+        # Unsubscribe the HA stop listener if it's still registered.
+        if self._ha_stop_unsub is not None:
+            self._ha_stop_unsub()
+            self._ha_stop_unsub = None
         if self._heartbeat_task and not self._heartbeat_task.done():
             _LOGGER.debug("Stopping heartbeat for device %s", self.serial_number)
             self._heartbeat_task.cancel()
@@ -909,13 +924,20 @@ class DysonDevice:
                 _LOGGER.debug(
                     "Heartbeat loop cancelled for device %s", self.serial_number
                 )
-                break
+                raise
             except Exception as err:
                 _LOGGER.error(
                     "Error in heartbeat loop for %s: %s", self.serial_number, err
                 )
-                # Continue the loop despite errors
-                await asyncio.sleep(5)  # Brief pause before retry
+                # Brief pause before retry, but allow cancellation to propagate cleanly
+                try:
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    _LOGGER.debug(
+                        "Heartbeat retry sleep cancelled for device %s",
+                        self.serial_number,
+                    )
+                    raise
 
     async def force_reconnect(self) -> bool:
         """Force a reconnection attempt with preferred connection priority."""
