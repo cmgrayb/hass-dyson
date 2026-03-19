@@ -2569,42 +2569,35 @@ class DysonDevice:
         await self.send_command("STATE-SET", {"sltm": timer_value})
 
     @staticmethod
+    @staticmethod
     def _resolve_ancp_from_span(lower_angle: int, upper_angle: int) -> str:
-        """Derive the Angle Current Preset (ancp) code from an angle span.
+        """Return the Angle Current Preset (ancp) code for a custom angle range.
 
-        Spans that match a named preset within a small tolerance (±5°) are
-        mapped to the corresponding device code; all others are labelled
-        ``"CUST"``.
+        Always returns ``"CUST"`` so the device respects the explicit
+        ``osal``/``osau`` values rather than snapping to its own preset
+        position.  Named preset codes (``"0045"`` etc.) must only be sent via
+        :meth:`set_oscillation_preset` — sending them alongside ``osal``/
+        ``osau`` causes the device firmware to ignore those values entirely.
 
         Args:
-            lower_angle: Lower oscillation angle in degrees.
-            upper_angle: Upper oscillation angle in degrees.
+            lower_angle: Lower oscillation angle in degrees (unused, kept for
+                API compatibility).
+            upper_angle: Upper oscillation angle in degrees (unused, kept for
+                API compatibility).
 
         Returns:
-            One of ``"0045"``, ``"0090"``, ``"0180"``, ``"0350"``, or ``"CUST"``.
+            Always ``"CUST"``.
         """
-        span = upper_angle - lower_angle
-        if 340 <= span <= 350:
-            return "0350"
-        if abs(span - 180) <= 5:
-            return "0180"
-        if abs(span - 90) <= 5:
-            return "0090"
-        if abs(span - 45) <= 5:
-            return "0045"
-        return "CUST"  # Non-preset custom span
+        return "CUST"
 
     async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
         """Set oscillation to a specific angle range.
 
-        Automatically derives the ``ancp`` (Angle Current Preset) value from
-        the span so both the device firmware and the MyDyson app display the
-        correct preset label.  Spans that match a named preset within a small
-        tolerance are given the corresponding preset code ("0045", "0090",
-        "0180", "0350"); all others are labelled "CUST".
-
-        Sending explicit ``osal``/``osau`` values keeps the number entities in
-        Home Assistant in sync, regardless of whether a named preset is active.
+        Always sends ``ancp=CUST`` alongside the explicit ``osal``/``osau``
+        values.  Named preset codes must only be sent via
+        :meth:`set_oscillation_preset` — when the device receives a named
+        preset code it ignores ``osal``/``osau`` entirely and repositions to
+        its own firmware-defined position for that preset.
         """
 
         # Ensure angles are within valid range (0-350 degrees)
