@@ -2693,13 +2693,16 @@ class DysonDevice:
         key (e.g. Dyson BP04 product type 664).
 
         Args:
-            option: One of ``"Off"``, ``"25°"``, ``"50°"``, or ``"Breeze"``.
+            option: One of ``"0°"``, ``"25°"``, ``"50°"``, or ``"Breeze"``.
 
         Raises:
             ValueError: If *option* is not one of the supported values.
         """
-        if option == "Off":
-            await self.send_command("STATE-SET", {"oton": "OFF"})
+        if option == "0°":
+            await self.send_command(
+                "STATE-SET",
+                {"anct": "CUST", "otal": "0000", "otau": "0000"},
+            )
         elif option == "25°":
             await self.send_command(
                 "STATE-SET",
@@ -2718,7 +2721,7 @@ class DysonDevice:
         else:
             raise ValueError(
                 f"Invalid tilt oscillation option '{option}'. "
-                "Must be one of: 'Off', '25°', '50°', 'Breeze'."
+                "Must be one of: '0°', '25°', '50°', 'Breeze'."
             )
 
         _LOGGER.debug(

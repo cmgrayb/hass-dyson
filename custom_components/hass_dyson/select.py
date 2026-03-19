@@ -1358,13 +1358,13 @@ class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
     presence of ``oton`` in the first ``product-state`` reported by the device.
 
     Options and their MQTT payloads:
-        Off    → {oton: OFF}
+        0°     → {anct: CUST, otal: 0000, otau: 0000}
         25°    → {anct: CUST, otal: 0025, otau: 0025}
         50°    → {anct: CUST, otal: 0050, otau: 0050}
         Breeze → {oton: ON,  anct: BRZE, otal: 0359, otau: 0359}
 
     State reading uses ``oton`` as the primary gate (``ON`` → Breeze) then
-    ``otal`` for the angle (``0025`` → 25°, ``0050`` → 50°, ``0000`` → Off).
+    ``otal`` for the angle (``0025`` → 25°, ``0050`` → 50°, ``0000`` → 0°).
     """
 
     coordinator: DysonDataUpdateCoordinator
@@ -1375,16 +1375,16 @@ class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_tilt_oscillation_mode"
         self._attr_translation_key = "tilt_oscillation_mode"
         self._attr_icon = "mdi:angle-acute"
-        self._attr_options = ["Off", "25°", "50°", "Breeze"]
+        self._attr_options = ["0°", "25°", "50°", "Breeze"]
 
     def _detect_tilt_mode(self) -> str:
         """Detect the current tilt oscillation mode from device state.
 
         Returns:
-            One of "Off", "25°", "50°", "Breeze".
+            One of "0°", "25°", "50°", "Breeze".
         """
         if not self.coordinator.device:
-            return "Off"
+            return "0°"
 
         product_state = self.coordinator.data.get("product-state", {})
         oton = self.coordinator.device.get_state_value(product_state, "oton", "OFF")
@@ -1397,7 +1397,7 @@ class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
             return "25°"
         if otal == "0050":
             return "50°"
-        return "Off"
+        return "0°"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
