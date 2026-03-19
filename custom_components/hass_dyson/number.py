@@ -340,6 +340,15 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
+    # Canonical spans for named presets — device does not update osal/osau for
+    # these, so we derive lower/upper from ancp + the last-known midpoint.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation lower angle number."""
         super().__init__(coordinator)
@@ -356,16 +365,35 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Get lower oscillation angle from device state (osal)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
-            )
-            try:
-                # Convert angle data to number (e.g., "0090" -> 90)
-                self._attr_native_value = int(angle_data.lstrip("0") or "0")
-            except (ValueError, TypeError):
-                self._attr_native_value = 0
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                # Device won't update osal/osau for preset commands.  Derive a
+                # representative lower angle from the canonical span centred on
+                # the midpoint of the (stale) osal/osau.
+                try:
+                    lower_raw = self.coordinator.device.get_state_value(
+                        product_state, "osal", "0000"
+                    )
+                    upper_raw = self.coordinator.device.get_state_value(
+                        product_state, "osau", "0350"
+                    )
+                    midpoint = (
+                        int(lower_raw.lstrip("0") or "0")
+                        + int(upper_raw.lstrip("0") or "350")
+                    ) // 2
+                    span = self._ANCP_SPAN_MAP[ancp]
+                    self._attr_native_value = max(0, midpoint - span // 2)
+                except (ValueError, TypeError):
+                    self._attr_native_value = 0
+            else:
+                angle_data = self.coordinator.device.get_state_value(
+                    product_state, "osal", "0000"
+                )
+                try:
+                    self._attr_native_value = int(angle_data.lstrip("0") or "0")
+                except (ValueError, TypeError):
+                    self._attr_native_value = 0
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()
@@ -429,6 +457,15 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
+    # Canonical spans for named presets — device does not update osal/osau for
+    # these, so we derive lower/upper from ancp + the last-known midpoint.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation upper angle number."""
         super().__init__(coordinator)
@@ -445,16 +482,35 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Get upper oscillation angle from device state (osau)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            try:
-                # Convert angle data to number (e.g., "0350" -> 350)
-                self._attr_native_value = int(angle_data.lstrip("0") or "350")
-            except (ValueError, TypeError):
-                self._attr_native_value = 350
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                # Device won't update osal/osau for preset commands.  Derive a
+                # representative upper angle from the canonical span centred on
+                # the midpoint of the (stale) osal/osau.
+                try:
+                    lower_raw = self.coordinator.device.get_state_value(
+                        product_state, "osal", "0000"
+                    )
+                    upper_raw = self.coordinator.device.get_state_value(
+                        product_state, "osau", "0350"
+                    )
+                    midpoint = (
+                        int(lower_raw.lstrip("0") or "0")
+                        + int(upper_raw.lstrip("0") or "350")
+                    ) // 2
+                    span = self._ANCP_SPAN_MAP[ancp]
+                    self._attr_native_value = min(350, midpoint + span // 2)
+                except (ValueError, TypeError):
+                    self._attr_native_value = 350
+            else:
+                angle_data = self.coordinator.device.get_state_value(
+                    product_state, "osau", "0350"
+                )
+                try:
+                    self._attr_native_value = int(angle_data.lstrip("0") or "350")
+                except (ValueError, TypeError):
+                    self._attr_native_value = 350
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()
@@ -518,6 +574,16 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
+    # Map ancp preset codes to canonical spans (same as DysonOscillationAngleSpanNumber).
+    # Used in async_set_native_value so that moving the center while in a named
+    # preset mode preserves the correct span rather than reading stale osal/osau.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation center angle number."""
         super().__init__(coordinator)
@@ -559,17 +625,27 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
             return
 
         try:
-            # Get current span (upper - lower)
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
-            )
-            upper_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            lower_angle = int(lower_data.lstrip("0") or "0")
-            upper_angle = int(upper_data.lstrip("0") or "350")
-            current_span = upper_angle - lower_angle
+
+            # Determine the current span.  When the device is in a named preset
+            # mode it does NOT update osal/osau in STATE-CHANGE confirmations,
+            # so those values can be stale and must not be used as the span
+            # source.  Trust ancp for named presets; fall back to osal/osau only
+            # for ancp=CUST / unknown (custom angles where the device does update
+            # osal/osau).
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                current_span = self._ANCP_SPAN_MAP[ancp]
+            else:
+                lower_data = self.coordinator.device.get_state_value(
+                    product_state, "osal", "0000"
+                )
+                upper_data = self.coordinator.device.get_state_value(
+                    product_state, "osau", "0350"
+                )
+                lower_angle = int(lower_data.lstrip("0") or "0")
+                upper_angle = int(upper_data.lstrip("0") or "350")
+                current_span = upper_angle - lower_angle
 
             # Calculate new lower and upper angles centered on the target
             center_angle = int(value)

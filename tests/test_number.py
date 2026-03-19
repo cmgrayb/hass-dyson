@@ -203,14 +203,38 @@ class TestDysonOscillationLowerAngleNumber:
         assert entity._attr_native_unit_of_measurement == "°"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
-        """Test handling coordinator update with device."""
+        """Test handling coordinator update with device (custom mode reads osal directly)."""
         entity = DysonOscillationLowerAngleNumber(mock_coordinator)
-        mock_coordinator.device.get_state_value.return_value = "0045"
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "ancp": "CUST",
+                "osal": "0045",
+                "osau": "0315",
+            }.get(key, default)
+        )
 
         with patch.object(entity, "async_write_ha_state"):
             entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 45
+
+    def test_handle_coordinator_update_preset_derives_lower(self, mock_coordinator):
+        """Test that a named preset derives lower from canonical span + midpoint."""
+        entity = DysonOscillationLowerAngleNumber(mock_coordinator)
+        # ancp=0090 → 90° preset; stale osal/osau give midpoint 175°
+        # Expected lower = 175 - 90//2 = 175 - 45 = 130
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "ancp": "0090",
+                "osal": "0130",
+                "osau": "0220",  # midpoint = (130+220)//2 = 175
+            }.get(key, default)
+        )
+
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+
+        assert entity._attr_native_value == 130  # 175 - 45
 
     @pytest.mark.asyncio
     async def test_async_set_native_value_success(self, mock_coordinator):
@@ -270,6 +294,52 @@ class TestDysonOscillationCenterAngleNumber:
             entity._handle_coordinator_update()
 
         assert entity._attr_native_value == 180  # (45 + 315) // 2
+
+    @pytest.mark.asyncio
+    async def test_set_native_value_uses_ancp_span_for_named_preset(
+        self, mock_coordinator
+    ):
+        """Regression: moving center while in preset mode must preserve the preset span.
+
+        Device doesn't update osal/osau for ancp-only preset commands.  Those
+        stale values must NOT be used to compute the current span — the
+        canonical span from ancp must be used instead.
+        """
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                # ancp says 90° — the device is in 90° preset mode.
+                # osal/osau are stale from a previous custom-angle session
+                # (span ~164°) and must be ignored for span calculation.
+                "ancp": "0090",
+                "osal": "0003",
+                "osau": "0167",
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationCenterAngleNumber(mock_coordinator)
+        await entity.async_set_native_value(200)
+
+        # New angles must be centred on 200° with a 90° span (45° each side).
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(155, 245)
+
+    @pytest.mark.asyncio
+    async def test_set_native_value_custom_mode_reads_osal_osau(self, mock_coordinator):
+        """In custom mode (ancp=CUST), span must still come from osal/osau."""
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda state, key, default: {
+                "ancp": "CUST",
+                "osal": "0045",
+                "osau": "0315",  # span = 270°
+            }.get(key, default)
+        )
+
+        entity = DysonOscillationCenterAngleNumber(mock_coordinator)
+        await entity.async_set_native_value(100)
+
+        # New angles must be centred on 100° with a 270° span.
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(0, 270)
 
 
 class TestDysonOscillationAngleSpanNumber:
