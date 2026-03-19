@@ -15,7 +15,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 
 from custom_components.hass_dyson.device import DysonDevice
 
@@ -216,6 +216,96 @@ class TestHeartbeatAndStartup:
             device._request_environmental_data.call_count >= 1
             or device._request_current_state.call_count >= 1
         )
+
+    @pytest.mark.asyncio
+    async def test_ha_stop_event_cancels_heartbeat(self):
+        """Test that EVENT_HOMEASSISTANT_STOP cancels the heartbeat task cleanly.
+
+        Regression test for issue #308: without a stop-event listener the
+        heartbeat task outlived HA's 'final writes' shutdown stage, causing the
+        'Task still running after final writes shutdown stage' warning.
+        """
+        loop = asyncio.get_running_loop()
+        registered_listeners: list = []
+
+        hass = MagicMock()
+        hass.is_running = True
+        hass.loop = loop
+        hass.async_create_task = lambda coro: loop.create_task(coro)
+
+        def fake_listen_once(event, callback):
+            registered_listeners.append((event, callback))
+            return MagicMock()
+
+        hass.bus.async_listen_once = MagicMock(side_effect=fake_listen_once)
+
+        device = DysonDevice(
+            hass=hass,
+            serial_number="TEST-123",
+            host="192.168.1.100",
+            credential="test",
+            mqtt_prefix="475",
+        )
+        device._connected = True
+        device._request_current_state = AsyncMock()
+        device._request_current_faults = AsyncMock()
+        device._last_heartbeat = time.time()
+        device._heartbeat_interval = 10.0  # Long interval — sits in sleep
+
+        await device._start_heartbeat_now()
+
+        # Verify a stop listener was registered
+        stop_listeners = [
+            cb for ev, cb in registered_listeners if ev == EVENT_HOMEASSISTANT_STOP
+        ]
+        assert len(stop_listeners) == 1, "Expected exactly one STOP listener"
+
+        # The task should be running
+        assert device._heartbeat_task is not None
+        assert not device._heartbeat_task.done()
+
+        # Simulate HA firing the stop event
+        stop_listeners[0](None)
+
+        # Give the cancellation a moment to process
+        await asyncio.sleep(0.01)
+
+        assert device._heartbeat_task.done()
+        assert device._heartbeat_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_stop_heartbeat_unsubscribes_ha_stop_listener(self):
+        """Test that _stop_heartbeat unsubscribes the HA stop listener to avoid leaks."""
+        loop = asyncio.get_running_loop()
+        unsub_mock = MagicMock()
+
+        hass = MagicMock()
+        hass.is_running = True
+        hass.loop = loop
+        hass.async_create_task = lambda coro: loop.create_task(coro)
+        hass.bus.async_listen_once = MagicMock(return_value=unsub_mock)
+
+        device = DysonDevice(
+            hass=hass,
+            serial_number="TEST-123",
+            host="192.168.1.100",
+            credential="test",
+            mqtt_prefix="475",
+        )
+        device._connected = True
+        device._request_current_state = AsyncMock()
+        device._request_current_faults = AsyncMock()
+        device._last_heartbeat = time.time()
+        device._heartbeat_interval = 10.0
+
+        await device._start_heartbeat_now()
+        assert device._ha_stop_unsub is not None
+
+        await device._stop_heartbeat()
+
+        # Unsubscribe callable must have been called and reference cleared
+        unsub_mock.assert_called_once()
+        assert device._ha_stop_unsub is None
 
     @pytest.mark.asyncio
     async def test_heartbeat_loop_cancellation_propagates(self, mock_hass_running):
