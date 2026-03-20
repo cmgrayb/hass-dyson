@@ -2591,13 +2591,16 @@ class DysonDevice:
         return "CUST"
 
     async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
-        """Set oscillation to a specific angle range.
+        """Reposition the fan to a specific angle range without changing oscillation state.
 
         Always sends ``ancp=CUST`` alongside the explicit ``osal``/``osau``
-        values.  Named preset codes must only be sent via
-        :meth:`set_oscillation_preset` — when the device receives a named
-        preset code it ignores ``osal``/``osau`` entirely and repositions to
-        its own firmware-defined position for that preset.
+        values so the device respects the explicit angles.  Named preset codes
+        must only be sent via :meth:`set_oscillation_preset` — when the device
+        receives a named preset code it ignores ``osal``/``osau`` entirely and
+        repositions to its own firmware-defined position for that preset.
+
+        ``oson`` is intentionally omitted so that calling this method while
+        oscillation is off does not inadvertently re-enable it.
         """
 
         # Ensure angles are within valid range (0-350 degrees)
@@ -2619,8 +2622,7 @@ class DysonDevice:
             {
                 "osal": lower_str,  # Oscillation angle lower
                 "osau": upper_str,  # Oscillation angle upper
-                "oson": "ON",  # Enable oscillation
-                "ancp": ancp,  # Angle Current Preset (or "CUST")
+                "ancp": ancp,  # Angle Current Preset (always "CUST")
             },
         )
 
@@ -2746,7 +2748,6 @@ class DysonDevice:
         command_data = {
             "osal": lower_str,  # Oscillation angle lower (fixed 157°)
             "osau": upper_str,  # Oscillation angle upper (fixed 197°)
-            "oson": "ON",  # Enable oscillation
         }
 
         # Add ancp parameter if provided (preset pattern control)
