@@ -433,7 +433,7 @@ class TestOscillationAngles:
         call_args = mock_device_basic.send_command.call_args[0]
         assert call_args[0] == "STATE-SET"
         assert call_args[1].get("ancp") == "BRZE"
-        assert call_args[1].get("oson") == "ON"
+        assert call_args[1].get("oson") == "ON"  # Breeze always enables oscillation
         assert "osal" not in call_args[1]
         assert "osau" not in call_args[1]
 

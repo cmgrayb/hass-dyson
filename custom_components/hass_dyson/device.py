@@ -2607,9 +2607,9 @@ class DysonDevice:
         lower_angle = max(0, min(350, lower_angle))
         upper_angle = max(0, min(350, upper_angle))
 
-        # Ensure lower angle is less than upper angle
-        if lower_angle >= upper_angle:
-            raise ValueError("Lower angle must be less than upper angle")
+        # lower must not exceed upper (equal = 0-span point-aim, which is valid)
+        if lower_angle > upper_angle:
+            raise ValueError("Lower angle must not exceed upper angle")
 
         # Convert angles to 4-digit string format
         lower_str = f"{lower_angle:04d}"
@@ -2623,18 +2623,31 @@ class DysonDevice:
                 "osal": lower_str,  # Oscillation angle lower
                 "osau": upper_str,  # Oscillation angle upper
                 "ancp": ancp,  # Angle Current Preset (always "CUST")
+                "oson": "ON",  # Oscillation on — device turns it off naturally for span=0
             },
         )
 
-    async def set_oscillation_preset(self, preset_angle: int) -> None:
+    async def set_oscillation_preset(
+        self,
+        preset_angle: int,
+        lower: int | None = None,
+        upper: int | None = None,
+    ) -> None:
         """Set oscillation to a named preset angle.
 
         Uses ``ancp`` (Angle Current Preset) to select the pre-defined
-        oscillation angle.  The device firmware handles the actual angle
-        positioning internally; no ``osal``/``osau`` values are sent.
+        oscillation angle.  ``oson=ON`` is always included so that selecting
+        a preset activates oscillation, matching the Dyson app.
+
+        When *lower* and *upper* are provided the command includes explicit
+        ``osal``/``osau`` values.  This is required when the device is in
+        point-aim mode (span = 0) because the device will not turn oscillation
+        on without a valid sweep range.
 
         Args:
             preset_angle: One of 45, 90, 180, or 350 degrees.
+            lower: Optional lower oscillation angle in degrees (0-350).
+            upper: Optional upper oscillation angle in degrees (0-350).
 
         Raises:
             ValueError: If *preset_angle* is not one of the supported values.
@@ -2645,13 +2658,14 @@ class DysonDevice:
             )
 
         ancp_str = f"{preset_angle:04d}"
-        await self.send_command(
-            "STATE-SET",
-            {
-                "oson": "ON",  # Enable oscillation
-                "ancp": ancp_str,  # Angle Current Preset (e.g. "0045")
-            },
-        )
+        command: dict[str, str] = {
+            "ancp": ancp_str,  # Angle Current Preset (e.g. "0045")
+            "oson": "ON",  # Selecting a preset always enables oscillation
+        }
+        if lower is not None and upper is not None:
+            command["osal"] = f"{lower:04d}"  # Oscillation angle lower
+            command["osau"] = f"{upper:04d}"  # Oscillation angle upper
+        await self.send_command("STATE-SET", command)
 
         _LOGGER.debug(
             "Set oscillation preset to %s° (ancp=%s) for %s",
@@ -2667,12 +2681,14 @@ class DysonDevice:
         pattern.  The device selects its own angle excursions; no osal/osau
         values are required.  Only available on devices that have both
         AdvanceOscillationDay1 and Humidifier capabilities.
+
+        Selecting Breeze always enables oscillation, matching the Dyson app.
         """
         await self.send_command(
             "STATE-SET",
             {
                 "ancp": "BRZE",  # Breeze oscillation preset
-                "oson": "ON",  # Enable oscillation
+                "oson": "ON",  # Selecting Breeze always enables oscillation
             },
         )
 

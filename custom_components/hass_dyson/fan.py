@@ -824,9 +824,41 @@ class DysonFan(DysonEntity, FanEntity):
                 if self._saved_oscillation_mode_for_restore == "Breeze":
                     self._saved_oscillation_mode_for_restore = None
                     self._breeze_transition_pending = True
+                    # Fan entity is the oson control: send oson=ON first,
+                    # then send ancp=BRZE to restore the Breeze mode.
+                    await self.coordinator.device.set_oscillation(oscillating)
                     await self.coordinator.device.set_oscillation_breeze()
                 else:
                     self._saved_oscillation_mode_for_restore = None
+                    # When the span is 0 (equal lower/upper = point-aim mode) the
+                    # device rejects oson=ON because there is no sweep range.
+                    # Expand to the minimum step (5°) centered on the pointing
+                    # angle before turning oscillation on so the device accepts it.
+                    product_state = self.coordinator.data.get("product-state", {})
+                    osal = self.coordinator.device.get_state_value(
+                        product_state, "osal", "0000"
+                    )
+                    osau = self.coordinator.device.get_state_value(
+                        product_state, "osau", "0350"
+                    )
+                    try:
+                        lower = int(osal.lstrip("0") or "0")
+                        upper = int(osau.lstrip("0") or "350")
+                        if lower == upper:  # span=0
+                            center = lower
+                            new_lower = max(0, center - 1)
+                            new_upper = min(350, new_lower + 2)
+                            _LOGGER.debug(
+                                "Expanding zero-span angles to %s–%s before enabling oscillation for %s",
+                                new_lower,
+                                new_upper,
+                                self.coordinator.serial_number,
+                            )
+                            await self.coordinator.device.set_oscillation_angles(
+                                new_lower, new_upper
+                            )
+                    except (ValueError, TypeError):
+                        pass
                     await self.coordinator.device.set_oscillation(oscillating)
 
             # Update state immediately for responsive UI

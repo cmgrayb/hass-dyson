@@ -199,7 +199,7 @@ class TestDysonOscillationLowerAngleNumber:
         assert entity._attr_mode == NumberMode.SLIDER
         assert entity._attr_native_min_value == 0
         assert entity._attr_native_max_value == 350
-        assert entity._attr_native_step == 5
+        assert entity._attr_native_step == 1
         assert entity._attr_native_unit_of_measurement == "°"
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
@@ -249,6 +249,19 @@ class TestDysonOscillationLowerAngleNumber:
         mock_coordinator.device.set_oscillation_angles.assert_called_once_with(90, 315)
         mock_logger.debug.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_equal_to_upper_allows_zero_span(
+        self, mock_coordinator
+    ):
+        """Test that setting lower equal to upper (span=0 / point-aim) is accepted."""
+        entity = DysonOscillationLowerAngleNumber(mock_coordinator)
+        mock_coordinator.data = {"product-state": {"osau": "0175"}}
+
+        await entity.async_set_native_value(175.0)
+
+        # lower == upper is now valid (point-aim mode)
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(175, 175)
+
 
 class TestDysonOscillationUpperAngleNumber:
     """Test DysonOscillationUpperAngleNumber entity."""
@@ -271,6 +284,19 @@ class TestDysonOscillationUpperAngleNumber:
         await entity.async_set_native_value(270.0)
 
         mock_coordinator.device.set_oscillation_angles.assert_called_once_with(45, 270)
+
+    @pytest.mark.asyncio
+    async def test_async_set_native_value_equal_to_lower_allows_zero_span(
+        self, mock_coordinator
+    ):
+        """Test that setting upper equal to lower (span=0 / point-aim) is accepted."""
+        entity = DysonOscillationUpperAngleNumber(mock_coordinator)
+        mock_coordinator.data = {"product-state": {"osal": "0175"}}
+
+        await entity.async_set_native_value(175.0)
+
+        # upper == lower is now valid (point-aim mode)
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(175, 175)
 
 
 class TestDysonOscillationCenterAngleNumber:

@@ -41,7 +41,7 @@ class TestDysonOscillationDay0LowerAngle:
         assert entity._attr_icon == "mdi:rotate-left"
         assert entity._attr_native_min_value == 142
         assert entity._attr_native_max_value == 212
-        assert entity._attr_native_step == 5
+        assert entity._attr_native_step == 1
         assert entity._attr_native_unit_of_measurement == "°"
 
     def test_handle_coordinator_update_valid_data(self, mock_day0_coordinator):
@@ -230,7 +230,7 @@ class TestDysonOscillationDay0UpperAngle:
         assert entity._attr_icon == "mdi:rotate-right"
         assert entity._attr_native_min_value == 142
         assert entity._attr_native_max_value == 212
-        assert entity._attr_native_step == 5
+        assert entity._attr_native_step == 1
         assert entity._attr_native_unit_of_measurement == "°"
 
     def test_handle_coordinator_update_valid_data(self, mock_day0_coordinator):
@@ -379,7 +379,7 @@ class TestDysonOscillationDay0AngleSpan:
         assert entity._attr_icon == "mdi:angle-acute"
         assert entity._attr_native_min_value == 10
         assert entity._attr_native_max_value == 70
-        assert entity._attr_native_step == 5
+        assert entity._attr_native_step == 1
         assert entity._attr_native_unit_of_measurement == "°"
 
     def test_handle_coordinator_update_calculates_span(self, mock_day0_coordinator):
