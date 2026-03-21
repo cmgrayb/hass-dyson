@@ -89,8 +89,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if has_heating:
             hvac_modes.append(HVACMode.HEAT)
 
-        if has_humidifier:
-            hvac_modes.append(HVACMode.DRY)  # Use DRY mode for humidification
+        # Note: humidification is controlled via the separate humidifier entity.
+        # DRY mode is intentionally excluded — it means dehumidification in HA,
+        # which is the opposite of what this device does.
 
         self._attr_hvac_modes = hvac_modes
 
@@ -250,7 +251,10 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         elif heating_mode == "HEAT":
             self._attr_hvac_mode = HVACMode.HEAT
         elif humidity_enabled == "HUMD" or humidity_auto == "ON":
-            self._attr_hvac_mode = HVACMode.DRY  # Use DRY mode for humidification
+            # Humidification is active: the fan is running for air circulation.
+            # Report FAN_ONLY — DRY would mean dehumidification, which is the opposite.
+            # Humidification state is accurately represented by the humidifier entity.
+            self._attr_hvac_mode = HVACMode.FAN_ONLY
         elif fan_power == "ON":
             # Fan is on - determine the specific mode based on heating state
             if heating_mode == "OFF":
@@ -305,11 +309,10 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             self._attr_hvac_action = HVACAction.OFF
         elif heating_status == "HEAT":
             self._attr_hvac_action = HVACAction.HEATING
-        elif hvac_mode == HVACMode.DRY and (
-            humidity_enabled == "HUMD" or humidity_auto == "ON"
-        ):
-            # Device is in humidification mode - use drying action as closest match
-            self._attr_hvac_action = HVACAction.DRYING
+        elif fan_power == "ON" and (humidity_enabled == "HUMD" or humidity_auto == "ON"):
+            # Humidification is active: the fan is running. Report FAN, not DRYING.
+            # DRYING means dehumidification in HA — the opposite of what is happening.
+            self._attr_hvac_action = HVACAction.FAN
         elif hvac_mode == HVACMode.FAN_ONLY and fan_power == "ON":
             # Device is in fan-only mode with fan running
             self._attr_hvac_action = HVACAction.FAN
@@ -387,34 +390,6 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                         )
                         # Fallback to direct device control if humidifier entity not available
                         await self.coordinator.device.set_humidifier_mode(False)
-
-            elif hvac_mode == HVACMode.DRY and "Humidifier" in device_capabilities:
-                # Enable humidification mode through humidifier entity (compatibility layer)
-                await self.coordinator.device.set_fan_power(True)
-                if "Heating" in device_capabilities:
-                    await self.coordinator.device.set_heating_mode("OFF")
-
-                # Control humidifier entity through Home Assistant service
-                humidifier_entity_id = f"humidifier.{self.coordinator.serial_number.lower().replace('-', '_')}_humidifier"
-                try:
-                    await self.hass.services.async_call(
-                        "humidifier",
-                        "turn_on",
-                        {"entity_id": humidifier_entity_id},
-                        blocking=True,
-                    )
-                    _LOGGER.debug(
-                        "Turned on humidifier entity %s via climate control",
-                        humidifier_entity_id,
-                    )
-                except Exception as err:
-                    _LOGGER.warning(
-                        "Could not control humidifier entity %s, falling back to direct device control: %s",
-                        humidifier_entity_id,
-                        err,
-                    )
-                    # Fallback to direct device control if humidifier entity not available
-                    await self.coordinator.device.set_humidifier_mode(True)
 
             else:
                 supported_modes = [mode.value for mode in self._attr_hvac_modes]
@@ -568,8 +543,6 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         if "Heating" in device_capabilities:
             await self.async_set_hvac_mode(HVACMode.HEAT)
-        elif "Humidifier" in device_capabilities:
-            await self.async_set_hvac_mode(HVACMode.DRY)
         else:
             _LOGGER.warning(
                 "No supported climate modes available for %s",
