@@ -182,7 +182,7 @@ class TestDysonTiltOscillationModeSelectInit:
 
     def test_options(self, tilt_coordinator):
         entity = DysonTiltOscillationModeSelect(tilt_coordinator)
-        assert entity._attr_options == ["Off", "25°", "50°", "Breeze"]
+        assert entity._attr_options == ["0°", "25°", "50°", "Breeze"]
 
     def test_icon(self, tilt_coordinator):
         entity = DysonTiltOscillationModeSelect(tilt_coordinator)
@@ -200,10 +200,10 @@ class TestDetectTiltMode:
     def _make_entity(self, coordinator) -> DysonTiltOscillationModeSelect:
         return DysonTiltOscillationModeSelect(coordinator)
 
-    def test_off_when_oton_off_and_otal_zero(self, tilt_coordinator):
+    def test_zero_degrees_when_oton_off_and_otal_zero(self, tilt_coordinator):
         tilt_coordinator.data = {"product-state": {"oton": "OFF", "otal": "0000"}}
         entity = self._make_entity(tilt_coordinator)
-        assert entity._detect_tilt_mode() == "Off"
+        assert entity._detect_tilt_mode() == "0°"
 
     def test_25_degrees(self, tilt_coordinator):
         tilt_coordinator.data = {"product-state": {"oton": "OFF", "otal": "0025"}}
@@ -226,15 +226,15 @@ class TestDetectTiltMode:
         entity = self._make_entity(tilt_coordinator)
         assert entity._detect_tilt_mode() == "Breeze"
 
-    def test_unknown_otal_returns_off(self, tilt_coordinator):
+    def test_unknown_otal_returns_zero_degrees(self, tilt_coordinator):
         tilt_coordinator.data = {"product-state": {"oton": "OFF", "otal": "0099"}}
         entity = self._make_entity(tilt_coordinator)
-        assert entity._detect_tilt_mode() == "Off"
+        assert entity._detect_tilt_mode() == "0°"
 
-    def test_no_device_returns_off(self, tilt_coordinator):
+    def test_no_device_returns_zero_degrees(self, tilt_coordinator):
         tilt_coordinator.device = None
         entity = self._make_entity(tilt_coordinator)
-        assert entity._detect_tilt_mode() == "Off"
+        assert entity._detect_tilt_mode() == "0°"
 
 
 # ---------------------------------------------------------------------------
@@ -288,15 +288,15 @@ class TestAsyncSelectOption:
     """Test that the correct device command is sent for each option."""
 
     @pytest.mark.asyncio
-    async def test_select_off(self, tilt_coordinator):
+    async def test_select_zero_degrees(self, tilt_coordinator):
         tilt_coordinator.device.set_tilt_oscillation = AsyncMock()
         entity = DysonTiltOscillationModeSelect(tilt_coordinator)
         entity.async_write_ha_state = MagicMock()
 
-        await entity.async_select_option("Off")
+        await entity.async_select_option("0°")
 
-        tilt_coordinator.device.set_tilt_oscillation.assert_awaited_once_with("Off")
-        assert entity._attr_current_option == "Off"
+        tilt_coordinator.device.set_tilt_oscillation.assert_awaited_once_with("0°")
+        assert entity._attr_current_option == "0°"
 
     @pytest.mark.asyncio
     async def test_select_25_degrees(self, tilt_coordinator):
@@ -336,7 +336,7 @@ class TestAsyncSelectOption:
         tilt_coordinator.device = None
         entity = DysonTiltOscillationModeSelect(tilt_coordinator)
         # Should return without error
-        await entity.async_select_option("Off")
+        await entity.async_select_option("0°")
 
     @pytest.mark.asyncio
     async def test_connection_error_logged(self, tilt_coordinator):
@@ -383,7 +383,7 @@ class TestDeviceSetTiltOscillation:
             return device
 
     @pytest.mark.asyncio
-    async def test_off_payload(self):
+    async def test_zero_degrees_payload(self):
         from unittest.mock import AsyncMock
 
         from custom_components.hass_dyson.device import DysonDevice
@@ -393,8 +393,10 @@ class TestDeviceSetTiltOscillation:
         device.serial_number = "664-EU-ABC1234A"
 
         # Call the actual method by binding it
-        await DysonDevice.set_tilt_oscillation(device, "Off")
-        device.send_command.assert_awaited_once_with("STATE-SET", {"oton": "OFF"})
+        await DysonDevice.set_tilt_oscillation(device, "0°")
+        device.send_command.assert_awaited_once_with(
+            "STATE-SET", {"anct": "CUST", "otal": "0000", "otau": "0000"}
+        )
 
     @pytest.mark.asyncio
     async def test_25_degrees_payload(self):

@@ -433,18 +433,23 @@ class TestOscillationAngles:
         call_args = mock_device_basic.send_command.call_args[0]
         assert call_args[0] == "STATE-SET"
         assert call_args[1].get("ancp") == "BRZE"
-        assert call_args[1].get("oson") == "ON"
+        assert call_args[1].get("oson") == "ON"  # Breeze always enables oscillation
         assert "osal" not in call_args[1]
         assert "osau" not in call_args[1]
 
     def test_resolve_ancp_from_span(self, mock_device_basic):
-        """Test _resolve_ancp_from_span returns the correct preset code."""
-        assert mock_device_basic._resolve_ancp_from_span(0, 350) == "0350"
-        assert mock_device_basic._resolve_ancp_from_span(88, 268) == "0180"  # span=180
-        assert mock_device_basic._resolve_ancp_from_span(130, 220) == "0090"  # span=90
-        assert mock_device_basic._resolve_ancp_from_span(157, 202) == "0045"  # span=45
-        assert mock_device_basic._resolve_ancp_from_span(100, 200) == "CUST"  # span=100
-        assert mock_device_basic._resolve_ancp_from_span(0, 37) == "CUST"  # span=37
+        """Test _resolve_ancp_from_span always returns CUST.
+
+        Named preset codes must only be sent via set_oscillation_preset().
+        When the device receives a named preset code alongside osal/osau it
+        ignores the explicit angles and repositions to its own firmware default.
+        """
+        assert mock_device_basic._resolve_ancp_from_span(0, 350) == "CUST"
+        assert mock_device_basic._resolve_ancp_from_span(88, 268) == "CUST"
+        assert mock_device_basic._resolve_ancp_from_span(130, 220) == "CUST"
+        assert mock_device_basic._resolve_ancp_from_span(157, 202) == "CUST"
+        assert mock_device_basic._resolve_ancp_from_span(100, 200) == "CUST"
+        assert mock_device_basic._resolve_ancp_from_span(0, 37) == "CUST"
 
 
 class TestEnvironmentalSensors:

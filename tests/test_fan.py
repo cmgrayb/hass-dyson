@@ -1097,7 +1097,8 @@ class TestFanCoverageEnhancement:
             await fan.async_oscillate(True)
 
         mock_coordinator.device.set_oscillation_breeze.assert_called_once()
-        mock_coordinator.device.set_oscillation.assert_not_called()
+        # set_oscillation(True) is called first (fan entity is the oson control)
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
         assert fan._attr_oscillating is True
         # Saved mode cleared after use
         assert fan._saved_oscillation_mode_for_restore is None
@@ -1162,6 +1163,67 @@ class TestFanCoverageEnhancement:
 
         mock_coordinator.device.set_oscillation.assert_called_once_with(True)
         mock_coordinator.device.set_oscillation_breeze.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_expands_zero_span(self, mock_coordinator):
+        """Test that turning on oscillation when span=0 first expands to minimum span.
+
+        When osal==osau (point-aim mode) the device rejects oson=ON because
+        there is no sweep range.  The fan entity must expand the span to at
+        least 10° (centred on the pointing angle) before enabling oscillation.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",
+                "osal": "0175",
+                "osau": "0175",  # span=0  — point-aim at 175°
+            }
+        }
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        def mock_get(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mock_get
+        fan = DysonFan(mock_coordinator)
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        # Must expand span before enabling oscillation
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(174, 176)
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_zero_span_near_boundary(
+        self, mock_coordinator
+    ):
+        """Test span expansion is clamped to 0–350 when pointing angle is near 0."""
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",
+                "osal": "0003",
+                "osau": "0003",  # near lower boundary
+            }
+        }
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        def mock_get(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mock_get
+        fan = DysonFan(mock_coordinator)
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        # new_lower = max(0, 3-1) = 2; new_upper = min(350, 2+2) = 4
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(2, 4)
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_async_oscillate_without_support_logs_warning(self, mock_coordinator):
