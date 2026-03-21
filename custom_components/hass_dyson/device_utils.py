@@ -6,7 +6,9 @@ from typing import Any
 from homeassistant.const import CONF_USERNAME
 
 from .const import (
+    CONF_COUNTRY,
     CONF_CREDENTIAL,
+    CONF_CULTURE,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
@@ -429,6 +431,8 @@ def create_device_config_data(
     product_type: str | None = None,
     category: str | None = None,
     parent_entry_id: str | None = None,
+    country: str | None = None,
+    culture: str | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Create standardized device configuration data.
@@ -451,6 +455,8 @@ def create_device_config_data(
         product_type: Product type from cloud
         category: Raw category from cloud (for compatibility)
         parent_entry_id: Link to parent account entry
+        country: ISO 3166-1 alpha-2 country code (e.g. "CN", "US") for API routing
+        culture: IETF language tag (e.g. "zh-CN") for API routing
         **kwargs: Additional fields to include
 
     Returns:
@@ -476,6 +482,8 @@ def create_device_config_data(
             "product_type": product_type,
             "category": category,
             "parent_entry_id": parent_entry_id,
+            CONF_COUNTRY: country,
+            CONF_CULTURE: culture,
         },
     )
 
@@ -542,6 +550,8 @@ def create_cloud_device_config(
     parent_entry_id: str | None = None,
     connection_type: str | None = None,
     hostname: str | None = None,
+    country: str | None = None,
+    culture: str | None = None,
 ) -> dict[str, Any]:
     """Create config data for cloud-discovered device.
 
@@ -553,6 +563,9 @@ def create_cloud_device_config(
         parent_entry_id: Parent account entry ID
         connection_type: Connection preference (optional)
         hostname: Static IP/hostname for local connection (optional)
+        country: ISO 3166-1 alpha-2 country code from the parent account entry.
+            Required for correct API endpoint routing (e.g. CN uses appapi.cp.dyson.cn).
+        culture: IETF language tag from the parent account entry (e.g. "zh-CN").
 
     Returns:
         Dictionary of config entry data for cloud device
@@ -596,4 +609,6 @@ def create_cloud_device_config(
         parent_entry_id=parent_entry_id,
         connection_type=connection_type,
         hostname=hostname,
+        country=country,
+        culture=culture,
     )
