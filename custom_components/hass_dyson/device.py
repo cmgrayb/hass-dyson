@@ -2569,51 +2569,47 @@ class DysonDevice:
         await self.send_command("STATE-SET", {"sltm": timer_value})
 
     @staticmethod
+    @staticmethod
     def _resolve_ancp_from_span(lower_angle: int, upper_angle: int) -> str:
-        """Derive the Angle Current Preset (ancp) code from an angle span.
+        """Return the Angle Current Preset (ancp) code for a custom angle range.
 
-        Spans that match a named preset within a small tolerance (±5°) are
-        mapped to the corresponding device code; all others are labelled
-        ``"CUST"``.
+        Always returns ``"CUST"`` so the device respects the explicit
+        ``osal``/``osau`` values rather than snapping to its own preset
+        position.  Named preset codes (``"0045"`` etc.) must only be sent via
+        :meth:`set_oscillation_preset` — sending them alongside ``osal``/
+        ``osau`` causes the device firmware to ignore those values entirely.
 
         Args:
-            lower_angle: Lower oscillation angle in degrees.
-            upper_angle: Upper oscillation angle in degrees.
+            lower_angle: Lower oscillation angle in degrees (unused, kept for
+                API compatibility).
+            upper_angle: Upper oscillation angle in degrees (unused, kept for
+                API compatibility).
 
         Returns:
-            One of ``"0045"``, ``"0090"``, ``"0180"``, ``"0350"``, or ``"CUST"``.
+            Always ``"CUST"``.
         """
-        span = upper_angle - lower_angle
-        if 340 <= span <= 350:
-            return "0350"
-        if abs(span - 180) <= 5:
-            return "0180"
-        if abs(span - 90) <= 5:
-            return "0090"
-        if abs(span - 45) <= 5:
-            return "0045"
-        return "CUST"  # Non-preset custom span
+        return "CUST"
 
     async def set_oscillation_angles(self, lower_angle: int, upper_angle: int) -> None:
-        """Set oscillation to a specific angle range.
+        """Reposition the fan to a specific angle range without changing oscillation state.
 
-        Automatically derives the ``ancp`` (Angle Current Preset) value from
-        the span so both the device firmware and the MyDyson app display the
-        correct preset label.  Spans that match a named preset within a small
-        tolerance are given the corresponding preset code ("0045", "0090",
-        "0180", "0350"); all others are labelled "CUST".
+        Always sends ``ancp=CUST`` alongside the explicit ``osal``/``osau``
+        values so the device respects the explicit angles.  Named preset codes
+        must only be sent via :meth:`set_oscillation_preset` — when the device
+        receives a named preset code it ignores ``osal``/``osau`` entirely and
+        repositions to its own firmware-defined position for that preset.
 
-        Sending explicit ``osal``/``osau`` values keeps the number entities in
-        Home Assistant in sync, regardless of whether a named preset is active.
+        ``oson`` is intentionally omitted so that calling this method while
+        oscillation is off does not inadvertently re-enable it.
         """
 
         # Ensure angles are within valid range (0-350 degrees)
         lower_angle = max(0, min(350, lower_angle))
         upper_angle = max(0, min(350, upper_angle))
 
-        # Ensure lower angle is less than upper angle
-        if lower_angle >= upper_angle:
-            raise ValueError("Lower angle must be less than upper angle")
+        # lower must not exceed upper (equal = 0-span point-aim, which is valid)
+        if lower_angle > upper_angle:
+            raise ValueError("Lower angle must not exceed upper angle")
 
         # Convert angles to 4-digit string format
         lower_str = f"{lower_angle:04d}"
@@ -2626,20 +2622,32 @@ class DysonDevice:
             {
                 "osal": lower_str,  # Oscillation angle lower
                 "osau": upper_str,  # Oscillation angle upper
-                "oson": "ON",  # Enable oscillation
-                "ancp": ancp,  # Angle Current Preset (or "CUST")
+                "ancp": ancp,  # Angle Current Preset (always "CUST")
+                "oson": "ON",  # Oscillation on — device turns it off naturally for span=0
             },
         )
 
-    async def set_oscillation_preset(self, preset_angle: int) -> None:
+    async def set_oscillation_preset(
+        self,
+        preset_angle: int,
+        lower: int | None = None,
+        upper: int | None = None,
+    ) -> None:
         """Set oscillation to a named preset angle.
 
         Uses ``ancp`` (Angle Current Preset) to select the pre-defined
-        oscillation angle.  The device firmware handles the actual angle
-        positioning internally; no ``osal``/``osau`` values are sent.
+        oscillation angle.  ``oson=ON`` is always included so that selecting
+        a preset activates oscillation, matching the Dyson app.
+
+        When *lower* and *upper* are provided the command includes explicit
+        ``osal``/``osau`` values.  This is required when the device is in
+        point-aim mode (span = 0) because the device will not turn oscillation
+        on without a valid sweep range.
 
         Args:
             preset_angle: One of 45, 90, 180, or 350 degrees.
+            lower: Optional lower oscillation angle in degrees (0-350).
+            upper: Optional upper oscillation angle in degrees (0-350).
 
         Raises:
             ValueError: If *preset_angle* is not one of the supported values.
@@ -2650,13 +2658,14 @@ class DysonDevice:
             )
 
         ancp_str = f"{preset_angle:04d}"
-        await self.send_command(
-            "STATE-SET",
-            {
-                "oson": "ON",  # Enable oscillation
-                "ancp": ancp_str,  # Angle Current Preset (e.g. "0045")
-            },
-        )
+        command: dict[str, str] = {
+            "ancp": ancp_str,  # Angle Current Preset (e.g. "0045")
+            "oson": "ON",  # Selecting a preset always enables oscillation
+        }
+        if lower is not None and upper is not None:
+            command["osal"] = f"{lower:04d}"  # Oscillation angle lower
+            command["osau"] = f"{upper:04d}"  # Oscillation angle upper
+        await self.send_command("STATE-SET", command)
 
         _LOGGER.debug(
             "Set oscillation preset to %s° (ancp=%s) for %s",
@@ -2672,12 +2681,14 @@ class DysonDevice:
         pattern.  The device selects its own angle excursions; no osal/osau
         values are required.  Only available on devices that have both
         AdvanceOscillationDay1 and Humidifier capabilities.
+
+        Selecting Breeze always enables oscillation, matching the Dyson app.
         """
         await self.send_command(
             "STATE-SET",
             {
                 "ancp": "BRZE",  # Breeze oscillation preset
-                "oson": "ON",  # Enable oscillation
+                "oson": "ON",  # Selecting Breeze always enables oscillation
             },
         )
 
@@ -2693,13 +2704,16 @@ class DysonDevice:
         key (e.g. Dyson BP04 product type 664).
 
         Args:
-            option: One of ``"Off"``, ``"25°"``, ``"50°"``, or ``"Breeze"``.
+            option: One of ``"0°"``, ``"25°"``, ``"50°"``, or ``"Breeze"``.
 
         Raises:
             ValueError: If *option* is not one of the supported values.
         """
-        if option == "Off":
-            await self.send_command("STATE-SET", {"oton": "OFF"})
+        if option == "0°":
+            await self.send_command(
+                "STATE-SET",
+                {"anct": "CUST", "otal": "0000", "otau": "0000"},
+            )
         elif option == "25°":
             await self.send_command(
                 "STATE-SET",
@@ -2718,7 +2732,7 @@ class DysonDevice:
         else:
             raise ValueError(
                 f"Invalid tilt oscillation option '{option}'. "
-                "Must be one of: 'Off', '25°', '50°', 'Breeze'."
+                "Must be one of: '0°', '25°', '50°', 'Breeze'."
             )
 
         _LOGGER.debug(
@@ -2750,7 +2764,6 @@ class DysonDevice:
         command_data = {
             "osal": lower_str,  # Oscillation angle lower (fixed 157°)
             "osau": upper_str,  # Oscillation angle upper (fixed 197°)
-            "oson": "ON",  # Enable oscillation
         }
 
         # Add ancp parameter if provided (preset pattern control)
