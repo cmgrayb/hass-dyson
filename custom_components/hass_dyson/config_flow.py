@@ -876,7 +876,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 "Successfully authenticated with Dyson API via mobile, got auth token"
                             )
                             # Store empty password for consistency (mobile auth doesn't use password)
-                            self._password = ""
+                            self._password = ""  # nosec B105 - not a password, mobile auth uses token
                             return await self.async_step_connection()
                         except Exception as complete_error:
                             _LOGGER.error(

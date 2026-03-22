@@ -1284,7 +1284,7 @@ def _create_detailed_device_info_from_coordinator(
         }
 
         # Determine the MQTT password - use actual credential if available, otherwise placeholder
-        mqtt_password = "Requires device setup"
+        mqtt_password = "Requires device setup"  # nosec B105 - informational placeholder, not a real password
         if hasattr(device, "credential") and device.credential:
             mqtt_password = device.credential
 
@@ -1324,7 +1324,8 @@ def _create_sanitized_device_info_from_cloud_device(device) -> dict[str, Any]:
 
 
 def _create_detailed_device_info_from_cloud_device(
-    device, decrypted_password: str = ""
+    device,
+    decrypted_password: str = "",  # nosec B107 - empty default is intentional, caller provides real password
 ) -> dict[str, Any]:
     """Create detailed device information from cloud device object.
 
