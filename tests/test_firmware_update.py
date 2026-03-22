@@ -97,6 +97,105 @@ class TestDysonFirmwareUpdateEntity:
         result = await update_entity.async_install(version="1.0.1", backup=False)
         assert result is None  # Method doesn't return anything
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_async_install_communication_error(
+        self, update_entity, mock_coordinator, exc_type
+    ):
+        """Test firmware update installation with ConnectionError or TimeoutError."""
+        mock_coordinator.async_install_firmware_update = AsyncMock(
+            side_effect=exc_type("connection failed")
+        )
+
+        result = await update_entity.async_install(version="1.0.1", backup=False)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [KeyError, AttributeError])
+    async def test_async_install_data_unavailable_error(
+        self, update_entity, mock_coordinator, exc_type
+    ):
+        """Test firmware update installation with KeyError or AttributeError."""
+        mock_coordinator.async_install_firmware_update = AsyncMock(
+            side_effect=exc_type("missing key")
+        )
+
+        result = await update_entity.async_install(version="1.0.1", backup=False)
+        assert result is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ValueError, TypeError])
+    async def test_async_install_invalid_version_error(
+        self, update_entity, mock_coordinator, exc_type
+    ):
+        """Test firmware update installation with ValueError or TypeError."""
+        mock_coordinator.async_install_firmware_update = AsyncMock(
+            side_effect=exc_type("invalid version")
+        )
+
+        result = await update_entity.async_install(version="1.0.1", backup=False)
+        assert result is None
+
+    def test_auto_update_property(self, update_entity, mock_coordinator):
+        """Test auto_update property returns coordinator value."""
+        mock_coordinator.firmware_auto_update_enabled = True
+        assert update_entity.auto_update is True
+
+        mock_coordinator.firmware_auto_update_enabled = False
+        assert update_entity.auto_update is False
+
+    def test_title_property(self, update_entity):
+        """Test title property returns static string."""
+        assert update_entity.title == "Dyson Device Firmware"
+
+    def test_release_summary_update_available(self, update_entity, mock_coordinator):
+        """Test release_summary when an update is available."""
+        mock_coordinator.firmware_version = "1.0.0"
+        mock_coordinator.firmware_latest_version = "1.0.1"
+
+        summary = update_entity.release_summary
+        assert summary == "Firmware update from 1.0.0 to 1.0.1"
+
+    def test_release_summary_no_update(self, update_entity, mock_coordinator):
+        """Test release_summary returns None when no update is needed."""
+        mock_coordinator.firmware_version = "1.0.1"
+        mock_coordinator.firmware_latest_version = "1.0.1"
+
+        assert update_entity.release_summary is None
+
+    def test_release_summary_no_latest_version(self, update_entity, mock_coordinator):
+        """Test release_summary returns None when latest version is unknown."""
+        mock_coordinator.firmware_version = "1.0.0"
+        mock_coordinator.firmware_latest_version = None
+
+        assert update_entity.release_summary is None
+
+    @pytest.mark.asyncio
+    async def test_async_install_no_device(self, update_entity, mock_coordinator):
+        """Test async_install returns early when coordinator.device is None."""
+        mock_coordinator.device = None
+
+        result = await update_entity.async_install(version="1.0.1", backup=False)
+        assert result is None
+        mock_coordinator.async_install_firmware_update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_install_no_version_available(
+        self, update_entity, mock_coordinator
+    ):
+        """Test async_install returns early when no version is available."""
+        mock_coordinator.firmware_latest_version = None
+
+        result = await update_entity.async_install(version=None, backup=False)
+        assert result is None
+        mock_coordinator.async_install_firmware_update.assert_not_called()
+
+    def test_handle_coordinator_update(self, update_entity):
+        """Test _handle_coordinator_update logs and delegates to super."""
+        with patch.object(update_entity, "async_write_ha_state") as mock_write:
+            update_entity._handle_coordinator_update()
+            mock_write.assert_called_once()
+
     def test_available_cloud_device(self, update_entity, mock_coordinator):
         """Test entity availability for cloud devices."""
         mock_coordinator.config_entry.data = {"discovery_method": DISCOVERY_CLOUD}

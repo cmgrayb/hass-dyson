@@ -73,6 +73,17 @@ async def async_setup_entry(
             )
             entities.append(DysonRobotPowerGenericSelect(coordinator))
 
+    # Add tilt oscillation select for ec devices that report the oton key in state.
+    # These devices (e.g. BP04) have no dedicated capability flag; presence of oton
+    # in the first STATE-CHANGE product-state is the sole gating criterion.
+    device_categories = getattr(coordinator, "device_category", [])
+    if isinstance(device_categories, list) and "ec" in device_categories:
+        product_state = {}
+        if coordinator.data:
+            product_state = coordinator.data.get("product-state", {})
+        if "oton" in product_state:
+            entities.append(DysonTiltOscillationModeSelect(coordinator))
+
     # Note: Heating mode control is now integrated into the fan entity's preset modes
     # No separate heating mode select needed
 
@@ -187,7 +198,7 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_oscillation_mode"
         self._attr_translation_key = "oscillation_mode"
         self._attr_icon = "mdi:rotate-3d-variant"
-        self._attr_options = ["Off", "45°", "90°", "180°", "350°", "Custom"]
+        self._attr_options = ["45°", "90°", "180°", "350°", "Custom"]
         # Breeze mode is only available on devices that also have Humidifier capability
         if "Humidifier" in coordinator.device_capabilities:
             self._attr_options.insert(self._attr_options.index("Custom"), "Breeze")
@@ -198,11 +209,6 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # (Angle Current Preset), which is a device/app preset identifier.
         self._saved_sweep_midpoint: int | None = None
         self._last_known_mode: str | None = None  # Track mode transitions
-        # Set when we send a Breeze command; cleared once the device settles at
-        # oson=ON, ancp=BRZE.  During the spin-down transition the device
-        # briefly reports oson=OFF — without this flag that would flicker the
-        # select to "Off" and fire a spurious HA state-change event.
-        self._breeze_transition_pending: bool = False
 
     def _calculate_sweep_midpoint(self) -> int:
         """Calculate the midpoint of the current sweep range from osal/osau.
@@ -242,69 +248,57 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         "0350": "350°",
     }
 
+    # Maps span values (degrees) to HA option strings for span-based snap detection.
+    # Used when the device reports ancp=CUST after a center/span move: if the
+    # resulting span still matches a named preset the mode select snaps back to
+    # that preset, mirroring the Dyson app behaviour.
+    _PRESET_SPAN_MAP: dict[int, str] = {
+        45: "45°",
+        90: "90°",
+        180: "180°",
+        350: "350°",
+    }
+
     def _detect_mode_from_angles(self) -> str:
-        """Detect current oscillation mode from device state."""
+        """Detect current oscillation mode from device state.
+
+        This method is intentionally oson-agnostic.  Oscillation on/off state
+        is owned by the fan entity's oscillate toggle; the mode select only
+        reflects the configured oscillation pattern (ancp / angle preset).
+        """
         if not self.coordinator.device:
-            return "Off"
+            return "Custom"
 
         product_state = self.coordinator.data.get("product-state", {})
 
-        # oson is the primary gate — if oscillation is disabled, mode is Off.
-        # After a Breeze turn-off the device leaves ancp=BRZE sticky but sets
-        # oson=OFF, which is correctly read as "Off" by checking oson first.
-        # Settled Breeze state is oson=ON + ancp=BRZE (matching vendor app
-        # behaviour where the device settles to oson=ON after the two-step
-        # STATE-CHANGE transition).
-        oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
-
-        if oson == "OFF":
-            # If we recently sent a Breeze command the device briefly reports
-            # oson=OFF while its motor spins down before re-engaging in Breeze
-            # mode.  During that window honour the pending flag so the UI stays
-            # on "Breeze" rather than flickering to "Off".
-            if self._breeze_transition_pending:
-                ancp_check = self.coordinator.device.get_state_value(
-                    product_state, "ancp", ""
-                )
-                if ancp_check == "BRZE":
-                    return "Breeze"
-            return "Off"
-
         ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+
         if ancp == "BRZE" and "Breeze" in self._attr_options:
             return "Breeze"
 
-        # Trust ancp for named presets first.  The vendor app sends only
-        # {ancp:X, oson:ON} without osal/osau for preset selections, and the
-        # device does NOT update osal/osau in the STATE-CHANGE confirmation —
-        # they retain their previous values.  Span detection on stale osal/osau
-        # would therefore give the wrong result (e.g. span=0 → "Custom").
-        # ancp is always freshly stamped in the device's STATE-CHANGE reply.
+        # Trust ancp for named presets.  The HA integration sends
+        # {ancp:X, osal:Y, osau:Z, oson:ON} for preset selections.  The device
+        # echoes back the new ancp value in its STATE-CHANGE confirmation but
+        # does NOT always echo osal/osau changes — ancp is the reliable signal.
         if ancp in self._PRESET_ANCP_MAP:
             return self._PRESET_ANCP_MAP[ancp]
 
-        # ancp is "CUST", unknown, or absent — fall back to span detection.
-        # This covers custom angles set directly via the number entities.
+        # ancp is "CUST" (or unknown) — device is using explicit osal/osau.
+        # If the current span matches a named preset value, snap to that preset
+        # so that moving the center while in e.g. 90° mode keeps showing "90°",
+        # matching the Dyson app behaviour.
         try:
-            lower_data = self.coordinator.device.get_state_value(
+            lower_str = self.coordinator.device.get_state_value(
                 product_state, "osal", "0000"
             )
-            upper_data = self.coordinator.device.get_state_value(
+            upper_str = self.coordinator.device.get_state_value(
                 product_state, "osau", "0350"
             )
-            lower_angle = int(lower_data.lstrip("0") or "0")
-            upper_angle = int(upper_data.lstrip("0") or "350")
-            angle_span = upper_angle - lower_angle
-
-            if 340 <= angle_span <= 350:
-                return "350°"
-            elif abs(angle_span - 180) <= 5:
-                return "180°"
-            elif abs(angle_span - 90) <= 5:
-                return "90°"
-            elif abs(angle_span - 45) <= 5:
-                return "45°"
-            return "Custom"
+            lower = int(lower_str.lstrip("0") or "0")
+            upper = int(upper_str.lstrip("0") or "350")
+            span = upper - lower
+            if span in self._PRESET_SPAN_MAP:
+                return self._PRESET_SPAN_MAP[span]
         except (ValueError, TypeError):
             pass
 
@@ -332,7 +326,6 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         return (
             self._last_known_mode == "350°"
             and new_mode != "350°"
-            and new_mode != "Off"
             and self._saved_sweep_midpoint is not None
         )
 
@@ -445,29 +438,6 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # Detect current mode from device state
         detected_mode = self._detect_mode_from_angles()
 
-        # Clear the Breeze transition flag ONLY once the device has settled into
-        # the genuine oson=ON, ancp=BRZE state.  During the spin-down transition
-        # the device may fire multiple STATE-CHANGEs with oson=OFF; each of
-        # those returns "Breeze" via the _breeze_transition_pending guard.
-        # Clearing the flag on the FIRST transient update causes the SECOND
-        # transient update (still oson=OFF) to slip through as "Off".
-        # Checking oson=ON here ensures the flag persists for every transient
-        # STATE-CHANGE and is cleared only on the genuine settled confirmation.
-        if detected_mode == "Breeze" and self._breeze_transition_pending:
-            product_state = self.coordinator.data.get("product-state", {})
-            oson = self.coordinator.device.get_state_value(product_state, "oson", "OFF")
-            if oson == "ON":
-                self._breeze_transition_pending = False
-                _LOGGER.debug(
-                    "Breeze transition complete (oson=ON confirmed) for %s — flag cleared",
-                    self.coordinator.serial_number,
-                )
-            else:
-                _LOGGER.debug(
-                    "Breeze transition still pending (oson=OFF) for %s — flag kept",
-                    self.coordinator.serial_number,
-                )
-
         # Save the sweep midpoint when an external event moves the device into
         # 350° mode so we can restore it if the user later picks a preset via HA.
         if self._should_save_midpoint_on_state_change(detected_mode):
@@ -505,32 +475,40 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             return
 
         try:
-            if option == "Off":
-                await self.coordinator.device.set_oscillation(False)
-                return
-
             if option == "Breeze":
-                # Matches vendor app command exactly: {ancp: BRZE, oson: ON}.
-                # Device handles its own two-step transition (transient oson=OFF
-                # then settled oson=ON).  Set the pending flag first so the
-                # transient oson=OFF does not flicker the select to "Off".
-                self._breeze_transition_pending = True
                 await self.coordinator.device.set_oscillation_breeze()
                 return
 
             if option == "Custom":
-                # For Custom, enable oscillation while leaving osal/osau unchanged.
-                await self.coordinator.device.set_oscillation(True)
+                # Re-send the current osal/osau with ancp=CUST to explicitly put
+                # the device into custom mode (e.g. when switching from a named
+                # preset).  Does not touch oson.
+                product_state = self.coordinator.data.get("product-state", {})
+                lower_str = self.coordinator.device.get_state_value(
+                    product_state, "osal", "0000"
+                )
+                upper_str = self.coordinator.device.get_state_value(
+                    product_state, "osau", "0350"
+                )
+                lower = int(lower_str.lstrip("0") or "0")
+                upper = int(upper_str.lstrip("0") or "350")
+                await self.coordinator.device.set_oscillation_angles(lower, upper)
                 return
 
             # Named preset modes: 45°, 90°, 180°, 350°.
-            # Match vendor app exactly: send only {ancp:X, oson:ON} with no
-            # osal/osau.  The device manages its own physical angle positioning
-            # for preset modes and does NOT update osal/osau in the STATE-CHANGE
-            # confirmation — sending osal/osau is therefore redundant and causes
-            # the span-based detection to see stale / mismatched values.
+            # Always send osal/osau alongside the preset so the device has a
+            # valid sweep range.  Without explicit angles the device ignores
+            # oson=ON when the current span is 0 (point-aim mode).  The angles
+            # are centred on the current sweep midpoint so the fan keeps facing
+            # roughly the same direction.
             preset_angle = int(option.replace("°", ""))
-            await self.coordinator.device.set_oscillation_preset(preset_angle)
+            sweep_midpoint = self._calculate_sweep_midpoint()
+            lower, upper = self._calculate_angles_for_preset(
+                preset_angle, sweep_midpoint
+            )
+            await self.coordinator.device.set_oscillation_preset(
+                preset_angle, lower, upper
+            )
 
             _LOGGER.debug(
                 "Set oscillation preset to %s° (ancp=%04d) for %s",
@@ -1332,6 +1310,106 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
         except Exception as err:
             _LOGGER.error(
                 "Error setting generic robot power to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
+    """Select entity for tilt (vertical) oscillation mode.
+
+    Supports devices such as the Dyson BP04 (product type 664) that expose
+    the ``oton``/``otal``/``otau``/``anct`` state keys for vertical tilt control.
+    The device has no dedicated capability flag; support is detected by the
+    presence of ``oton`` in the first ``product-state`` reported by the device.
+
+    Options and their MQTT payloads:
+        0°     → {anct: CUST, otal: 0000, otau: 0000}
+        25°    → {anct: CUST, otal: 0025, otau: 0025}
+        50°    → {anct: CUST, otal: 0050, otau: 0050}
+        Breeze → {oton: ON,  anct: BRZE, otal: 0359, otau: 0359}
+
+    State reading uses ``oton`` as the primary gate (``ON`` → Breeze) then
+    ``otal`` for the angle (``0025`` → 25°, ``0050`` → 50°, ``0000`` → 0°).
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the tilt oscillation mode select."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_tilt_oscillation_mode"
+        self._attr_translation_key = "tilt_oscillation_mode"
+        self._attr_icon = "mdi:angle-acute"
+        self._attr_options = ["0°", "25°", "50°", "Breeze"]
+
+    def _detect_tilt_mode(self) -> str:
+        """Detect the current tilt oscillation mode from device state.
+
+        Returns:
+            One of "0°", "25°", "50°", "Breeze".
+        """
+        if not self.coordinator.device:
+            return "0°"
+
+        product_state = self.coordinator.data.get("product-state", {})
+        oton = self.coordinator.device.get_state_value(product_state, "oton", "OFF")
+
+        if oton == "ON":
+            return "Breeze"
+
+        otal = self.coordinator.device.get_state_value(product_state, "otal", "0000")
+        if otal == "0025":
+            return "25°"
+        if otal == "0050":
+            return "50°"
+        return "0°"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if not self.coordinator.device:
+            self._attr_current_option = None
+            super()._handle_coordinator_update()
+            return
+
+        self._attr_current_option = self._detect_tilt_mode()
+        super()._handle_coordinator_update()
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle a tilt oscillation mode selection."""
+        if not self.coordinator.device:
+            return
+
+        try:
+            await self.coordinator.device.set_tilt_oscillation(option)
+
+            # Optimistic update for responsive UI
+            self._attr_current_option = option
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set tilt oscillation to '%s' for %s",
+                option,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting tilt oscillation to '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except ValueError as err:
+            _LOGGER.error(
+                "Invalid tilt oscillation option '%s' for %s: %s",
+                option,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting tilt oscillation to '%s' for %s: %s",
                 option,
                 self.coordinator.serial_number,
                 err,

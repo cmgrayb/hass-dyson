@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.switch import SwitchEntity
 
-from custom_components.hass_dyson.const import DOMAIN
+from custom_components.hass_dyson.const import DISCOVERY_CLOUD, DOMAIN
 from custom_components.hass_dyson.switch import (
+    DysonAutoModeSwitch,
     DysonContinuousMonitoringSwitch,
     DysonFirmwareAutoUpdateSwitch,
     DysonHeatingSwitch,
@@ -571,3 +572,620 @@ class TestSwitchMissingCoverage:
         pure_mock_coordinator.data["product-state"]["nmod"] = "ON"
         switch._handle_coordinator_update()
         assert switch._attr_is_on is True
+
+
+class TestAsyncSetupEntryCloudPath:
+    """Test async_setup_entry cloud-discovery path."""
+
+    @pytest.mark.asyncio
+    async def test_setup_adds_firmware_auto_update_switch_for_cloud_device(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        """Test that the firmware auto-update switch is added for cloud devices."""
+        from custom_components.hass_dyson.const import CONF_DISCOVERY_METHOD
+
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_config_entry.data = {
+            **pure_mock_config_entry.data,
+            CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+        }
+        mock_add_entities = MagicMock()
+
+        result = await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        assert result is True
+        entities = mock_add_entities.call_args[0][0]
+        switch_types = [type(e).__name__ for e in entities]
+        assert "DysonFirmwareAutoUpdateSwitch" in switch_types
+
+
+class TestDysonAutoModeSwitch:
+    """Test DysonAutoModeSwitch."""
+
+    def test_initialization(self, pure_mock_coordinator, pure_mock_sensor_entity):
+        """Test switch initialization."""
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        assert switch.unique_id == f"{pure_mock_coordinator.serial_number}_auto_mode"
+        assert switch.translation_key == "auto_mode"
+
+    def test_handle_coordinator_update_device_present(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test _handle_coordinator_update when device is present."""
+        pure_mock_coordinator.data["product-state"]["auto"] = "ON"
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        switch._handle_coordinator_update()
+
+        assert switch._attr_is_on is True
+
+    def test_handle_coordinator_update_device_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test _handle_coordinator_update when device is None sets is_on to None."""
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        switch._handle_coordinator_update()
+
+        assert switch._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_turn_on_success(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test turning on auto mode."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock()
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_on()
+
+        pure_mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
+
+    @pytest.mark.asyncio
+    async def test_turn_on_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test async_turn_on returns early when device is None."""
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        await switch.async_turn_on()  # should not raise
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_turn_on_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """Test async_turn_on handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_on()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_turn_on_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test async_turn_on handles AttributeError."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=AttributeError("method missing")
+        )
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_on()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_turn_on_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test async_turn_on handles generic Exception."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_on()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_turn_off_success(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test turning off auto mode."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock()
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_off()
+
+        pure_mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
+
+    @pytest.mark.asyncio
+    async def test_turn_off_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test async_turn_off returns early when device is None."""
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        await switch.async_turn_off()  # should not raise
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_turn_off_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """Test async_turn_off handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_off()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_turn_off_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test async_turn_off handles AttributeError."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=AttributeError("method missing")
+        )
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_off()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_turn_off_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test async_turn_off handles generic Exception."""
+        pure_mock_coordinator.device.set_auto_mode = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(DysonAutoModeSwitch, pure_mock_coordinator)
+
+        await switch.async_turn_off()  # should not raise
+
+
+class TestSwitchDeviceNoneAndExceptionBranches:
+    """Cover device=None early-returns and exception handlers missed in other tests."""
+
+    # --- DysonNightModeSwitch ---
+
+    def test_night_mode_update_device_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """_handle_coordinator_update sets is_on to None when device is gone."""
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        switch._handle_coordinator_update()
+
+        assert switch._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_night_mode_turn_on_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on returns early when device is None."""
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        await switch.async_turn_on()  # should not raise
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_night_mode_turn_on_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """async_turn_on handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_night_mode_turn_on_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on handles AttributeError."""
+        pure_mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=AttributeError("no method")
+        )
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_night_mode_turn_off_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off returns early when device is None."""
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        await switch.async_turn_off()  # should not raise
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_night_mode_turn_off_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """async_turn_off handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    async def test_night_mode_turn_off_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off handles AttributeError."""
+        pure_mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=AttributeError("no method")
+        )
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    async def test_night_mode_turn_off_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off handles generic Exception."""
+        pure_mock_coordinator.device.set_night_mode = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(DysonNightModeSwitch, pure_mock_coordinator)
+        await switch.async_turn_off()
+
+    # --- DysonHeatingSwitch ---
+
+    def test_heating_update_device_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """_handle_coordinator_update sets is_on to None when device is gone."""
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        switch._handle_coordinator_update()
+
+        assert switch._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_heating_turn_on_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on returns early when device is None."""
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_heating_turn_on_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """async_turn_on handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_heating_turn_on_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on handles AttributeError."""
+        pure_mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=AttributeError("no method")
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_heating_turn_on_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on handles generic Exception."""
+        pure_mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_heating_turn_off_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off returns early when device is None."""
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_heating_turn_off_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """async_turn_off handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    async def test_heating_turn_off_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off handles AttributeError."""
+        pure_mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=AttributeError("no method")
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    async def test_heating_turn_off_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off handles generic Exception."""
+        pure_mock_coordinator.device.set_heating_mode = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        await switch.async_turn_off()
+
+    def test_heating_extra_state_attributes_device_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """extra_state_attributes returns None when device is None."""
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+        pure_mock_coordinator.device = None
+
+        assert switch.extra_state_attributes is None
+
+    def test_heating_extra_state_attributes_full(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """extra_state_attributes returns heating info including temp calculation."""
+        pure_mock_coordinator.data["product-state"]["hmod"] = "HEAT"
+        pure_mock_coordinator.data["product-state"]["hmax"] = "2980"
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+
+        attrs = switch.extra_state_attributes
+
+        assert attrs is not None
+        assert attrs["heating_mode"] == "HEAT"
+        assert attrs["heating_enabled"] is True
+        assert "target_temperature" in attrs
+        assert attrs["target_temperature_kelvin"] == "2980"
+
+    def test_heating_extra_state_attributes_invalid_hmax(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """extra_state_attributes handles ValueError when hmax is non-numeric."""
+        pure_mock_coordinator.data["product-state"]["hmod"] = "OFF"
+
+        def bad_get_state_value(data_dict, key, default=None):
+            if key == "hmax":
+                return "INVALID"
+            return data_dict.get(key, default)
+
+        pure_mock_coordinator.device.get_state_value = MagicMock(
+            side_effect=bad_get_state_value
+        )
+        switch = pure_mock_sensor_entity(DysonHeatingSwitch, pure_mock_coordinator)
+
+        attrs = switch.extra_state_attributes
+
+        assert attrs is not None
+        assert "target_temperature" not in attrs  # skipped due to ValueError
+
+    # --- DysonContinuousMonitoringSwitch ---
+
+    def test_continuous_monitoring_update_device_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """_handle_coordinator_update sets is_on to None when device is gone."""
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        pure_mock_coordinator.device = None
+
+        switch._handle_coordinator_update()
+
+        assert switch._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_turn_on_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on returns early when device is None."""
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        pure_mock_coordinator.device = None
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_continuous_monitoring_turn_on_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """async_turn_on handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_turn_on_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on handles AttributeError."""
+        pure_mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=AttributeError("no method")
+        )
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_turn_on_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on handles generic Exception."""
+        pure_mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_on()
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_turn_off_no_device(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off returns early when device is None."""
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        pure_mock_coordinator.device = None
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc_type", [ConnectionError, TimeoutError])
+    async def test_continuous_monitoring_turn_off_communication_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, exc_type
+    ):
+        """async_turn_off handles ConnectionError/TimeoutError."""
+        pure_mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=exc_type("comm error")
+        )
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_turn_off_attribute_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off handles AttributeError."""
+        pure_mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=AttributeError("no method")
+        )
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_off()
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_turn_off_generic_error(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off handles generic Exception."""
+        pure_mock_coordinator.device.set_continuous_monitoring = AsyncMock(
+            side_effect=Exception("unexpected")
+        )
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_off()
+
+    def test_continuous_monitoring_extra_state_attributes_device_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """extra_state_attributes returns None when device is None."""
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+        pure_mock_coordinator.device = None
+
+        assert switch.extra_state_attributes is None
+
+    def test_continuous_monitoring_extra_state_attributes_full(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """extra_state_attributes returns monitoring info."""
+        pure_mock_coordinator.data["product-state"]["rhtm"] = "ON"
+        switch = pure_mock_sensor_entity(
+            DysonContinuousMonitoringSwitch, pure_mock_coordinator
+        )
+
+        attrs = switch.extra_state_attributes
+
+        assert attrs is not None
+        assert attrs["continuous_monitoring"] is True
+        assert attrs["monitoring_mode"] == "ON"
+
+    # --- DysonFirmwareAutoUpdateSwitch ---
+
+    @pytest.mark.asyncio
+    async def test_firmware_auto_update_turn_on_failure(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_on logs error when coordinator returns False."""
+        pure_mock_coordinator.async_set_firmware_auto_update = AsyncMock(
+            return_value=False
+        )
+        switch = pure_mock_sensor_entity(
+            DysonFirmwareAutoUpdateSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_on()  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_firmware_auto_update_turn_off_failure(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """async_turn_off logs error when coordinator returns False."""
+        pure_mock_coordinator.async_set_firmware_auto_update = AsyncMock(
+            return_value=False
+        )
+        switch = pure_mock_sensor_entity(
+            DysonFirmwareAutoUpdateSwitch, pure_mock_coordinator
+        )
+        await switch.async_turn_off()  # should not raise
+
+    def test_firmware_auto_update_handle_coordinator_update(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """_handle_coordinator_update calls super and logs."""
+        pure_mock_coordinator.firmware_auto_update_enabled = True
+        pure_mock_coordinator.firmware_version = "2.0.0"
+        switch = pure_mock_sensor_entity(
+            DysonFirmwareAutoUpdateSwitch, pure_mock_coordinator
+        )
+
+        switch._handle_coordinator_update()  # should not raise
+        switch.async_write_ha_state.assert_called()
+
+    def test_firmware_auto_update_extra_state_attributes(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """extra_state_attributes includes current_firmware_version."""
+        pure_mock_coordinator.firmware_version = "2.0.0"
+        switch = pure_mock_sensor_entity(
+            DysonFirmwareAutoUpdateSwitch, pure_mock_coordinator
+        )
+
+        attrs = switch.extra_state_attributes
+
+        assert attrs is not None
+        assert attrs["current_firmware_version"] == "2.0.0"

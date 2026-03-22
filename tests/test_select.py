@@ -442,7 +442,7 @@ class TestDysonOscillationModeSelect:
         assert entity._attr_unique_id == "NK6-EU-MHA0000A_oscillation_mode"
         assert entity._attr_translation_key == "oscillation_mode"
         assert entity._attr_icon == "mdi:rotate-3d-variant"
-        assert entity._attr_options == ["Off", "45°", "90°", "180°", "350°", "Custom"]
+        assert entity._attr_options == ["45°", "90°", "180°", "350°", "Custom"]
         assert entity._saved_sweep_midpoint is None
         assert entity._last_known_mode is None
 
@@ -487,16 +487,26 @@ class TestDysonOscillationModeSelect:
 
         assert midpoint == 175  # Default
 
-    def test_detect_mode_off(self, mock_coordinator):
-        """Test detecting off mode."""
+    def test_detect_mode_oson_off_unknown_ancp_returns_custom(self, mock_coordinator):
+        """Test that oson=OFF with no matching ancp and non-preset span returns Custom.
+
+        The mode select is oson-agnostic; oscillation on/off is the fan toggle's
+        responsibility.  With no recognised ancp value and a non-preset span the
+        mode falls back to Custom.
+        """
         mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {"oson": "OFF"}.get(key, default)
+            lambda data, key, default: {
+                "oson": "OFF",
+                "ancp": "",
+                "osal": "0100",  # 100°
+                "osau": "0250",  # 250° → span 150°, not a preset
+            }.get(key, default)
         )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
 
-        assert mode == "Off"
+        assert mode == "Custom"
 
     # ------------------------------------------------------------------
     # Detection via ancp (Angle Current Preset)
@@ -567,8 +577,13 @@ class TestDysonOscillationModeSelect:
         entity = DysonOscillationModeSelect(mock_coordinator)
         assert entity._detect_mode_from_angles() == "Custom"
 
-    def test_detect_mode_ancp_off_overrides_preset(self, mock_coordinator):
-        """Test that oson=OFF takes priority over a memorised ancp preset value."""
+    def test_detect_mode_ancp_preset_honored_regardless_of_oson(self, mock_coordinator):
+        """Test that ancp preset is returned even when oson=OFF.
+
+        The mode select is oson-agnostic.  A retained ancp preset value is
+        always honoured so that the mode display stays stable when oscillation
+        is toggled off via the fan switch.
+        """
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "OFF",
@@ -576,20 +591,24 @@ class TestDysonOscillationModeSelect:
             }.get(key, default)
         )
         entity = DysonOscillationModeSelect(mock_coordinator)
-        assert entity._detect_mode_from_angles() == "Off"
+        assert entity._detect_mode_from_angles() == "45°"
 
     # ------------------------------------------------------------------
-    # Fallback detection via osal/osau span (legacy firmware)
+    # ancp=CUST with span matching a preset → snap to preset (Dyson app behaviour)
     # ------------------------------------------------------------------
 
-    def test_detect_mode_350_degrees(self, mock_coordinator):
-        """Test detecting 350° mode via span fallback."""
+    def test_detect_mode_350_degrees_ancp_cust_snaps_to_preset(self, mock_coordinator):
+        """Test ancp=CUST with 350° span snaps to '350°'.
+
+        After moving the center while in 350° mode the device sets ancp=CUST
+        but the span stays 350°.  The select should keep showing '350°'.
+        """
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
-                "ancp": "CUST",  # not a named preset → fall through
-                "osal": "0005",  # 5°
-                "osau": "0355",  # 355°
+                "ancp": "CUST",
+                "osal": "0000",
+                "osau": "0350",  # 350° span
             }.get(key, default)
         )
 
@@ -598,14 +617,14 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "350°"
 
-    def test_detect_mode_180_degrees(self, mock_coordinator):
-        """Test detecting 180° mode via span fallback."""
+    def test_detect_mode_180_degrees_ancp_cust_snaps_to_preset(self, mock_coordinator):
+        """Test ancp=CUST with 180° span snaps to '180°'."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "CUST",
                 "osal": "0090",  # 90°
-                "osau": "0270",  # 270°
+                "osau": "0270",  # 270° → span 180°
             }.get(key, default)
         )
 
@@ -614,14 +633,14 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "180°"
 
-    def test_detect_mode_90_degrees(self, mock_coordinator):
-        """Test detecting 90° mode via span fallback."""
+    def test_detect_mode_90_degrees_ancp_cust_snaps_to_preset(self, mock_coordinator):
+        """Test ancp=CUST with 90° span snaps to '90°'."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "CUST",
                 "osal": "0130",  # 130°
-                "osau": "0220",  # 220°
+                "osau": "0220",  # 220° → span 90°
             }.get(key, default)
         )
 
@@ -630,14 +649,14 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "90°"
 
-    def test_detect_mode_45_degrees(self, mock_coordinator):
-        """Test detecting 45° mode via span fallback."""
+    def test_detect_mode_45_degrees_ancp_cust_snaps_to_preset(self, mock_coordinator):
+        """Test ancp=CUST with 45° span snaps to '45°'."""
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
                 "oson": "ON",
                 "ancp": "CUST",
                 "osal": "0155",  # 155°
-                "osau": "0200",  # 200°
+                "osau": "0200",  # 200° → span 45°
             }.get(key, default)
         )
 
@@ -663,13 +682,13 @@ class TestDysonOscillationModeSelect:
         assert mode == "Custom"
 
     def test_detect_mode_no_device(self, mock_coordinator):
-        """Test detecting mode with no device."""
+        """Test detecting mode with no device returns safe fallback."""
         mock_coordinator.device = None
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
 
-        assert mode == "Off"
+        assert mode == "Custom"
 
     def test_should_save_midpoint_on_state_change_to_350(self, mock_coordinator):
         """Test midpoint saving when an external change enters 350° mode."""
@@ -710,7 +729,7 @@ class TestDysonOscillationModeSelect:
         mock_coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         entity = DysonOscillationModeSelect(mock_coordinator)
         assert "Breeze" not in entity._attr_options
-        assert entity._attr_options == ["Off", "45°", "90°", "180°", "350°", "Custom"]
+        assert entity._attr_options == ["45°", "90°", "180°", "350°", "Custom"]
 
     def test_initialization_with_humidifier_includes_breeze(self, mock_coordinator):
         """Test that Breeze option is present when device has Humidifier capability."""
@@ -721,7 +740,6 @@ class TestDysonOscillationModeSelect:
         entity = DysonOscillationModeSelect(mock_coordinator)
         assert "Breeze" in entity._attr_options
         assert entity._attr_options == [
-            "Off",
             "45°",
             "90°",
             "180°",
@@ -750,13 +768,13 @@ class TestDysonOscillationModeSelect:
 
         assert mode == "Breeze"
 
-    def test_detect_mode_breeze_oson_off_is_off(self, mock_coordinator):
-        """Test that ancp=BRZE with oson=OFF is correctly detected as Off.
+    def test_detect_mode_breeze_oson_off_still_shows_breeze(self, mock_coordinator):
+        """Test that ancp=BRZE with oson=OFF still returns Breeze.
 
-        After turning oscillation off while in Breeze mode the device leaves
-        ancp=BRZE sticky but sets oson=OFF.  The vendor app also reports the
-        device as not oscillating in this state.  oson=OFF is the authoritative
-        gate so this must return 'Off', not 'Breeze'.
+        The mode select is oson-agnostic — oscillation on/off is owned by the
+        fan entity's oscillate toggle.  When the fan is toggled off while in
+        Breeze mode the device leaves ancp=BRZE sticky; the mode select must
+        keep reporting Breeze so the user can see the configured mode.
         """
         mock_coordinator.device_capabilities = [
             "AdvanceOscillationDay1",
@@ -764,15 +782,15 @@ class TestDysonOscillationModeSelect:
         ]
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: {
-                "oson": "OFF",  # oscillation disabled
-                "ancp": "BRZE",  # sticky leftover
+                "oson": "OFF",  # oscillation disabled via fan toggle
+                "ancp": "BRZE",  # sticky — configured mode is still Breeze
             }.get(key, default)
         )
 
         entity = DysonOscillationModeSelect(mock_coordinator)
         mode = entity._detect_mode_from_angles()
 
-        assert mode == "Off"
+        assert mode == "Breeze"
 
     def test_detect_mode_breeze_ancp_falls_back_on_non_humidifier(
         self, mock_coordinator
@@ -796,7 +814,7 @@ class TestDysonOscillationModeSelect:
 
     @pytest.mark.asyncio
     async def test_async_select_option_breeze(self, mock_coordinator):
-        """Test selecting Breeze calls set_oscillation_breeze and sets transition flag."""
+        """Test selecting Breeze calls set_oscillation_breeze."""
         mock_coordinator.device_capabilities = [
             "AdvanceOscillationDay1",
             "Humidifier",
@@ -807,110 +825,6 @@ class TestDysonOscillationModeSelect:
         await entity.async_select_option("Breeze")
 
         mock_coordinator.device.set_oscillation_breeze.assert_called_once()
-        # Flag must be set so the transient oson=OFF doesn't flicker the UI.
-        assert entity._breeze_transition_pending is True
-
-    def test_detect_mode_breeze_transition_pending_oson_off(self, mock_coordinator):
-        """Test that oson=OFF, ancp=BRZE returns Breeze when transition flag is set.
-
-        During the two-step Breeze entry the device briefly reports oson=OFF
-        before re-engaging.  When _breeze_transition_pending is True the
-        detection must return 'Breeze' rather than 'Off' to prevent a UI flicker.
-        """
-        mock_coordinator.device_capabilities = [
-            "AdvanceOscillationDay1",
-            "Humidifier",
-        ]
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "oson": "OFF",  # transient mid-transition
-                "ancp": "BRZE",
-            }.get(key, default)
-        )
-
-        entity = DysonOscillationModeSelect(mock_coordinator)
-        entity._breeze_transition_pending = True
-        mode = entity._detect_mode_from_angles()
-
-        assert mode == "Breeze"
-
-    def test_breeze_transition_flag_not_cleared_during_transient_oson_off(
-        self, mock_coordinator
-    ):
-        """Test that _breeze_transition_pending is NOT cleared on a transient oson=OFF.
-
-        The device fires multiple STATE-CHANGEs with oson=OFF during the Breeze
-        spin-down.  Clearing the flag on the first update leaves the second one
-        unguarded, causing 'Off' to appear.  The flag must only be cleared once
-        oson=ON is confirmed (genuine settled Breeze state).
-        """
-        mock_coordinator.device_capabilities = [
-            "AdvanceOscillationDay1",
-            "Humidifier",
-        ]
-        # Simulate transient STATE-CHANGE: oson=OFF, ancp=BRZE
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "oson": "OFF",
-                "ancp": "BRZE",
-            }.get(key, default)
-        )
-        mock_coordinator.data = {"product-state": {}}
-
-        entity = DysonOscillationModeSelect(mock_coordinator)
-        entity._breeze_transition_pending = True
-
-        with patch.object(entity, "async_write_ha_state"):
-            entity._handle_coordinator_update()
-
-        # Mode must show Breeze (via the guard) — not Off
-        assert entity._attr_current_option == "Breeze"
-        # Flag must still be set — oson was OFF (transient), not settled yet
-        assert entity._breeze_transition_pending is True
-
-    def test_breeze_transition_flag_cleared_on_settled_oson_on(self, mock_coordinator):
-        """Test that _breeze_transition_pending IS cleared once oson=ON is confirmed."""
-        mock_coordinator.device_capabilities = [
-            "AdvanceOscillationDay1",
-            "Humidifier",
-        ]
-        # Simulate settled STATE-CHANGE: oson=ON, ancp=BRZE
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "oson": "ON",
-                "ancp": "BRZE",
-            }.get(key, default)
-        )
-        mock_coordinator.data = {"product-state": {}}
-
-        entity = DysonOscillationModeSelect(mock_coordinator)
-        entity._breeze_transition_pending = True
-
-        with patch.object(entity, "async_write_ha_state"):
-            entity._handle_coordinator_update()
-
-        assert entity._attr_current_option == "Breeze"
-        # Flag must be cleared now that oson=ON confirms settled Breeze
-        assert entity._breeze_transition_pending is False
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_off_from_breeze(self, mock_coordinator):
-        """Test that selecting Off from Breeze calls set_oscillation(False).
-
-        The vendor app sends only {oson: OFF} when turning off from Breeze.
-        No special ancp override is needed.
-        """
-        mock_coordinator.device_capabilities = [
-            "AdvanceOscillationDay1",
-            "Humidifier",
-        ]
-        mock_coordinator.device.set_oscillation = AsyncMock()
-
-        entity = DysonOscillationModeSelect(mock_coordinator)
-        entity._attr_current_option = "Breeze"
-        await entity.async_select_option("Off")
-
-        mock_coordinator.device.set_oscillation.assert_called_once_with(False)
 
     @pytest.mark.asyncio
     async def test_async_select_option_breeze_no_device(self, mock_coordinator):
@@ -1342,9 +1256,6 @@ class TestDysonOscillationModeSelectCoverage:
         select._saved_sweep_midpoint = 200
         assert select._should_restore_midpoint_on_state_change("350°") is False
 
-        # Test with Off mode
-        assert select._should_restore_midpoint_on_state_change("Off") is False
-
         # Test with different last mode
         select._last_known_mode = "90°"
         assert select._should_restore_midpoint_on_state_change("45°") is False
@@ -1420,19 +1331,29 @@ class TestDysonOscillationModeSelectCoverage:
 
     @pytest.mark.asyncio
     async def test_async_select_option_custom_mode(self, mock_coordinator):
-        """Test selecting custom oscillation mode."""
-        mock_coordinator.device.set_oscillation = AsyncMock()
+        """Test selecting Custom calls set_oscillation_angles with current osal/osau.
+
+        Selecting 'Custom' re-sends the device's current angle values with
+        ancp=CUST to switch it into custom mode.  oson is not touched.
+        """
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: {
+                "osal": "0100",
+                "osau": "0260",
+            }.get(key, default)
+        )
 
         select = DysonOscillationModeSelect(mock_coordinator)
         await select.async_select_option("Custom")
 
-        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(100, 260)
 
     @pytest.mark.asyncio
     async def test_async_select_option_350_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 350° calls set_oscillation_preset(350) — no osal/osau (vendor match)."""
+        """Test selecting 350° calls set_oscillation_preset(350, 0, 350)."""
         mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
@@ -1440,13 +1361,17 @@ class TestDysonOscillationModeSelectCoverage:
 
         await select.async_select_option("350°")
 
-        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(350)
+        # center falls back to 175 (get_state_value returns Mock → TypeError caught)
+        # 350° preset always yields (0, 350)
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(
+            350, 0, 350
+        )
 
     @pytest.mark.asyncio
     async def test_async_select_option_90_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 90° calls set_oscillation_preset(90) — no osal/osau (vendor match)."""
+        """Test selecting 90° calls set_oscillation_preset(90, lower, upper) with computed angles."""
         mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
@@ -1454,31 +1379,40 @@ class TestDysonOscillationModeSelectCoverage:
 
         await select.async_select_option("90°")
 
-        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(90)
+        # center falls back to 175 → lower=130, upper=220
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(
+            90, 130, 220
+        )
 
     @pytest.mark.asyncio
     async def test_async_select_option_45_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 45° calls set_oscillation_preset(45) — no osal/osau (vendor match)."""
+        """Test selecting 45° calls set_oscillation_preset(45, lower, upper) with computed angles."""
         mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
         await select.async_select_option("45°")
 
-        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(45)
+        # center falls back to 175 → lower=152, upper=197
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(
+            45, 152, 197
+        )
 
     @pytest.mark.asyncio
     async def test_async_select_option_180_degree_calls_set_oscillation_preset(
         self, mock_coordinator
     ):
-        """Test selecting 180° calls set_oscillation_preset(180) — no osal/osau (vendor match)."""
+        """Test selecting 180° calls set_oscillation_preset(180, lower, upper) with computed angles."""
         mock_coordinator.device.set_oscillation_preset = AsyncMock()
 
         select = DysonOscillationModeSelect(mock_coordinator)
         await select.async_select_option("180°")
 
-        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(180)
+        # center falls back to 175 → lower=85, upper=265
+        mock_coordinator.device.set_oscillation_preset.assert_called_once_with(
+            180, 85, 265
+        )
 
 
 class TestDysonHeatingModeSelectCoverage:

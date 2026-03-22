@@ -224,6 +224,24 @@ class TestDysonVacuumEntity:
         expected_attributes = {"raw_state": "INACTIVE_CHARGED"}
         assert attributes == expected_attributes
 
+    def test_extra_state_attributes_no_state_with_position(
+        self, mock_coordinator_robot
+    ):
+        """Test attributes when robot_state is None but global_position is set.
+
+        Covers the branch where the robot_state condition (line 202) is False
+        and execution falls through to the robot_global_position check.
+        """
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        mock_coordinator_robot.device.robot_state = None
+        mock_coordinator_robot.device.robot_global_position = [500, 300]
+        mock_coordinator_robot.device.robot_full_clean_type = None
+        mock_coordinator_robot.device.robot_clean_id = None
+
+        attributes = entity.extra_state_attributes
+        assert attributes == {"global_position": [500, 300]}
+
     @pytest.mark.asyncio
     async def test_pause(self, mock_coordinator_robot):
         """Test pause command."""

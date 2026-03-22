@@ -59,6 +59,8 @@ from homeassistant.helpers import config_validation as cv
 from .config_flow import DysonConfigFlow  # noqa: F401
 from .const import (
     CONF_AUTO_ADD_DEVICES,
+    CONF_COUNTRY,
+    CONF_CULTURE,
     CONF_POLL_FOR_DEVICES,
     CONF_SERIAL_NUMBER,
     DEFAULT_AUTO_ADD_DEVICES,
@@ -364,6 +366,8 @@ async def _handle_new_device(
             device_info=device_info,
             auth_token=entry.data.get("auth_token"),
             parent_entry_id=entry.entry_id,
+            country=entry.data.get(CONF_COUNTRY),
+            culture=entry.data.get(CONF_CULTURE),
         )
 
         _LOGGER.info(

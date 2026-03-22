@@ -228,6 +228,21 @@ STATE_KEY_OSCILLATION_CENTER: Final = (
     "ancp"  # Angle custom preset (e.g. "CUST", "BRZE", or numeric center)
 )
 
+# Tilt oscillation state keys (vertical axis)
+STATE_KEY_TILT_OSCILLATION_ON: Final = "oton"  # Tilt oscillation on/off (writable)
+STATE_KEY_TILT_OSCILLATION_LOWER: Final = (
+    "otal"  # Tilt lower angle, e.g. "0025" (writable)
+)
+STATE_KEY_TILT_OSCILLATION_UPPER: Final = (
+    "otau"  # Tilt upper angle, e.g. "0025" (writable)
+)
+STATE_KEY_TILT_ANGLE_CONTROL: Final = (
+    "anct"  # Tilt angle control preset: "CUST" or "BRZE" (writable)
+)
+STATE_KEY_TILT_OSCILLATION_STATUS: Final = (
+    "otcs"  # Tilt oscillation control status (read-only)
+)
+
 # Humidifier state keys
 STATE_KEY_HUMIDITY_ENABLED: Final = "hume"  # Humidity mode (HUMD/OFF)
 STATE_KEY_HUMIDITY_AUTO: Final = "haut"  # Humidity auto mode (ON/OFF)

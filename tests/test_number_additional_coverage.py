@@ -309,7 +309,13 @@ class TestOscillationAngleErrorCoverage:
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=TimeoutError("Connection timeout")
         )
-        coordinator.device.get_state_value = Mock(side_effect=["0045", "0315"])
+        coordinator.device.get_state_value = Mock(
+            side_effect=lambda state, key, default: {
+                "ancp": "CUST",
+                "osal": "0045",
+                "osau": "0315",
+            }.get(key, default)
+        )
         coordinator.data = {"product-state": {"osal": "0045", "osau": "0315"}}
 
         entity = DysonOscillationCenterAngleNumber(coordinator)
@@ -327,7 +333,13 @@ class TestOscillationAngleErrorCoverage:
         coordinator.device.set_oscillation_angles = AsyncMock(
             side_effect=ConnectionError("Device offline")
         )
-        coordinator.device.get_state_value = Mock(side_effect=["0045", "0315"])
+        coordinator.device.get_state_value = Mock(
+            side_effect=lambda state, key, default: {
+                "ancp": "CUST",
+                "osal": "0045",
+                "osau": "0315",
+            }.get(key, default)
+        )
         coordinator.data = {"product-state": {"osal": "0045", "osau": "0315"}}
 
         entity = DysonOscillationCenterAngleNumber(coordinator)

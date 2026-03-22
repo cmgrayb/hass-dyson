@@ -153,7 +153,7 @@ SERVICE_SET_OSCILLATION_ANGLES_SCHEMA = vol.Schema(
         vol.Required("upper_angle"): vol.All(
             vol.Coerce(int),
             vol.Range(min=0, max=350),  # Upper bound: 0-350 degrees
-        ),  # Note: lower_angle must be < upper_angle (validated in handler)
+        ),  # Note: lower_angle may equal upper_angle (0-span = fixed aim)
     }
 )
 
@@ -410,8 +410,8 @@ async def _handle_set_oscillation_angles(
     lower_angle = call.data["lower_angle"]
     upper_angle = call.data["upper_angle"]
 
-    if lower_angle >= upper_angle:
-        raise ServiceValidationError("Lower angle must be less than upper angle")
+    if lower_angle > upper_angle:
+        raise ServiceValidationError("Lower angle must not exceed upper angle")
 
     coordinator = await _get_coordinator_from_device_id(hass, device_id)
     if not coordinator or not coordinator.device:
@@ -1284,7 +1284,7 @@ def _create_detailed_device_info_from_coordinator(
         }
 
         # Determine the MQTT password - use actual credential if available, otherwise placeholder
-        mqtt_password = "Requires device setup"
+        mqtt_password = "Requires device setup"  # nosec B105 - informational placeholder, not a real password
         if hasattr(device, "credential") and device.credential:
             mqtt_password = device.credential
 
@@ -1324,7 +1324,8 @@ def _create_sanitized_device_info_from_cloud_device(device) -> dict[str, Any]:
 
 
 def _create_detailed_device_info_from_cloud_device(
-    device, decrypted_password: str = ""
+    device,
+    decrypted_password: str = "",  # nosec B107 - empty default is intentional, caller provides real password
 ) -> dict[str, Any]:
     """Create detailed device information from cloud device object.
 

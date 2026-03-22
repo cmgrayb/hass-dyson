@@ -340,6 +340,15 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
+    # Canonical spans for named presets — device does not update osal/osau for
+    # these, so we derive lower/upper from ancp + the last-known midpoint.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation lower angle number."""
         super().__init__(coordinator)
@@ -350,22 +359,41 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Get lower oscillation angle from device state (osal)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
-            )
-            try:
-                # Convert angle data to number (e.g., "0090" -> 90)
-                self._attr_native_value = int(angle_data.lstrip("0") or "0")
-            except (ValueError, TypeError):
-                self._attr_native_value = 0
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                # Device won't update osal/osau for preset commands.  Derive a
+                # representative lower angle from the canonical span centred on
+                # the midpoint of the (stale) osal/osau.
+                try:
+                    lower_raw = self.coordinator.device.get_state_value(
+                        product_state, "osal", "0000"
+                    )
+                    upper_raw = self.coordinator.device.get_state_value(
+                        product_state, "osau", "0350"
+                    )
+                    midpoint = (
+                        int(lower_raw.lstrip("0") or "0")
+                        + int(upper_raw.lstrip("0") or "350")
+                    ) // 2
+                    span = self._ANCP_SPAN_MAP[ancp]
+                    self._attr_native_value = max(0, midpoint - span // 2)
+                except (ValueError, TypeError):
+                    self._attr_native_value = 0
+            else:
+                angle_data = self.coordinator.device.get_state_value(
+                    product_state, "osal", "0000"
+                )
+                try:
+                    self._attr_native_value = int(angle_data.lstrip("0") or "0")
+                except (ValueError, TypeError):
+                    self._attr_native_value = 0
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()
@@ -376,16 +404,16 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
             return
 
         try:
-            # Get current upper angle to ensure lower < upper
+            # Get current upper angle to ensure lower <= upper
             upper_angle_data = self.coordinator.data.get("product-state", {}).get(
                 "osau", "0350"
             )
             upper_angle = int(upper_angle_data.lstrip("0") or "350")
 
-            # Ensure lower angle is less than upper angle
-            lower_angle = min(int(value), upper_angle - 5)
+            # Clamp so lower never exceeds upper (equal angles = span-0 / point-aim)
+            lower_angle = min(int(value), upper_angle)
 
-            # Use device method directly
+            # Use device method directly (includes oson=ON; device handles span=0 naturally)
             await self.coordinator.device.set_oscillation_angles(
                 lower_angle, upper_angle
             )
@@ -429,6 +457,15 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
+    # Canonical spans for named presets — device does not update osal/osau for
+    # these, so we derive lower/upper from ancp + the last-known midpoint.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation upper angle number."""
         super().__init__(coordinator)
@@ -439,22 +476,41 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         if self.coordinator.device:
-            # Get upper oscillation angle from device state (osau)
             product_state = self.coordinator.data.get("product-state", {})
-            angle_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            try:
-                # Convert angle data to number (e.g., "0350" -> 350)
-                self._attr_native_value = int(angle_data.lstrip("0") or "350")
-            except (ValueError, TypeError):
-                self._attr_native_value = 350
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                # Device won't update osal/osau for preset commands.  Derive a
+                # representative upper angle from the canonical span centred on
+                # the midpoint of the (stale) osal/osau.
+                try:
+                    lower_raw = self.coordinator.device.get_state_value(
+                        product_state, "osal", "0000"
+                    )
+                    upper_raw = self.coordinator.device.get_state_value(
+                        product_state, "osau", "0350"
+                    )
+                    midpoint = (
+                        int(lower_raw.lstrip("0") or "0")
+                        + int(upper_raw.lstrip("0") or "350")
+                    ) // 2
+                    span = self._ANCP_SPAN_MAP[ancp]
+                    self._attr_native_value = min(350, midpoint + span // 2)
+                except (ValueError, TypeError):
+                    self._attr_native_value = 350
+            else:
+                angle_data = self.coordinator.device.get_state_value(
+                    product_state, "osau", "0350"
+                )
+                try:
+                    self._attr_native_value = int(angle_data.lstrip("0") or "350")
+                except (ValueError, TypeError):
+                    self._attr_native_value = 350
         else:
             self._attr_native_value = None
         super()._handle_coordinator_update()
@@ -465,16 +521,16 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
             return
 
         try:
-            # Get current lower angle to ensure lower < upper
+            # Get current lower angle to ensure lower <= upper
             lower_angle_data = self.coordinator.data.get("product-state", {}).get(
                 "osal", "0000"
             )
             lower_angle = int(lower_angle_data.lstrip("0") or "0")
 
-            # Ensure upper angle is greater than lower angle
-            upper_angle = max(int(value), lower_angle + 5)
+            # Clamp so upper never goes below lower (equal angles = span-0 / point-aim)
+            upper_angle = max(int(value), lower_angle)
 
-            # Use device method directly
+            # Use device method directly (includes oson=ON; device handles span=0 naturally)
             await self.coordinator.device.set_oscillation_angles(
                 lower_angle, upper_angle
             )
@@ -518,6 +574,16 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
 
     coordinator: DysonDataUpdateCoordinator
 
+    # Map ancp preset codes to canonical spans (same as DysonOscillationAngleSpanNumber).
+    # Used in async_set_native_value so that moving the center while in a named
+    # preset mode preserves the correct span rather than reading stale osal/osau.
+    _ANCP_SPAN_MAP: dict[str, int] = {
+        "0045": 45,
+        "0090": 90,
+        "0180": 180,
+        "0350": 350,
+    }
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the oscillation center angle number."""
         super().__init__(coordinator)
@@ -528,7 +594,7 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
         self._attr_mode = NumberMode.SLIDER
         self._attr_native_min_value = 0
         self._attr_native_max_value = 350
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     def _handle_coordinator_update(self) -> None:
@@ -559,17 +625,27 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
             return
 
         try:
-            # Get current span (upper - lower)
             product_state = self.coordinator.data.get("product-state", {})
-            lower_data = self.coordinator.device.get_state_value(
-                product_state, "osal", "0000"
-            )
-            upper_data = self.coordinator.device.get_state_value(
-                product_state, "osau", "0350"
-            )
-            lower_angle = int(lower_data.lstrip("0") or "0")
-            upper_angle = int(upper_data.lstrip("0") or "350")
-            current_span = upper_angle - lower_angle
+
+            # Determine the current span.  When the device is in a named preset
+            # mode it does NOT update osal/osau in STATE-CHANGE confirmations,
+            # so those values can be stale and must not be used as the span
+            # source.  Trust ancp for named presets; fall back to osal/osau only
+            # for ancp=CUST / unknown (custom angles where the device does update
+            # osal/osau).
+            ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+            if ancp in self._ANCP_SPAN_MAP:
+                current_span = self._ANCP_SPAN_MAP[ancp]
+            else:
+                lower_data = self.coordinator.device.get_state_value(
+                    product_state, "osal", "0000"
+                )
+                upper_data = self.coordinator.device.get_state_value(
+                    product_state, "osau", "0350"
+                )
+                lower_angle = int(lower_data.lstrip("0") or "0")
+                upper_angle = int(upper_data.lstrip("0") or "350")
+                current_span = upper_angle - lower_angle
 
             # Calculate new lower and upper angles centered on the target
             center_angle = int(value)
@@ -583,7 +659,7 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
             elif new_upper == 350:
                 new_lower = max(0, 350 - current_span)
 
-            # Use device method directly
+            # Use device method directly (includes oson=ON; device handles span=0 naturally)
             await self.coordinator.device.set_oscillation_angles(new_lower, new_upper)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug(
@@ -635,9 +711,9 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
         self._attr_icon = "mdi:angle-acute"
         # No entity_category - intentionally in Controls section as primary operational control
         self._attr_mode = NumberMode.SLIDER
-        self._attr_native_min_value = 10
+        self._attr_native_min_value = 0
         self._attr_native_max_value = 350
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     # Map ancp preset codes to their canonical span in degrees.
@@ -710,7 +786,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
             elif new_upper == 350:
                 new_lower = max(0, 350 - new_span)
 
-            # Use device method directly
+            # Use device method directly (includes oson=ON; device handles span=0 naturally)
             await self.coordinator.device.set_oscillation_angles(new_lower, new_upper)
             # No need to refresh - MQTT provides real-time updates
             _LOGGER.debug(
@@ -767,7 +843,7 @@ class DysonOscillationDay0LowerAngleNumber(DysonEntity, NumberEntity):
         self._attr_native_max_value = (
             212  # Allow full range, validation happens on device
         )
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     def _handle_coordinator_update(self) -> None:
@@ -860,7 +936,7 @@ class DysonOscillationDay0UpperAngleNumber(DysonEntity, NumberEntity):
             142  # Allow full range, validation happens on device
         )
         self._attr_native_max_value = 212
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     def _handle_coordinator_update(self) -> None:
@@ -951,7 +1027,7 @@ class DysonOscillationDay0AngleSpanNumber(DysonEntity, NumberEntity):
         # Day0 constraints: max 70° span (35° each side of 177° center)
         self._attr_native_min_value = 10
         self._attr_native_max_value = 70
-        self._attr_native_step = 5
+        self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "°"
 
     def _handle_coordinator_update(self) -> None:
