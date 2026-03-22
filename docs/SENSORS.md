@@ -56,11 +56,11 @@ Track coarse particulate matter concentration for comprehensive air quality moni
 
 Coarse particulate matter including dust, pollen, and mold spores. WHO guidelines recommend annual average < 15 µg/m³, with values above 50 µg/m³ considered unhealthy for sensitive groups.
 
-### P25R Level Sensor
+### PM25 Level Sensor
 
 #### Description
 
-The P25R sensor provides additional fine particulate matter readings using an alternative measurement method, offering enhanced air quality monitoring precision.
+The PM25 sensor provides additional fine particulate matter readings using an alternative measurement method, offering enhanced air quality monitoring precision.
 
 #### Purpose
 
@@ -68,7 +68,7 @@ Supplement PM2.5 readings with additional precision measurement data for compreh
 
 #### Technical Specifications
 
-1. Entity ID: `sensor.{device_name}_p25r`
+1. Entity ID: `sensor.{device_name}_PM25`
 2. Unit: µg/m³ (micrograms per cubic meter)
 3. Device Class: None
 4. State Class: Measurement
@@ -77,38 +77,11 @@ Supplement PM2.5 readings with additional precision measurement data for compreh
 7. Entity Category: Diagnostic
 8. Availability: Devices with ExtendedAQ capability
 9. Update Frequency: Real-time with device data updates
-10. MQTT Key: `p25r` in environmental-data
+10. MQTT Key: `PM25` in environmental-data
 
 #### Technical Notes
 
-P25R readings may show slight variations from standard PM2.5 measurements due to different detection methods. Used for device calibration and enhanced measurement accuracy.
-
-### P10R Level Sensor
-
-#### Description
-
-The P10R sensor provides additional coarse particulate matter readings using an alternative measurement method, offering enhanced air quality monitoring precision.
-
-#### Purpose
-
-Supplement PM10 readings with additional precision measurement data for comprehensive coarse particle monitoring and device calibration.
-
-#### Technical Specifications
-
-1. Entity ID: `sensor.{device_name}_p10r`
-2. Unit: µg/m³ (micrograms per cubic meter)
-3. Device Class: None
-4. State Class: Measurement
-5. Range: 0-999 µg/m³
-6. Icon: mdi:air-filter
-7. Entity Category: Diagnostic
-8. Availability: Devices with ExtendedAQ capability
-9. Update Frequency: Real-time with device data updates
-10. MQTT Key: `p10r` in environmental-data
-
-#### Technical Notes
-
-P10R readings may show slight variations from standard PM10 measurements due to different detection methods. Used for device calibration and enhanced measurement accuracy.
+PM25 readings may show slight variations from standard PM2.5 measurements due to different detection methods. Used for device calibration and enhanced measurement accuracy.
 
 ## Gas Quality Sensors
 
@@ -190,15 +163,15 @@ Monitor formaldehyde levels for comprehensive chemical air quality assessment an
 
 Colorless gas commonly found in furniture, carpets, building materials, and cleaning products. Can cause eye, nose, and throat irritation. Values above 10 ppb may cause discomfort.
 
-### VOC Sensor (Legacy)
+### VOC Sensor
 
 #### Description
 
-The VOC sensor monitors volatile organic compounds concentration in the air, detecting chemical compounds from household products and materials. This is a legacy sensor maintained for backward compatibility.
+The VOC sensor monitors volatile organic compounds concentration in the air, detecting chemical compounds from household products and materials.
 
 #### Purpose
 
-Monitor chemical air quality through volatile organic compound detection on older devices without ExtendedAQ capability.
+Monitor chemical air quality through volatile organic compound detection.
 
 #### Technical Specifications
 
@@ -209,12 +182,8 @@ Monitor chemical air quality through volatile organic compound detection on olde
 5. Range: 0-500 ppb
 6. Icon: mdi:chemical-weapon
 7. Entity Category: Diagnostic
-8. Availability: Devices with VOC capability (excluding ExtendedAQ devices)
+8. Availability: Any device that reports VOC data (`va10` key in environmental data), or that declares the `VOC` capability explicitly
 9. Update Frequency: Real-time with device data updates
-
-#### Legacy Support
-
-This sensor is only created on older devices with VOC capability but without ExtendedAQ capability. ExtendedAQ devices provide more specific gas monitoring through CO2, NO2, and HCHO sensors.
 
 ## Environmental Sensors
 
@@ -250,7 +219,7 @@ Raw Dyson data is in Kelvin × 10 format. The integration performs conversion: `
 #### Discovery Logic
 
 Temperature sensors are created when devices have BOTH:
-1. **Capability requirement**: Heating capability OR EnvironmentalData capability
+1. **Capability requirement**: None, detected automatically on any ec device if present
 2. **Data presence**: Temperature data (`tact` key) present in environmental MQTT response
 
 This ensures sensors are only created for devices that both declare the capability and actually provide temperature data.
@@ -279,14 +248,14 @@ Monitor humidity levels for comfort, health management, and integration with hum
 #### Discovery Logic
 
 Humidity sensors are created when devices have BOTH:
-1. **Capability requirement**: Humidifier capability OR EnvironmentalData capability
+1. **Capability requirement**: None, detected automatically on any ec device if present
 2. **Data presence**: Humidity data (`hact` key) present in environmental MQTT response
 
 This ensures sensors are only created for devices that both declare the capability and actually provide humidity data.
 
 #### Data Format
 
-Humidity values are reported as percentages from 0-100%. For example, a value of "0045" represents 45% relative humidity.
+Humidity values are reported as whole percentages by the device from 0-100%. For example, a value of "0045" represents 45% relative humidity.
 
 ## Connectivity Sensors
 
@@ -485,7 +454,7 @@ Track filter compatibility and ensure correct replacement filter selection for o
 #### Filter Status Values
 
 Shows specific HEPA filter model installed:
-- Filter model number (e.g., "970013-03")
+- Filter model type (e.g., "GCOM" for Genuine Combination Filter)
 - "Not Installed" if no filter is detected
 - "Unknown" if type cannot be determined
 
@@ -544,7 +513,7 @@ Track carbon filter compatibility and ensure correct replacement filter selectio
 #### Filter Status Values
 
 Shows specific carbon filter model installed:
-- Filter model number (e.g., "970532-01")
+- Filter model type (e.g., "GCOM")
 - "Not Installed" if no filter is detected
 - "Unknown" if the type cannot be determined
 
@@ -571,24 +540,23 @@ The HASS-Dyson integration uses dynamic sensor discovery based on device capabil
 ExtendedAQ is the primary capability for modern air quality monitoring and includes support for:
 
 | Sensor | Always Created | Data Key | Discovery Method |
-|--------|---------------|----------|------------------|
-| PM2.5 | Yes | `pm25` | Always present on ExtendedAQ devices |
-| PM10 | Yes | `pm10` | Always present on ExtendedAQ devices |
-| P25R | Yes | `p25r` | Always present on ExtendedAQ devices |
-| P10R | Yes | `p10r` | Always present on ExtendedAQ devices |
-| CO2 | Dynamic | `co2` | Created only when CO2 data is present |
-| NO2 | Dynamic | `no2` | Created only when NO2 data is present |
-| HCHO | Dynamic | `hcho` | Created only when HCHO data is present |
+|--------|---------------|----------|-----------------|
+| PM2.5 | Yes | `p25r`/`pm25` | Always present on ExtendedAQ devices |
+| PM10 | Yes | `p10r`/`pm10` | Always present on ExtendedAQ devices |
+| VOC | Dynamic | `va10` | Created when VOC data is present |
+| CO2 | Dynamic | `co2` | Created when CO2 data is present |
+| NO2 | Dynamic | `noxl` | Created when NO2 data is present |
+| HCHO | Dynamic | `hchr`/`hcho` | Created when HCHO data is present |
 
-#### Legacy VOC Support
+#### VOC Capability
 
-For backward compatibility, the VOC sensor is maintained:
+The deprecated `VOC` capability flag forces creation of VOC, NO2, and CO2 sensors regardless of live data presence. This applies to any device that explicitly declares the `VOC` capability, with or without ExtendedAQ.  The VOC capability flag is currently only used for creating mock devices during testing.
 
 | Sensor | Capability | Availability |
 |--------|------------|--------------|
-| VOC | VOC capability | Only on devices WITHOUT ExtendedAQ |
-
-**Note**: Devices with ExtendedAQ capability provide more specific gas monitoring through CO2, NO2, and HCHO sensors instead of the generic VOC sensor.
+| VOC | VOC capability | Any device declaring VOC capability |
+| NO2 | VOC capability | Any device declaring VOC capability |
+| CO2 | VOC capability | Any device declaring VOC capability |
 
 ### Environmental Sensors
 
@@ -644,10 +612,10 @@ Filter sensors use different discovery methods based on filter type:
 
 | Sensor | Discovery Method | Availability |
 |--------|-----------------|--------------|
-| Carbon Filter Life | Device State Check | Only when `cflt` ≠ "NONE" |
-| Carbon Filter Type | Device State Check | Only when `cflt` ≠ "NONE" |
+| Carbon Filter Life | Device State Check | Only when `cflt` is not `"NONE"` and is not `"SCOG"` |
+| Carbon Filter Type | Device State Check | Only when `cflt` is not `"NONE"` and is not `"SCOG"` |
 
-**Note**: Carbon filter sensors are created dynamically based on the presence of carbon filter data (`cflt` field) in device state, not capability-based.
+**Note**: Carbon filter sensors are created dynamically based on the `cflt` field in device state. Values `"NONE"` and `"SCOG"` both indicate no separate carbon filter is installed; all other values indicate a carbon filter is present and sensors will be created.
 
 ## Technical Implementation Details
 
@@ -670,7 +638,7 @@ Device responds on `status/current` topic with:
   "data":{
     "pm25":"0012",
     "pm10":"0018",
-    "p25r":"0010",
+    "PM25":"0010",
     "p10r":"0016",
     "co2":"0450",
     "no2":"0025",
@@ -687,7 +655,7 @@ Device responds on `status/current` topic with:
 |--------|----------|-------------|------------|
 | PM2.5 | `pm25` | Integer (µg/m³) | Direct value |
 | PM10 | `pm10` | Integer (µg/m³) | Direct value |
-| P25R | `p25r` | Integer (µg/m³) | Direct value |
+| PM25 | `PM25` | Integer (µg/m³) | Direct value |
 | P10R | `p10r` | Integer (µg/m³) | Direct value |
 | CO2 | `co2` | Integer (ppm) | Direct value |
 | NO2 | `no2` | Integer (ppb) | Direct value |
@@ -703,7 +671,7 @@ All sensors include comprehensive validation to ensure data integrity and reliab
 
 1. **Air Quality Sensors**: Reject values outside expected ranges to prevent sensor errors
    - PM2.5/PM10: 0-999 µg/m³
-   - P25R/P10R: 0-999 µg/m³
+   - PM25/P10R: 0-999 µg/m³
    - CO2: 0-5000 ppm
    - NO2: 0-1000 ppb
    - HCHO: 0-1000 ppb
@@ -775,7 +743,7 @@ Sensors are categorized to control visibility and organization in Home Assistant
    - PM2.5, PM10, CO2, Temperature, Humidity
 
 2. **Diagnostic Sensors**: Device status and technical sensors (`EntityCategory.DIAGNOSTIC`)
-   - P25R, P10R, NO2, HCHO, WiFi Signal, Connection Status, Filter Types
+   - PM25, P10R, NO2, HCHO, WiFi Signal, Connection Status, Filter Types
 
 #### Visibility Control
 

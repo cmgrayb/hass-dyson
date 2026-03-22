@@ -8,9 +8,9 @@ The Get Cloud Devices Action is added to Home Assistant when a cloud account is 
 
 The Action has two options:
 
-1. Account E-mail: the email address associated with the desired account to query
+1. Account E-mail: the email address or mobile number associated with the desired account to query
     - If this is unconfigured or blank, the first account found will be queried
-2. Sanitize Data: when run with this option selected, the action will return only the data that the developers will need to assist in adding a missing feature, with no identifiable or unique information included
+2. Sanitize Data: when run with this option selected and set to true, the action will return only the data that the developers will need to assist in adding a missing feature, with no identifiable or unique information included
 
 ### Purpose
 
@@ -117,7 +117,7 @@ The Action has three required parameters:
 2. Lower Angle: the lower bound of oscillation in degrees (0-350°)
 3. Upper Angle: the upper bound of oscillation in degrees (0-350°)
 
-Note: Lower angle must be less than upper angle.
+Note: Lower angle must be less than or equal to upper angle.
 
 ### Purpose
 
@@ -157,28 +157,3 @@ After replacing a HEPA filter, carbon filter, or both, use this action to reset 
 #### Maintenance Tracking
 
 Ensure the device accurately tracks filter usage and provides correct replacement notifications.
-
-## Schedule Operation Action (Experimental)
-
-### Description
-
-The Schedule Operation Action is an experimental feature available for individual Dyson devices.
-
-The Action has three required parameters and one optional parameter:
-
-1. Device ID: the device identifier for the target device
-2. Operation: the operation to schedule ("turn_on", "turn_off", "set_speed", "toggle_auto_mode")
-3. Schedule Time: the time to execute the operation in ISO format (e.g., "2025-01-01T12:00:00Z")
-4. Parameters: optional JSON string with additional parameters for the operation
-
-### Purpose
-
-Schedule future operations on Dyson devices (experimental feature).
-
-### Intended Use Cases
-
-#### Future Automation
-
-Schedule device operations to occur at specific times.
-
-**Note**: This is an experimental feature and is not yet fully implemented. Currently, it only logs the scheduled operation for future development.
