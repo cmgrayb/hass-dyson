@@ -30,7 +30,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.3",
-    "homeassistant==2026.4.0b4",
+    "homeassistant==2026.4.0b5",
     "cryptography>=45.0.7",
     "requests>=2.32.5",
     "libdyson-rest==0.12.1",
