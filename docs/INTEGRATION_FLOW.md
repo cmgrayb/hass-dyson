@@ -41,7 +41,7 @@ flowchart TB
     SetupType -->|Cloud Account| CloudAuth[Cloud Authentication]
     SetupType -->|Manual Device| ManualSetup[Manual Device Setup]
 
-    CloudAuth --> AuthSteps[1. Enter Email<br/>2. Receive OTP to Email/SMS<br/>3. Enter Password + OTP Code<br/>4. Choose Connection Type<br/>5. Discover Devices from Cloud]
+    CloudAuth --> AuthSteps[1. Enter Email<br/>2. Receive OTP to Email/SMS<br/>3. OTP Code +/- Password<br/>4. Choose Connection Type<br/>5. Discover Devices from Cloud]
     AuthSteps --> CloudOptions[Configure Cloud Preferences]
     CloudOptions --> AutoAdd{Auto-Add Devices?}
     AutoAdd -->|Yes| DevicePolling{Enable Polling?}
