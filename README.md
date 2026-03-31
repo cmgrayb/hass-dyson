@@ -282,6 +282,11 @@ hass_dyson:
 
 If you like our work, please give us a star!
 
+## Sponsorship
+
+All money contributed through the sponsorship button goes to development devices to further
+improve this integration.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
