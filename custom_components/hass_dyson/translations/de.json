@@ -210,6 +210,12 @@
       },
       "dominant_pollutant": {
         "name": "Dominierender Schadstoff"
+      },
+      "next_cleaning_cycle": {
+        "name": "Nächster Reinigungszyklus"
+      },
+      "cleaning_time_remaining": {
+        "name": "Verbleibende Reinigungszeit"
       }
     },
     "switch": {
