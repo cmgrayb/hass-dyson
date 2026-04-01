@@ -284,7 +284,7 @@ If you like our work, please give us a star!
 
 ## Sponsorship
 
-This integration is provided free of charge and no requirement express or implied to donate.  Any money contributed through the sponsorship button as a gift goes to development devices to further improve this integration.
+This integration is provided free of charge and there is no requirement expressed or implied to donate.  Any money contributed through the sponsorship button as a gift goes to development devices to further improve this integration.
 
 ## License
 

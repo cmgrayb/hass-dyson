@@ -174,7 +174,7 @@ class TestAsyncSetPresetModeErrorHandling:
             patch.object(fan, "async_write_ha_state"),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            await fan.async_set_preset_mode("Auto")
+            await fan.async_set_preset_mode("auto")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
@@ -193,7 +193,7 @@ class TestAsyncSetPresetModeErrorHandling:
             patch.object(fan, "async_write_ha_state"),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            await fan.async_set_preset_mode("Manual")
+            await fan.async_set_preset_mode("manual")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
@@ -213,7 +213,7 @@ class TestAsyncSetPresetModeErrorHandling:
             patch.object(fan, "async_write_ha_state"),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            await fan.async_set_preset_mode("Heat")
+            await fan.async_set_preset_mode("heat")
 
         # Assert
         mock_coordinator.device.set_heating_mode.assert_called_once_with("HEAT")
@@ -230,7 +230,7 @@ class TestAsyncSetPresetModeErrorHandling:
             patch.object(fan, "async_write_ha_state"),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            await fan.async_set_preset_mode("Auto")
+            await fan.async_set_preset_mode("auto")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
@@ -247,7 +247,7 @@ class TestAsyncSetPresetModeErrorHandling:
             patch.object(fan, "async_write_ha_state"),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            await fan.async_set_preset_mode("Auto")
+            await fan.async_set_preset_mode("auto")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
@@ -266,7 +266,7 @@ class TestAsyncSetPresetModeErrorHandling:
             patch.object(fan, "async_write_ha_state"),
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            await fan.async_set_preset_mode("Auto")
+            await fan.async_set_preset_mode("auto")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
