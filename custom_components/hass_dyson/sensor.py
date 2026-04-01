@@ -2799,7 +2799,7 @@ class DysonNextCleaningCycleSensor(DysonEntity, SensorEntity):
         self._attr_native_unit_of_measurement = UnitOfTime.HOURS
         self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:timer-outline"
+        self._attr_icon = "mdi:calendar-filter"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -2871,7 +2871,7 @@ class DysonCleaningTimeRemainingSensor(DysonEntity, SensorEntity):
         self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
         self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:timer"
+        self._attr_icon = "mdi:wrench-clock"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
