@@ -48,6 +48,39 @@ def mock_coordinator():
 
 
 @pytest.fixture
+def mock_coordinator_heating():
+    """Create a mock coordinator for a heating-capable device (Hot+Cool series)."""
+    coordinator = MagicMock()
+    coordinator.serial_number = "TEST-SERIAL-123"
+    coordinator.device_name = "Test Device"
+    coordinator.device_category = "ec"
+    coordinator.data = {
+        "product-state": {
+            "fpwr": "ON",
+            "fnst": "FAN",
+            "fnsp": "0005",
+            "fdir": "ON",
+            "hmod": "OFF",
+        }
+    }
+    coordinator.device = MagicMock()
+    coordinator.device.fan_power = True
+    coordinator.device.fan_state = "FAN"
+    coordinator.device.fan_speed_setting = "0005"
+    coordinator.device.fan_speed = 5
+    coordinator.device.auto_mode = False
+    coordinator.device.set_fan_power = AsyncMock()
+    coordinator.device.set_fan_speed = AsyncMock()
+    coordinator.device.set_auto_mode = AsyncMock()
+    coordinator.device.set_direction = AsyncMock()
+    coordinator.device.set_heating_mode = AsyncMock()
+    coordinator.device.get_state_value = MagicMock(return_value="OFF")
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.device_capabilities = ["Heating"]
+    return coordinator
+
+
+@pytest.fixture
 def mock_coordinator_no_direction():
     """Create a mock coordinator without direction support."""
     coordinator = MagicMock()
@@ -589,6 +622,70 @@ class TestDysonFan:
         await fan.async_set_preset_mode("auto")
 
         # Assert - should return without error, no calls made
+
+    def test_handle_coordinator_update_heating_device_heat_mode(
+        self, mock_coordinator_heating
+    ):
+        """Test _handle_coordinator_update sets heat preset when hmod=HEAT (lines 342-343)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_heating)
+        mock_coordinator_heating.device.fan_power = True
+        mock_coordinator_heating.device.fan_speed_setting = "0005"
+        mock_coordinator_heating.device.auto_mode = False
+
+        def mock_get_state_value(data, key, default):
+            if key == "hmod":
+                return "HEAT"
+            return default
+
+        mock_coordinator_heating.device.get_state_value.side_effect = (
+            mock_get_state_value
+        )
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode == "heat"
+
+    def test_handle_coordinator_update_heating_device_auto_mode(
+        self, mock_coordinator_heating
+    ):
+        """Test _handle_coordinator_update sets auto preset on heating device when auto_mode (lines 344-345)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_heating)
+        mock_coordinator_heating.device.fan_power = True
+        mock_coordinator_heating.device.fan_speed_setting = "0005"
+        mock_coordinator_heating.device.auto_mode = True  # auto mode active
+
+        mock_coordinator_heating.device.get_state_value.return_value = "OFF"  # hmod=OFF
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode == "auto"
+
+    def test_handle_coordinator_update_heating_device_manual_mode(
+        self, mock_coordinator_heating
+    ):
+        """Test _handle_coordinator_update sets manual preset on heating device when not auto (lines 346-347)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_heating)
+        mock_coordinator_heating.device.fan_power = True
+        mock_coordinator_heating.device.fan_speed_setting = "0005"
+        mock_coordinator_heating.device.auto_mode = False  # manual mode
+
+        mock_coordinator_heating.device.get_state_value.return_value = "OFF"  # hmod=OFF
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode == "manual"
 
 
 class TestFanIntegration:
