@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.31.0"
+version = "0.32.0-beta.1"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -30,7 +30,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.3",
-    "homeassistant==2026.4.0b8",
+    "homeassistant==2026.4.0",
     "cryptography>=45.0.7",
     "requests>=2.32.5",
     "libdyson-rest==0.12.1",
