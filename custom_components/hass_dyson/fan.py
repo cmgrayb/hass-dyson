@@ -162,6 +162,12 @@ class DysonFan(DysonEntity, FanEntity):
     coordinator: DysonDataUpdateCoordinator
     _attr_current_temperature: float | None
     _attr_target_temperature: float
+    _attr_translation_key = "dyson_fan"
+
+    # Preset variables for better maintenance
+    PRESET_MODE_AUTO = "auto"
+    PRESET_MODE_MANUAL = "manual"
+    PRESET_MODE_HEAT = "heat"
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Dyson fan entity with capability detection.
@@ -223,7 +229,11 @@ class DysonFan(DysonEntity, FanEntity):
 
         # Set up preset modes based on heating capability
         if self._has_heating:
-            self._attr_preset_modes = ["Auto", "Manual", "Heat"]
+            self._attr_preset_modes = [
+                self.PRESET_MODE_AUTO,
+                self.PRESET_MODE_MANUAL,
+                self.PRESET_MODE_HEAT,
+            ]
             # Add climate-specific attributes for heating devices
             self._attr_temperature_unit = UnitOfTemperature.CELSIUS
             self._attr_min_temp = 1
@@ -239,7 +249,7 @@ class DysonFan(DysonEntity, FanEntity):
             ]
             self._attr_hvac_mode = HVACMode.OFF
         else:
-            self._attr_preset_modes = ["Auto", "Manual"]
+            self._attr_preset_modes = [self.PRESET_MODE_AUTO, self.PRESET_MODE_MANUAL]
 
         # Initialize state attributes to ensure clean state
         self._attr_is_on = None  # Will be set properly in first coordinator update
@@ -330,14 +340,16 @@ class DysonFan(DysonEntity, FanEntity):
                     product_state, "hmod", "OFF"
                 )
                 if heating_mode == "HEAT":
-                    self._attr_preset_mode = "Heat"
+                    self._attr_preset_mode = self.PRESET_MODE_HEAT
                 elif is_auto_mode:
-                    self._attr_preset_mode = "Auto"
+                    self._attr_preset_mode = self.PRESET_MODE_AUTO
                 else:
-                    self._attr_preset_mode = "Manual"
+                    self._attr_preset_mode = self.PRESET_MODE_MANUAL
             else:
                 # Non-heating devices use simple Auto/Manual logic
-                self._attr_preset_mode = "Auto" if is_auto_mode else "Manual"
+                self._attr_preset_mode = (
+                    self.PRESET_MODE_AUTO if is_auto_mode else self.PRESET_MODE_MANUAL
+                )
 
             # Update oscillation state from device data if supported
             if self._oscillation_supported:
@@ -618,11 +630,11 @@ class DysonFan(DysonEntity, FanEntity):
             return
 
         try:
-            if preset_mode == "Auto":
+            if preset_mode == self.PRESET_MODE_AUTO:
                 await self.coordinator.device.set_auto_mode(True)
-            elif preset_mode == "Manual":
+            elif preset_mode == self.PRESET_MODE_MANUAL:
                 await self.coordinator.device.set_auto_mode(False)
-            elif preset_mode == "Heat" and self._has_heating:
+            elif preset_mode == self.PRESET_MODE_MANUAL and self._has_heating:
                 # Enable heating mode
                 await self.coordinator.device.set_heating_mode("HEAT")
             else:
