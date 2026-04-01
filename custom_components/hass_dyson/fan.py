@@ -634,7 +634,7 @@ class DysonFan(DysonEntity, FanEntity):
                 await self.coordinator.device.set_auto_mode(True)
             elif preset_mode == self.PRESET_MODE_MANUAL:
                 await self.coordinator.device.set_auto_mode(False)
-            elif preset_mode == self.PRESET_MODE_MANUAL and self._has_heating:
+            elif preset_mode == self.PRESET_MODE_HEAT and self._has_heating:
                 # Enable heating mode
                 await self.coordinator.device.set_heating_mode("HEAT")
             else:
