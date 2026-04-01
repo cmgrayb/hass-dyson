@@ -229,7 +229,11 @@ class DysonFan(DysonEntity, FanEntity):
 
         # Set up preset modes based on heating capability
         if self._has_heating:
-            self._attr_preset_modes = [self.PRESET_MODE_AUTO, self.PRESET_MODE_MANUAL, self.PRESET_MODE_HEAT]
+            self._attr_preset_modes = [
+                self.PRESET_MODE_AUTO,
+                self.PRESET_MODE_MANUAL,
+                self.PRESET_MODE_HEAT,
+            ]
             # Add climate-specific attributes for heating devices
             self._attr_temperature_unit = UnitOfTemperature.CELSIUS
             self._attr_min_temp = 1
@@ -343,7 +347,9 @@ class DysonFan(DysonEntity, FanEntity):
                     self._attr_preset_mode = self.PRESET_MODE_MANUAL
             else:
                 # Non-heating devices use simple Auto/Manual logic
-                self._attr_preset_mode = self.PRESET_MODE_AUTO if is_auto_mode else self.PRESET_MODE_MANUAL
+                self._attr_preset_mode = (
+                    self.PRESET_MODE_AUTO if is_auto_mode else self.PRESET_MODE_MANUAL
+                )
 
             # Update oscillation state from device data if supported
             if self._oscillation_supported:
