@@ -150,7 +150,7 @@ class TestDysonFan:
         )
         assert fan._attr_speed_count == 10
         assert fan._attr_percentage_step == 10
-        assert fan._attr_preset_modes == ["Auto", "Manual"]
+        assert fan._attr_preset_modes == ["auto", "manual"]
         assert fan._attr_is_on is None
         assert fan._attr_percentage == 0
         assert fan._attr_current_direction == "forward"
@@ -229,7 +229,7 @@ class TestDysonFan:
         assert (
             fan._attr_current_direction == "forward"
         )  # fdir=ON means forward direction
-        assert fan._attr_preset_mode == "Manual"
+        assert fan._attr_preset_mode == "manual"
         assert fan._attr_oscillating is False
 
     def test_handle_coordinator_update_fan_auto_mode_via_fmod(self, mock_coordinator):
@@ -247,7 +247,7 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_preset_mode == "Auto"
+        assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_fan_auto_mode_via_auto_key(
         self, mock_coordinator
@@ -266,7 +266,7 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_preset_mode == "Auto"
+        assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_fan_manual_mode(self, mock_coordinator):
         """Test fan in manual mode (both fmod and auto indicate manual)."""
@@ -283,7 +283,7 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_preset_mode == "Manual"
+        assert fan._attr_preset_mode == "manual"
 
     def test_handle_coordinator_update_fan_off(self, mock_coordinator):
         """Test _handle_coordinator_update when fan is off."""
@@ -317,7 +317,7 @@ class TestDysonFan:
         # Assert
         assert fan._attr_is_on is True
         assert fan._attr_percentage == 70  # 7 * 10
-        assert fan._attr_preset_mode == "Auto"
+        assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_invalid_speed(self, mock_coordinator):
         """Test _handle_coordinator_update with invalid speed setting."""
@@ -561,7 +561,7 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        await fan.async_set_preset_mode("Auto")
+        await fan.async_set_preset_mode("auto")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
@@ -573,7 +573,7 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        await fan.async_set_preset_mode("Manual")
+        await fan.async_set_preset_mode("manual")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
@@ -586,7 +586,7 @@ class TestDysonFan:
         mock_coordinator.device = None
 
         # Act
-        await fan.async_set_preset_mode("Auto")
+        await fan.async_set_preset_mode("auto")
 
         # Assert - should return without error, no calls made
 
