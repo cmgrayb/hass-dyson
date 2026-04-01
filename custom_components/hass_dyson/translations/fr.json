@@ -210,6 +210,12 @@
       },
       "dominant_pollutant": {
         "name": "Polluant dominant"
+      },
+      "next_cleaning_cycle": {
+        "name": "Prochain cycle de nettoyage"
+      },
+      "cleaning_time_remaining": {
+        "name": "Temps de nettoyage restant"
       }
     },
     "switch": {
