@@ -8,7 +8,7 @@
                         "state": {
                             "auto": "mdi:fan-auto",
                             "manual": "mdi:fan",
-                            "heat": "hdi:heat-wave"
+                            "heat": "mdi:heat-wave"
                         }
                     }
                 }
