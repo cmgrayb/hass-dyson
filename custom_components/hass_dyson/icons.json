@@ -7,7 +7,6 @@
                         "default": "mdi:fan",
                         "state": {
                             "auto": "mdi:fan-auto",
-                            "manual": "mdi:fan",
                             "heat": "mdi:heat-wave"
                         }
                     }
