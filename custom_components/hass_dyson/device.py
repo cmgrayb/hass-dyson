@@ -30,11 +30,11 @@ Supported Device Categories:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import socket
 import time
-import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -554,8 +554,16 @@ class DysonDevice:
                 )
                 return False
 
-            # Create paho MQTT client for local connection
-            client_id = f"dyson-ha-local-{uuid.uuid4().hex[:8]}"
+            # Create paho MQTT client for local connection.
+            # Use a stable, deterministic client_id derived from the serial number.
+            # A random client_id causes the Dyson device's MQTT broker to accumulate
+            # stale sessions across HA restarts, eventually exhausting the connection
+            # pool and disconnecting new clients with error code 7 (MQTT_ERR_CONN_LOST).
+            # A stable client_id lets the broker replace the previous session on
+            # reconnect, preventing pool exhaustion.
+            # Keep within 23 chars (MQTT 3.1 limit) for maximum broker compatibility.
+            serial_hash = hashlib.sha1(self.serial_number.encode()).hexdigest()[:11]
+            client_id = f"hd-{serial_hash}"  # "hd-" + 11 hex chars = 14 chars
             username = self.serial_number
 
             _LOGGER.debug("Using MQTT client ID: %s", client_id)
