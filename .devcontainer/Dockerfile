@@ -34,7 +34,6 @@ COPY requirements-dev.txt /tmp/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir homeassistant && \
     pip install --no-cache-dir -r /tmp/requirements-dev.txt
 
 # Install additional development tools

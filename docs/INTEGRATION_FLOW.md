@@ -41,15 +41,15 @@ flowchart TB
     SetupType -->|Cloud Account| CloudAuth[Cloud Authentication]
     SetupType -->|Manual Device| ManualSetup[Manual Device Setup]
 
-    CloudAuth --> AuthSteps[1. Enter Email/Password<br/>2. Get OTP Code<br/>3. Verify OTP<br/>4. Get Auth Token]
-    AuthSteps --> CloudOptions[Configure Cloud Options]
+    CloudAuth --> AuthSteps[1. Enter Email<br/>2. Receive OTP to Email/SMS<br/>3. OTP Code +/- Password<br/>4. Choose Connection Type<br/>5. Discover Devices from Cloud]
+    AuthSteps --> CloudOptions[Configure Cloud Preferences]
     CloudOptions --> AutoAdd{Auto-Add Devices?}
     AutoAdd -->|Yes| DevicePolling{Enable Polling?}
     AutoAdd -->|No| CreateCloudEntry[Create Account Entry]
     DevicePolling -->|Yes| CreateCloudEntry
     DevicePolling -->|No| CreateCloudEntry
 
-    ManualSetup --> ManualSteps[1. Enter Serial Number<br/>2. Choose Connection Type<br/>3. Enter Network Details<br/>4. Configure MQTT]
+    ManualSetup --> ManualSteps[Configure Device Details:<br/>- Serial Number<br/>- MQTT Credential and Prefix<br/>- Hostname - optional, mDNS fallback<br/>- Device Category and Capabilities]
     ManualSteps --> CreateDeviceEntry[Create Device Entry]
 
     YAMLSetup --> ParseYAML[Parse YAML Config]
@@ -104,19 +104,19 @@ flowchart TB
     DetectCaps --> CheckFirmware[async_check_firmware_update]
     CheckFirmware --> RegisterServices[async_setup_device_services_for_coordinator]
 
-    RegisterServices --> DetermineCateg{Device Category}
-    DetermineCateg -->|ec - Environment Cleaner| ECServices[Register EC Services:<br/>- set_sleep_timer<br/>- set_continuous_monitoring<br/>- etc.]
-    DetermineCateg -->|robot - Robot Vacuum| RobotServices[Register Robot Services:<br/>- start_cleaning<br/>- set_cleaning_mode<br/>- etc.]
-    DetermineCateg -->|vacuum - Vacuum| VacuumServices[Register Vacuum Services]
-    DetermineCateg -->|flrc - Floor Cleaner| FLRCServices[Register FLRC Services]
+    RegisterServices --> DetermineCapab{Device Capabilities}
+    DetermineCapab -->|Scheduling| SchedulingServices[Timer Services:<br/>- set_sleep_timer<br/>- cancel_sleep_timer]
+    DetermineCapab -->|AdvanceOscillationDay1| OscServices[Oscillation Services:<br/>- set_oscillation_angles]
+    DetermineCapab -->|ExtendedAQ or<br/>EnvironmentalData| FilterServices[Filter Services:<br/>- reset_filter]
+    DetermineCapab -->|Legacy category fallback<br/>ec / robot / vacuum / flrc| CategoryServices[Category Services:<br/>- ec: sleep_timer, cancel, reset_filter<br/>- robot/vacuum/flrc: reset_filter]
 
-    ECServices --> PlatformSetup[_get_platforms_for_device]
-    RobotServices --> PlatformSetup
-    VacuumServices --> PlatformSetup
-    FLRCServices --> PlatformSetup
+    SchedulingServices --> PlatformSetup[_get_platforms_for_device]
+    OscServices --> PlatformSetup
+    FilterServices --> PlatformSetup
+    CategoryServices --> PlatformSetup
 
     PlatformSetup --> CapCheck{Check Capabilities}
-    CapCheck --> Platforms[Setup Platforms:<br/>- Fan Platform<br/>- Sensor Platform<br/>- Binary Sensor Platform<br/>- Climate Platform<br/>- Switch Platform<br/>- Number Platform<br/>- Select Platform<br/>- Button Platform<br/>- Vacuum Platform<br/>- Humidifier Platform]
+    CapCheck --> Platforms[Setup Platforms:<br/>- Fan Platform<br/>- Sensor Platform<br/>- Binary Sensor Platform<br/>- Climate Platform<br/>- Switch Platform<br/>- Number Platform<br/>- Select Platform<br/>- Button Platform<br/>- Vacuum Platform<br/>- Humidifier Platform<br/>- Update Platform - cloud devices only]
 
     Platforms --> CreateEntities[Each Platform Creates Entities]
     CreateEntities --> EntityInit[Entities Initialize with Coordinator]
@@ -212,7 +212,7 @@ graph TB
     end
 
     subgraph "Coordinators"
-        CloudCoord[DysonCloudAccountCoordinator<br/>- Device Discovery<br/>- Cloud Polling<br/>- Auth Token Management]
+        CloudCoord[DysonCloudAccountCoordinator<br/>- Device Discovery<br/>- Cloud Polling<br/>- Device Entry Creation]
         DeviceCoord[DysonDataUpdateCoordinator<br/>- Device State<br/>- MQTT Communication<br/>- Firmware Updates<br/>- Service Registration]
     end
 
@@ -459,7 +459,7 @@ sequenceDiagram
 
     MQTT--xDevice: Connection Lost
     Device->>Device: Detect Disconnect
-    Device->>Device: Attempt Reconnection<br/>(5 retries, 5s delay)
+    Device->>Device: Attempt Reconnection<br/>(30s backoff, 5min preferred retry)
 
     alt Reconnection Successful
         Device->>MQTT: Reconnect
@@ -480,7 +480,7 @@ sequenceDiagram
 
     Note over User,Dyson: Periodic State Polling
 
-    loop Every 30 seconds
+    loop Every 60 seconds
         Device->>MQTT: Publish REQUEST-CURRENT-STATE
         Dyson->>MQTT: Publish Full State
         MQTT->>Device: Receive State
@@ -527,12 +527,13 @@ sequenceDiagram
 
 5. **Connection Recovery**
    - Automatic reconnection on connection loss
-   - 5 retry attempts with 5-second delays
+   - 30-second backoff between reconnect attempts
+   - 5-minute interval before retrying preferred connection type
    - State resynchronization after reconnection
    - Availability tracking for entities
 
 6. **Periodic Polling**
-   - REQUEST-CURRENT-STATE every 30 seconds
+   - REQUEST-CURRENT-STATE every 60 seconds
    - Ensures state consistency
    - Detects manual changes on device
 
@@ -565,4 +566,4 @@ These Mermaid diagrams can be viewed in:
 
 ---
 
-*Last Updated: February 11, 2026*
+*Last Updated: March 22, 2026*

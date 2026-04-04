@@ -42,7 +42,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Status Monitoring** - Connectivity, filter life, fault detection, firmware version
 - **Precise Adjustments** - Timers, oscillation angles
 - **Heating Support** - Climate Control with Heater mode, Heater Thermostat, and Fan Direction
-- **Humidifier Support** (e.g. PH models) - Experimental support is now available
+- **Humidifier Support** Humidifier entity with set point, current level and empty tank alerts
 - **Climate Control** - Climate Control with Humidistat (Experimental)
 
 ### Robotic Vacuums
@@ -55,6 +55,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 ### BLE Devices
 
 - **lec Support** - We hope to someday support Dyson "lec" or BLE devices such as lights via BLE proxy devices
+- **Vacuum Start Controls** - Support the start in room functionality introduced in Home Assistant 2026.2.0 as well as "global" (all defined rooms)
 
 ## Quick Start
 
@@ -89,11 +90,11 @@ When selecting **Cloud Discovery**, you'll be guided through the following steps
 
 #### **Step 1: Account Credentials**
 
-- **Email**: Your Dyson account email address
+- **Email or Mobile Number**: Your Dyson account email address or mobile number if in CN region
 - **Country**: Verify your country and culture (affects API region and localization)
 
-- **Password**: Your Dyson account password
-- **OTP**: The one-time password sent to your e-mail by Dyson
+- **Password**: Your Dyson account password if using email
+- **OTP**: The one-time password sent to your email by Dyson if using email, or the one-time password sent to your mobile device if not
 
 #### **Step 2: Default Connection Method**
 
@@ -103,6 +104,7 @@ Choose your preferred default connection method for your devices:
   - Maximum privacy, can be used without internet access for the device
   - Susceptible to local device MQTT server failures and mDNS resolution issues
   - Note: This mode is most similar to the [ha-dyson](https://github.com/libdyson-wg/ha-dyson) integration
+  - When using this approach, we highly recommend assigning a DHCP reservation or using a static IP to minimize mDNS broadcast issues
 
 - **Local with Cloud Fallback**: Stays local until and unless the local server cannot be
     reached, then reconnects to the device through the Dyson-hosted MQTT Proxy service.
@@ -186,6 +188,7 @@ Based on your device capabilities and category, you'll automatically get:
 - **Humidifier Controls**:
   - Mode control: Humidify/Fan only/Off
   - Humidifier minimum humidity (humidistat)
+  - Empty tank diagnostic sensor
 
 **Robotic Vacuum models (Robot Category) (360/Heurist/Vis Nav, etc.)**:
 
@@ -260,7 +263,7 @@ hass_dyson:
 - **Home Assistant** 2025.12+
 - **Python** 3.11+
 - **Dependencies** (auto-installed):
-  - `libdyson-rest>=0.11.0`
+  - `libdyson-rest>=0.12.1`
   - `paho-mqtt>=2.1.0`
   - `cryptography>=45.0.7`
 
@@ -279,6 +282,10 @@ hass_dyson:
 
 If you like our work, please give us a star!
 
+## Sponsorship
+
+This integration is provided free of charge and there is no requirement expressed or implied to donate.  Any money contributed through the sponsorship button as a gift goes to development devices to further improve this integration.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -286,5 +293,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **⚠️ Disclaimer**: This is an unofficial integration not affiliated with Dyson Ltd. Use at your own risk.
-
-

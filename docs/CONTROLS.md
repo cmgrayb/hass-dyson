@@ -93,15 +93,15 @@ Devices with advanced oscillation capability provide additional precise controls
 #### Oscillation Mode Select
 
 1. Entity ID: `select.{device_name}_oscillation_mode`
-2. Options: Off, 45°, 90°, 180°, 350°, Custom
+2. Options: 45°, 90°, 180°, 350°, Custom
 3. Purpose: Quick selection of common oscillation patterns
 
 #### Angle Range Controls
 
-1. **Lower Angle**: `number.{device_name}_oscillation_lower_angle` (0-355°)
-2. **Upper Angle**: `number.{device_name}_oscillation_upper_angle` (5-360°)
-3. **Center Angle**: `number.{device_name}_oscillation_center_angle` (0-359°)
-4. **Oscillation Angle**: `number.{device_name}_oscillation_angle` (Sets custom span between low and high angle 5-360°)
+1. **Lower Angle**: `number.{device_name}_oscillation_lower_angle` (0-350°)
+2. **Upper Angle**: `number.{device_name}_oscillation_upper_angle` (0-350°)
+3. **Center Angle**: `number.{device_name}_oscillation_center_angle` (0-350°)
+4. **Oscillation Angle**: `number.{device_name}_oscillation_angle` (Sets custom span between low and high angle 0-350°)
 
 #### Preset Patterns
 
@@ -120,7 +120,7 @@ Devices with the AdvanceOscillationDay0 capability provide a simplified oscillat
 #### Oscillation Mode Select
 
 1. Entity ID: `select.{device_name}_oscillation_mode_day0`
-2. Options: Off, 15°, 40°, 70°, Custom
+2. Options: 15°, 40°, 70°
 3. Purpose: Quick selection of common oscillation patterns with fixed 177° center
 
 #### Angle Range Controls
@@ -130,7 +130,7 @@ Devices with the AdvanceOscillationDay0 capability provide a simplified oscillat
 3. **Center Angle**: `number.{device_name}_oscillation_day0_center_angle` (147-207°)
 4. **Oscillation Span**: `number.{device_name}_oscillation_day0_angle_span` (10-70°)
 
-Note: Day0 capability allows flexible custom ranges within 142°-212° physical limits. The center angle control lets you position preset modes (15°, 40°, 70°) anywhere within the valid range, while custom mode allows complete manual control.
+Note: Day0 capability is limited to presets only and will always center at ~180°.  Use of the Set Oscillation Angle service is possible, but not recommended.  Instead, please use a service against the Oscillation Mode Select entity to choose the desired preset, and the Oscillation on/off service built into Home Assistant for toggle.
 
 #### Day0 Preset Patterns
 
@@ -139,9 +139,6 @@ Note: Day0 capability allows flexible custom ranges within 142°-212° physical 
 | **15°** | Very narrow focused area | ±7.5° from center | Current center angle (adjustable) |
 | **40°** | Narrow coverage | ±20° from center | Current center angle (adjustable) |
 | **70°** | Medium coverage | ±35° from center | Current center angle (adjustable) |
-| **Custom** | User-defined range | Any range within 142°-212° | Flexible manual control |
-
-**Example**: With center set to 160°, the 40° preset creates 140°-180° range. With center at 200°, it creates 180°-212° range (clamped to physical limits).
 
 ## Night Mode Control
 
@@ -158,7 +155,7 @@ Provide quiet operation suitable for bedrooms and sleep areas while maintaining 
 1. Entity ID: `switch.{device_name}_night_mode`
 2. Platform: Switch
 3. States: On/Off
-4. Availability: All Environment Cleaner devices
+4. Availability: All Environment Cleaner devices with "Scheduling" capability
 5. Update Frequency: Real-time with device state changes
 
 ### Night Mode Effects
@@ -276,6 +273,7 @@ Provide heating functionality and temperature control for year-round climate man
 1. **Schedule Operation**: Use timers and schedules for different daily periods
 2. **Scene Integration**: Include in bedtime, morning, and away scenes
 3. **Weather Integration**: Adjust settings based on outdoor air quality or pollen forecasts
+4. **Climate Integration**: Create a template climate entity for fan-only devices to automatically run your fan on a thermostat for cooling
 
 ## Troubleshooting
 
@@ -288,8 +286,10 @@ Provide heating functionality and temperature control for year-round climate man
 
 ### Connection Issues
 
-1. **Controls Not Responding**: Check WiFi connectivity and MQTT connection status
-2. **Delayed Updates**: Normal for some settings - allow up to 30 seconds for state changes
-3. **Missing Controls**: Verify device capabilities and integration configuration
+1. **Controls Not Responding**:
+    a. Check WiFi connectivity and MQTT connection status
+    b. Try setting a static IP or DNS entry by reconfiguring the device to bypass local mDNS issues
+2. **Delayed Updates**: Normal for some settings and devices - allow up to 30 seconds for state changes
+3. **Missing Controls**: If manually created, verify device capabilities and configuration; if created from cloud account, please open an issue
 
 For additional troubleshooting, see the main integration documentation and device compatibility guide.

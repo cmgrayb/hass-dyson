@@ -11,4 +11,4 @@ lacking in some way.
 
 - ✅ **438 Series** - Pure Cool Air Purifiers (verified with real device)
 - ✅ **475 Series** - Hot+Cool models (mocked and community assisted testing)
-- ✅ **527 Series** - V10/V11 models (mocked and community assisted testing)
+- ✅ **527 Series** - Humidifier/Purifier models (mocked and community assisted testing)

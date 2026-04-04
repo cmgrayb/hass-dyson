@@ -27,19 +27,20 @@ The following capabilities can add additional entities to Environment Cleaner de
 
 | Capability | Required For | Entities Added |
 |------------|--------------|----------------|
-| **ExtendedAQ** | Air quality monitoring | • PM2.5 sensor<br>• PM10 sensor<br>• HEPA filter life sensor<br>• HEPA filter type sensor |
+| **ExtendedAQ** | Full air quality monitoring | • PM2.5 sensor<br>• PM10 sensor<br>• VOC sensor (volatile organic compounds)<br>• NOx sensor (nitrogen oxides)<br>• CO2 sensor (carbon dioxide)<br>• Formaldehyde sensor (HCHO)<br>• HEPA filter life sensor<br>• HEPA filter type sensor<br>• Carbon filter life sensor<br>• Carbon filter type sensor |
 | **Scheduling** | Sleep timer functionality | • Number platform (sleep timer 15-540 minutes) |
+| **AdvanceOscillationDay0** | Basic oscillation control | • Select platform (oscillation patterns) |
 | **AdvanceOscillationDay1** | Advanced oscillation control | • Number platform (oscillation angle range)<br>• Select platform (oscillation patterns) |
-| **Heating** (name subject to change) | Heat mode devices | • Temperature sensor<br>• Climate platform<br>• Heating switch |
-| **Humidifier** (name subject to change) | Humidity control devices | • Humidity sensor<br>• Humidifier platform<br>• Water tank level sensor |
-| **Formaldehyde** (name subject to change) | Chemical air quality monitoring | • Formaldehyde sensor (HCHO)<br>• Carbon filter life sensor<br>• Carbon filter type sensor |
-| **NO2VOC** (name subject to change) | Gas and VOC monitoring | • NO2 sensor (nitrogen dioxide)<br>• VOC sensor (volatile organic compounds)<br>• Gas filter status sensor |
+| **Heating** (auto-detected) | Heat mode devices | • Temperature sensor<br>• Climate platform<br>• Heating switch |
+| **Humidifier** (auto-detected) | Humidity control devices | • Humidity sensor<br>• Humidifier platform<br>• Water tank level sensor |
 
 ### Example Device Configurations
 
-1. Basic Fan (TP00 series): Fan + basic switches only
-2. Air Purifier (TP04/TP07): Fan + ExtendedAQ sensors
-3. Hot+Cool (HP04/HP07): Fan + ExtendedAQ + Heating
+1. Basic Fan (AM00 series): Fan + AdvanceOscillationDay0
+2. Air Purifier (TP00 series): Fan + AdvanceOscillationDay1 + ExtendedAQ
+3. Hot+Cool (HP00 series): Fan + AdvanceOscillationDay1 + ExtendedAQ
+4. Humidifier (PH00 series): Fan + AdvanceOscillationDay1 + ExtendedAQ
+5. Big and Quiet (BP00 series): Fan + AdvanceOscillationDay1 + ExtendedAQ
 
 ## Robot and Vacuum Devices
 
@@ -52,8 +53,9 @@ Robot and Vacuum devices are currently only partially supported.  If you have on
 
 All Robot and Vacuum devices include these entities:
 
-1. Vacuum Platform: Start/stop, pause, dock, status
+1. Vacuum Platform: Stop, pause, dock, status
 2. Binary Sensors: Online/offline status, charging status, docked status
+3. Battery sensor: Battery level monitoring
 
 ### Capability-Dependent Entities
 
@@ -67,8 +69,7 @@ The following capabilities can add additional entities to Robot and Vacuum devic
 
 The following features are planned for future releases:
 
-1. Battery sensor: Battery level monitoring
-2. Robot-specific controls: Cleaning patterns, etc.
+1. Robot-specific controls: Clean by area or all areas
 
 ## Vacuum Cleaner Devices
 
@@ -113,18 +114,29 @@ The following features are planned for future releases:
 
 ### Description
 
-Extended Air Quality capability provides continuous air quality monitoring with particle sensors.
+Extended Air Quality capability provides comprehensive air quality monitoring covering particulate matter, gaseous pollutants, and filter status tracking. All sensors listed below are provided automatically when the device reports this capability — no separate capability selection is required.
 
 ### Purpose
 
-Monitor indoor air quality through particulate matter detection and filter status tracking.
+Monitor indoor air quality through particulate matter, gaseous pollutants, chemical detection, and filter status tracking.
 
 ### Entities Provided
 
 1. PM2.5 Sensor: Fine particulate matter measurement (μg/m³)
 2. PM10 Sensor: Coarse particulate matter measurement (μg/m³)
-3. HEPA Filter Life: Remaining filter life percentage (%)
-4. HEPA Filter Type: Installed filter model/type information
+3. VOC Sensor: Volatile organic compounds index
+4. NOx Sensor: Nitrogen oxides index
+5. CO2 Sensor: Carbon dioxide level (ppm) — where supported by device hardware
+6. Formaldehyde Sensor: HCHO level detection (mg/m³) — where supported by device hardware
+7. HEPA Filter Life: Remaining HEPA filter life percentage (%)
+8. HEPA Filter Type: Installed HEPA filter model/type information
+9. Carbon Filter Life: Remaining carbon filter life percentage (%)
+10. Carbon Filter Type: Installed carbon filter model/type information
+
+### Notes
+
+- All entities under ExtendedAQ are detected and enabled automatically from the cloud API response or device MQTT data.
+- Sensors for CO2 and Formaldehyde are only present if the physical device hardware supports those measurements; the integration does not require a separate capability flag for them.
 
 ## Heating Capability
 
@@ -178,32 +190,17 @@ Available for devices in the following categories:
 1. WiFi Signal Strength: Signal strength measurement in dBm
 2. Connection Status: Current connection state (Local/Cloud/Disconnected)
 
-## Future Capabilities Under Investigation
-
-## Formaldehyde Capability
-
-### Description
-
-Formaldehyde capability would provide chemical air quality monitoring for volatile organic compounds.
-This capability is currently experimental.  If you can have one of these devices and can help us with the information we need to complete the capability, let us know! Issue [#40](https://github.com/cmgrayb/hass-dyson/issues/40)
-
-### Planned Entities
-
-1. Carbon Filter Life: Remaining carbon filter life percentage (%)
-2. Carbon Filter Type: Installed carbon filter model information
-3. Formaldehyde Sensor: HCHO level detection and measurement
-
 ## Humidifier Capability
 
 ### Description
 
-Humidifier capability provides humidity control functionality for devices with humidification systems.
-This capability is currently experimental.  If you can have one of these devices and can help us with the information we need to complete the capability, let us know! Issue [#39](https://github.com/cmgrayb/hass-dyson/issues/39)
+Humidifier capability provides humidity control functionality for devices with humidification systems. This capability is auto-detected and fully supported.
 
-### Planned Entities
+### Entities Provided
 
 1. Humidity Sensor: Current relative humidity measurement (%)
-2. Humidifier Controls: Humidity target and operational mode settings
+2. Humidifier Platform: Humidity target setting and operational mode controls
+3. Water Tank Level Sensor: Remaining water level status
 
 ## Device Configuration Examples
 
@@ -216,7 +213,7 @@ Configuration example for Dyson Pure Cool TP04 with ExtendedAQ.
 ### Available Platforms
 
 1. fan: Speed control, auto mode, night mode
-2. sensor: PM2.5, PM10, HEPA filter life/type, WiFi signal, connection status
+2. sensor: PM2.5, PM10, VOC, NOx, HEPA filter life/type, carbon filter life/type, WiFi signal, connection status
 3. binary_sensor: Online status, night mode status, auto mode status
 4. action: Reset filter functionality
 5. number: Sleep timer control
@@ -232,21 +229,21 @@ Configuration example for Dyson Pure Hot+Cool HP07 with ExtendedAQ, and Heating.
 
 1. fan: Speed control, preset modes (auto, manual, sleep)
 2. climate: Heating control, temperature management
-3. sensor: PM2.5, PM10, temperature, HEPA filters, WiFi, connection status
+3. sensor: PM2.5, PM10, VOC, NOx, HEPA filter life/type, carbon filter life/type, temperature, WiFi signal, connection status
 4. binary_sensor: Online status, night mode status, heating status
 5. number: Sleep timer control, oscillation angle controls
 6. select: Fan control mode, oscillation patterns, heating mode
 7. switch: Night mode, heating control, continuous monitoring
 
-## Dyson V15 Robot Vacuum Configuration
+## Dyson VisNav Robot Vacuum Configuration
 
 ### Description
 
-Configuration example for Dyson V15 Robot Vacuum with Robot and WiFi capabilities.
+Configuration example for Dyson VisNav Robot Vacuum with Robot and WiFi capabilities.
 
 ### Available Platforms
 
-1. vacuum: Start, stop, dock, status control
+1. vacuum: Stop, dock, status control
 2. sensor: WiFi signal strength, connection status
 3. binary_sensor: Online status, charging status, docked status
 
@@ -317,7 +314,7 @@ Resolve missing temperature control entities for heating-capable devices.
 1. Verify device model supports heating functionality (HP series devices)
 2. Check device configuration includes Heating capability setting
 3. For manual setup, ensure Heating is selected in device capabilities
-4. For persistent issues, report via Issue [#46](https://github.com/cmgrayb/hass-dyson/issues/46)
+4. For persistent issues, please open an [issue](https://github.com/cmgrayb/hass-dyson/issues)
 
 ## Unexpected Sensors Appearing
 

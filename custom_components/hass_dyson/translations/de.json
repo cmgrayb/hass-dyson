@@ -210,6 +210,12 @@
       },
       "dominant_pollutant": {
         "name": "Dominierender Schadstoff"
+      },
+      "next_cleaning_cycle": {
+        "name": "Nächster Reinigungszyklus"
+      },
+      "cleaning_time_remaining": {
+        "name": "Verbleibende Reinigungszeit"
       }
     },
     "switch": {
@@ -239,10 +245,15 @@
       "oscillation_mode": {
         "name": "Oszillation"
       },
+      "tilt_oscillation_mode": {
+        "name": "Neigung"
+      },
       "heating_mode": {
-        "name": "Heizmodus"      },
+        "name": "Heizmodus"
+      },
       "water_hardness": {
-        "name": "Wasserhärte"      }
+        "name": "Wasserhärte"
+      }
     },
     "number": {
       "sleep_timer": {
@@ -282,6 +293,19 @@
           "hvac_action": {
             "state": {
               "drying": "Befeuchtung"
+            }
+          }
+        }
+      }
+    },
+    "fan": {
+      "dyson_fan": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "auto": "Auto",
+              "manual": "Manuell",
+              "heat": "Heizen"
             }
           }
         }

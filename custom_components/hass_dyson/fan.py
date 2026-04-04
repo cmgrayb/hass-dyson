@@ -162,6 +162,12 @@ class DysonFan(DysonEntity, FanEntity):
     coordinator: DysonDataUpdateCoordinator
     _attr_current_temperature: float | None
     _attr_target_temperature: float
+    _attr_translation_key = "dyson_fan"
+
+    # Preset variables for better maintenance
+    PRESET_MODE_AUTO = "auto"
+    PRESET_MODE_MANUAL = "manual"
+    PRESET_MODE_HEAT = "heat"
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the Dyson fan entity with capability detection.
@@ -223,7 +229,11 @@ class DysonFan(DysonEntity, FanEntity):
 
         # Set up preset modes based on heating capability
         if self._has_heating:
-            self._attr_preset_modes = ["Auto", "Manual", "Heat"]
+            self._attr_preset_modes = [
+                self.PRESET_MODE_AUTO,
+                self.PRESET_MODE_MANUAL,
+                self.PRESET_MODE_HEAT,
+            ]
             # Add climate-specific attributes for heating devices
             self._attr_temperature_unit = UnitOfTemperature.CELSIUS
             self._attr_min_temp = 1
@@ -239,7 +249,7 @@ class DysonFan(DysonEntity, FanEntity):
             ]
             self._attr_hvac_mode = HVACMode.OFF
         else:
-            self._attr_preset_modes = ["Auto", "Manual"]
+            self._attr_preset_modes = [self.PRESET_MODE_AUTO, self.PRESET_MODE_MANUAL]
 
         # Initialize state attributes to ensure clean state
         self._attr_is_on = None  # Will be set properly in first coordinator update
@@ -330,14 +340,16 @@ class DysonFan(DysonEntity, FanEntity):
                     product_state, "hmod", "OFF"
                 )
                 if heating_mode == "HEAT":
-                    self._attr_preset_mode = "Heat"
+                    self._attr_preset_mode = self.PRESET_MODE_HEAT
                 elif is_auto_mode:
-                    self._attr_preset_mode = "Auto"
+                    self._attr_preset_mode = self.PRESET_MODE_AUTO
                 else:
-                    self._attr_preset_mode = "Manual"
+                    self._attr_preset_mode = self.PRESET_MODE_MANUAL
             else:
                 # Non-heating devices use simple Auto/Manual logic
-                self._attr_preset_mode = "Auto" if is_auto_mode else "Manual"
+                self._attr_preset_mode = (
+                    self.PRESET_MODE_AUTO if is_auto_mode else self.PRESET_MODE_MANUAL
+                )
 
             # Update oscillation state from device data if supported
             if self._oscillation_supported:
@@ -618,11 +630,11 @@ class DysonFan(DysonEntity, FanEntity):
             return
 
         try:
-            if preset_mode == "Auto":
+            if preset_mode == self.PRESET_MODE_AUTO:
                 await self.coordinator.device.set_auto_mode(True)
-            elif preset_mode == "Manual":
+            elif preset_mode == self.PRESET_MODE_MANUAL:
                 await self.coordinator.device.set_auto_mode(False)
-            elif preset_mode == "Heat" and self._has_heating:
+            elif preset_mode == self.PRESET_MODE_HEAT and self._has_heating:
                 # Enable heating mode
                 await self.coordinator.device.set_heating_mode("HEAT")
             else:
@@ -824,9 +836,41 @@ class DysonFan(DysonEntity, FanEntity):
                 if self._saved_oscillation_mode_for_restore == "Breeze":
                     self._saved_oscillation_mode_for_restore = None
                     self._breeze_transition_pending = True
+                    # Fan entity is the oson control: send oson=ON first,
+                    # then send ancp=BRZE to restore the Breeze mode.
+                    await self.coordinator.device.set_oscillation(oscillating)
                     await self.coordinator.device.set_oscillation_breeze()
                 else:
                     self._saved_oscillation_mode_for_restore = None
+                    # When the span is 0 (equal lower/upper = point-aim mode) the
+                    # device rejects oson=ON because there is no sweep range.
+                    # Expand to the minimum step (5°) centered on the pointing
+                    # angle before turning oscillation on so the device accepts it.
+                    product_state = self.coordinator.data.get("product-state", {})
+                    osal = self.coordinator.device.get_state_value(
+                        product_state, "osal", "0000"
+                    )
+                    osau = self.coordinator.device.get_state_value(
+                        product_state, "osau", "0350"
+                    )
+                    try:
+                        lower = int(osal.lstrip("0") or "0")
+                        upper = int(osau.lstrip("0") or "350")
+                        if lower == upper:  # span=0
+                            center = lower
+                            new_lower = max(0, center - 1)
+                            new_upper = min(350, new_lower + 2)
+                            _LOGGER.debug(
+                                "Expanding zero-span angles to %s–%s before enabling oscillation for %s",
+                                new_lower,
+                                new_upper,
+                                self.coordinator.serial_number,
+                            )
+                            await self.coordinator.device.set_oscillation_angles(
+                                new_lower, new_upper
+                            )
+                    except (ValueError, TypeError):
+                        pass
                     await self.coordinator.device.set_oscillation(oscillating)
 
             # Update state immediately for responsive UI

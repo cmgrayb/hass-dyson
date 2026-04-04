@@ -48,6 +48,39 @@ def mock_coordinator():
 
 
 @pytest.fixture
+def mock_coordinator_heating():
+    """Create a mock coordinator for a heating-capable device (Hot+Cool series)."""
+    coordinator = MagicMock()
+    coordinator.serial_number = "TEST-SERIAL-123"
+    coordinator.device_name = "Test Device"
+    coordinator.device_category = "ec"
+    coordinator.data = {
+        "product-state": {
+            "fpwr": "ON",
+            "fnst": "FAN",
+            "fnsp": "0005",
+            "fdir": "ON",
+            "hmod": "OFF",
+        }
+    }
+    coordinator.device = MagicMock()
+    coordinator.device.fan_power = True
+    coordinator.device.fan_state = "FAN"
+    coordinator.device.fan_speed_setting = "0005"
+    coordinator.device.fan_speed = 5
+    coordinator.device.auto_mode = False
+    coordinator.device.set_fan_power = AsyncMock()
+    coordinator.device.set_fan_speed = AsyncMock()
+    coordinator.device.set_auto_mode = AsyncMock()
+    coordinator.device.set_direction = AsyncMock()
+    coordinator.device.set_heating_mode = AsyncMock()
+    coordinator.device.get_state_value = MagicMock(return_value="OFF")
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.device_capabilities = ["Heating"]
+    return coordinator
+
+
+@pytest.fixture
 def mock_coordinator_no_direction():
     """Create a mock coordinator without direction support."""
     coordinator = MagicMock()
@@ -150,7 +183,7 @@ class TestDysonFan:
         )
         assert fan._attr_speed_count == 10
         assert fan._attr_percentage_step == 10
-        assert fan._attr_preset_modes == ["Auto", "Manual"]
+        assert fan._attr_preset_modes == ["auto", "manual"]
         assert fan._attr_is_on is None
         assert fan._attr_percentage == 0
         assert fan._attr_current_direction == "forward"
@@ -229,7 +262,7 @@ class TestDysonFan:
         assert (
             fan._attr_current_direction == "forward"
         )  # fdir=ON means forward direction
-        assert fan._attr_preset_mode == "Manual"
+        assert fan._attr_preset_mode == "manual"
         assert fan._attr_oscillating is False
 
     def test_handle_coordinator_update_fan_auto_mode_via_fmod(self, mock_coordinator):
@@ -247,7 +280,7 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_preset_mode == "Auto"
+        assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_fan_auto_mode_via_auto_key(
         self, mock_coordinator
@@ -266,7 +299,7 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_preset_mode == "Auto"
+        assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_fan_manual_mode(self, mock_coordinator):
         """Test fan in manual mode (both fmod and auto indicate manual)."""
@@ -283,7 +316,7 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_preset_mode == "Manual"
+        assert fan._attr_preset_mode == "manual"
 
     def test_handle_coordinator_update_fan_off(self, mock_coordinator):
         """Test _handle_coordinator_update when fan is off."""
@@ -317,7 +350,7 @@ class TestDysonFan:
         # Assert
         assert fan._attr_is_on is True
         assert fan._attr_percentage == 70  # 7 * 10
-        assert fan._attr_preset_mode == "Auto"
+        assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_invalid_speed(self, mock_coordinator):
         """Test _handle_coordinator_update with invalid speed setting."""
@@ -561,7 +594,7 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        await fan.async_set_preset_mode("Auto")
+        await fan.async_set_preset_mode("auto")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
@@ -573,7 +606,7 @@ class TestDysonFan:
         fan = DysonFan(mock_coordinator)
 
         # Act
-        await fan.async_set_preset_mode("Manual")
+        await fan.async_set_preset_mode("manual")
 
         # Assert
         mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
@@ -586,9 +619,73 @@ class TestDysonFan:
         mock_coordinator.device = None
 
         # Act
-        await fan.async_set_preset_mode("Auto")
+        await fan.async_set_preset_mode("auto")
 
         # Assert - should return without error, no calls made
+
+    def test_handle_coordinator_update_heating_device_heat_mode(
+        self, mock_coordinator_heating
+    ):
+        """Test _handle_coordinator_update sets heat preset when hmod=HEAT (lines 342-343)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_heating)
+        mock_coordinator_heating.device.fan_power = True
+        mock_coordinator_heating.device.fan_speed_setting = "0005"
+        mock_coordinator_heating.device.auto_mode = False
+
+        def mock_get_state_value(data, key, default):
+            if key == "hmod":
+                return "HEAT"
+            return default
+
+        mock_coordinator_heating.device.get_state_value.side_effect = (
+            mock_get_state_value
+        )
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode == "heat"
+
+    def test_handle_coordinator_update_heating_device_auto_mode(
+        self, mock_coordinator_heating
+    ):
+        """Test _handle_coordinator_update sets auto preset on heating device when auto_mode (lines 344-345)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_heating)
+        mock_coordinator_heating.device.fan_power = True
+        mock_coordinator_heating.device.fan_speed_setting = "0005"
+        mock_coordinator_heating.device.auto_mode = True  # auto mode active
+
+        mock_coordinator_heating.device.get_state_value.return_value = "OFF"  # hmod=OFF
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode == "auto"
+
+    def test_handle_coordinator_update_heating_device_manual_mode(
+        self, mock_coordinator_heating
+    ):
+        """Test _handle_coordinator_update sets manual preset on heating device when not auto (lines 346-347)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator_heating)
+        mock_coordinator_heating.device.fan_power = True
+        mock_coordinator_heating.device.fan_speed_setting = "0005"
+        mock_coordinator_heating.device.auto_mode = False  # manual mode
+
+        mock_coordinator_heating.device.get_state_value.return_value = "OFF"  # hmod=OFF
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_preset_mode == "manual"
 
 
 class TestFanIntegration:
@@ -1097,7 +1194,8 @@ class TestFanCoverageEnhancement:
             await fan.async_oscillate(True)
 
         mock_coordinator.device.set_oscillation_breeze.assert_called_once()
-        mock_coordinator.device.set_oscillation.assert_not_called()
+        # set_oscillation(True) is called first (fan entity is the oson control)
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
         assert fan._attr_oscillating is True
         # Saved mode cleared after use
         assert fan._saved_oscillation_mode_for_restore is None
@@ -1162,6 +1260,67 @@ class TestFanCoverageEnhancement:
 
         mock_coordinator.device.set_oscillation.assert_called_once_with(True)
         mock_coordinator.device.set_oscillation_breeze.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_expands_zero_span(self, mock_coordinator):
+        """Test that turning on oscillation when span=0 first expands to minimum span.
+
+        When osal==osau (point-aim mode) the device rejects oson=ON because
+        there is no sweep range.  The fan entity must expand the span to at
+        least 10° (centred on the pointing angle) before enabling oscillation.
+        """
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",
+                "osal": "0175",
+                "osau": "0175",  # span=0  — point-aim at 175°
+            }
+        }
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        def mock_get(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mock_get
+        fan = DysonFan(mock_coordinator)
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        # Must expand span before enabling oscillation
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(174, 176)
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
+
+    @pytest.mark.asyncio
+    async def test_async_oscillate_turn_on_zero_span_near_boundary(
+        self, mock_coordinator
+    ):
+        """Test span expansion is clamped to 0–350 when pointing angle is near 0."""
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "ON",
+                "oson": "OFF",
+                "osal": "0003",
+                "osau": "0003",  # near lower boundary
+            }
+        }
+        mock_coordinator.device.set_oscillation_angles = AsyncMock()
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        def mock_get(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mock_get
+        fan = DysonFan(mock_coordinator)
+
+        with patch.object(fan, "async_write_ha_state"):
+            await fan.async_oscillate(True)
+
+        # new_lower = max(0, 3-1) = 2; new_upper = min(350, 2+2) = 4
+        mock_coordinator.device.set_oscillation_angles.assert_called_once_with(2, 4)
+        mock_coordinator.device.set_oscillation.assert_called_once_with(True)
 
     @pytest.mark.asyncio
     async def test_async_oscillate_without_support_logs_warning(self, mock_coordinator):

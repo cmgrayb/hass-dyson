@@ -189,11 +189,7 @@ class TestDysonClimateEntity:
         assert entity._attr_target_humidity_step == 1
 
         # HVAC modes (humidifier device)
-        expected_hvac_modes = [
-            HVACMode.OFF,
-            HVACMode.FAN_ONLY,
-            HVACMode.DRY,  # DRY mode for humidification
-        ]
+        expected_hvac_modes = [HVACMode.OFF, HVACMode.FAN_ONLY]
         assert entity._attr_hvac_modes == expected_hvac_modes
 
     def test_init_sets_attributes_correctly_both_capabilities(self, mock_coordinator):
@@ -215,12 +211,7 @@ class TestDysonClimateEntity:
         assert entity._attr_supported_features == expected_features
 
         # HVAC modes (both capabilities)
-        expected_hvac_modes = [
-            HVACMode.OFF,
-            HVACMode.FAN_ONLY,
-            HVACMode.HEAT,
-            HVACMode.DRY,  # DRY mode for humidification
-        ]
+        expected_hvac_modes = [HVACMode.OFF, HVACMode.FAN_ONLY, HVACMode.HEAT]
         assert entity._attr_hvac_modes == expected_hvac_modes
 
     def test_handle_coordinator_update_with_device(self, mock_coordinator):
@@ -317,7 +308,7 @@ class TestDysonClimateEntity:
         entity._update_hvac_mode({"product-state": {}})
 
         # Assert
-        assert entity._attr_hvac_mode == HVACMode.DRY
+        assert entity._attr_hvac_mode == HVACMode.FAN_ONLY
 
     def test_hvac_mode_humidifier_auto(self, mock_coordinator):
         """Test HVAC mode detection when humidifier auto is enabled."""
@@ -336,7 +327,7 @@ class TestDysonClimateEntity:
         entity._update_hvac_mode({"product-state": {}})
 
         # Assert
-        assert entity._attr_hvac_mode == HVACMode.DRY
+        assert entity._attr_hvac_mode == HVACMode.FAN_ONLY
 
     def test_handle_coordinator_update_no_device(self, mock_coordinator):
         """Test coordinator update handling when device is not available."""
@@ -610,24 +601,6 @@ class TestDysonClimateEntity:
         mock_coordinator.device.send_command.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_async_set_hvac_mode_dry_humidifier(self, mock_coordinator):
-        """Test setting HVAC mode to DRY (humidifier mode)."""
-        # Arrange
-        mock_coordinator.device_capabilities = ["Humidifier"]
-        entity = DysonClimateEntity(mock_coordinator)
-        entity.hass = MagicMock()
-        entity.async_write_ha_state = MagicMock()
-        mock_coordinator.device.set_fan_power = AsyncMock()
-        mock_coordinator.device.set_humidifier_mode = AsyncMock()
-
-        # Act
-        await entity.async_set_hvac_mode(HVACMode.DRY)
-
-        # Assert
-        mock_coordinator.device.set_fan_power.assert_called_once_with(True)
-        mock_coordinator.device.set_humidifier_mode.assert_called_once_with(True)
-
-    @pytest.mark.asyncio
     async def test_async_set_hvac_mode_off_with_humidifier(self, mock_coordinator):
         """Test setting HVAC mode to OFF with humidifier capabilities."""
         # Arrange
@@ -676,21 +649,6 @@ class TestDysonClimateEntity:
 
         # Assert
         mock_coordinator.device.send_command.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_turn_on_humidifier_device(self, mock_coordinator):
-        """Test turn_on defaults to DRY mode for humidifier-only device."""
-        # Arrange
-        mock_coordinator.device_capabilities = ["Humidifier"]
-        entity = DysonClimateEntity(mock_coordinator)
-        entity.async_set_hvac_mode = AsyncMock()
-
-        # Act
-        entity.hass = MagicMock()
-        await entity.async_turn_on()
-
-        # Assert - should be called with DRY mode for humidifier
-        entity.async_set_hvac_mode.assert_called_once_with(HVACMode.DRY)
 
     @pytest.mark.asyncio
     async def test_async_set_hvac_mode_no_device(self, mock_coordinator):

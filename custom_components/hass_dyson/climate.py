@@ -309,7 +309,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             self._attr_hvac_action = HVACAction.OFF
         elif heating_status == "HEAT":
             self._attr_hvac_action = HVACAction.HEATING
-        elif fan_power == "ON" and (humidity_enabled == "HUMD" or humidity_auto == "ON"):
+        elif fan_power == "ON" and (
+            humidity_enabled == "HUMD" or humidity_auto == "ON"
+        ):
             # Humidification is active: the fan is running. Report FAN, not DRYING.
             # DRYING means dehumidification in HA — the opposite of what is happening.
             self._attr_hvac_action = HVACAction.FAN

@@ -5,7 +5,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
 ## Prerequisites
 
 ### **Home Assistant Requirements**
-- Home Assistant Core 2025.12 or newer
+- Home Assistant Core 2026.2 or newer
 - Custom components support enabled
 - Network access to Dyson devices
 
@@ -95,7 +95,7 @@ Complete setup instructions for integrating your Dyson devices with Home Assista
   - Older Dyson devices may have a sticker on them with the connection information
 
 - Option 3: Third Party Tools
-  - There are several third party tools which can retrieve the information such as option 1 for those uncomfortable with cloud account creation
+  - There are several third party tools which can retrieve the information such as option 1 for those uncomfortable with cloud account creation or unable to do so due to network isolation
     - libdyson-rest
       - Use the troubleshoot_account.py script in [cmgrayb/libdyson-rest](https://github.com/cmgrayb/libdyson-rest) to perform the action outside of Home Assistant
     - opendyson
@@ -220,7 +220,7 @@ Configure a static IP address or hostname when:
 **Method 1: Router Admin Panel**
 - Log into your router's admin interface
 - Look for "Connected Devices" or "DHCP Client List"
-- Find your Dyson device by name or MAC address
+- Find your Dyson device by name or MAC address, the name is usually the device's serial number
 
 **Method 2: Dyson Mobile App**
 - Some Dyson models show their IP address in the app settings
@@ -239,7 +239,7 @@ Configure a static IP address or hostname when:
 - **IPv4 Address**: `192.168.1.100`
 - **Hostname**: `dyson-fan`
 - **FQDN**: `dyson-fan.local` or `dyson-fan.mydomain.com`
-- **Do not include**: `http://`, `https://`, or any URL scheme
+- **Do not include**: `http://`, `https://`, `mqtt://` or any other protocols
 
 ### **Connection Type Behavior**
 
@@ -364,7 +364,7 @@ Model: 438                      ← Use this for device_type and MQTT prefix
 | **Premium Model** | `ExtendedAQ`, `VOC`, `Formaldehyde`, `Heating`, `AdvanceOscillationDay1`, `Scheduling` | Full-featured device with all sensors |
 | **Humidifier** | `Humidifier`, `ExtendedAQ`, `EnvironmentalData` | Humidification with air quality monitoring |
 | **Robot Vacuum** | `Scheduling`, `ChangeWifi` | Basic vacuum with scheduling |
-| **Basic Fan** | `AdvanceOscillationDay1`, `Scheduling` | Simple fan with timer and oscillation |
+| **Basic Fan** | `AdvanceOscillationDay0`, `Scheduling` | Simple fan with timer and oscillation |
 
 **Note**: Check your device's specifications or use cloud discovery to determine exact capabilities.
 

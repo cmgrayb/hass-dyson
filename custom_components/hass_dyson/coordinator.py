@@ -1138,7 +1138,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         raises error instructing user to reconfigure with cloud-only connection.
         """
         mqtt_username = self.serial_number
-        mqtt_password = ""
+        mqtt_password = ""  # nosec B105 - placeholder, actual password set from device credentials below
 
         mqtt_obj = self._get_mqtt_object(device_info)
         if mqtt_obj:

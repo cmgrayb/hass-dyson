@@ -30,7 +30,7 @@ When you click **Configure** on a device, you can modify:
 - **Change IP** - Update to new IP address or hostname
 - **Clear IP** - Remove static IP to return to automatic mDNS
 
-**When to use static IP**:
+**When to use static IP or hostname**:
 - mDNS discovery is unreliable on your network
 - Device has DHCP reservation
 - You prefer predictable addressing

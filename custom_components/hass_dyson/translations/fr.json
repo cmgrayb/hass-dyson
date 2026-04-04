@@ -210,6 +210,12 @@
       },
       "dominant_pollutant": {
         "name": "Polluant dominant"
+      },
+      "next_cleaning_cycle": {
+        "name": "Prochain cycle de nettoyage"
+      },
+      "cleaning_time_remaining": {
+        "name": "Temps de nettoyage restant"
       }
     },
     "switch": {
@@ -238,6 +244,9 @@
       },
       "oscillation_mode": {
         "name": "Oscillation"
+      },
+      "tilt_oscillation_mode": {
+        "name": "Inclinaison"
       },
       "heating_mode": {
         "name": "Mode de chauffage"
@@ -284,6 +293,19 @@
           "hvac_action": {
             "state": {
               "drying": "Humidification"
+            }
+          }
+        }
+      }
+    },
+    "fan": {
+      "dyson_fan": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "auto": "Auto",
+              "manual": "Manual",
+              "heat": "Heat"
             }
           }
         }
