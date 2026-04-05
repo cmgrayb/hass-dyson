@@ -152,6 +152,7 @@ class DysonDevice:
         cloud_host: str | None = None,
         cloud_credential: str | None = None,
         device_category: list[str] | None = None,
+        mqtt_client_id: str | None = None,
     ) -> None:
         """Initialize the device wrapper."""
         self.hass = hass
@@ -161,6 +162,7 @@ class DysonDevice:
         self.mqtt_prefix = mqtt_prefix
         self.capabilities = capabilities or []
         self.device_category = device_category or ["ec"]
+        self._mqtt_client_id = mqtt_client_id
         self.connection_type = connection_type
         self.cloud_host = cloud_host
         self.cloud_credential = cloud_credential
@@ -556,15 +558,19 @@ class DysonDevice:
                 return False
 
             # Create paho MQTT client for local connection.
-            # Use a stable, deterministic client_id derived from the serial number.
-            # A random client_id causes the Dyson device's MQTT broker to accumulate
-            # stale sessions across HA restarts, eventually exhausting the connection
-            # pool and disconnecting new clients with error code 7 (MQTT_ERR_CONN_LOST).
-            # A stable client_id lets the broker replace the previous session on
-            # reconnect, preventing pool exhaustion.
-            # Keep within 23 chars (MQTT 3.1 limit) for maximum broker compatibility.
-            serial_hash = hashlib.sha1(self.serial_number.encode()).hexdigest()[:11]
-            client_id = f"hd-{serial_hash}"  # "hd-" + 11 hex chars = 14 chars
+            # Use a stable, deterministic client_id to prevent the Dyson device's
+            # MQTT broker from accumulating stale sessions across HA restarts.
+            # Each (HA instance × device) pair gets a unique ID: the coordinator
+            # pre-computes sha256(ha_instance_uuid + serial_number)[:23] and passes
+            # it in. This ensures two HA instances managing the same device each
+            # maintain their own independent broker session.
+            # Fallback (no coordinator, e.g. unit tests): sha256(serial)[:23] keeps
+            # the same anti-overflow benefit without the per-instance uniqueness.
+            # 23 chars = MQTT 3.1 maximum; no prefix so all chars contribute entropy.
+            client_id = (
+                self._mqtt_client_id
+                or hashlib.sha256(self.serial_number.encode()).hexdigest()[:23]
+            )
             username = self.serial_number
 
             _LOGGER.debug("Using MQTT client ID: %s", client_id)

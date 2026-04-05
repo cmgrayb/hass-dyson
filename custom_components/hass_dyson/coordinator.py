@@ -20,12 +20,14 @@ Key Features:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
+from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -1450,6 +1452,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         from .device import DysonDevice
 
+        ha_uuid = await ha_instance_id.async_get(self.hass)
+        mqtt_client_id = hashlib.sha256(
+            f"{ha_uuid}{self.serial_number}".encode()
+        ).hexdigest()[:23]
+
         self.device = DysonDevice(
             self.hass,
             self.serial_number,
@@ -1461,6 +1468,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             cloud_host,
             cloud_credential_data,
             self._device_category,
+            mqtt_client_id=mqtt_client_id,
         )
 
         # Set firmware version in the device for proper device info
@@ -1522,6 +1530,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             connection_type = self._get_effective_connection_type()
 
             # For manual setup, we don't have cloud credentials
+            ha_uuid = await ha_instance_id.async_get(self.hass)
+            mqtt_client_id = hashlib.sha256(
+                f"{ha_uuid}{serial_number}".encode()
+            ).hexdigest()[:23]
+
             self.device = DysonDevice(
                 self.hass,
                 serial_number,
@@ -1533,6 +1546,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 None,  # No cloud host for manual setup
                 None,  # No cloud credential for manual setup
                 self._device_category,
+                mqtt_client_id=mqtt_client_id,
             )
 
             # Set unknown firmware version since we don't get it from cloud
