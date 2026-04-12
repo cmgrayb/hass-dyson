@@ -1229,12 +1229,21 @@ async def async_setup_entry(  # noqa: C901
             coordinator.data.get("product-state", {}) if coordinator.data else {}
         )
         carbon_filter_type = device_data.get("cflt")
+        carbon_filter_type_normalized = (
+            str(carbon_filter_type).strip().upper()
+            if carbon_filter_type is not None
+            else None
+        )
 
-        # Add carbon filter sensors if filter data exists and is not "NONE" or "SCOG"
-        if carbon_filter_type is not None and str(carbon_filter_type).upper() not in [
-            "NONE",
-            "SCOG",
-        ]:
+        # Skip if cflt indicates no separate carbon filter. SCO* values
+        # (SCOG/SCOF/SCOH/...) are generational variants Dyson reports on
+        # pre-11-series devices with a combination cartridge; 11-series and
+        # later use "NONE" for the same thing.
+        if (
+            carbon_filter_type_normalized is not None
+            and carbon_filter_type_normalized != "NONE"
+            and not carbon_filter_type_normalized.startswith("SCO")
+        ):
             _LOGGER.debug(
                 "Adding carbon filter sensors for device %s - filter type: %s",
                 device_serial,
@@ -2703,8 +2712,15 @@ class DysonCarbonFilterTypeSensor(DysonEntity, SensorEntity):
 
             # Handle filter type conversion with validation
             if filter_type is not None:
-                # Convert "NONE" or "SCOG" to "Not Installed", otherwise return the actual type
-                if str(filter_type).upper() in ["NONE", "SCOG"]:
+                # Convert "NONE" or any SCO* variant to "Not Installed",
+                # otherwise return the actual type. SCO* values (SCOG/SCOF/
+                # SCOH/...) are generational variants Dyson reports on pre-11
+                # series devices with a combination cartridge.
+                filter_type_normalized = str(filter_type).strip().upper()
+                if (
+                    filter_type_normalized == "NONE"
+                    or filter_type_normalized.startswith("SCO")
+                ):
                     self._attr_native_value = "Not Installed"
                     _LOGGER.debug(
                         "Carbon filter not installed on device %s", device_serial

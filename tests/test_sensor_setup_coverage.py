@@ -721,6 +721,58 @@ class TestSensorSetupFilterPaths:
         assert "DysonCarbonFilterTypeSensor" not in sensor_types
 
     @pytest.mark.asyncio
+    async def test_setup_no_carbon_filters_when_cflt_scof(self):
+        """Test carbon filter sensors NOT created when cflt is SCOF."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = []
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "TEST-NO-CARBON-004"
+        coordinator.data = {"product-state": {"cflt": "SCOF"}}
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        assert "DysonCarbonFilterLifeSensor" not in sensor_types
+        assert "DysonCarbonFilterTypeSensor" not in sensor_types
+
+    @pytest.mark.asyncio
+    async def test_setup_no_carbon_filters_when_cflt_scoh(self):
+        """Test carbon filter sensors NOT created when cflt is SCOH."""
+        hass = MagicMock(spec=HomeAssistant)
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        async_add_entities = MagicMock()
+
+        coordinator = MagicMock()
+        coordinator.device_capabilities = []
+        coordinator.device_category = ["ec"]
+        coordinator.serial_number = "TEST-NO-CARBON-005"
+        coordinator.data = {"product-state": {"cflt": "SCOH"}}
+
+        hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
+
+        # Act
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        # Assert
+        assert result is True
+        entities = async_add_entities.call_args[0][0]
+        sensor_types = [type(entity).__name__ for entity in entities]
+        assert "DysonCarbonFilterLifeSensor" not in sensor_types
+        assert "DysonCarbonFilterTypeSensor" not in sensor_types
+
+    @pytest.mark.asyncio
     async def test_setup_no_carbon_filters_when_cflt_missing(self):
         """Test carbon filter sensors NOT created when cflt key is missing."""
         hass = MagicMock(spec=HomeAssistant)
