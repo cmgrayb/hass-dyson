@@ -548,6 +548,25 @@ class DysonDevice:
     async def _attempt_local_connection(self, host: str, credential: str) -> bool:
         """Attempt local MQTT connection."""
         try:
+            # Stop any still-running MQTT loop before starting a new connection.
+            # If the previous connection ended with an unexpected disconnect (e.g.
+            # network drop), _on_disconnect sets self._connected = False but leaves
+            # loop_start()'s background thread alive.  Paho's built-in auto-reconnect
+            # will then fire on that orphaned client.  Because we use a stable
+            # client_id, the orphaned client's reconnect would steal the broker
+            # session back from the freshly-established connection, causing the
+            # device to fall offline again.  Stopping the loop here prevents that.
+            if self._mqtt_client is not None:
+                try:
+                    await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
+                except Exception as stop_err:
+                    _LOGGER.debug(
+                        "Failed to stop previous MQTT loop for %s: %s",
+                        self.serial_number,
+                        stop_err,
+                    )
+                self._mqtt_client = None
+
             # First test basic network connectivity
             if not await self._test_network_connectivity(host, 1883):
                 _LOGGER.info(
@@ -676,6 +695,20 @@ class DysonDevice:
     async def _attempt_cloud_connection(self, host: str, credential: str) -> bool:
         """Attempt AWS IoT WebSocket MQTT connection."""
         try:
+            # Stop any still-running MQTT loop before starting a new connection.
+            # Same reasoning as in _attempt_local_connection: an orphaned paho thread
+            # with auto-reconnect would steal the new session on the cloud broker.
+            if self._mqtt_client is not None:
+                try:
+                    await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
+                except Exception as stop_err:
+                    _LOGGER.debug(
+                        "Failed to stop previous MQTT loop for %s: %s",
+                        self.serial_number,
+                        stop_err,
+                    )
+                self._mqtt_client = None
+
             # Parse AWS IoT credentials from JSON string
             try:
                 cloud_credentials = json.loads(credential)
