@@ -185,6 +185,7 @@ class DysonDevice:
             300.0  # Retry preferred connection every 5 minutes
         )
         self._intentional_disconnect = False  # Track intentional disconnections
+        self._rst_during_handshake = False  # RST arrived before CONNACK (async path)
 
         # Heartbeat mechanism to keep device active and get regular updates
         self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
@@ -776,6 +777,32 @@ class DysonDevice:
                                 cleanup_err,
                             )
 
+                        # Async RST path: connect() returned 0 (TCP established),
+                        # loop started, but the broker RST'd the connection before
+                        # sending CONNACK.  _on_disconnect will have set
+                        # _rst_during_handshake=True.  Treat it identically to the
+                        # synchronous MQTT_ERR_CONN_LOST path above.
+                        if self._rst_during_handshake:
+                            self._rst_during_handshake = False
+                            _LOGGER.info(
+                                "Stable client ID rejected by %s broker via async "
+                                "handshake RST (likely stale session from previous "
+                                "connection) — retrying with random client ID",
+                                self.serial_number,
+                            )
+                            if attempt_index == 0:
+                                continue
+                            _LOGGER.warning(
+                                "Both stable and random client IDs rejected by %s "
+                                "broker via handshake RST; falling back to cloud "
+                                "and retrying local in ~2 minutes",
+                                self.serial_number,
+                            )
+                            self._last_preferred_retry = (
+                                time.time() - self._preferred_retry_interval + 120
+                            )
+                            return False
+
                     return connection_success
                 else:
                     _LOGGER.warning(
@@ -1184,19 +1211,35 @@ class DysonDevice:
         self, client: mqtt.Client, userdata: Any, rc, properties=None, *args
     ) -> None:
         """Handle MQTT disconnection callback."""
+        # Capture state before any mutations so we can reason about the cause.
+        was_intentional = self._intentional_disconnect
+        was_connected = self._connected  # True only if _on_connect previously fired
+
         # Use appropriate log level based on whether disconnect was intentional
-        if self._intentional_disconnect:
+        if was_intentional:
             _LOGGER.debug(
                 "MQTT client disconnected for %s (intentional), code: %s",
                 self.serial_number,
                 rc,
             )
-            # Reset the flag after logging
             self._intentional_disconnect = False
         else:
             _LOGGER.warning(
                 "MQTT client disconnected for %s, code: %s", self.serial_number, rc
             )
+
+        # Track RST-during-handshake: the broker closed the TCP connection before
+        # sending CONNACK (Dyson firmware violation of MQTT §3.1.4).  This only
+        # matters when we never reached _connected=True in this attempt and the
+        # disconnect is not one we initiated ourselves.
+        if not was_connected and not was_intentional:
+            is_rst = (
+                hasattr(rc, "is_disconnect_packet_from_server")
+                and not rc.is_disconnect_packet_from_server
+            )
+            if is_rst:
+                self._rst_during_handshake = True
+
         self._connected = False
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
 
@@ -1205,10 +1248,14 @@ class DysonDevice:
             lambda: self.hass.async_create_task(self._stop_heartbeat())
         )
 
-        # If this is an unexpected disconnection (not initiated by us), prepare for intelligent reconnection
-        # Only apply the 15-minute fallback timer if we had a stable connection (not during initial connection attempts)
+        # Apply the 15-minute fallback penalty ONLY when dropping an active,
+        # previously-established connection (was_connected=True).  If
+        # was_connected=False we never got past the CONNACK phase; the retry
+        # loop in _attempt_local_connection will set the appropriate 2-minute
+        # penalty instead of locking local out for 15 minutes.
         if (
             rc != mqtt.MQTT_ERR_SUCCESS
+            and was_connected
             and hasattr(self, "_had_stable_connection")
             and self._had_stable_connection
         ):
@@ -1216,8 +1263,6 @@ class DysonDevice:
                 "Unexpected disconnection for %s, will stay on fallback connection for 15 minutes unless manually reconnected",
                 self.serial_number,
             )
-            # Set preferred retry timer to 15 minutes from now to prevent automatic retry of preferred connection
-            # Manual reconnection (force_reconnect) will reset this to allow immediate preferred connection attempts
             self._last_preferred_retry = time.time() + 900  # 15 minutes = 900 seconds
         elif rc != mqtt.MQTT_ERR_SUCCESS:
             _LOGGER.debug(
