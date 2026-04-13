@@ -1012,6 +1012,20 @@ class DysonDevice:
                 )
                 return True
 
+            # Broker RST'd the handshake asynchronously — no point waiting out the
+            # full timeout; the retry loop will handle it.  Returning early (within
+            # one polling interval, ~100 ms) ensures we reach loop_stop() before
+            # paho's 1-second min reconnect delay fires, so we see only one RST
+            # per attempt instead of multiple paho auto-reconnect attempts.
+            if self._rst_during_handshake:
+                _LOGGER.debug(
+                    "RST detected during handshake for %s via %s after %.1f seconds — aborting connection wait",
+                    self.serial_number,
+                    conn_type,
+                    elapsed_time,
+                )
+                return False
+
             await asyncio.sleep(check_interval)
             elapsed_time += check_interval
 
