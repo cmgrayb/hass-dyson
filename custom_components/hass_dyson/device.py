@@ -678,22 +678,45 @@ class DysonDevice:
                 port = 1883
                 _LOGGER.debug("Attempting local MQTT connection to %s:%s", host, port)
 
+                rst_detected = False
                 try:
                     result = await self.hass.async_add_executor_job(
                         mqtt_client.connect, host, port, 60
                     )
                 except ConnectionResetError as rst_err:
-                    # Dyson's embedded broker violates MQTT §3.1.4: instead of
-                    # evicting the old session when the same client_id reconnects,
-                    # it RSTs the TCP connection.  This occurs in the ~90-second
-                    # window after an abrupt disconnect while the device keepalive
-                    # timer for the previous session is still active.
+                    # Paho occasionally surfaces the RST as an exception rather
+                    # than returning MQTT_ERR_CONN_LOST — handle both paths.
                     _LOGGER.info(
                         "Local broker for %s reset connection for client_id %s: %s",
                         self.serial_number,
                         client_id,
                         rst_err,
                     )
+                    rst_detected = True
+                    result = mqtt.MQTT_ERR_CONN_LOST
+                # Any exception other than ConnectionResetError (socket.gaierror,
+                # other ConnectionError, etc.) propagates to the outer handlers.
+
+                # MQTT_ERR_CONN_LOST (7) returned directly by paho means the broker
+                # sent TCP RST before/during the CONNECT packet — paho swallows the
+                # underlying ConnectionResetError and converts it to this error code.
+                # Treat it exactly the same as a raised ConnectionResetError.
+                if result == mqtt.MQTT_ERR_CONN_LOST and not rst_detected:
+                    _LOGGER.info(
+                        "Local broker for %s rejected client_id %s with CONN_LOST "
+                        "(likely stale session RST — broker does not comply with "
+                        "MQTT §3.1.4 clean-session eviction)",
+                        self.serial_number,
+                        client_id,
+                    )
+                    rst_detected = True
+
+                if rst_detected:
+                    # Dyson's embedded broker violates MQTT §3.1.4: instead of
+                    # evicting the old session when the same client_id reconnects,
+                    # it RSTs the TCP connection.  This occurs in the ~90-second
+                    # window after an abrupt disconnect while the device keepalive
+                    # timer for the previous session is still active.
                     if attempt_index == 0:
                         # The stable ID has a stale session on the broker.
                         # Retry with a random UUID that the broker has never seen.
@@ -715,8 +738,6 @@ class DysonDevice:
                         time.time() - self._preferred_retry_interval + 120
                     )
                     return False
-                # Any exception other than ConnectionResetError (socket.gaierror,
-                # other ConnectionError, etc.) propagates to the outer handlers.
 
                 if result == mqtt.CONNACK_ACCEPTED:
                     # Start the network loop in a thread.
