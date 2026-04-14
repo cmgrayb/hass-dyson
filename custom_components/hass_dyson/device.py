@@ -587,14 +587,17 @@ class DysonDevice:
                 return False
 
             # Build the ordered list of client IDs to try.
-            # Strategy: stable sha256 ID first — prevents the Dyson broker from
-            # accumulating stale sessions across HA restarts (each restart reuses
-            # the same ID, so the broker always has exactly one session per device).
+            # Strategy: stable sha256 ID first — attempts MQTT best practices for
+            # session persistence and clean reconnects.
             # If the broker RSTs the initial connect() call with the stable ID —
             # its non-compliant response to a reconnect while the previous session's
-            # keepalive timer is still active (~90 s after an abrupt disconnect) —
-            # retry immediately with a random UUID.  The broker has never seen that
-            # ID and will accept it unconditionally.
+            # keepalive timer is still active retry immediately with a random UUID for
+            # compatibility with older Dyson firmware which does not follow MQTT
+            # session management best practices and can get stuck refusing connections
+            # for the stable ID until its keepalive expires (~90 s).
+            # This retry logic allows for a successful connection much sooner in that
+            # scenario, improving user experience when restarting Home Assistant or
+            # recovering from network blips.
             stable_client_id = (
                 self._mqtt_client_id
                 or hashlib.sha256(self.serial_number.encode()).hexdigest()[:23]
