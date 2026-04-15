@@ -20,8 +20,8 @@ from .const import (
     DOMAIN,
     FAULT_TRANSLATIONS,
 )
-from .coordinator import DysonDataUpdateCoordinator
-from .entity import DysonEntity
+from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
+from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,8 +121,16 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Dyson binary sensor platform."""
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
 
+    # BLE light devices — motion sensor only
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        ble_coordinator: DysonBLEDataUpdateCoordinator = entry_data["ble_coordinator"]
+        async_add_entities([DysonMotionBinarySensor(ble_coordinator)], True)
+        return True
+
+    # MQTT-based devices — existing fault / filter sensors
+    coordinator: DysonDataUpdateCoordinator = entry_data
     entities: list[BinarySensorEntity] = []
 
     # Basic binary sensors for all devices
@@ -481,6 +489,41 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
 #         """Handle updated data from the coordinator."""
 #         # The coordinator already handles firmware update information extraction
 #         # during cloud device setup, so we just need to update our state
+
+
+class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Binary sensor reporting motion detected by a Dyson BLE light.
+
+    The Dyson Lightcycle Morph (and compatible lamps) expose a motion detection
+    characteristic (11008) that fires a BLE notification whenever occupancy
+    changes.  This sensor surfaces that signal as a standard Home Assistant
+    motion binary sensor.
+
+    Attributes:
+        _attr_device_class: :attr:`BinarySensorDeviceClass.MOTION`
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.MOTION
+
+    def __init__(self, coordinator: DysonBLEDataUpdateCoordinator) -> None:
+        """Initialise the motion sensor.
+
+        Args:
+            coordinator: BLE data update coordinator for this device.
+        """
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_motion"
+        self._attr_name = "Motion"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True when motion has been detected."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return bool(data.get("motion_detected", False))
+
+
 #         _LOGGER.debug(
 #             "Firmware update sensor updated for %s: update_available=%s, version=%s, auto_update=%s",
 #             self.coordinator.serial_number,

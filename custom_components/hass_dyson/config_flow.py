@@ -17,11 +17,14 @@ from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
     CONF_AUTO_ADD_DEVICES,
+    CONF_BLE_MAC,
+    CONF_BLE_PROXY,
     CONF_COUNTRY,
     CONF_CREDENTIAL,
     CONF_CULTURE,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
+    CONF_LTK,
     CONF_MQTT_PREFIX,
     CONF_POLL_FOR_DEVICES,
     CONF_SERIAL_NUMBER,
@@ -53,6 +56,7 @@ def _get_setup_method_options() -> dict[str, str]:
     return {
         "cloud_account": "Dyson Cloud Account (Recommended)",
         "manual_device": "Manual Device Setup",
+        "ble_light": "Dyson BLE Light (e.g. Lightcycle Morph)",
     }
 
 
@@ -338,6 +342,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_cloud_account()
                 elif setup_method == "manual_device":
                     return await self.async_step_manual_device()
+                elif setup_method == "ble_light":
+                    return await self.async_step_ble_light()
                 else:
                     _LOGGER.error("Invalid setup method selected: %s", setup_method)
                     errors["base"] = "invalid_setup_method"
@@ -719,6 +725,76 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as e:
             _LOGGER.exception("Error creating manual device setup form: %s", e)
             raise
+
+    async def async_step_ble_light(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle BLE light device setup (e.g. Dyson Lightcycle Morph CD06).
+
+        Collects the device serial number, BLE MAC address, and LTK.  The LTK
+        can be obtained automatically via Dyson cloud auth or entered manually.
+        """
+        import re
+
+        errors: dict[str, str] = {}
+        _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+
+        if user_input is not None:
+            serial = user_input.get(CONF_SERIAL_NUMBER, "").strip().upper()
+            mac = user_input.get(CONF_BLE_MAC, "").strip().upper()
+            ltk_hex = user_input.get(CONF_LTK, "").strip().lower()
+            device_name = user_input.get("device_name", f"Dyson {serial}").strip()
+
+            # Validate serial
+            if not serial:
+                errors[CONF_SERIAL_NUMBER] = "required"
+            # Validate MAC address format
+            elif not _MAC_RE.match(mac):
+                errors[CONF_BLE_MAC] = "invalid_mac_address"
+            # Validate LTK is a hex string of even length
+            elif (
+                not ltk_hex
+                or not all(c in "0123456789abcdef" for c in ltk_hex)
+                or len(ltk_hex) % 2 != 0
+            ):
+                errors[CONF_LTK] = "invalid_ltk"
+
+            if not errors:
+                try:
+                    await self.async_set_unique_id(serial)
+                    self._abort_if_unique_id_configured()
+                except Exception:  # noqa: BLE001
+                    errors[CONF_SERIAL_NUMBER] = "already_configured"
+
+            if not errors:
+                _LOGGER.info("Creating BLE light config entry for %s (%s)", serial, mac)
+                config_data: dict[str, Any] = {
+                    CONF_SERIAL_NUMBER: serial,
+                    CONF_BLE_MAC: mac,
+                    CONF_LTK: ltk_hex,
+                }
+                if user_input.get(CONF_BLE_PROXY):
+                    config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
+                return self.async_create_entry(title=device_name, data=config_data)
+
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_SERIAL_NUMBER): str,
+                vol.Required(CONF_BLE_MAC): str,
+                vol.Required(CONF_LTK): str,
+                vol.Optional("device_name"): str,
+                vol.Optional(CONF_BLE_PROXY): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="ble_light",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/SETUP.md",
+                "ltk_hint": "Obtain the LTK via Dyson cloud pairing (see documentation).",
+            },
+        )
 
     async def async_step_verify(
         self, user_input: dict[str, Any] | None = None
