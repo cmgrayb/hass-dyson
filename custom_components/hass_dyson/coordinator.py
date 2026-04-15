@@ -2570,13 +2570,8 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ble_proxy = config_entry.data.get(CONF_BLE_PROXY)
 
         # account_uuid is derived from an HMAC of the instance id (stable, unique)
+        # Resolved lazily in async_setup via ha_instance_id.async_get(hass)
         import uuid as _uuid
-
-        instance_id = (
-            asyncio.get_event_loop().run_until_complete(ha_instance_id.async_get(hass))
-            if False
-            else ""
-        )  # Resolved lazily in async_setup
 
         self.ble_device = DysonBLEDevice(
             hass=hass,
