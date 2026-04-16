@@ -23,7 +23,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Dyson button platform."""
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+    # BLE devices manage their own reconnection — MQTT reconnect button not applicable
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        return
+    coordinator: DysonDataUpdateCoordinator = entry_data
 
     entities = []
 

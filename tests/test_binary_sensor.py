@@ -80,14 +80,19 @@ class TestBinarySensorPlatformSetup:
     async def test_async_setup_entry_minimal_sensors_for_unsupported_device(
         self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
     ):
-        """Test setup creates minimal sensors for unsupported device types."""
+        """Test setup creates no sensors for unrecognised device types without capabilities.
+
+        Devices that are not EC (air purifier), robot, vacuum, etc. and have no
+        capabilities get no binary sensor entities — filter replacement is only
+        added for EC-category devices and fault sensors only for known categories.
+        """
         # Arrange
         mock_add_entities = MagicMock()
         pure_mock_hass.data[DOMAIN] = {
             pure_mock_config_entry.entry_id: pure_mock_coordinator
         }
 
-        # Configure device as unknown type with no capabilities (should have minimal sensors)
+        # Configure device as unknown type with no capabilities
         pure_mock_coordinator.device_category = "other"
         pure_mock_coordinator.device_capabilities = []
 
@@ -96,20 +101,55 @@ class TestBinarySensorPlatformSetup:
             pure_mock_hass, pure_mock_config_entry, mock_add_entities
         )
 
-        # Assert
+        # Assert — setup is called but no entities are created for this device type
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        # Should at least have filter replacement sensor
-        assert len(entities) >= 1
+        # No filter replacement (not EC), no fault sensors (unknown category)
+        assert len(entities) == 0
 
-        # Check filter replacement sensor is always included
+        # Filter replacement must NOT be present for a non-EC device
         filter_sensors = [
             e
             for e in entities
             if hasattr(e, "_attr_translation_key")
             and e._attr_translation_key == "filter_replacement"
         ]
-        assert len(filter_sensors) == 1
+        assert len(filter_sensors) == 0
+
+    @pytest.mark.asyncio
+    async def test_filter_replacement_excluded_for_light_devices(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        """Test filter replacement sensor is NOT created for light-category devices.
+
+        The Dyson Solarcycle Morph (floor lamp) has no air filter, so the
+        filter replacement sensor must not appear for DEVICE_CATEGORY_LIGHT.
+        """
+        # Arrange
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+
+        # Simulate a light device (Solarcycle Morph, Lightcycle Morph, etc.)
+        pure_mock_coordinator.device_category = "light"
+        pure_mock_coordinator.device_capabilities = []
+
+        # Act
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        # Assert — no filter replacement sensor for a light device
+        mock_add_entities.assert_called_once()
+        entities = mock_add_entities.call_args[0][0]
+        filter_sensors = [
+            e
+            for e in entities
+            if hasattr(e, "_attr_translation_key")
+            and e._attr_translation_key == "filter_replacement"
+        ]
+        assert len(filter_sensors) == 0
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_robot_device_fault_sensors(

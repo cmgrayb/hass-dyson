@@ -1122,6 +1122,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             True if device has connected_configuration (MQTT or cloud), False otherwise
         """
         try:
+            # lecOnly devices communicate exclusively over BLE — no MQTT support
+            connection_category = getattr(device_info, "connection_category", None)
+            if connection_category == "lecOnly":
+                return False
+
             connected_config = getattr(device_info, "connected_configuration", None)
             if not connected_config:
                 return False
@@ -2400,11 +2405,25 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if auto_add_devices:
             for device in devices:
                 if device.serial_number in new_devices:
+                    if getattr(device, "connection_category", None) == "lecOnly":
+                        _LOGGER.info(
+                            "Skipping BLE-only device %s from auto-add (lecOnly) "
+                            "\u2014 set up via 'Dyson BLE Light' instead",
+                            device.serial_number,
+                        )
+                        continue
                     await self._create_device_entry(device)
         else:
             # Create discovery flows for manual device addition
             for device in devices:
                 if device.serial_number in new_devices:
+                    if getattr(device, "connection_category", None) == "lecOnly":
+                        _LOGGER.info(
+                            "Skipping BLE-only device %s from discovery (lecOnly) "
+                            "\u2014 set up via 'Dyson BLE Light' instead",
+                            device.serial_number,
+                        )
+                        continue
                     await self._create_discovery_flow(device)
             _LOGGER.info(
                 "Auto-add disabled, %d new devices will be available for manual setup",

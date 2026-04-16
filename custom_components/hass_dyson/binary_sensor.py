@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CAPABILITY_FAULT_CODES,
+    DEVICE_CATEGORY_EC,
     DEVICE_CATEGORY_FAULT_CODES,
     DOMAIN,
     FAULT_TRANSLATIONS,
@@ -133,12 +134,13 @@ async def async_setup_entry(
     coordinator: DysonDataUpdateCoordinator = entry_data
     entities: list[BinarySensorEntity] = []
 
-    # Basic binary sensors for all devices
-    entities.extend(
-        [
-            DysonFilterReplacementSensor(coordinator),
-        ]
-    )
+    # Filter replacement sensor — only for devices with air filters (EC category)
+    if DEVICE_CATEGORY_EC in coordinator.device_category:
+        entities.append(DysonFilterReplacementSensor(coordinator))
+        _LOGGER.debug(
+            "Adding filter replacement sensor for EC device %s",
+            coordinator.serial_number,
+        )
 
     # Add firmware update available sensor for cloud-discovered devices only
     # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection

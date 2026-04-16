@@ -64,6 +64,34 @@
         "data": {
           "confirm": "Ajouter cet appareil à Home Assistant"
         }
+      },
+      "ble_discover": {
+        "title": "Sélectionner une lampe Dyson BLE",
+        "description": "{device_count} lampe(s) Dyson BLE trouvée(s) à proximité. Sélectionnez votre appareil ou choisissez de saisir l'adresse MAC manuellement.",
+        "data": {
+          "ble_device": "Appareil"
+        }
+      },
+      "ble_configure": {
+        "title": "Configurer la lampe Dyson BLE",
+        "description": "Saisissez le numéro de série et l'adresse MAC de votre appareil. Si un compte cloud Dyson est déjà configuré dans Home Assistant, la clé d'appairage LTK sera récupérée automatiquement. Sinon, vous serez invité à la saisir manuellement.\n\n[Documentation de configuration]({docs_url})",
+        "data": {
+          "serial_number": "Numéro de série de l'appareil (figurant sur l'autocollant à la base)",
+          "ble_mac": "Adresse MAC Bluetooth (ex. AA:BB:CC:DD:EE:FF)",
+          "device_name": "Nom de l'appareil (Optionnel)",
+          "ble_proxy": "Hôte proxy Bluetooth (Optionnel)"
+        }
+      },
+      "ble_light": {
+        "title": "Appairage BLE manuel (saisie LTK)",
+        "description": "La clé d'appairage LTK n'a pas pu être récupérée automatiquement. Veuillez la saisir manuellement. Vous pouvez l'obtenir via la [documentation de configuration]({docs_url}).\n\n{ltk_hint}",
+        "data": {
+          "serial_number": "Numéro de série de l'appareil",
+          "ble_mac": "Adresse MAC Bluetooth (ex. AA:BB:CC:DD:EE:FF)",
+          "ltk": "Clé d'appairage LTK (chaîne hexadécimale)",
+          "device_name": "Nom de l'appareil (Optionnel)",
+          "ble_proxy": "Hôte proxy Bluetooth (Optionnel)"
+        }
       }
     },
     "error": {
@@ -78,7 +106,9 @@
       "api_format_changed": "Le format de l'API cloud Dyson a changé. La découverte d'appareils cloud est temporairement indisponible. Veuillez utiliser la configuration manuelle d'appareil à la place.",
       "api_validation_failed": "Échec de la validation de la réponse de l'API cloud Dyson. Veuillez réessayer ou utiliser la configuration manuelle d'appareil.",
       "cloud_api_error": "Erreur de communication avec l'API cloud Dyson. Veuillez réessayer plus tard.",
-      "required": "Ce champ est obligatoire."
+      "required": "Ce champ est obligatoire.",
+      "invalid_mac_address": "Adresse MAC Bluetooth invalide. Format attendu : AA:BB:CC:DD:EE:FF.",
+      "invalid_ltk": "LTK invalide. Doit être une chaîne hexadécimale avec un nombre pair de caractères."
     },
     "abort": {
       "already_configured": "Cet appareil Dyson est déjà configuré.",

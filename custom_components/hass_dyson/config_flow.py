@@ -16,6 +16,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
+    BLE_SERVICE_UUID,
     CONF_AUTO_ADD_DEVICES,
     CONF_BLE_MAC,
     CONF_BLE_PROXY,
@@ -258,6 +259,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._connection_type: str | None = None
         self._country: str | None = None  # Store country for mobile auth detection
         self._culture: str | None = None  # Store culture for complete_login
+        # BLE pairing state
+        self._ble_mac: str | None = None
+        self._ble_serial: str | None = None
+        self._ble_found_devices: list[tuple[str, str]] = []  # (mac, name)
 
     def _device_has_mqtt_support(self, device) -> bool:
         """Check if a device has MQTT connection support.
@@ -343,7 +348,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 elif setup_method == "manual_device":
                     return await self.async_step_manual_device()
                 elif setup_method == "ble_light":
-                    return await self.async_step_ble_light()
+                    return await self.async_step_ble_discover()
                 else:
                     _LOGGER.error("Invalid setup method selected: %s", setup_method)
                     errors["base"] = "invalid_setup_method"
@@ -726,6 +731,213 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Error creating manual device setup form: %s", e)
             raise
 
+    async def async_step_ble_discover(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Scan for nearby Dyson BLE light devices and let the user select one.
+
+        Uses the Home Assistant bluetooth integration to find devices advertising
+        the Dyson BLE service UUID.  If no devices are found the user is taken
+        directly to the manual-configure step.
+        """
+        errors: dict[str, str] = {}
+
+        # Scan for Dyson BLE devices using HA's bluetooth integration
+        self._ble_found_devices = []
+        try:
+            from homeassistant.components import bluetooth as _bt
+
+            service_infos = _bt.async_discovered_service_info(
+                self.hass, connectable=True
+            )
+            for si in service_infos:
+                if BLE_SERVICE_UUID in (si.service_uuids or []):
+                    name = si.name or si.address
+                    self._ble_found_devices.append((si.address, name))
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug(
+                "BLE scan unavailable — Bluetooth integration may not be loaded"
+            )
+
+        if not self._ble_found_devices:
+            # Nothing found via BLE scan; skip straight to manual configure
+            return await self.async_step_ble_configure()
+
+        if user_input is not None:
+            selected = user_input.get("ble_device", "")
+            if selected != "manual":
+                self._ble_mac = selected
+            return await self.async_step_ble_configure()
+
+        # Build a device-selection dropdown
+        choices: dict[str, str] = {
+            mac: f"{name} ({mac})" for mac, name in self._ble_found_devices
+        }
+        choices["manual"] = "Enter device MAC address manually"
+
+        return self.async_show_form(
+            step_id="ble_discover",
+            data_schema=vol.Schema({vol.Required("ble_device"): vol.In(choices)}),
+            errors=errors,
+            description_placeholders={
+                "device_count": str(len(self._ble_found_devices)),
+            },
+        )
+
+    async def async_step_ble_configure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Collect serial number and MAC, then attempt account-assisted LTK fetch.
+
+        If an existing Dyson cloud account entry is found in Home Assistant,
+        the LTK is fetched automatically from the Dyson cloud (no button press
+        required).  On failure the user is forwarded to the manual-entry step.
+        """
+        import re
+
+        errors: dict[str, str] = {}
+        _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+
+        if user_input is not None:
+            serial = user_input.get(CONF_SERIAL_NUMBER, "").strip().upper()
+            mac = user_input.get(CONF_BLE_MAC, self._ble_mac or "").strip().upper()
+            device_name = user_input.get("device_name", f"Dyson {serial}").strip()
+
+            if not serial:
+                errors[CONF_SERIAL_NUMBER] = "required"
+            elif not _MAC_RE.match(mac):
+                errors[CONF_BLE_MAC] = "invalid_mac_address"
+
+            if not errors:
+                self._ble_mac = mac
+                self._ble_serial = serial
+                try:
+                    await self.async_set_unique_id(serial)
+                    self._abort_if_unique_id_configured()
+                except Exception:  # noqa: BLE001
+                    errors[CONF_SERIAL_NUMBER] = "already_configured"
+
+            if not errors:
+                # Attempt account-assisted LTK retrieval (no button press needed)
+                ltk = await self._fetch_ltk_from_account(serial)
+                if ltk:
+                    _LOGGER.info(
+                        "Auto-fetched LTK for BLE device %s via Dyson cloud account",
+                        serial,
+                    )
+                    config_data: dict[str, Any] = {
+                        CONF_SERIAL_NUMBER: serial,
+                        CONF_BLE_MAC: mac,
+                        CONF_LTK: ltk,
+                    }
+                    if user_input.get(CONF_BLE_PROXY):
+                        config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
+                    return self.async_create_entry(title=device_name, data=config_data)
+
+                # Auto-fetch failed — fall through to manual LTK entry
+                _LOGGER.info(
+                    "LTK auto-fetch failed for %s; falling back to manual entry", serial
+                )
+                return await self.async_step_ble_light()
+
+        default_mac = self._ble_mac or ""
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_SERIAL_NUMBER): str,
+                vol.Required(CONF_BLE_MAC, default=default_mac): str,
+                vol.Optional("device_name"): str,
+                vol.Optional(CONF_BLE_PROXY): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="ble_configure",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={
+                "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/SETUP.md",
+            },
+        )
+
+    async def _fetch_ltk_from_account(self, serial: str) -> str | None:
+        """Try to fetch the device LTK from any Dyson cloud account configured in HA.
+
+        Iterates over all DOMAIN config entries that carry an auth_token and
+        attempts the ``GET /v1/lec/<serial>/ltk`` endpoint using the fallback
+        auth-code ``80541406`` (documented in the Dyson BLE protocol).
+
+        Args:
+            serial: The device serial number (uppercase).
+
+        Returns:
+            The LTK hex string on success, or ``None`` if no account is
+            available or the cloud endpoint does not return a valid LTK.
+        """
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            auth_token = entry.data.get("auth_token")
+            if not auth_token:
+                continue
+            ltk = await self.hass.async_add_executor_job(
+                self._cloud_fetch_ltk, serial, auth_token
+            )
+            if ltk:
+                return ltk
+        return None
+
+    def _cloud_fetch_ltk(self, serial: str, auth_token: str) -> str | None:
+        """Fetch the device LTK from the Dyson cloud synchronously.
+
+        This is a blocking HTTP call intended to be invoked via
+        ``hass.async_add_executor_job``.  It tries the well-known fallback
+        auth-code ``80541406`` against each of the Dyson API base URLs.
+
+        Args:
+            serial: The device serial number.
+            auth_token: Bearer token from an existing Dyson cloud account.
+
+        Returns:
+            The LTK hex string on success, or ``None`` on any failure.
+        """
+        import json
+        import ssl
+        import urllib.error
+        import urllib.request
+
+        base_urls = [
+            "https://appapi.cp.dyson.com",
+            "https://api.dyson.com",
+            "https://linkapp-api.dyson.com",
+        ]
+        api_auth_code = "80541406"
+        ssl_ctx = ssl.create_default_context()
+
+        for base_url in base_urls:
+            try:
+                url = f"{base_url}/v1/lec/{serial}/ltk"
+                req = urllib.request.Request(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {auth_token}",
+                        "X-Dyson-ApiAuthCode": api_auth_code,
+                        "Accept": "application/json",
+                    },
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=15, context=ssl_ctx) as resp:
+                    data = json.loads(resp.read())
+                    ltk = data.get("ltk")
+                    if ltk and isinstance(ltk, str):
+                        return ltk
+            except urllib.error.HTTPError as err:
+                _LOGGER.debug(
+                    "LTK fetch HTTP %s from %s for %s", err.code, base_url, serial
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "LTK fetch error from %s for %s: %s", base_url, serial, err
+                )
+
+        return None
+
     async def async_step_ble_light(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -777,10 +989,13 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
                 return self.async_create_entry(title=device_name, data=config_data)
 
+        # Pre-fill serial/MAC if they were already captured in a prior step
+        default_serial = self._ble_serial or ""
+        default_mac = self._ble_mac or ""
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_SERIAL_NUMBER): str,
-                vol.Required(CONF_BLE_MAC): str,
+                vol.Required(CONF_SERIAL_NUMBER, default=default_serial): str,
+                vol.Required(CONF_BLE_MAC, default=default_mac): str,
                 vol.Required(CONF_LTK): str,
                 vol.Optional("device_name"): str,
                 vol.Optional(CONF_BLE_PROXY): str,
