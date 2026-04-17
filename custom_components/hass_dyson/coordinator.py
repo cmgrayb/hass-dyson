@@ -2653,6 +2653,15 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             EVENT_BLE_STATE_CHANGE, self._handle_ble_event
         )
 
+        _LOGGER.info(
+            "BLE coordinator setup complete for %s "
+            "(MAC: %s, LTK configured: %s, proxy: %s) — starting connection task",
+            self.serial_number,
+            mac,
+            bool(ltk_hex),
+            ble_proxy or "none (will use local BT adapter)",
+        )
+
         # Start the BLE connection task
         self._stop_event.clear()
         self._ble_task = asyncio.ensure_future(
@@ -2685,28 +2694,56 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         from .ble_device import _KEEPALIVE_INTERVAL, _RECONNECT_DELAYS
 
+        _LOGGER.info("BLE lifecycle task started for %s", self.serial_number)
         attempt = 0
         while not self._stop_event.is_set():
             if self.ble_device is None:
+                _LOGGER.warning(
+                    "BLE lifecycle task: ble_device is None for %s, waiting...",
+                    self.serial_number,
+                )
                 await asyncio.sleep(5)
                 continue
 
+            _LOGGER.info(
+                "BLE lifecycle task: attempting connection for %s (attempt %d)",
+                self.serial_number,
+                attempt + 1,
+            )
             try:
                 await self.ble_device.connect_and_authenticate()
                 attempt = 0  # Reset backoff on successful connect
+                _LOGGER.info(
+                    "BLE lifecycle task: %s connected — entering keepalive loop",
+                    self.serial_number,
+                )
                 # Keepalive loop: poll state periodically and watch for disconnect
                 while not self._stop_event.is_set() and self.ble_device.is_connected:
                     await asyncio.sleep(_KEEPALIVE_INTERVAL)
                     if self.ble_device.is_connected:
                         await self.ble_device.poll_state()
+                _LOGGER.info(
+                    "BLE lifecycle task: %s exited keepalive loop (connected: %s, stop: %s)",
+                    self.serial_number,
+                    self.ble_device.is_connected,
+                    self._stop_event.is_set(),
+                )
             except asyncio.CancelledError:
+                _LOGGER.debug("BLE lifecycle task cancelled for %s", self.serial_number)
                 return
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.warning(
-                    "BLE connection error for %s: %s", self.serial_number, exc
+                    "BLE lifecycle task: connection error for %s (%s: %s)",
+                    self.serial_number,
+                    type(exc).__name__,
+                    exc,
                 )
 
             if self._stop_event.is_set():
+                _LOGGER.debug(
+                    "BLE lifecycle task: stop requested for %s, exiting",
+                    self.serial_number,
+                )
                 return
 
             delay_index = min(attempt, len(_RECONNECT_DELAYS) - 1)

@@ -503,17 +503,70 @@ class DysonBLEDevice:
         """Obtain a BleakClient via HA's bluetooth integration."""
         from bleak import BleakClient  # provided by HA core
 
+        _LOGGER.debug(
+            "BLE client lookup for %s (MAC: %s, proxy: %s)",
+            self.serial_number,
+            self.mac_address,
+            self._ble_proxy or "none (direct adapter)",
+        )
+
         try:
             from homeassistant.components import bluetooth as _bt
 
-            service_info = _bt.async_last_service_info(
+            # Log all currently discovered service infos for this MAC to aid diagnosis
+            connectable_info = _bt.async_last_service_info(
                 self.hass, self.mac_address, connectable=True
             )
-            if service_info is not None:
-                return BleakClient(service_info.device)
-        except (ImportError, Exception):  # noqa: BLE001
-            pass
-        # Fall back to MAC address
+            non_connectable_info = _bt.async_last_service_info(
+                self.hass, self.mac_address, connectable=False
+            )
+
+            if connectable_info is not None:
+                _LOGGER.info(
+                    "BLE device %s (%s) found as CONNECTABLE via adapter/proxy '%s' "
+                    "(RSSI: %s dBm) — will use proxy-aware BleakClient",
+                    self.serial_number,
+                    self.mac_address,
+                    getattr(connectable_info, "source", "unknown"),
+                    getattr(connectable_info, "rssi", "unknown"),
+                )
+                return BleakClient(connectable_info.device)
+            elif non_connectable_info is not None:
+                _LOGGER.warning(
+                    "BLE device %s (%s) is visible (RSSI: %s dBm, source: '%s') but NOT "
+                    "connectable. If using an ESPHome Bluetooth proxy, ensure it is "
+                    "configured with 'active: true' in the bluetooth_proxy component. "
+                    "Falling back to raw MAC address — connection will likely fail.",
+                    self.serial_number,
+                    self.mac_address,
+                    getattr(non_connectable_info, "rssi", "unknown"),
+                    getattr(non_connectable_info, "source", "unknown"),
+                )
+            else:
+                _LOGGER.warning(
+                    "BLE device %s (%s) has NOT been seen by any HA Bluetooth adapter or "
+                    "proxy. Check that the device is powered on and within range. "
+                    "Falling back to raw MAC address — connection will likely fail.",
+                    self.serial_number,
+                    self.mac_address,
+                )
+        except ImportError:
+            _LOGGER.warning(
+                "HA bluetooth integration not available for %s — "
+                "falling back to raw MAC address",
+                self.serial_number,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "Error querying HA bluetooth integration for %s: %s — "
+                "falling back to raw MAC address",
+                self.serial_number,
+                exc,
+            )
+        # Fall back to MAC address (works for local adapters, not proxies)
+        _LOGGER.debug(
+            "Using raw MAC address fallback for BleakClient(%s)", self.mac_address
+        )
         return BleakClient(self.mac_address)
 
     # ── LTK re-auth ───────────────────────────────────────────────────────────
@@ -528,39 +581,64 @@ class DysonBLEDevice:
             RuntimeError: If the client is not connected.
             TimeoutError: If the lamp does not respond within the timeout.
         """
+        _LOGGER.debug(
+            "LTK re-auth started for %s (LTK length: %d chars)",
+            self.serial_number,
+            len(self._ltk_hex),
+        )
         ltk = bytes.fromhex(self._ltk_hex)
         enc_key = hkdf_derive_aes_key(ltk)
         nonce = os.urandom(16)
 
         # Request product info first (matches observed app behaviour)
+        _LOGGER.debug("Requesting product info from %s", self.serial_number)
         await self._send_message(BLE_MSG_TYPE_REQUEST_PRODUCT_INFO)
         try:
             product_msg = await self._wait_for_type(
                 BLE_MSG_TYPE_PRODUCT_INFO, timeout=5.0
             )
             self._parse_product_info(product_msg.payload)
+            _LOGGER.debug(
+                "Product info received from %s: firmware %s.%s build %s",
+                self.serial_number,
+                self.state.firmware_major,
+                self.state.firmware_minor,
+                self.state.firmware_build,
+            )
         except TimeoutError:
             _LOGGER.debug(
-                "No product info response from %s; continuing", self.serial_number
+                "No product info response from %s (timeout); continuing with auth",
+                self.serial_number,
             )
 
         # Challenge-response
+        _LOGGER.debug("Sending PayloadA (0x06) to %s", self.serial_number)
         payload_a = build_reauth_payload_a(self._account_uuid, enc_key, nonce)
         await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_A, payload_a)
 
+        _LOGGER.debug("Waiting for PayloadB (0x07) from %s", self.serial_number)
         payload_b_msg = await self._wait_for_type(
             BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=10.0
+        )
+        _LOGGER.debug(
+            "PayloadB received from %s (%d bytes)",
+            self.serial_number,
+            len(payload_b_msg.payload),
         )
         # The challenge from PayloadB is the 16-byte block starting at offset 18
         # (2 reserved bytes + 16-byte IV skipped; the actual challenge is at +2)
         # For simplicity we treat the entire PayloadB payload as the challenge input
         challenge = payload_b_msg.payload
 
+        _LOGGER.debug("Sending PayloadC (0x08) to %s", self.serial_number)
         payload_c = build_reauth_payload_c(
             enc_key, challenge[:16] if len(challenge) >= 16 else challenge
         )
         await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_C, payload_c)
 
+        _LOGGER.debug(
+            "Waiting for Connection Established (0x26) from %s", self.serial_number
+        )
         await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=10.0)
         _LOGGER.info("BLE LTK re-auth successful for %s", self.serial_number)
 
@@ -638,7 +716,9 @@ class DysonBLEDevice:
             )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning(
-                "Failed to subscribe to motion char for %s: %s", self.serial_number, exc
+                "Failed to subscribe to motion characteristic for %s: %s",
+                self.serial_number,
+                exc,
             )
 
         # Runtime / diagnostic notifications (best-effort)
@@ -651,8 +731,18 @@ class DysonBLEDevice:
                 await self._client.start_notify(
                     uuid, self._on_runtime_notification(short_id)
                 )
-            except Exception:  # noqa: BLE001
-                pass
+                _LOGGER.debug(
+                    "Subscribed to diagnostic characteristic %s for %s",
+                    short_id,
+                    self.serial_number,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Could not subscribe to diagnostic characteristic %s for %s: %s",
+                    short_id,
+                    self.serial_number,
+                    exc,
+                )
 
     # ── Public connection API ─────────────────────────────────────────────────
 
@@ -669,11 +759,16 @@ class DysonBLEDevice:
         """
         async with self._lock:
             _LOGGER.info(
-                "Connecting to Dyson BLE lamp %s (%s)",
+                "Connecting to Dyson BLE lamp %s (MAC: %s)",
                 self.serial_number,
                 self.mac_address,
             )
             client = await self._get_bleak_client()
+            _LOGGER.debug(
+                "BleakClient created for %s: %s",
+                self.serial_number,
+                type(client).__name__,
+            )
             attempts = 4
             delay = 1.25
             last_exc: Exception | None = None
@@ -690,11 +785,12 @@ class DysonBLEDevice:
                     break
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
-                    _LOGGER.debug(
-                        "Connect attempt %d/%d failed for %s: %s",
+                    _LOGGER.warning(
+                        "BLE connect attempt %d/%d failed for %s: %s: %s",
                         attempt,
                         attempts,
                         self.serial_number,
+                        type(exc).__name__,
                         exc,
                     )
                     if attempt < attempts:
@@ -702,9 +798,14 @@ class DysonBLEDevice:
 
             if not client.is_connected:
                 raise RuntimeError(
-                    f"Failed to connect to {self.serial_number} after {attempts} attempts"
+                    f"Failed to connect to {self.serial_number} after {attempts} attempts: "
+                    f"{type(last_exc).__name__}: {last_exc}"
                 ) from last_exc
 
+            _LOGGER.info(
+                "GATT connection established for %s — subscribing to auth characteristic",
+                self.serial_number,
+            )
             self._client = client
             self.state.connected = True
             self._message_queue = asyncio.Queue()
@@ -714,18 +815,32 @@ class DysonBLEDevice:
             await self._client.start_notify(
                 BLE_AUTH_CHAR_UUID, self._on_auth_notification
             )
+            _LOGGER.debug(
+                "Auth characteristic notification subscription active for %s",
+                self.serial_number,
+            )
 
             # LTK re-auth
             try:
                 await self._reauth_with_ltk()
             except Exception as exc:
-                _LOGGER.error("LTK re-auth failed for %s: %s", self.serial_number, exc)
+                _LOGGER.error(
+                    "LTK re-auth failed for %s (%s: %s) — "
+                    "verify that the LTK was correctly retrieved from the Dyson cloud",
+                    self.serial_number,
+                    type(exc).__name__,
+                    exc,
+                )
                 self.state.last_error = str(exc)
                 await self._disconnect_client()
                 raise
 
             self.state.authenticated = True
             self.state.last_error = ""
+            _LOGGER.info(
+                "Dyson BLE lamp %s fully connected and authenticated",
+                self.serial_number,
+            )
 
             # Read initial state and subscribe to runtime notifications
             await self._read_initial_state()
@@ -739,11 +854,17 @@ class DysonBLEDevice:
         if client is not None:
             try:
                 if client.is_connected:
+                    _LOGGER.debug(
+                        "Disconnecting GATT client for %s", self.serial_number
+                    )
                     await client.disconnect()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Error during GATT disconnect for %s: %s", self.serial_number, exc
+                )
         self.state.connected = False
         self.state.authenticated = False
+        _LOGGER.debug("GATT client disconnected for %s", self.serial_number)
         self._fire_state_change()
 
     async def disconnect(self) -> None:
