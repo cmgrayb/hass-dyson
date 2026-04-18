@@ -67,7 +67,7 @@
       },
       "ble_discover": {
         "title": "Select Dyson BLE Light",
-        "description": "Found {device_count} Dyson BLE light(s) nearby. Select your device or choose to enter the MAC address manually.",
+        "description": "Found {device_count} Dyson BLE device(s) nearby. Select your device or choose to enter the MAC address manually.",
         "data": {
           "ble_device": "Device"
         }

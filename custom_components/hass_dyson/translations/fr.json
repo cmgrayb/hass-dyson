@@ -67,7 +67,7 @@
       },
       "ble_discover": {
         "title": "Sélectionner une lampe Dyson BLE",
-        "description": "{device_count} lampe(s) Dyson BLE trouvée(s) à proximité. Sélectionnez votre appareil ou choisissez de saisir l'adresse MAC manuellement.",
+        "description": "{device_count} appareil(s) Dyson BLE trouvé(s) à proximité. Sélectionnez votre appareil ou choisissez de saisir l'adresse MAC manuellement.",
         "data": {
           "ble_device": "Appareil"
         }
