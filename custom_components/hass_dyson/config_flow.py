@@ -742,28 +742,29 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         errors: dict[str, str] = {}
 
-        # Scan for Dyson BLE devices using HA's bluetooth integration
-        self._ble_found_devices = []
-        try:
-            from homeassistant.components import bluetooth as _bt
+        # Scan only on the first (display) call; on the second call (user_input
+        # present) the list from the first call is still in self._ble_found_devices.
+        if user_input is None:
+            self._ble_found_devices = []
+            try:
+                from homeassistant.components import bluetooth as _bt
 
-            service_infos = _bt.async_discovered_service_info(
-                self.hass, connectable=True
-            )
-            for si in service_infos:
-                if BLE_SERVICE_UUID in (si.service_uuids or []):
-                    name = si.name or si.address
-                    self._ble_found_devices.append((si.address, name))
-        except Exception:  # noqa: BLE001
-            _LOGGER.debug(
-                "BLE scan unavailable — Bluetooth integration may not be loaded"
-            )
+                service_infos = _bt.async_discovered_service_info(
+                    self.hass, connectable=True
+                )
+                for si in service_infos:
+                    if BLE_SERVICE_UUID in (si.service_uuids or []):
+                        name = si.name or si.address
+                        self._ble_found_devices.append((si.address, name))
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "BLE scan unavailable — Bluetooth integration may not be loaded"
+                )
 
-        if not self._ble_found_devices:
-            # Nothing found via BLE scan; skip straight to manual configure
-            return await self.async_step_ble_configure()
-
-        if user_input is not None:
+            if not self._ble_found_devices:
+                # Nothing found via BLE scan; skip straight to manual configure
+                return await self.async_step_ble_configure()
+        else:
             selected = user_input.get("ble_device", "")
             if selected != "manual":
                 self._ble_mac = selected
