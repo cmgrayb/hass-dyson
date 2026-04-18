@@ -469,6 +469,23 @@ class DysonBLEDevice:
 
         return _handler
 
+    def _on_bleak_disconnect(self, client: Any) -> None:  # noqa: ARG002
+        """Handle unexpected BLE disconnect (called by bleak_retry_connector).
+
+        Registered as the ``disconnected_callback`` when
+        :func:`bleak_retry_connector.establish_connection` is used.  The
+        coordinator's keepalive loop will detect the disconnection via
+        :attr:`is_connected` and trigger a reconnect with backoff.
+        """
+        _LOGGER.info(
+            "BLE device %s (%s) unexpectedly disconnected",
+            self.serial_number,
+            self.mac_address,
+        )
+        self.state.connected = False
+        self.state.authenticated = False
+        self._client = None
+
     async def _wait_for_type(self, type_id: int, timeout: float = 10.0) -> DysonMessage:
         """Wait for a specific message type from the auth characteristic."""
         end = self.hass.loop.time() + timeout
@@ -500,7 +517,13 @@ class DysonBLEDevice:
             )
 
     async def _get_bleak_client(self) -> Any:
-        """Obtain a BleakClient via HA's bluetooth integration."""
+        """Obtain a connected (or connectable) BleakClient.
+
+        When the device is visible in HA's Bluetooth stack, uses
+        :func:`bleak_retry_connector.establish_connection` to return an
+        **already-connected** client with HA-recommended retry logic.  Falls
+        back to a raw ``BleakClient(mac)`` that still needs ``.connect()``.
+        """
         from bleak import BleakClient  # provided by HA core
 
         _LOGGER.debug(
@@ -524,13 +547,42 @@ class DysonBLEDevice:
             if connectable_info is not None:
                 _LOGGER.info(
                     "BLE device %s (%s) found as CONNECTABLE via adapter/proxy '%s' "
-                    "(RSSI: %s dBm) — will use proxy-aware BleakClient",
+                    "(RSSI: %s dBm) — connecting via bleak_retry_connector",
                     self.serial_number,
                     self.mac_address,
                     getattr(connectable_info, "source", "unknown"),
                     getattr(connectable_info, "rssi", "unknown"),
                 )
-                return BleakClient(connectable_info.device)
+                try:
+                    from bleak_retry_connector import establish_connection
+
+                    client = await establish_connection(
+                        BleakClient,
+                        connectable_info.device,
+                        self.serial_number,
+                        disconnected_callback=self._on_bleak_disconnect,
+                        max_attempts=4,
+                    )
+                    _LOGGER.info(
+                        "BLE connection to %s established via bleak_retry_connector",
+                        self.serial_number,
+                    )
+                    return client  # Already connected — skip manual .connect()
+                except ImportError:
+                    _LOGGER.warning(
+                        "bleak_retry_connector not available for %s — "
+                        "falling back to direct BleakClient (connection may be unreliable)",
+                        self.serial_number,
+                    )
+                    return BleakClient(connectable_info.device)
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "establish_connection() failed for %s (%s) — "
+                        "falling back to direct BleakClient",
+                        self.serial_number,
+                        exc,
+                    )
+                    return BleakClient(connectable_info.device)
             elif non_connectable_info is not None:
                 _LOGGER.warning(
                     "BLE device %s (%s) is visible (RSSI: %s dBm, source: '%s') but NOT "
@@ -618,7 +670,7 @@ class DysonBLEDevice:
 
         _LOGGER.debug("Waiting for PayloadB (0x07) from %s", self.serial_number)
         payload_b_msg = await self._wait_for_type(
-            BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=10.0
+            BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=20.0
         )
         _LOGGER.debug(
             "PayloadB received from %s (%d bytes)",
@@ -639,7 +691,7 @@ class DysonBLEDevice:
         _LOGGER.debug(
             "Waiting for Connection Established (0x26) from %s", self.serial_number
         )
-        await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=10.0)
+        await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=20.0)
         _LOGGER.info("BLE LTK re-auth successful for %s", self.serial_number)
 
     def _parse_product_info(self, payload: bytes) -> None:
@@ -765,42 +817,51 @@ class DysonBLEDevice:
             )
             client = await self._get_bleak_client()
             _LOGGER.debug(
-                "BleakClient created for %s: %s",
+                "BleakClient obtained for %s: %s (already_connected: %s)",
                 self.serial_number,
                 type(client).__name__,
+                getattr(client, "is_connected", False),
             )
-            attempts = 4
-            delay = 1.25
-            last_exc: Exception | None = None
 
-            for attempt in range(1, attempts + 1):
-                try:
-                    _LOGGER.debug(
-                        "BLE connect attempt %d/%d for %s",
-                        attempt,
-                        attempts,
-                        self.serial_number,
-                    )
-                    await client.connect()
-                    break
-                except Exception as exc:  # noqa: BLE001
-                    last_exc = exc
-                    _LOGGER.warning(
-                        "BLE connect attempt %d/%d failed for %s: %s: %s",
-                        attempt,
-                        attempts,
-                        self.serial_number,
-                        type(exc).__name__,
-                        exc,
-                    )
-                    if attempt < attempts:
-                        await asyncio.sleep(delay)
+            if not getattr(client, "is_connected", False):
+                # Client not pre-connected — use manual retry loop (raw MAC fallback path)
+                attempts = 4
+                delay = 1.25
+                last_exc: Exception | None = None
 
-            if not client.is_connected:
-                raise RuntimeError(
-                    f"Failed to connect to {self.serial_number} after {attempts} attempts: "
-                    f"{type(last_exc).__name__}: {last_exc}"
-                ) from last_exc
+                for attempt in range(1, attempts + 1):
+                    try:
+                        _LOGGER.debug(
+                            "BLE connect attempt %d/%d for %s",
+                            attempt,
+                            attempts,
+                            self.serial_number,
+                        )
+                        await client.connect()
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        last_exc = exc
+                        _LOGGER.warning(
+                            "BLE connect attempt %d/%d failed for %s: %s: %s",
+                            attempt,
+                            attempts,
+                            self.serial_number,
+                            type(exc).__name__,
+                            exc,
+                        )
+                        if attempt < attempts:
+                            await asyncio.sleep(delay)
+
+                if not client.is_connected:
+                    raise RuntimeError(
+                        f"Failed to connect to {self.serial_number} after {attempts} attempts: "
+                        f"{type(last_exc).__name__}: {last_exc}"
+                    ) from last_exc
+            else:
+                _LOGGER.info(
+                    "GATT connection already established for %s via bleak_retry_connector",
+                    self.serial_number,
+                )
 
             _LOGGER.info(
                 "GATT connection established for %s — subscribing to auth characteristic",
