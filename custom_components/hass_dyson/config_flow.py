@@ -767,6 +767,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             selected = user_input.get("ble_device", "")
             if selected != "manual":
                 self._ble_mac = selected
+                # Pre-populate serial from the advertisement name if it looks like
+                # a Dyson serial (e.g. "E5U-EU-SDA0094A") rather than a raw MAC.
+                for mac, name in self._ble_found_devices:
+                    if mac == selected and "-" in name and ":" not in name:
+                        self._ble_serial = name.upper()
+                        break
             return await self.async_step_ble_configure()
 
         # Build a device-selection dropdown
