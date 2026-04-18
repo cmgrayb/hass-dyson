@@ -465,13 +465,21 @@ async def _setup_individual_device_entry(
         # Perform initial data fetch
         await coordinator.async_config_entry_first_refresh()
     except UnsupportedDeviceError as err:
-        # Device doesn't support MQTT - automatically remove it
+        # Device doesn't support MQTT - schedule removal AFTER setup_lock is released.
+        # Awaiting async_remove here would deadlock because async_setup_entry already
+        # holds entry.setup_lock and async_remove tries to acquire the same lock.
         _LOGGER.info(
-            "Removing unsupported device '%s' (no MQTT support): %s",
+            "Scheduling removal of unsupported device '%s' (no MQTT support): %s",
             entry.title,
             err,
         )
-        await hass.config_entries.async_remove(entry.entry_id)
+
+        async def _remove_unsupported_entry() -> None:
+            """Remove the config entry after setup_lock has been released."""
+            if hass.config_entries.async_get_entry(entry.entry_id) is not None:
+                await hass.config_entries.async_remove(entry.entry_id)
+
+        hass.async_create_task(_remove_unsupported_entry())
         return False
 
     # Store coordinator in hass data
