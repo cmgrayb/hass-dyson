@@ -768,12 +768,33 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             selected = user_input.get("ble_device", "")
             if selected != "manual":
                 self._ble_mac = selected
-                # Pre-populate serial from the advertisement name if it looks like
-                # a Dyson serial (e.g. "E5U-EU-SDA0094A") rather than a raw MAC.
+                # Try stored scan results first (normalise case for robustness).
                 for mac, name in self._ble_found_devices:
-                    if mac == selected and "-" in name and ":" not in name:
+                    if (
+                        mac.upper() == selected.upper()
+                        and "-" in name
+                        and ":" not in name
+                    ):
                         self._ble_serial = name.upper()
                         break
+                # If not resolved yet, query the HA BT stack directly for the
+                # selected MAC — the device was visible seconds ago so it will
+                # still be in the cache regardless of _ble_found_devices state.
+                if not self._ble_serial:
+                    try:
+                        from homeassistant.components import bluetooth as _bt
+
+                        si = _bt.async_last_service_info(
+                            self.hass, selected, connectable=True
+                        ) or _bt.async_last_service_info(
+                            self.hass, selected, connectable=False
+                        )
+                        if si is not None:
+                            adv_name = si.name or ""
+                            if "-" in adv_name and ":" not in adv_name:
+                                self._ble_serial = adv_name.upper()
+                    except Exception:  # noqa: BLE001
+                        pass
             return await self.async_step_ble_configure()
 
         # Build a device-selection dropdown
