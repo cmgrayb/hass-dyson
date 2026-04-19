@@ -868,10 +868,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 return await self.async_step_ble_light()
 
+        default_serial = self._ble_serial or ""
         default_mac = self._ble_mac or ""
         data_schema = vol.Schema(
             {
-                vol.Required(CONF_SERIAL_NUMBER): str,
+                vol.Required(CONF_SERIAL_NUMBER, default=default_serial): str,
                 vol.Required(CONF_BLE_MAC, default=default_mac): str,
                 vol.Optional("device_name"): str,
                 vol.Optional(CONF_BLE_PROXY): str,
