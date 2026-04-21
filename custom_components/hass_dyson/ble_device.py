@@ -227,6 +227,41 @@ def _aes_cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
     return encryptor.update(plaintext) + encryptor.finalize()
 
 
+def _aes_cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
+    """AES-128-CBC decrypt (no padding — ciphertext must be block-aligned)."""
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+    return decryptor.update(ciphertext) + decryptor.finalize()
+
+
+def g20c_decrypt(enc_key: bytes, envelope: bytes) -> bytes | None:
+    """Decrypt a 64-byte g20c envelope and return the 16-byte plaintext.
+
+    Verifies HMAC-SHA256 before decrypting to detect wrong keys early.
+    Mirrors the inverse of :func:`g20c_encrypt`.
+
+    Args:
+        enc_key: 16-byte AES key derived from :func:`hkdf_derive_aes_key`.
+        envelope: 64-byte g20c envelope: ``IV(16) + CT(16) + MAC(32)``.
+
+    Returns:
+        16-byte plaintext, or ``None`` if MAC verification fails (bad key or
+        corrupted data).
+    """
+    if len(envelope) != 64:  # noqa: PLR2004
+        return None
+    iv = envelope[:16]
+    ct = envelope[16:32]
+    mac = envelope[32:64]
+    expected_mac = hmac.new(enc_key, ct, hashlib.sha256).digest()
+    if not hmac.compare_digest(mac, expected_mac):
+        return None
+    return _aes_cbc_decrypt(enc_key, iv, ct)
+
+
 def g20c_encrypt(enc_key: bytes, plaintext: bytes) -> bytes:
     """Encrypt using Dyson's g20c scheme: IV(16) + AES-CBC(16) + HMAC-SHA256(32).
 
@@ -694,15 +729,27 @@ class DysonBLEDevice:
             self.serial_number,
             len(payload_b_msg.payload),
         )
-        # The challenge from PayloadB is the 16-byte block starting at offset 18
-        # (2 reserved bytes + 16-byte IV skipped; the actual challenge is at +2)
-        # For simplicity we treat the entire PayloadB payload as the challenge input
-        challenge = payload_b_msg.payload
+        # PayloadB structure mirrors PayloadA:
+        #   device_uuid(16) || 0x00 0x00 || g20c_envelope(64) = 82 bytes
+        # g20c_envelope: IV(16) || CT(16) || MAC(32) = 64 bytes
+        # The device's challenge nonce is the plaintext inside the g20c envelope.
+        # We must decrypt it with enc_key, then re-encrypt it in PayloadC to prove
+        # we hold the correct key (classic mutual challenge-response).
+        g20c_envelope = payload_b_msg.payload[18:82]  # skip device_uuid(16)+reserved(2)
+        device_nonce = g20c_decrypt(enc_key, g20c_envelope)
+        if device_nonce is None:
+            raise RuntimeError(
+                f"PayloadB from {self.serial_number} failed HMAC verification — "
+                "LTK may be incorrect or corrupted"
+            )
+        _LOGGER.debug(
+            "Decoded device challenge from %s (nonce: %s...)",
+            self.serial_number,
+            device_nonce.hex()[:8],
+        )
 
         _LOGGER.debug("Sending PayloadC (0x08) to %s", self.serial_number)
-        payload_c = build_reauth_payload_c(
-            enc_key, challenge[:16] if len(challenge) >= 16 else challenge
-        )
+        payload_c = build_reauth_payload_c(enc_key, device_nonce)
         await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_C, payload_c)
 
         _LOGGER.debug(
@@ -1051,7 +1098,7 @@ class DysonBLEDevice:
             "identifiers": {(BLE_SERVICE_UUID, self.serial_number)},
             "name": f"Dyson {self.serial_number}",
             "manufacturer": "Dyson",
-            "model": "Lightcycle Morph (CD06)",
+            "model": "Lightcycle Morph",
         }
         if self.state.firmware_major is not None:
             info["sw_version"] = (
