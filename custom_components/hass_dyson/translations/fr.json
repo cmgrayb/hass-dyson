@@ -92,6 +92,11 @@
           "device_name": "Nom de l'appareil (Optionnel)",
           "ble_proxy": "Hôte proxy Bluetooth (Optionnel)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Ré-authentification du compte Dyson",
+        "description": "Votre compte Dyson ({email}) doit se ré-authentifier pour mettre à jour les identifiants. Cliquez sur Soumettre pour recevoir un code de vérification.",
+        "data": {}
       }
     },
     "error": {
@@ -115,7 +120,9 @@
       "invalid_discovery_info": "Informations de découverte invalides reçues. Impossible de procéder à la configuration de l'appareil.",
       "no_discovery_info": "Aucune information de découverte disponible. Veuillez réessayer ou utiliser la configuration manuelle.",
       "user_declined": "La configuration de l'appareil a été annulée par l'utilisateur.",
-      "no_device_data": "Les informations requises de l'appareil sont manquantes. Impossible de terminer la configuration."
+      "no_device_data": "Les informations requises de l'appareil sont manquantes. Impossible de terminer la configuration.",
+      "reauth_successful": "La ré-authentification a réussi. Vos identifiants ont été mis à jour.",
+      "reauth_failed": "La ré-authentification a échoué de manière inattendue. Veuillez réessayer."
     }
   },
   "options": {
@@ -168,6 +175,9 @@
           "auto_add_devices": "Ajouter automatiquement les appareils découverts (lorsque désactivé, les appareils apparaîtront comme découvrables mais nécessiteront une approbation manuelle)"
         }
       }
+    },
+    "abort": {
+      "reauthenticate_initiated": "La ré-authentification a été initiée. Veuillez suivre les instructions qui apparaissent dans la section Notifications ou Réparations pour terminer la ré-authentification."
     }
   },
   "entity": {

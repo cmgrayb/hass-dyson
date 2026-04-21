@@ -2623,12 +2623,24 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             EVENT_BLE_STATE_CHANGE,
         )
 
-        # Build a stable account UUID from the HA instance ID
-        try:
-            raw_id = await ha_instance_id.async_get(self.hass)
-            digest = hashlib.sha256(raw_id.encode()).digest()
-            account_uuid = str(_uuid.UUID(bytes=digest[:16]))
-        except Exception:  # noqa: BLE001
+        # Use the Dyson account UUID stored in the BLE config entry (set during LTK auto-fetch).
+        # Fall back to the account_uuid in any cloud account config entry, then to a zero UUID
+        # with a warning directing the user to re-authenticate.
+        account_uuid = self._config_entry.data.get("account_uuid", "")
+        if not account_uuid:
+            # Try the parent cloud account entry
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                candidate = entry.data.get("account_uuid", "")
+                if candidate:
+                    account_uuid = candidate
+                    break
+        if not account_uuid:
+            _LOGGER.warning(
+                "No Dyson account UUID found for BLE device %s. "
+                "BLE authentication will likely fail. "
+                "Please delete this device and re-add it after re-authenticating your Dyson cloud account.",
+                self.serial_number,
+            )
             account_uuid = str(_uuid.UUID(int=0))
 
         # Recreate with proper account uuid

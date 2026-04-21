@@ -92,6 +92,11 @@
           "device_name": "Device Name (Optional)",
           "ble_proxy": "Bluetooth Proxy Host (Optional)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Dyson Account",
+        "description": "Your Dyson account ({email}) needs to re-authenticate to update credentials. Click Submit to send a verification code.",
+        "data": {}
       }
     },
     "error": {
@@ -115,7 +120,9 @@
       "invalid_discovery_info": "Invalid discovery information received. Unable to proceed with device setup.",
       "no_discovery_info": "No discovery information available. Please try again or use manual setup.",
       "user_declined": "Device setup was cancelled by user.",
-      "no_device_data": "Required device information is missing. Unable to complete setup."
+      "no_device_data": "Required device information is missing. Unable to complete setup.",
+      "reauth_successful": "Re-authentication was successful. Your credentials have been updated.",
+      "reauth_failed": "Re-authentication failed unexpectedly. Please try again."
     }
   },
   "options": {
@@ -168,6 +175,9 @@
           "auto_add_devices": "Automatically add discovered devices (when disabled, devices will appear as discoverable but require manual approval)"
         }
       }
+    },
+    "abort": {
+      "reauthenticate_initiated": "Re-authentication has been initiated. Please follow the prompts that appear in the Notifications or Repairs section to complete re-authentication."
     }
   },
   "entity": {

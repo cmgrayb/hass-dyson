@@ -92,6 +92,11 @@
           "device_name": "Gerätename (Optional)",
           "ble_proxy": "Bluetooth-Proxy-Host (Optional)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Dyson-Konto erneut authentifizieren",
+        "description": "Ihr Dyson-Konto ({email}) muss erneut authentifiziert werden, um die Zugangsdaten zu aktualisieren. Klicken Sie auf Senden, um einen Bestätigungscode zu erhalten.",
+        "data": {}
       }
     },
     "error": {
@@ -115,7 +120,9 @@
       "invalid_discovery_info": "Ungültige Erkennungsinformationen erhalten. Gerätekonfiguration kann nicht fortgesetzt werden.",
       "no_discovery_info": "Keine Erkennungsinformationen verfügbar. Bitte versuchen Sie es erneut oder verwenden Sie die manuelle Einrichtung.",
       "user_declined": "Gerätekonfiguration wurde vom Benutzer abgebrochen.",
-      "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden."
+      "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden.",
+      "reauth_successful": "Erneute Authentifizierung erfolgreich. Ihre Zugangsdaten wurden aktualisiert.",
+      "reauth_failed": "Erneute Authentifizierung unerwartet fehlgeschlagen. Bitte versuchen Sie es erneut."
     }
   },
   "options": {
@@ -168,6 +175,9 @@
           "auto_add_devices": "Entdeckte Geräte automatisch hinzufügen (wenn deaktiviert, erscheinen Geräte als erkennbar, erfordern aber manuelle Genehmigung)"
         }
       }
+    },
+    "abort": {
+      "reauthenticate_initiated": "Die erneute Authentifizierung wurde eingeleitet. Bitte folgen Sie den Anweisungen, die im Bereich Benachrichtigungen oder Reparaturen erscheinen, um die erneute Authentifizierung abzuschließen."
     }
   },
   "entity": {

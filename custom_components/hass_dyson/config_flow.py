@@ -142,6 +142,7 @@ def _get_management_actions() -> dict[str, str]:
         "reload_all": "🔄 Reload All Devices",
         "reconfigure_connection": "⚙️ Reconfigure Default Connection Settings",
         "cloud_preferences": "☁️ Configure Cloud Account Settings",
+        "reauthenticate": "🔑 Re-authenticate Dyson Account",
     }
 
 
@@ -259,6 +260,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._connection_type: str | None = None
         self._country: str | None = None  # Store country for mobile auth detection
         self._culture: str | None = None  # Store culture for complete_login
+        self._account_uuid: str | None = None  # Dyson account UUID from login
+        self._reauth_entry: config_entries.ConfigEntry | None = (
+            None  # set during reauth
+        )
         # BLE pairing state
         self._ble_mac: str | None = None
         self._ble_serial: str | None = None
@@ -327,6 +332,95 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.debug("Error closing cloud client: %s", e)
             finally:
                 self._cloud_client = None
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        """Handle re-authentication for an existing Dyson cloud account entry.
+
+        Called automatically by HA when a repair notification is triggered or
+        when ``entry.async_start_reauth`` is invoked.  Pre-fills stored
+        credentials and starts a new OTP challenge so the user only needs to
+        enter their password and the emailed code.
+
+        Args:
+            entry_data: Existing config entry data (passed by HA).
+
+        Returns:
+            The result of showing the reauth confirmation form.
+        """
+        self._reauth_entry = self._get_reauth_entry()
+        self._email = self._reauth_entry.data.get("email", "")
+        self._country = self._reauth_entry.data.get(CONF_COUNTRY, "US")
+        self._culture = self._reauth_entry.data.get(CONF_CULTURE, "en-US")
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show re-authentication form and initiate OTP on confirm.
+
+        The email is pre-filled from the existing entry.  On submit, an OTP
+        challenge is started and the user is routed to the normal verify step.
+
+        Args:
+            user_input: Form data submitted by the user, or None on first render.
+
+        Returns:
+            The form to display or a redirect to the verify step.
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            challenge_id, errors = await self._initiate_otp_with_dyson_api(
+                self._email or "", self._country or "US", self._culture or "en-US"
+            )
+            if challenge_id is not None:
+                self._challenge_id = challenge_id
+                if _is_cn_mobile_auth(self._country or "US", self._email or ""):
+                    return await self.async_step_verify_mobile()
+                return await self.async_step_verify()
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({}),
+            errors=errors,
+            description_placeholders={"email": self._email or ""},
+        )
+
+    async def _finish_reauth(self) -> ConfigFlowResult:
+        """Complete re-authentication by updating the existing entry in place.
+
+        Reads the fresh ``auth_token`` and ``account_uuid`` from the cloud
+        client and merges them into the existing entry data.  Reloads the
+        entry so the coordinator picks up the new credentials immediately.
+
+        Returns:
+            An ``async_update_reload_and_abort`` result that reloads the entry
+            and closes the reauth flow.
+        """
+        if self._reauth_entry is None:
+            _LOGGER.error("_finish_reauth called outside of a reauth flow")
+            return self.async_abort(reason="reauth_failed")
+
+        auth_token = getattr(self._cloud_client, "auth_token", None)
+        account_uuid = (
+            self._account_uuid or getattr(self._cloud_client, "account_id", None) or ""
+        )
+        await self._cleanup_cloud_client()
+
+        updated_data = {
+            **self._reauth_entry.data,
+            "auth_token": auth_token,
+            "account_uuid": account_uuid,
+        }
+        _LOGGER.info(
+            "Reauth complete for %s — account_uuid now set to %s",
+            self._email,
+            account_uuid[:8] + "..." if account_uuid else "(empty)",
+        )
+        return self.async_update_reload_and_abort(
+            self._reauth_entry,
+            data=updated_data,
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -847,8 +941,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 # Attempt account-assisted LTK retrieval (no button press needed)
-                ltk = await self._fetch_ltk_from_account(serial)
-                if ltk:
+                ltk_result = await self._fetch_ltk_from_account(serial)
+                if ltk_result:
+                    ltk, account_uuid = ltk_result
                     _LOGGER.info(
                         "Auto-fetched LTK for BLE device %s via Dyson cloud account",
                         serial,
@@ -857,6 +952,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_SERIAL_NUMBER: serial,
                         CONF_BLE_MAC: mac,
                         CONF_LTK: ltk,
+                        "account_uuid": account_uuid,
                     }
                     if user_input.get(CONF_BLE_PROXY):
                         config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
@@ -887,7 +983,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
-    async def _fetch_ltk_from_account(self, serial: str) -> str | None:
+    async def _fetch_ltk_from_account(self, serial: str) -> tuple[str, str] | None:
         """Try to fetch the device LTK from any Dyson cloud account configured in HA.
 
         Iterates over all DOMAIN config entries that carry an auth_token and
@@ -898,8 +994,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             serial: The device serial number (uppercase).
 
         Returns:
-            The LTK hex string on success, or ``None`` if no account is
-            available or the cloud endpoint does not return a valid LTK.
+            A ``(ltk_hex, account_uuid)`` tuple on success, or ``None`` if no
+            account is available or the cloud endpoint does not return a valid LTK.
         """
         for entry in self.hass.config_entries.async_entries(DOMAIN):
             auth_token = entry.data.get("auth_token")
@@ -909,7 +1005,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._cloud_fetch_ltk, serial, auth_token
             )
             if ltk:
-                return ltk
+                account_uuid = entry.data.get("account_uuid") or ""
+                return ltk, account_uuid
         return None
 
     def _cloud_fetch_ltk(self, serial: str, auth_token: str) -> str | None:
@@ -1096,8 +1193,14 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             _LOGGER.info(
                                 "Successfully authenticated with Dyson API, got auth token"
                             )
+                            # Capture the Dyson account UUID from the client (set by complete_login)
+                            self._account_uuid = getattr(
+                                self._cloud_client, "account_id", None
+                            )
                             # Store password for later use in device setup
                             self._password = password
+                            if self._reauth_entry is not None:
+                                return await self._finish_reauth()
                             return await self.async_step_connection()
                         except Exception as complete_error:
                             _LOGGER.error(
@@ -1195,8 +1298,14 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             _LOGGER.info(
                                 "Successfully authenticated with Dyson API via mobile, got auth token"
                             )
+                            # Capture the Dyson account UUID from the client (set by complete_login_mobile)
+                            self._account_uuid = getattr(
+                                self._cloud_client, "account_id", None
+                            )
                             # Store empty password for consistency (mobile auth doesn't use password)
                             self._password = ""  # nosec B105 - not a password, mobile auth uses token
+                            if self._reauth_entry is not None:
+                                return await self._finish_reauth()
                             return await self.async_step_connection()
                         except Exception as complete_error:
                             _LOGGER.error(
@@ -1476,8 +1585,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
                 device_list.append(device_info)
 
-        # Get auth token before cleanup
+        # Get auth token and account UUID before cleanup
         auth_token = getattr(self._cloud_client, "auth_token", None)
+        account_uuid = (
+            self._account_uuid or getattr(self._cloud_client, "account_id", None) or ""
+        )
 
         # Clean up the cloud client
         await self._cleanup_cloud_client()
@@ -1489,6 +1601,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "connection_type": self._connection_type,
                 "devices": device_list,
                 "auth_token": auth_token,
+                "account_uuid": account_uuid,
                 CONF_COUNTRY: self._country,
                 CONF_CULTURE: self._culture,
                 CONF_POLL_FOR_DEVICES: poll_for_devices,
@@ -1869,6 +1982,9 @@ class DysonOptionsFlow(config_entries.OptionsFlow):
                 return await self.async_step_reconfigure_connection()
             elif action == "cloud_preferences":
                 return await self.async_step_manage_cloud_preferences()
+            elif action == "reauthenticate":
+                self._config_entry.async_start_reauth(self.hass)
+                return self.async_abort(reason="reauthenticate_initiated")
 
         # Get current devices from config entry
         devices = self._config_entry.data.get("devices", [])

@@ -496,11 +496,28 @@ class DysonBLEDevice:
                     f"Timed out waiting for BLE message type 0x{type_id:02X} "
                     f"from {self.serial_number}"
                 )
-            msg = await asyncio.wait_for(self._message_queue.get(), timeout=remaining)
+            # Poll with a short sub-timeout so we detect disconnects quickly
+            # rather than waiting the full remaining time with an empty queue.
+            poll_timeout = min(remaining, 1.0)
+            try:
+                msg = await asyncio.wait_for(
+                    asyncio.shield(self._message_queue.get()), timeout=poll_timeout
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                # Check if the client disconnected during the wait
+                if self._client is None or not getattr(
+                    self._client, "is_connected", True
+                ):
+                    raise RuntimeError(
+                        f"BLE device {self.serial_number} disconnected while waiting "
+                        f"for message type 0x{type_id:02X}"
+                    )
+                continue  # Still connected — keep waiting
             if msg.type_id == type_id:
                 return msg
-            _LOGGER.debug(
-                "Ignoring type 0x%02X while waiting for 0x%02X from %s",
+            _LOGGER.warning(
+                "Unexpected BLE message type 0x%02X received while waiting for "
+                "0x%02X from %s — possible rejection or error response from device",
                 msg.type_id,
                 type_id,
                 self.serial_number,

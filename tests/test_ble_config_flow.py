@@ -245,7 +245,7 @@ class TestBleConfigure:
     async def test_ltk_auto_fetch_success_creates_entry(self, flow):
         """When LTK is auto-fetched the entry is created immediately."""
         with patch.object(
-            flow, "_fetch_ltk_from_account", new=AsyncMock(return_value=VALID_LTK)
+            flow, "_fetch_ltk_from_account", new=AsyncMock(return_value=(VALID_LTK, ""))
         ):
             result = await flow.async_step_ble_configure(
                 user_input={CONF_SERIAL_NUMBER: VALID_SERIAL, CONF_BLE_MAC: VALID_MAC}
@@ -260,7 +260,7 @@ class TestBleConfigure:
     async def test_ltk_auto_fetch_success_with_proxy(self, flow):
         """BLE proxy is included in config if provided."""
         with patch.object(
-            flow, "_fetch_ltk_from_account", new=AsyncMock(return_value=VALID_LTK)
+            flow, "_fetch_ltk_from_account", new=AsyncMock(return_value=(VALID_LTK, ""))
         ):
             result = await flow.async_step_ble_configure(
                 user_input={
@@ -346,7 +346,7 @@ class TestFetchLtkFromAccount:
         flow.hass.async_add_executor_job = AsyncMock(return_value=VALID_LTK)
 
         result = await flow._fetch_ltk_from_account(VALID_SERIAL)
-        assert result == VALID_LTK
+        assert result == (VALID_LTK, "")
 
     @pytest.mark.asyncio
     async def test_first_successful_entry_returned(self, flow):
@@ -367,7 +367,7 @@ class TestFetchLtkFromAccount:
         flow.hass.async_add_executor_job = fake_executor
 
         result = await flow._fetch_ltk_from_account(VALID_SERIAL)
-        assert result == VALID_LTK
+        assert result == (VALID_LTK, "")
         assert call_count == 1  # returned after first entry
 
     @pytest.mark.asyncio
@@ -391,7 +391,7 @@ class TestFetchLtkFromAccount:
         flow.hass.async_add_executor_job = fake_executor
 
         result = await flow._fetch_ltk_from_account(VALID_SERIAL)
-        assert result == VALID_LTK
+        assert result == (VALID_LTK, "")
 
 
 # ---------------------------------------------------------------------------
