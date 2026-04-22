@@ -286,8 +286,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         name = getattr(device, "name", "Unknown")
         try:
-            # BLE-only devices are supported (managed via BLE config entry)
-            if getattr(device, "connection_category", None) == "lecOnly":
+            # BLE-only devices are supported (managed via BLE config entry).
+            # connection_category may be a plain string or a ConnectionCategory enum
+            # from libdyson_rest — normalise to string value before comparing.
+            connection_cat = getattr(device, "connection_category", None)
+            connection_cat_val = getattr(connection_cat, "value", connection_cat)
+            if connection_cat_val == "lecOnly":
                 _LOGGER.debug(
                     "Device %s is a BLE-only device (lecOnly) — supported", name
                 )
@@ -1573,11 +1577,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         device_list: list[dict[str, Any]] = []
         if self._discovered_devices is not None:
             for device in self._discovered_devices:
+                # Normalise connection_category: may be a ConnectionCategory enum
+                # or a plain string — store the string value for later use.
+                conn_cat = getattr(device, "connection_category", None)
+                conn_cat_val = getattr(conn_cat, "value", conn_cat) or ""
                 device_info = {
                     "serial_number": device.serial_number,
                     "name": getattr(device, "name", f"Dyson {device.serial_number}"),
                     "product_type": getattr(device, "product_type", "unknown"),
                     "category": getattr(device, "category", "unknown"),
+                    "connection_category": conn_cat_val,
                 }
                 device_list.append(device_info)
 
