@@ -2358,11 +2358,16 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Build device info list from cloud devices."""
         updated_devices = []
         for device in devices:
+            # Normalise connection_category: may be a ConnectionCategory enum or
+            # a plain string — store the string value so downstream checks work.
+            conn_cat = getattr(device, "connection_category", None)
+            conn_cat_val = getattr(conn_cat, "value", conn_cat) or ""
             device_info = {
                 "serial_number": device.serial_number,
                 "name": getattr(device, "name", f"Dyson {device.serial_number}"),
                 "product_type": getattr(device, "product_type", "unknown"),
                 "category": getattr(device, "category", "unknown"),
+                "connection_category": conn_cat_val,
             }
             updated_devices.append(device_info)
         return updated_devices
@@ -2405,24 +2410,32 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if auto_add_devices:
             for device in devices:
                 if device.serial_number in new_devices:
-                    if getattr(device, "connection_category", None) == "lecOnly":
+                    # Normalise connection_category: may be enum or string
+                    conn_cat = getattr(device, "connection_category", None)
+                    conn_cat_val = getattr(conn_cat, "value", conn_cat)
+                    if conn_cat_val == "lecOnly":
                         _LOGGER.info(
                             "Skipping BLE-only device %s from auto-add (lecOnly) "
-                            "\u2014 set up via 'Dyson BLE Light' instead",
+                            "\u2014 will trigger BLE Light discovery flow instead",
                             device.serial_number,
                         )
+                        await self._create_ble_discovery_flow(device)
                         continue
                     await self._create_device_entry(device)
         else:
             # Create discovery flows for manual device addition
             for device in devices:
                 if device.serial_number in new_devices:
-                    if getattr(device, "connection_category", None) == "lecOnly":
+                    # Normalise connection_category: may be enum or string
+                    conn_cat = getattr(device, "connection_category", None)
+                    conn_cat_val = getattr(conn_cat, "value", conn_cat)
+                    if conn_cat_val == "lecOnly":
                         _LOGGER.info(
                             "Skipping BLE-only device %s from discovery (lecOnly) "
-                            "\u2014 set up via 'Dyson BLE Light' instead",
+                            "\u2014 will trigger BLE Light discovery flow instead",
                             device.serial_number,
                         )
+                        await self._create_ble_discovery_flow(device)
                         continue
                     await self._create_discovery_flow(device)
             _LOGGER.info(
@@ -2532,6 +2545,12 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "name": device_name,
                         "product_type": getattr(device, "product_type", "unknown"),
                         "category": getattr(device, "category", "unknown"),
+                        "connection_category": getattr(
+                            getattr(device, "connection_category", None),
+                            "value",
+                            getattr(device, "connection_category", ""),
+                        )
+                        or "",
                         "auth_token": self._auth_token,
                         "email": self._email,
                         "parent_entry_id": self.config_entry.entry_id,
@@ -2543,6 +2562,78 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as e:
             _LOGGER.error("Failed to create discovery flow for %s: %s", device_name, e)
+
+    async def _create_ble_discovery_flow(self, device) -> None:
+        """Create a discovery flow that routes the user to the BLE Light setup.
+
+        For lecOnly (BLE-only) devices discovered via cloud polling, we cannot
+        auto-create an entry because BLE pairing requires a MAC address and LTK.
+        Instead, trigger a discovery notification that, when clicked, routes the
+        user directly to the BLE configure step (with serial pre-filled).
+        """
+        device_serial = device.serial_number
+        device_name = getattr(device, "name", f"Dyson {device_serial}")
+
+        # Skip if already set up (BLE or any other entry)
+        existing_entries = [
+            entry
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+            if (
+                entry.data.get(CONF_SERIAL_NUMBER) == device_serial
+                and entry.entry_id != self.config_entry.entry_id
+            )
+        ]
+        if existing_entries:
+            _LOGGER.debug(
+                "BLE device %s already has a config entry, skipping", device_serial
+            )
+            return
+
+        # Skip if a BLE discovery flow is already in progress for this device
+        existing_flows = [
+            flow
+            for flow in self.hass.config_entries.flow.async_progress()
+            if (
+                flow["handler"] == DOMAIN
+                and flow.get("context", {}).get("unique_id") == device_serial
+            )
+        ]
+        if existing_flows:
+            _LOGGER.debug(
+                "Discovery flow already in progress for BLE device %s", device_serial
+            )
+            return
+
+        _LOGGER.info(
+            "Creating BLE discovery flow for lecOnly device: %s (%s)",
+            device_name,
+            device_serial,
+        )
+        try:
+            result = await self.hass.async_create_task(
+                self.hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={
+                        "source": "discovery",
+                        "unique_id": device_serial,
+                    },
+                    data={
+                        "serial_number": device_serial,
+                        "name": device_name,
+                        "product_type": getattr(device, "product_type", "unknown"),
+                        "category": getattr(device, "category", "unknown"),
+                        "connection_category": "lecOnly",
+                        "auth_token": self._auth_token,
+                        "email": self._email,
+                        "parent_entry_id": self.config_entry.entry_id,
+                    },
+                )
+            )
+            _LOGGER.info("BLE discovery flow created for %s: %s", device_name, result)
+        except Exception as e:
+            _LOGGER.error(
+                "Failed to create BLE discovery flow for %s: %s", device_name, e
+            )
 
 
 class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):

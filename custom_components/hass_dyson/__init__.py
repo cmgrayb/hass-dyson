@@ -272,6 +272,7 @@ async def _create_discovery_flow(
                 "name": device_name,
                 "product_type": device_info.get("product_type", "unknown"),
                 "category": device_info.get("category", "unknown"),
+                "connection_category": device_info.get("connection_category", ""),
                 "auth_token": entry.data.get("auth_token"),
                 "email": entry.data.get("email"),
                 "parent_entry_id": entry.entry_id,
