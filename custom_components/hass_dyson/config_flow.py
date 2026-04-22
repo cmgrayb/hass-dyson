@@ -269,58 +269,55 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._ble_serial: str | None = None
         self._ble_found_devices: list[tuple[str, str]] = []  # (mac, name)
 
-    def _device_has_mqtt_support(self, device) -> bool:
-        """Check if a device has MQTT connection support.
+    def _device_is_supported(self, device) -> bool:
+        """Check if a device is supported by this integration.
 
-        Only devices with MQTT credentials in connected_configuration can be used.
-        This is an allowlist approach - we assume devices are NOT supported unless
-        we find valid MQTT connection information.
+        A device is supported if it either:
+        - Has MQTT credentials (lecAndWifi / wifiOnly devices), or
+        - Is a BLE-only light (connection_category == "lecOnly"), which is
+          managed via the BLE device flow but still linked to this account
+          entry for LTK auto-fetch.
 
         Args:
             device: Device object from libdyson-rest
 
         Returns:
-            True if device has MQTT credentials, False otherwise
+            True if the device is supported, False otherwise.
         """
+        name = getattr(device, "name", "Unknown")
         try:
-            # Check for connected_configuration.mqtt.local_broker_credentials
+            # BLE-only devices are supported (managed via BLE config entry)
+            if getattr(device, "connection_category", None) == "lecOnly":
+                _LOGGER.debug(
+                    "Device %s is a BLE-only device (lecOnly) — supported", name
+                )
+                return True
+
+            # MQTT-capable devices: require connected_configuration.mqtt.local_broker_credentials
             connected_config = getattr(device, "connected_configuration", None)
             if not connected_config:
-                _LOGGER.debug(
-                    "Device %s has no connected_configuration",
-                    getattr(device, "name", "Unknown"),
-                )
+                _LOGGER.debug("Device %s has no connected_configuration", name)
                 return False
 
             mqtt_obj = getattr(connected_config, "mqtt", None)
             if not mqtt_obj:
-                _LOGGER.debug(
-                    "Device %s has no MQTT configuration",
-                    getattr(device, "name", "Unknown"),
-                )
+                _LOGGER.debug("Device %s has no MQTT configuration", name)
                 return False
 
             encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
             if not encrypted_credentials:
-                _LOGGER.debug(
-                    "Device %s has no MQTT credentials",
-                    getattr(device, "name", "Unknown"),
-                )
+                _LOGGER.debug("Device %s has no MQTT credentials", name)
                 return False
 
             _LOGGER.debug(
                 "Device %s has MQTT credentials (length: %s)",
-                getattr(device, "name", "Unknown"),
+                name,
                 len(encrypted_credentials),
             )
             return True
 
         except (AttributeError, TypeError) as err:
-            _LOGGER.debug(
-                "Error checking MQTT support for device %s: %s",
-                getattr(device, "name", "Unknown"),
-                err,
-            )
+            _LOGGER.debug("Error checking support for device %s: %s", name, err)
             return False
 
     async def _cleanup_cloud_client(self) -> None:
@@ -1430,19 +1427,17 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                     device, "connection_category", None
                                 )
 
-                                # Check if device has MQTT connection information
-                                # Only devices with connected_configuration.mqtt.local_broker_credentials are supported
-                                has_mqtt = self._device_has_mqtt_support(device)
-
-                                if not has_mqtt:
+                                # Include devices with MQTT credentials (lecAndWifi/wifiOnly)
+                                # and BLE-only devices (lecOnly) — both are supported
+                                if self._device_is_supported(device):
+                                    supported_devices.append(device)
+                                else:
                                     skipped_devices.append((device_name, connectivity))
                                     _LOGGER.info(
-                                        "Skipping device '%s' (connectivity: %s) - no MQTT credentials found",
+                                        "Skipping device '%s' (connectivity: %s) - not supported",
                                         device_name,
                                         connectivity if connectivity else "None",
                                     )
-                                else:
-                                    supported_devices.append(device)
 
                             # Log summary if any devices were skipped
                             if skipped_devices:
@@ -1453,8 +1448,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                             if not supported_devices:
                                 _LOGGER.warning(
-                                    "No supported devices found. All %d devices in account have unsupported connectivity types.",
-                                    len(devices),
+                                    "No supported devices found in account "
+                                    "(skipped %d unsupported).",
+                                    len(skipped_devices),
                                 )
                                 errors["base"] = "no_supported_devices"
                                 devices = None
