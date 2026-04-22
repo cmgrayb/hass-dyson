@@ -286,8 +286,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         name = getattr(device, "name", "Unknown")
         try:
-            # BLE-only devices are supported (managed via BLE config entry)
-            if getattr(device, "connection_category", None) == "lecOnly":
+            # BLE-only devices are supported (managed via BLE config entry).
+            # connection_category may be a plain string or a ConnectionCategory enum
+            # from libdyson_rest — normalise to string value before comparing.
+            connection_cat = getattr(device, "connection_category", None)
+            connection_cat_val = getattr(connection_cat, "value", connection_cat)
+            if connection_cat_val == "lecOnly":
                 _LOGGER.debug(
                     "Device %s is a BLE-only device (lecOnly) — supported", name
                 )
@@ -963,6 +967,51 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         default_serial = self._ble_serial or ""
         default_mac = self._ble_mac or ""
+
+        # If we know the serial but not the MAC, try to resolve it from the HA
+        # Bluetooth cache.  Dyson BLE devices advertise their serial number as
+        # the BLE device name (e.g. "CD06-GB-ABC1234A"), so a name match is
+        # sufficient.  We search all discovered service infos — not only those
+        # advertising the Dyson service UUID — because the device may not be in
+        # pairing mode and still be visible as a connectable advertisement.
+        if default_serial and not default_mac:
+            try:
+                from homeassistant.components import bluetooth as _bt
+
+                for si in _bt.async_discovered_service_info(
+                    self.hass, connectable=True
+                ):
+                    adv_name = (si.name or "").upper()
+                    if adv_name == default_serial.upper():
+                        default_mac = si.address
+                        self._ble_mac = default_mac
+                        _LOGGER.info(
+                            "Auto-resolved MAC for BLE device %s from Bluetooth cache: %s",
+                            default_serial,
+                            default_mac,
+                        )
+                        break
+
+                # Fall back to non-connectable advertisements if not found above
+                if not default_mac:
+                    for si in _bt.async_discovered_service_info(
+                        self.hass, connectable=False
+                    ):
+                        adv_name = (si.name or "").upper()
+                        if adv_name == default_serial.upper():
+                            default_mac = si.address
+                            self._ble_mac = default_mac
+                            _LOGGER.info(
+                                "Auto-resolved MAC for BLE device %s from non-connectable cache: %s",
+                                default_serial,
+                                default_mac,
+                            )
+                            break
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Bluetooth MAC auto-resolve unavailable for %s", default_serial
+                )
+
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_SERIAL_NUMBER, default=default_serial): str,
@@ -1573,11 +1622,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         device_list: list[dict[str, Any]] = []
         if self._discovered_devices is not None:
             for device in self._discovered_devices:
+                # Normalise connection_category: may be a ConnectionCategory enum
+                # or a plain string — store the string value for later use.
+                conn_cat = getattr(device, "connection_category", None)
+                conn_cat_val = getattr(conn_cat, "value", conn_cat) or ""
                 device_info = {
                     "serial_number": device.serial_number,
                     "name": getattr(device, "name", f"Dyson {device.serial_number}"),
                     "product_type": getattr(device, "product_type", "unknown"),
                     "category": getattr(device, "category", "unknown"),
+                    "connection_category": conn_cat_val,
                 }
                 device_list.append(device_info)
 
@@ -1677,6 +1731,17 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Update context with device name for discovery card subtitle
         self.context["title_placeholders"] = {"name": device_name}
+
+        # BLE-only (lecOnly) devices cannot be set up via the MQTT discovery path.
+        # Redirect to the BLE configure step so the user gets the correct pairing
+        # flow (MAC address entry + automatic LTK fetch) with serial pre-filled.
+        if discovery_info.get("connection_category") == "lecOnly":
+            _LOGGER.info(
+                "Device %s is BLE-only (lecOnly) — redirecting discovery to BLE configure flow",
+                device_serial,
+            )
+            self._ble_serial = device_serial
+            return await self.async_step_ble_configure()
 
         # Get better display name for device type
         from .const import AVAILABLE_DEVICE_CATEGORIES

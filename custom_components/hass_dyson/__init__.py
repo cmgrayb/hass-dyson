@@ -272,6 +272,7 @@ async def _create_discovery_flow(
                 "name": device_name,
                 "product_type": device_info.get("product_type", "unknown"),
                 "category": device_info.get("category", "unknown"),
+                "connection_category": device_info.get("connection_category", ""),
                 "auth_token": entry.data.get("auth_token"),
                 "email": entry.data.get("email"),
                 "parent_entry_id": entry.entry_id,
@@ -372,7 +373,12 @@ async def _handle_new_device(
     """Handle setup for a new device."""
     device_serial = device_info["serial_number"]
 
-    if auto_add_devices:
+    # BLE-only (lecOnly) devices cannot be auto-created as MQTT devices.
+    # They require the user to go through the BLE Light config flow for pairing,
+    # so always route them to the discovery flow regardless of auto_add_devices.
+    is_ble_only = device_info.get("connection_category", "") == "lecOnly"
+
+    if auto_add_devices and not is_ble_only:
         # Create individual config entry for this device
         from .device_utils import create_cloud_device_config
 
@@ -395,10 +401,17 @@ async def _handle_new_device(
             f"dyson_create_device_{device_serial}",
         )
     else:
-        _LOGGER.info(
-            "Device %s discovered but auto-add disabled - device will be available for manual setup",
-            device_serial,
-        )
+        if is_ble_only:
+            _LOGGER.info(
+                "Device %s is a BLE-only (lecOnly) device — routing to discovery flow "
+                "for BLE Light manual pairing",
+                device_serial,
+            )
+        else:
+            _LOGGER.info(
+                "Device %s discovered but auto-add disabled - device will be available for manual setup",
+                device_serial,
+            )
         # Create discovery flow for manual device confirmation
         hass.async_create_background_task(
             _create_discovery_flow(hass, entry, device_info),
