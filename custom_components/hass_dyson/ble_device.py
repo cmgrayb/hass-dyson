@@ -238,19 +238,23 @@ def _aes_cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
 
 
 def g20c_decrypt(enc_key: bytes, envelope: bytes) -> bytes | None:
-    """Decrypt a 64-byte g20c envelope and return the 16-byte plaintext.
+    """Decrypt a g20c envelope and return the plaintext.
 
     Verifies HMAC-SHA256 before decrypting to detect wrong keys early.
     Mirrors the inverse of :func:`g20c_encrypt`.
 
+    The envelope layout is always ``IV(16) + CT(16) + MAC(32)`` = 64 bytes,
+    matching the fixed output of :func:`g20c_encrypt` for a 16-byte plaintext.
+
     Args:
         enc_key: 16-byte AES key derived from :func:`hkdf_derive_aes_key`.
-        envelope: 64-byte g20c envelope: ``IV(16) + CT(16) + MAC(32)``.
+        envelope: g20c envelope bytes (must be exactly 64 bytes).
 
     Returns:
-        16-byte plaintext, or ``None`` if MAC verification fails (bad key or
-        corrupted data).
+        Decrypted plaintext bytes, or ``None`` if MAC verification fails
+        (wrong key, corrupted data, or wrong length).
     """
+    # Expected: IV(16) + CT(16) + MAC(32) = exactly 64 bytes
     if len(envelope) != 64:  # noqa: PLR2004
         return None
     iv = envelope[:16]
@@ -729,19 +733,25 @@ class DysonBLEDevice:
             self.serial_number,
             len(payload_b_msg.payload),
         )
-        # PayloadB structure mirrors PayloadA:
-        #   device_uuid(16) || 0x00 0x00 || g20c_envelope(64) = 82 bytes
-        # g20c_envelope: IV(16) || CT(16) || MAC(32) = 64 bytes
-        # The device's challenge nonce is the plaintext inside the g20c envelope.
-        # We must decrypt it with enc_key, then re-encrypt it in PayloadC to prove
-        # we hold the correct key (classic mutual challenge-response).
-        g20c_envelope = payload_b_msg.payload[18:82]  # skip device_uuid(16)+reserved(2)
-        device_nonce = g20c_decrypt(enc_key, g20c_envelope)
-        if device_nonce is None:
-            raise RuntimeError(
-                f"PayloadB from {self.serial_number} failed HMAC verification — "
-                "LTK may be incorrect or corrupted"
-            )
+        # PayloadB layout (offsets into payload, type byte already stripped):
+        #   [0:2]   reserved 0x00 0x00
+        #   [2:18]  IV (16 bytes)
+        #   [18:50] CT (32 bytes) — AES-CBC(nonce_echo || device_challenge)
+        #   [50:82] MAC (32 bytes, optional — may be absent on some firmware)
+        # We verify the MAC when present for early LTK mismatch detection,
+        # then decrypt and take the second 16-byte block as the device challenge.
+        iv = payload_b_msg.payload[2:18]
+        ct = payload_b_msg.payload[18:50]
+        mac = payload_b_msg.payload[50:82]
+        if mac:
+            expected_mac = hmac.new(enc_key, ct, hashlib.sha256).digest()
+            if not hmac.compare_digest(mac, expected_mac):
+                raise RuntimeError(
+                    f"PayloadB from {self.serial_number} failed HMAC verification — "
+                    "LTK may be incorrect or corrupted"
+                )
+        dec = _aes_cbc_decrypt(enc_key, iv, ct)
+        device_nonce = dec[16:32]  # second 16-byte block = device's challenge
         _LOGGER.debug(
             "Decoded device challenge from %s (nonce: %s...)",
             self.serial_number,
