@@ -72,11 +72,6 @@ Anything helps, and all sponsorship money goes directly to development devices f
 - **Vacuum Start Controls** - Support the start in room functionality introduced in
 Home Assistant 2026.2.0 as well as "global" (all defined rooms)
 
-### BLE Devices
-
-- **Auto-discover for BLE devices** - BLE Lights may currently be added manually, and work best when paired with a cloud account
-  - We plan to expand this to prompt the user with the pairing flow when found
-
 ## Quick Start
 
 ### Installation
