@@ -137,13 +137,10 @@ Integration / Bridge                Lamp
   │  Cloud: POST /v1/lec/<serial>/ltk  → save LTK locally
 ```
 
-The fresh pairing flow is a **one-time, out-of-band operation**.  It is not automated
-by the integration.  Users complete it once (using the standalone pairing script that
-can be derived from S-Termi's `dyson_fresh_pair.py`), then supply the resulting LTK to
-the integration during config flow.
-
-*Future*: the integration config flow may offer a guided fresh-pairing mode via the HA
-UI once more BLE-only devices are supported.
+The fresh pairing flow is a **one-time operation fully guided by the integration config
+flow**.  Users are walked through the steps — including the Flash button press — directly
+in the Home Assistant UI.  The resulting LTK is stored automatically; no external
+pairing script is required.
 
 ---
 
@@ -406,10 +403,9 @@ products, as they are generic over the device type.
 
 ## Known Limitations and Open Questions
 
-- **Fresh pairing not in config flow**: Fresh pairing requires a physical button press
-  and is a one-time operation.  The current design requires users to run the pairing
-  script separately and then enter the resulting LTK during config flow.  A future
-  iteration may add a guided pairing step within the HA UI.
+- **Fresh pairing**: Fresh pairing requires a one-time physical button press on the
+  lamp.  The config flow guides users through the full handshake in the Home Assistant
+  UI and stores the resulting LTK automatically.
 - **Char 11006/11007/11009**: These characteristics are observed but not fully decoded.
   Their purpose is logged as diagnostic attributes but not surfaced as HA entities.
 - **RSSI gating**: The original bridge implements an RSSI threshold gate before
