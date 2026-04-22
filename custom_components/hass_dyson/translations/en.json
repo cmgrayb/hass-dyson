@@ -64,6 +64,39 @@
         "data": {
           "confirm": "Add this device to Home Assistant"
         }
+      },
+      "ble_discover": {
+        "title": "Select Dyson BLE Light",
+        "description": "Found {device_count} Dyson BLE device(s) nearby. Select your device or choose to enter the MAC address manually.",
+        "data": {
+          "ble_device": "Device"
+        }
+      },
+      "ble_configure": {
+        "title": "Configure Dyson BLE Light",
+        "description": "Enter your device serial number and MAC address. If a Dyson cloud account is already configured in Home Assistant, the LTK pairing key will be fetched automatically. Otherwise you will be prompted to enter it manually.\n\n[Setup documentation]({docs_url})",
+        "data": {
+          "serial_number": "Device Serial Number (found on the sticker on the base)",
+          "ble_mac": "Bluetooth MAC Address (e.g. AA:BB:CC:DD:EE:FF)",
+          "device_name": "Device Name (Optional)",
+          "ble_proxy": "Bluetooth Proxy Host (Optional)"
+        }
+      },
+      "ble_light": {
+        "title": "Manual BLE Pairing (LTK Entry)",
+        "description": "The LTK pairing key could not be fetched automatically. Please enter it manually. You can obtain it using the [setup documentation]({docs_url}).\n\n{ltk_hint}",
+        "data": {
+          "serial_number": "Device Serial Number",
+          "ble_mac": "Bluetooth MAC Address (e.g. AA:BB:CC:DD:EE:FF)",
+          "ltk": "LTK Pairing Key (hex string)",
+          "device_name": "Device Name (Optional)",
+          "ble_proxy": "Bluetooth Proxy Host (Optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Dyson Account",
+        "description": "Your Dyson account ({email}) needs to re-authenticate to update credentials. Click Submit to send a verification code.",
+        "data": {}
       }
     },
     "error": {
@@ -78,14 +111,18 @@
       "api_format_changed": "Dyson cloud API format has changed. Cloud device discovery is temporarily unavailable. Please use manual device setup instead.",
       "api_validation_failed": "Dyson cloud API response validation failed. Please try again or use manual device setup.",
       "cloud_api_error": "Error communicating with Dyson cloud API. Please try again later.",
-      "required": "This field is required."
+      "required": "This field is required.",
+      "invalid_mac_address": "Invalid Bluetooth MAC address. Expected format: AA:BB:CC:DD:EE:FF.",
+      "invalid_ltk": "Invalid LTK. Must be a hexadecimal string with an even number of characters."
     },
     "abort": {
       "already_configured": "This Dyson device is already configured.",
       "invalid_discovery_info": "Invalid discovery information received. Unable to proceed with device setup.",
       "no_discovery_info": "No discovery information available. Please try again or use manual setup.",
       "user_declined": "Device setup was cancelled by user.",
-      "no_device_data": "Required device information is missing. Unable to complete setup."
+      "no_device_data": "Required device information is missing. Unable to complete setup.",
+      "reauth_successful": "Re-authentication was successful. Your credentials have been updated.",
+      "reauth_failed": "Re-authentication failed unexpectedly. Please try again."
     }
   },
   "options": {
@@ -138,6 +175,9 @@
           "auto_add_devices": "Automatically add discovered devices (when disabled, devices will appear as discoverable but require manual approval)"
         }
       }
+    },
+    "abort": {
+      "reauthenticate_initiated": "Re-authentication has been initiated. Please follow the prompts that appear in the Notifications or Repairs section to complete re-authentication."
     }
   },
   "entity": {

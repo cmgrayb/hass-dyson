@@ -50,12 +50,29 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
 - **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session (for future use)
 
+### Lights
+
+- **Basic Controls** - Lights may be set to on/off/color temp/brightness
+- **Scene Support** - Lights may be controlled as part of a Home Assistant Scene
+- **Active BLE Proxy connections** - Lights may be added as their own hub and connect through Bluetooth Proxies
+  - For more information, please see [esphome Bluetooth Proxy](https://esphome.io/components/bluetooth_proxy/)
+
 ## Planned Features
+
+Planned features are features we cannot currently complete due to lack of access to the
+device type.  If you feel you are technical enough to assist us with these features, we
+welcome the help.  If you feel you are not technical enough to assist, but can help
+financially, please consider a sponsorship.  Anything helps.  All sponsorship money goes
+directly to development devices for this integration.
+
+### Vacuum Start
+
+- **Vacuum Start Controls** - Support the start in room functionality introduced in Home Assistant 2026.2.0 as well as "global" (all defined rooms)
 
 ### BLE Devices
 
-- **lec Support** - We hope to someday support Dyson "lec" or BLE devices such as lights via BLE proxy devices
-- **Vacuum Start Controls** - Support the start in room functionality introduced in Home Assistant 2026.2.0 as well as "global" (all defined rooms)
+- **Auto-discover for BLE devices** - BLE Lights may currently be added manually, and work best when paired with a cloud account
+  - We plan to expand this to prompt the user with the pairing flow when found
 
 ## Quick Start
 

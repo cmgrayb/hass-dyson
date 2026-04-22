@@ -64,6 +64,39 @@
         "data": {
           "confirm": "Ajouter cet appareil à Home Assistant"
         }
+      },
+      "ble_discover": {
+        "title": "Sélectionner une lampe Dyson BLE",
+        "description": "{device_count} appareil(s) Dyson BLE trouvé(s) à proximité. Sélectionnez votre appareil ou choisissez de saisir l'adresse MAC manuellement.",
+        "data": {
+          "ble_device": "Appareil"
+        }
+      },
+      "ble_configure": {
+        "title": "Configurer la lampe Dyson BLE",
+        "description": "Saisissez le numéro de série et l'adresse MAC de votre appareil. Si un compte cloud Dyson est déjà configuré dans Home Assistant, la clé d'appairage LTK sera récupérée automatiquement. Sinon, vous serez invité à la saisir manuellement.\n\n[Documentation de configuration]({docs_url})",
+        "data": {
+          "serial_number": "Numéro de série de l'appareil (figurant sur l'autocollant à la base)",
+          "ble_mac": "Adresse MAC Bluetooth (ex. AA:BB:CC:DD:EE:FF)",
+          "device_name": "Nom de l'appareil (Optionnel)",
+          "ble_proxy": "Hôte proxy Bluetooth (Optionnel)"
+        }
+      },
+      "ble_light": {
+        "title": "Appairage BLE manuel (saisie LTK)",
+        "description": "La clé d'appairage LTK n'a pas pu être récupérée automatiquement. Veuillez la saisir manuellement. Vous pouvez l'obtenir via la [documentation de configuration]({docs_url}).\n\n{ltk_hint}",
+        "data": {
+          "serial_number": "Numéro de série de l'appareil",
+          "ble_mac": "Adresse MAC Bluetooth (ex. AA:BB:CC:DD:EE:FF)",
+          "ltk": "Clé d'appairage LTK (chaîne hexadécimale)",
+          "device_name": "Nom de l'appareil (Optionnel)",
+          "ble_proxy": "Hôte proxy Bluetooth (Optionnel)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ré-authentification du compte Dyson",
+        "description": "Votre compte Dyson ({email}) doit se ré-authentifier pour mettre à jour les identifiants. Cliquez sur Soumettre pour recevoir un code de vérification.",
+        "data": {}
       }
     },
     "error": {
@@ -78,14 +111,18 @@
       "api_format_changed": "Le format de l'API cloud Dyson a changé. La découverte d'appareils cloud est temporairement indisponible. Veuillez utiliser la configuration manuelle d'appareil à la place.",
       "api_validation_failed": "Échec de la validation de la réponse de l'API cloud Dyson. Veuillez réessayer ou utiliser la configuration manuelle d'appareil.",
       "cloud_api_error": "Erreur de communication avec l'API cloud Dyson. Veuillez réessayer plus tard.",
-      "required": "Ce champ est obligatoire."
+      "required": "Ce champ est obligatoire.",
+      "invalid_mac_address": "Adresse MAC Bluetooth invalide. Format attendu : AA:BB:CC:DD:EE:FF.",
+      "invalid_ltk": "LTK invalide. Doit être une chaîne hexadécimale avec un nombre pair de caractères."
     },
     "abort": {
       "already_configured": "Cet appareil Dyson est déjà configuré.",
       "invalid_discovery_info": "Informations de découverte invalides reçues. Impossible de procéder à la configuration de l'appareil.",
       "no_discovery_info": "Aucune information de découverte disponible. Veuillez réessayer ou utiliser la configuration manuelle.",
       "user_declined": "La configuration de l'appareil a été annulée par l'utilisateur.",
-      "no_device_data": "Les informations requises de l'appareil sont manquantes. Impossible de terminer la configuration."
+      "no_device_data": "Les informations requises de l'appareil sont manquantes. Impossible de terminer la configuration.",
+      "reauth_successful": "La ré-authentification a réussi. Vos identifiants ont été mis à jour.",
+      "reauth_failed": "La ré-authentification a échoué de manière inattendue. Veuillez réessayer."
     }
   },
   "options": {
@@ -138,6 +175,9 @@
           "auto_add_devices": "Ajouter automatiquement les appareils découverts (lorsque désactivé, les appareils apparaîtront comme découvrables mais nécessiteront une approbation manuelle)"
         }
       }
+    },
+    "abort": {
+      "reauthenticate_initiated": "La ré-authentification a été initiée. Veuillez suivre les instructions qui apparaissent dans la section Notifications ou Réparations pour terminer la ré-authentification."
     }
   },
   "entity": {
