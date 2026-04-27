@@ -31,7 +31,7 @@ requires-python = ">=3.10"
 dependencies = [
     "aiohttp>=3.13.5",
     "cryptography>=45.0.7",
-    "homeassistant==2026.4.3",
+    "homeassistant==2026.4.4",
     "libdyson-rest==0.12.1",
     "paho-mqtt>=2.1.0",
     "requests>=2.33.1",
