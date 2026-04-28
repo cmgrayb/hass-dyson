@@ -30,6 +30,7 @@ Supported Device Categories:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import socket
@@ -152,6 +153,7 @@ class DysonDevice:
         cloud_host: str | None = None,
         cloud_credential: str | None = None,
         device_category: list[str] | None = None,
+        mqtt_client_id: str | None = None,
     ) -> None:
         """Initialize the device wrapper."""
         self.hass = hass
@@ -161,6 +163,7 @@ class DysonDevice:
         self.mqtt_prefix = mqtt_prefix
         self.capabilities = capabilities or []
         self.device_category = device_category or ["ec"]
+        self._mqtt_client_id = mqtt_client_id
         self.connection_type = connection_type
         self.cloud_host = cloud_host
         self.cloud_credential = cloud_credential
@@ -182,6 +185,7 @@ class DysonDevice:
             300.0  # Retry preferred connection every 5 minutes
         )
         self._intentional_disconnect = False  # Track intentional disconnections
+        self._rst_during_handshake = False  # RST arrived before CONNACK (async path)
 
         # Heartbeat mechanism to keep device active and get regular updates
         self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
@@ -546,6 +550,33 @@ class DysonDevice:
     async def _attempt_local_connection(self, host: str, credential: str) -> bool:
         """Attempt local MQTT connection."""
         try:
+            # Stop any still-running MQTT loop before starting a new connection.
+            # If the previous connection ended with an unexpected disconnect (e.g.
+            # network drop), _on_disconnect sets self._connected = False but leaves
+            # loop_start()'s background thread alive.  Paho's built-in auto-reconnect
+            # will then fire on that orphaned client.  Because we use a stable
+            # client_id, the orphaned client's reconnect would steal the broker
+            # session back from the freshly-established connection, causing the
+            # device to fall offline again.  Stopping the loop here prevents that.
+            if self._mqtt_client is not None:
+                try:
+                    # disconnect() first so the background thread stops its
+                    # auto-reconnect loop promptly; loop_stop() then unblocks fast.
+                    try:
+                        await self.hass.async_add_executor_job(
+                            self._mqtt_client.disconnect
+                        )
+                    except Exception:
+                        pass  # Socket may already be closed
+                    await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
+                except Exception as stop_err:
+                    _LOGGER.debug(
+                        "Failed to stop previous MQTT loop for %s: %s",
+                        self.serial_number,
+                        stop_err,
+                    )
+                self._mqtt_client = None
+
             # First test basic network connectivity
             if not await self._test_network_connectivity(host, 1883):
                 _LOGGER.info(
@@ -555,87 +586,239 @@ class DysonDevice:
                 )
                 return False
 
-            # Create paho MQTT client for local connection
-            client_id = f"dyson-ha-local-{uuid.uuid4().hex[:8]}"
+            # Build the ordered list of client IDs to try.
+            # Strategy: stable sha256 ID first — attempts MQTT best practices for
+            # session persistence and clean reconnects.
+            # If the broker RSTs the initial connect() call with the stable ID —
+            # its non-compliant response to a reconnect while the previous session's
+            # keepalive timer is still active retry immediately with a random UUID for
+            # compatibility with older Dyson firmware which does not follow MQTT
+            # session management best practices and can get stuck refusing connections
+            # for the stable ID until its keepalive expires (~90 s).
+            # This retry logic allows for a successful connection much sooner in that
+            # scenario, improving user experience when restarting Home Assistant or
+            # recovering from network blips.
+            stable_client_id = (
+                self._mqtt_client_id
+                or hashlib.sha256(self.serial_number.encode()).hexdigest()[:23]
+            )
+            # Sentinel None means "generate a fresh random UUID for this slot".
+            client_ids_to_try: list[str | None] = [stable_client_id, None]
             username = self.serial_number
 
-            _LOGGER.debug("Using MQTT client ID: %s", client_id)
-            _LOGGER.debug("Using MQTT username: %s", username)
+            for attempt_index, client_id_or_sentinel in enumerate(client_ids_to_try):
+                # Resolve the sentinel to an actual client ID.
+                client_id: str
+                if client_id_or_sentinel is None:
+                    # Use .hex[:23] so we stay within the MQTT 3.1 23-char limit.
+                    client_id = uuid.uuid4().hex[:23]
+                    _LOGGER.info(
+                        "Stable client ID rejected by %s broker (connection reset, "
+                        "likely stale session from previous connection) – "
+                        "retrying with random client ID",
+                        self.serial_number,
+                    )
+                else:
+                    client_id = client_id_or_sentinel
 
-            # Robot vacuums require MQTT protocol version 3.1
-            # Other devices (fans, purifiers) work with default protocol (3.1.1/5.0)
-            if self._is_robot_vacuum():
-                mqtt_client = mqtt.Client(
-                    client_id=client_id,
-                    callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                    protocol=mqtt.MQTTv31,
-                )
-                _LOGGER.debug("Using MQTT 3.1 for robot vacuum %s", self.serial_number)
-            else:
-                mqtt_client = mqtt.Client(
-                    client_id=client_id,
-                    callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                )
-                _LOGGER.debug("Using default MQTT protocol for %s", self.serial_number)
-            self._mqtt_client = mqtt_client
-
-            # Disable automatic reconnection - we handle reconnection ourselves
-            mqtt_client.enable_logger(
-                logger=None
-            )  # Disable MQTT client logging to reduce noise
-            # Note: paho-mqtt doesn't have a direct disable auto-reconnect method,
-            # so we rely on our own connection management
-
-            # Set up authentication
-            mqtt_client.username_pw_set(username, credential)
-
-            # Set up callbacks
-            mqtt_client.on_connect = self._on_connect
-            mqtt_client.on_disconnect = self._on_disconnect
-            mqtt_client.on_message = self._on_message
-
-            # Connect to local MQTT broker
-            port = 1883
-            _LOGGER.debug("Attempting local MQTT connection to %s:%s", host, port)
-
-            result = await self.hass.async_add_executor_job(
-                mqtt_client.connect, host, port, 60
-            )
-
-            if result == mqtt.CONNACK_ACCEPTED:
-                # Start the network loop in a thread
-                await self.hass.async_add_executor_job(mqtt_client.loop_start)
-
-                # Wait for connection to be established
-                connection_success = await self._wait_for_connection("local")
-
-                if not connection_success:
-                    # Clean up failed connection attempt
+                # Clean up any paho client left over from the previous iteration
+                # (connection was reset before loop_start, so loop_stop is a no-op
+                # but disconnect should still be attempted to flush the socket).
+                if self._mqtt_client is not None:
                     try:
-                        await self.hass.async_add_executor_job(mqtt_client.loop_stop)
-                        await self.hass.async_add_executor_job(mqtt_client.disconnect)
-                        _LOGGER.debug(
-                            "Cleaned up failed local connection attempt for %s",
-                            self.serial_number,
+                        await self.hass.async_add_executor_job(
+                            self._mqtt_client.disconnect
                         )
-                    except Exception as cleanup_err:
-                        _LOGGER.debug(
-                            "Failed to clean up connection for %s: %s",
-                            self.serial_number,
-                            cleanup_err,
+                    except Exception:
+                        pass
+                    try:
+                        await self.hass.async_add_executor_job(
+                            self._mqtt_client.loop_stop
                         )
+                    except Exception:
+                        pass
+                    self._mqtt_client = None
 
-                return connection_success
-            else:
-                _LOGGER.warning(
-                    "Local MQTT connection to %s failed with result: %s. "
-                    "Common causes: device not reachable, mDNS resolution failure, "
-                    "network firewall blocking port 1883, or device on different VLAN. "
-                    "Consider using cloud-only connection type if local network issues persist.",
-                    host,
-                    result,
+                _LOGGER.debug(
+                    "Using MQTT client ID: %s (attempt %d)",
+                    client_id,
+                    attempt_index + 1,
                 )
-                return False
+                _LOGGER.debug("Using MQTT username: %s", username)
+
+                # Robot vacuums require MQTT protocol version 3.1.
+                # Other devices (fans, purifiers) use the default (3.1.1).
+                if self._is_robot_vacuum():
+                    mqtt_client = mqtt.Client(
+                        client_id=client_id,
+                        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                        protocol=mqtt.MQTTv31,
+                    )
+                    _LOGGER.debug(
+                        "Using MQTT 3.1 for robot vacuum %s", self.serial_number
+                    )
+                else:
+                    mqtt_client = mqtt.Client(
+                        client_id=client_id,
+                        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                    )
+                    _LOGGER.debug(
+                        "Using default MQTT protocol for %s", self.serial_number
+                    )
+                self._mqtt_client = mqtt_client
+
+                # Limit paho's auto-reconnect backoff so loop_stop() completes
+                # quickly.  Without this the default max_delay is 128 s, causing
+                # loop_stop() to block while the thread sleeps between retries.
+                mqtt_client.reconnect_delay_set(min_delay=1, max_delay=3)
+                mqtt_client.enable_logger(logger=None)
+
+                # Set up authentication and callbacks.
+                mqtt_client.username_pw_set(username, credential)
+                mqtt_client.on_connect = self._on_connect
+                mqtt_client.on_disconnect = self._on_disconnect
+                mqtt_client.on_message = self._on_message
+
+                port = 1883
+                _LOGGER.debug("Attempting local MQTT connection to %s:%s", host, port)
+
+                rst_detected = False
+                try:
+                    result = await self.hass.async_add_executor_job(
+                        mqtt_client.connect, host, port, 60
+                    )
+                except ConnectionResetError as rst_err:
+                    # Paho occasionally surfaces the RST as an exception rather
+                    # than returning MQTT_ERR_CONN_LOST — handle both paths.
+                    _LOGGER.info(
+                        "Local broker for %s reset connection for client_id %s: %s",
+                        self.serial_number,
+                        client_id,
+                        rst_err,
+                    )
+                    rst_detected = True
+                    result = mqtt.MQTT_ERR_CONN_LOST
+                # Any exception other than ConnectionResetError (socket.gaierror,
+                # other ConnectionError, etc.) propagates to the outer handlers.
+
+                # MQTT_ERR_CONN_LOST (7) returned directly by paho means the broker
+                # sent TCP RST before/during the CONNECT packet — paho swallows the
+                # underlying ConnectionResetError and converts it to this error code.
+                # Treat it exactly the same as a raised ConnectionResetError.
+                if result == mqtt.MQTT_ERR_CONN_LOST and not rst_detected:
+                    _LOGGER.info(
+                        "Local broker for %s rejected client_id %s with CONN_LOST "
+                        "(likely stale session RST — broker does not comply with "
+                        "MQTT §3.1.4 clean-session eviction)",
+                        self.serial_number,
+                        client_id,
+                    )
+                    rst_detected = True
+
+                if rst_detected:
+                    # Dyson's embedded broker violates MQTT §3.1.4: instead of
+                    # evicting the old session when the same client_id reconnects,
+                    # it RSTs the TCP connection.  This occurs in the ~90-second
+                    # window after an abrupt disconnect while the device keepalive
+                    # timer for the previous session is still active.
+                    if attempt_index == 0:
+                        # The stable ID has a stale session on the broker.
+                        # Retry with a random UUID that the broker has never seen.
+                        continue
+                    # Both stable and random IDs were rejected.  Schedule a
+                    # preferred-connection retry at ~2 minutes from now (long
+                    # enough for the device keepalive, ~90 s, to expire) and
+                    # fall through to the cloud connection.
+                    _LOGGER.warning(
+                        "Both stable and random client IDs rejected by %s broker; "
+                        "falling back to cloud and retrying local in ~2 minutes",
+                        self.serial_number,
+                    )
+                    # _last_preferred_retry semantics: _should_retry_preferred()
+                    # returns True when (now - _last_preferred_retry) >=
+                    # _preferred_retry_interval.  Setting it to
+                    # (now - interval + 120) makes the condition True after 120 s.
+                    self._last_preferred_retry = (
+                        time.time() - self._preferred_retry_interval + 120
+                    )
+                    return False
+
+                if result == mqtt.CONNACK_ACCEPTED:
+                    # Start the network loop in a thread.
+                    await self.hass.async_add_executor_job(mqtt_client.loop_start)
+
+                    # Wait for connection to be established.
+                    connection_success = await self._wait_for_connection("local")
+
+                    if not connection_success:
+                        # Clean up failed connection attempt.
+                        # Call disconnect() BEFORE loop_stop(): disconnect() signals
+                        # paho that this is an intentional close, preventing the
+                        # background thread from sleeping through its auto-reconnect
+                        # backoff before finally seeing _thread_terminate.  Without
+                        # this, loop_stop() can block for up to reconnect_delay_max
+                        # seconds (capped to 3 s by reconnect_delay_set above).
+                        try:
+                            try:
+                                await self.hass.async_add_executor_job(
+                                    mqtt_client.disconnect
+                                )
+                            except Exception:
+                                pass  # Socket may already be closed by device
+                            await self.hass.async_add_executor_job(
+                                mqtt_client.loop_stop
+                            )
+                            self._mqtt_client = None
+                            _LOGGER.debug(
+                                "Cleaned up failed local connection attempt for %s",
+                                self.serial_number,
+                            )
+                        except Exception as cleanup_err:
+                            _LOGGER.debug(
+                                "Failed to clean up connection for %s: %s",
+                                self.serial_number,
+                                cleanup_err,
+                            )
+
+                        # Async RST path: connect() returned 0 (TCP established),
+                        # loop started, but the broker RST'd the connection before
+                        # sending CONNACK.  _on_disconnect will have set
+                        # _rst_during_handshake=True.  Treat it identically to the
+                        # synchronous MQTT_ERR_CONN_LOST path above.
+                        if self._rst_during_handshake:
+                            self._rst_during_handshake = False
+                            _LOGGER.info(
+                                "Stable client ID rejected by %s broker via async "
+                                "handshake RST (likely stale session from previous "
+                                "connection) — retrying with random client ID",
+                                self.serial_number,
+                            )
+                            if attempt_index == 0:
+                                continue
+                            _LOGGER.warning(
+                                "Both stable and random client IDs rejected by %s "
+                                "broker via handshake RST; falling back to cloud "
+                                "and retrying local in ~2 minutes",
+                                self.serial_number,
+                            )
+                            self._last_preferred_retry = (
+                                time.time() - self._preferred_retry_interval + 120
+                            )
+                            return False
+
+                    return connection_success
+                else:
+                    _LOGGER.warning(
+                        "Local MQTT connection to %s failed with result: %s. "
+                        "Common causes: device not reachable, mDNS resolution failure, "
+                        "network firewall blocking port 1883, or device on different VLAN. "
+                        "Consider using cloud-only connection type if local network issues persist.",
+                        host,
+                        result,
+                    )
+                    return False
+
+            return False  # Both client ID attempts exhausted (should not reach here)
 
         except socket.gaierror as err:
             _LOGGER.warning(
@@ -662,6 +845,28 @@ class DysonDevice:
     async def _attempt_cloud_connection(self, host: str, credential: str) -> bool:
         """Attempt AWS IoT WebSocket MQTT connection."""
         try:
+            # Stop any still-running MQTT loop before starting a new connection.
+            # Same reasoning as in _attempt_local_connection: an orphaned paho thread
+            # with auto-reconnect would steal the new session on the cloud broker.
+            if self._mqtt_client is not None:
+                try:
+                    # disconnect() first so the background thread stops its
+                    # auto-reconnect loop promptly; loop_stop() then unblocks fast.
+                    try:
+                        await self.hass.async_add_executor_job(
+                            self._mqtt_client.disconnect
+                        )
+                    except Exception:
+                        pass  # Socket may already be closed
+                    await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
+                except Exception as stop_err:
+                    _LOGGER.debug(
+                        "Failed to stop previous MQTT loop for %s: %s",
+                        self.serial_number,
+                        stop_err,
+                    )
+                self._mqtt_client = None
+
             # Parse AWS IoT credentials from JSON string
             try:
                 cloud_credentials = json.loads(credential)
@@ -704,6 +909,9 @@ class DysonDevice:
             _LOGGER.debug("MQTT client internal ID: %s", mqtt_client._client_id)
 
             self._mqtt_client = mqtt_client
+
+            # Limit paho's auto-reconnect backoff so loop_stop() completes quickly.
+            mqtt_client.reconnect_delay_set(min_delay=1, max_delay=3)
 
             # Disable automatic reconnection - we handle reconnection ourselves
             mqtt_client.enable_logger(
@@ -758,10 +966,17 @@ class DysonDevice:
                 connection_success = await self._wait_for_connection("cloud")
 
                 if not connection_success:
-                    # Clean up failed connection attempt
+                    # Clean up failed connection attempt.
+                    # Call disconnect() first (see local cleanup comments).
                     try:
+                        try:
+                            await self.hass.async_add_executor_job(
+                                mqtt_client.disconnect
+                            )
+                        except Exception:
+                            pass  # Socket may already be closed
                         await self.hass.async_add_executor_job(mqtt_client.loop_stop)
-                        await self.hass.async_add_executor_job(mqtt_client.disconnect)
+                        self._mqtt_client = None
                         _LOGGER.debug(
                             "Cleaned up failed cloud connection attempt for %s",
                             self.serial_number,
@@ -799,6 +1014,20 @@ class DysonDevice:
                     elapsed_time,
                 )
                 return True
+
+            # Broker RST'd the handshake asynchronously — no point waiting out the
+            # full timeout; the retry loop will handle it.  Returning early (within
+            # one polling interval, ~100 ms) ensures we reach loop_stop() before
+            # paho's 1-second min reconnect delay fires, so we see only one RST
+            # per attempt instead of multiple paho auto-reconnect attempts.
+            if self._rst_during_handshake:
+                _LOGGER.debug(
+                    "RST detected during handshake for %s via %s after %.1f seconds — aborting connection wait",
+                    self.serial_number,
+                    conn_type,
+                    elapsed_time,
+                )
+                return False
 
             await asyncio.sleep(check_interval)
             elapsed_time += check_interval
@@ -999,19 +1228,35 @@ class DysonDevice:
         self, client: mqtt.Client, userdata: Any, rc, properties=None, *args
     ) -> None:
         """Handle MQTT disconnection callback."""
+        # Capture state before any mutations so we can reason about the cause.
+        was_intentional = self._intentional_disconnect
+        was_connected = self._connected  # True only if _on_connect previously fired
+
         # Use appropriate log level based on whether disconnect was intentional
-        if self._intentional_disconnect:
+        if was_intentional:
             _LOGGER.debug(
                 "MQTT client disconnected for %s (intentional), code: %s",
                 self.serial_number,
                 rc,
             )
-            # Reset the flag after logging
             self._intentional_disconnect = False
         else:
             _LOGGER.warning(
                 "MQTT client disconnected for %s, code: %s", self.serial_number, rc
             )
+
+        # Track RST-during-handshake: the broker closed the TCP connection before
+        # sending CONNACK (Dyson firmware violation of MQTT §3.1.4).  This only
+        # matters when we never reached _connected=True in this attempt and the
+        # disconnect is not one we initiated ourselves.
+        if not was_connected and not was_intentional:
+            is_rst = (
+                hasattr(rc, "is_disconnect_packet_from_server")
+                and not rc.is_disconnect_packet_from_server
+            )
+            if is_rst:
+                self._rst_during_handshake = True
+
         self._connected = False
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
 
@@ -1020,10 +1265,14 @@ class DysonDevice:
             lambda: self.hass.async_create_task(self._stop_heartbeat())
         )
 
-        # If this is an unexpected disconnection (not initiated by us), prepare for intelligent reconnection
-        # Only apply the 15-minute fallback timer if we had a stable connection (not during initial connection attempts)
+        # Apply the 15-minute fallback penalty ONLY when dropping an active,
+        # previously-established connection (was_connected=True).  If
+        # was_connected=False we never got past the CONNACK phase; the retry
+        # loop in _attempt_local_connection will set the appropriate 2-minute
+        # penalty instead of locking local out for 15 minutes.
         if (
             rc != mqtt.MQTT_ERR_SUCCESS
+            and was_connected
             and hasattr(self, "_had_stable_connection")
             and self._had_stable_connection
         ):
@@ -1031,8 +1280,6 @@ class DysonDevice:
                 "Unexpected disconnection for %s, will stay on fallback connection for 15 minutes unless manually reconnected",
                 self.serial_number,
             )
-            # Set preferred retry timer to 15 minutes from now to prevent automatic retry of preferred connection
-            # Manual reconnection (force_reconnect) will reset this to allow immediate preferred connection attempts
             self._last_preferred_retry = time.time() + 900  # 15 minutes = 900 seconds
         elif rc != mqtt.MQTT_ERR_SUCCESS:
             _LOGGER.debug(

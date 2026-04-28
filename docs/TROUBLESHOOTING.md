@@ -2,9 +2,9 @@
 
 ## Cloud Accounts
 
-### "Authentication failed. Please check your email and password."
+### "Failed to find account {email} on {api_fqdn}"
 
-Authentication has failed to request an OTP to send for the MFA step.
+The integration could not locate your account on the Dyson API endpoint determined by your country/region.
 
 - Ensure that an account already exists
 - Ensure that you are using a Dyson account, and not an OAUTH account such as:

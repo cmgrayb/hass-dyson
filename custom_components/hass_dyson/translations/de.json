@@ -64,10 +64,43 @@
         "data": {
           "confirm": "Dieses Gerät zu Home Assistant hinzufügen"
         }
+      },
+      "ble_discover": {
+        "title": "Dyson BLE-Leuchte auswählen",
+        "description": "{device_count} Dyson BLE-Gerät(e) in der Nähe gefunden. Wählen Sie Ihr Gerät oder geben Sie die MAC-Adresse manuell ein.",
+        "data": {
+          "ble_device": "Gerät"
+        }
+      },
+      "ble_configure": {
+        "title": "Dyson BLE-Leuchte konfigurieren",
+        "description": "Geben Sie die Seriennummer und MAC-Adresse Ihres Geräts ein. Wenn ein Dyson Cloud-Konto bereits in Home Assistant konfiguriert ist, wird der LTK-Kopplungsschlüssel automatisch abgerufen. Andernfalls werden Sie aufgefordert, ihn manuell einzugeben.\n\n[Setup-Dokumentation]({docs_url})",
+        "data": {
+          "serial_number": "Geräte-Seriennummer (auf dem Aufkleber am Sockel)",
+          "ble_mac": "Bluetooth-MAC-Adresse (z.B. AA:BB:CC:DD:EE:FF)",
+          "device_name": "Gerätename (Optional)",
+          "ble_proxy": "Bluetooth-Proxy-Host (Optional)"
+        }
+      },
+      "ble_light": {
+        "title": "Manuelle BLE-Kopplung (LTK-Eingabe)",
+        "description": "Der LTK-Kopplungsschlüssel konnte nicht automatisch abgerufen werden. Bitte geben Sie ihn manuell ein. Sie können ihn über die [Setup-Dokumentation]({docs_url}) erhalten.\n\n{ltk_hint}",
+        "data": {
+          "serial_number": "Geräte-Seriennummer",
+          "ble_mac": "Bluetooth-MAC-Adresse (z.B. AA:BB:CC:DD:EE:FF)",
+          "ltk": "LTK-Kopplungsschlüssel (Hex-Zeichenkette)",
+          "device_name": "Gerätename (Optional)",
+          "ble_proxy": "Bluetooth-Proxy-Host (Optional)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Dyson-Konto erneut authentifizieren",
+        "description": "Ihr Dyson-Konto ({email}) muss erneut authentifiziert werden, um die Zugangsdaten zu aktualisieren. Klicken Sie auf Senden, um einen Bestätigungscode zu erhalten.",
+        "data": {}
       }
     },
     "error": {
-      "auth_failed": "Authentifizierung fehlgeschlagen. Bitte überprüfen Sie Ihre E-Mail und Ihr Passwort.",
+      "auth_failed": "Konto {email} auf {api_fqdn} nicht gefunden.",
       "verification_failed": "Verifizierung fehlgeschlagen. Bitte überprüfen Sie Ihr Passwort und den Code und versuchen Sie es erneut.",
       "connection_failed": "Verbindung fehlgeschlagen. Bitte versuchen Sie es später erneut.",
       "no_devices": "Keine Geräte in Ihrem Dyson-Konto gefunden.",
@@ -78,14 +111,18 @@
       "api_format_changed": "Das Dyson Cloud-API-Format hat sich geändert. Cloud-Geräteerkennung ist vorübergehend nicht verfügbar. Bitte verwenden Sie stattdessen die manuelle Gerätekonfiguration.",
       "api_validation_failed": "Dyson Cloud-API-Antwort-Validierung fehlgeschlagen. Bitte versuchen Sie es erneut oder verwenden Sie die manuelle Gerätekonfiguration.",
       "cloud_api_error": "Fehler bei der Kommunikation mit der Dyson Cloud-API. Bitte versuchen Sie es später erneut.",
-      "required": "Dieses Feld ist erforderlich."
+      "required": "Dieses Feld ist erforderlich.",
+      "invalid_mac_address": "Ungültige Bluetooth-MAC-Adresse. Erwartetes Format: AA:BB:CC:DD:EE:FF.",
+      "invalid_ltk": "Ungültiger LTK. Muss eine hexadezimale Zeichenkette mit einer geraden Anzahl von Zeichen sein."
     },
     "abort": {
       "already_configured": "Dieses Dyson-Gerät ist bereits konfiguriert.",
       "invalid_discovery_info": "Ungültige Erkennungsinformationen erhalten. Gerätekonfiguration kann nicht fortgesetzt werden.",
       "no_discovery_info": "Keine Erkennungsinformationen verfügbar. Bitte versuchen Sie es erneut oder verwenden Sie die manuelle Einrichtung.",
       "user_declined": "Gerätekonfiguration wurde vom Benutzer abgebrochen.",
-      "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden."
+      "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden.",
+      "reauth_successful": "Erneute Authentifizierung erfolgreich. Ihre Zugangsdaten wurden aktualisiert.",
+      "reauth_failed": "Erneute Authentifizierung unerwartet fehlgeschlagen. Bitte versuchen Sie es erneut."
     }
   },
   "options": {
@@ -138,6 +175,9 @@
           "auto_add_devices": "Entdeckte Geräte automatisch hinzufügen (wenn deaktiviert, erscheinen Geräte als erkennbar, erfordern aber manuelle Genehmigung)"
         }
       }
+    },
+    "abort": {
+      "reauthenticate_initiated": "Die erneute Authentifizierung wurde eingeleitet. Bitte folgen Sie den Anweisungen, die im Bereich Benachrichtigungen oder Reparaturen erscheinen, um die erneute Authentifizierung abzuschließen."
     }
   },
   "entity": {

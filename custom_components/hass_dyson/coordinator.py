@@ -20,12 +20,14 @@ Key Features:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
+from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -1120,6 +1122,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             True if device has connected_configuration (MQTT or cloud), False otherwise
         """
         try:
+            # lecOnly devices communicate exclusively over BLE — no MQTT support
+            connection_category = getattr(device_info, "connection_category", None)
+            if connection_category == "lecOnly":
+                return False
+
             connected_config = getattr(device_info, "connected_configuration", None)
             if not connected_config:
                 return False
@@ -1450,6 +1457,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         from .device import DysonDevice
 
+        ha_uuid = await ha_instance_id.async_get(self.hass)
+        mqtt_client_id = hashlib.sha256(
+            f"{ha_uuid}{self.serial_number}".encode()
+        ).hexdigest()[:23]
+
         self.device = DysonDevice(
             self.hass,
             self.serial_number,
@@ -1461,6 +1473,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             cloud_host,
             cloud_credential_data,
             self._device_category,
+            mqtt_client_id=mqtt_client_id,
         )
 
         # Set firmware version in the device for proper device info
@@ -1522,6 +1535,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             connection_type = self._get_effective_connection_type()
 
             # For manual setup, we don't have cloud credentials
+            ha_uuid = await ha_instance_id.async_get(self.hass)
+            mqtt_client_id = hashlib.sha256(
+                f"{ha_uuid}{serial_number}".encode()
+            ).hexdigest()[:23]
+
             self.device = DysonDevice(
                 self.hass,
                 serial_number,
@@ -1533,6 +1551,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 None,  # No cloud host for manual setup
                 None,  # No cloud credential for manual setup
                 self._device_category,
+                mqtt_client_id=mqtt_client_id,
             )
 
             # Set unknown firmware version since we don't get it from cloud
@@ -2339,11 +2358,16 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Build device info list from cloud devices."""
         updated_devices = []
         for device in devices:
+            # Normalise connection_category: may be a ConnectionCategory enum or
+            # a plain string — store the string value so downstream checks work.
+            conn_cat = getattr(device, "connection_category", None)
+            conn_cat_val = getattr(conn_cat, "value", conn_cat) or ""
             device_info = {
                 "serial_number": device.serial_number,
                 "name": getattr(device, "name", f"Dyson {device.serial_number}"),
                 "product_type": getattr(device, "product_type", "unknown"),
                 "category": getattr(device, "category", "unknown"),
+                "connection_category": conn_cat_val,
             }
             updated_devices.append(device_info)
         return updated_devices
@@ -2386,11 +2410,33 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if auto_add_devices:
             for device in devices:
                 if device.serial_number in new_devices:
+                    # Normalise connection_category: may be enum or string
+                    conn_cat = getattr(device, "connection_category", None)
+                    conn_cat_val = getattr(conn_cat, "value", conn_cat)
+                    if conn_cat_val == "lecOnly":
+                        _LOGGER.info(
+                            "Skipping BLE-only device %s from auto-add (lecOnly) "
+                            "\u2014 will trigger BLE Light discovery flow instead",
+                            device.serial_number,
+                        )
+                        await self._create_ble_discovery_flow(device)
+                        continue
                     await self._create_device_entry(device)
         else:
             # Create discovery flows for manual device addition
             for device in devices:
                 if device.serial_number in new_devices:
+                    # Normalise connection_category: may be enum or string
+                    conn_cat = getattr(device, "connection_category", None)
+                    conn_cat_val = getattr(conn_cat, "value", conn_cat)
+                    if conn_cat_val == "lecOnly":
+                        _LOGGER.info(
+                            "Skipping BLE-only device %s from discovery (lecOnly) "
+                            "\u2014 will trigger BLE Light discovery flow instead",
+                            device.serial_number,
+                        )
+                        await self._create_ble_discovery_flow(device)
+                        continue
                     await self._create_discovery_flow(device)
             _LOGGER.info(
                 "Auto-add disabled, %d new devices will be available for manual setup",
@@ -2499,6 +2545,12 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "name": device_name,
                         "product_type": getattr(device, "product_type", "unknown"),
                         "category": getattr(device, "category", "unknown"),
+                        "connection_category": getattr(
+                            getattr(device, "connection_category", None),
+                            "value",
+                            getattr(device, "connection_category", ""),
+                        )
+                        or "",
                         "auth_token": self._auth_token,
                         "email": self._email,
                         "parent_entry_id": self.config_entry.entry_id,
@@ -2510,3 +2562,325 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except Exception as e:
             _LOGGER.error("Failed to create discovery flow for %s: %s", device_name, e)
+
+    async def _create_ble_discovery_flow(self, device) -> None:
+        """Create a discovery flow that routes the user to the BLE Light setup.
+
+        For lecOnly (BLE-only) devices discovered via cloud polling, we cannot
+        auto-create an entry because BLE pairing requires a MAC address and LTK.
+        Instead, trigger a discovery notification that, when clicked, routes the
+        user directly to the BLE configure step (with serial pre-filled).
+        """
+        device_serial = device.serial_number
+        device_name = getattr(device, "name", f"Dyson {device_serial}")
+
+        # Skip if already set up (BLE or any other entry)
+        existing_entries = [
+            entry
+            for entry in self.hass.config_entries.async_entries(DOMAIN)
+            if (
+                entry.data.get(CONF_SERIAL_NUMBER) == device_serial
+                and entry.entry_id != self.config_entry.entry_id
+            )
+        ]
+        if existing_entries:
+            _LOGGER.debug(
+                "BLE device %s already has a config entry, skipping", device_serial
+            )
+            return
+
+        # Skip if a BLE discovery flow is already in progress for this device
+        existing_flows = [
+            flow
+            for flow in self.hass.config_entries.flow.async_progress()
+            if (
+                flow["handler"] == DOMAIN
+                and flow.get("context", {}).get("unique_id") == device_serial
+            )
+        ]
+        if existing_flows:
+            _LOGGER.debug(
+                "Discovery flow already in progress for BLE device %s", device_serial
+            )
+            return
+
+        _LOGGER.info(
+            "Creating BLE discovery flow for lecOnly device: %s (%s)",
+            device_name,
+            device_serial,
+        )
+        try:
+            result = await self.hass.async_create_task(
+                self.hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={
+                        "source": "discovery",
+                        "unique_id": device_serial,
+                    },
+                    data={
+                        "serial_number": device_serial,
+                        "name": device_name,
+                        "product_type": getattr(device, "product_type", "unknown"),
+                        "category": getattr(device, "category", "unknown"),
+                        "connection_category": "lecOnly",
+                        "auth_token": self._auth_token,
+                        "email": self._email,
+                        "parent_entry_id": self.config_entry.entry_id,
+                    },
+                )
+            )
+            _LOGGER.info("BLE discovery flow created for %s: %s", device_name, result)
+        except Exception as e:
+            _LOGGER.error(
+                "Failed to create BLE discovery flow for %s: %s", device_name, e
+            )
+
+
+class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for Dyson BLE-only lights (e.g. Lightcycle Morph CD06).
+
+    Manages the BLE connection lifecycle via a dedicated named asyncio Task and
+    propagates state changes received on the Home Assistant event bus to all
+    subscribed entities using :meth:`async_set_updated_data`.
+
+    No MQTT is used.  State arrives via ``EVENT_BLE_STATE_CHANGE`` events fired
+    by :class:`.ble_device.DysonBLEDevice`.
+
+    Attributes:
+        serial_number: Dyson device serial number.
+        ble_device: :class:`.ble_device.DysonBLEDevice` instance or ``None``
+            before initial setup.
+    """
+
+    def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
+        """Initialise the BLE coordinator.
+
+        Args:
+            hass: Home Assistant instance.
+            config_entry: Config entry containing ``CONF_SERIAL_NUMBER``,
+                ``CONF_BLE_MAC``, ``CONF_LTK``, and optionally ``CONF_BLE_PROXY``.
+        """
+        from .ble_device import DysonBLEDevice
+        from .const import (
+            CONF_BLE_MAC,
+            CONF_BLE_PROXY,
+            CONF_LTK,
+        )
+
+        self.serial_number: str = config_entry.data[CONF_SERIAL_NUMBER]
+        self.ble_device: DysonBLEDevice | None = None
+        self._config_entry = config_entry
+        self._unsub_event: Any | None = None
+        self._ble_task: asyncio.Task[None] | None = None
+        self._stop_event = asyncio.Event()
+
+        # Build the BLE device from config entry data
+        mac = config_entry.data.get(CONF_BLE_MAC, "")
+        ltk_hex = config_entry.data.get(CONF_LTK, "")
+        ble_proxy = config_entry.data.get(CONF_BLE_PROXY)
+
+        # account_uuid is derived from an HMAC of the instance id (stable, unique)
+        # Resolved lazily in async_setup via ha_instance_id.async_get(hass)
+        import uuid as _uuid
+
+        self.ble_device = DysonBLEDevice(
+            hass=hass,
+            serial_number=self.serial_number,
+            mac_address=mac,
+            ltk_hex=ltk_hex,
+            account_uuid=str(_uuid.UUID(int=0)),  # Placeholder; set during setup
+            ble_proxy=ble_proxy,
+        )
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_ble_{self.serial_number}",
+            update_interval=None,  # Push-only; no polling
+        )
+
+    async def async_setup(self) -> None:
+        """Set up the BLE coordinator: subscribe to events and start BLE task.
+
+        Called by the platform setup after the coordinator is created.  Safe to
+        call more than once (idempotent).
+        """
+        import uuid as _uuid
+
+        from .ble_device import DysonBLEDevice
+        from .const import (
+            CONF_BLE_MAC,
+            CONF_LTK,
+            EVENT_BLE_STATE_CHANGE,
+        )
+
+        # Use the Dyson account UUID stored in the BLE config entry (set during LTK auto-fetch).
+        # Fall back to the account_uuid in any cloud account config entry, then to a zero UUID
+        # with a warning directing the user to re-authenticate.
+        account_uuid = self._config_entry.data.get("account_uuid", "")
+        if not account_uuid:
+            # Try the parent cloud account entry
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                candidate = entry.data.get("account_uuid", "")
+                if candidate:
+                    account_uuid = candidate
+                    break
+        if not account_uuid:
+            _LOGGER.warning(
+                "No Dyson account UUID found for BLE device %s. "
+                "BLE authentication will likely fail. "
+                "Please delete this device and re-add it after re-authenticating your Dyson cloud account.",
+                self.serial_number,
+            )
+            account_uuid = str(_uuid.UUID(int=0))
+
+        # Recreate with proper account uuid
+        mac = self._config_entry.data.get(CONF_BLE_MAC, "")
+        ltk_hex = self._config_entry.data.get(CONF_LTK, "")
+        from .const import CONF_BLE_PROXY
+
+        ble_proxy = self._config_entry.data.get(CONF_BLE_PROXY)
+        self.ble_device = DysonBLEDevice(
+            hass=self.hass,
+            serial_number=self.serial_number,
+            mac_address=mac,
+            ltk_hex=ltk_hex,
+            account_uuid=account_uuid,
+            ble_proxy=ble_proxy,
+        )
+
+        # Subscribe to BLE state change events
+        if self._unsub_event is not None:
+            self._unsub_event()
+        self._unsub_event = self.hass.bus.async_listen(
+            EVENT_BLE_STATE_CHANGE, self._handle_ble_event
+        )
+
+        _LOGGER.info(
+            "BLE coordinator setup complete for %s "
+            "(MAC: %s, LTK configured: %s, proxy: %s) — starting connection task",
+            self.serial_number,
+            mac,
+            bool(ltk_hex),
+            ble_proxy or "none (will use local BT adapter)",
+        )
+
+        # Start the BLE connection task
+        self._stop_event.clear()
+        self._ble_task = asyncio.ensure_future(
+            self._ble_lifecycle_task(),
+            loop=self.hass.loop,
+        )
+        self._ble_task.set_name(f"dyson-ble-{self.serial_number}")
+
+    async def async_shutdown(self) -> None:
+        """Shut down the BLE coordinator cleanly on config entry unload."""
+        self._stop_event.set()
+        if self._ble_task is not None and not self._ble_task.done():
+            self._ble_task.cancel()
+            try:
+                await self._ble_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            self._ble_task = None
+        if self._unsub_event is not None:
+            self._unsub_event()
+            self._unsub_event = None
+        if self.ble_device is not None:
+            await self.ble_device.disconnect()
+
+    async def _ble_lifecycle_task(self) -> None:
+        """Long-lived asyncio task managing BLE connect/reconnect loop.
+
+        Connects to the lamp, then waits for disconnection.  On disconnect,
+        retries with exponential backoff.  Stops when ``_stop_event`` is set.
+        """
+        from .ble_device import _KEEPALIVE_INTERVAL, _RECONNECT_DELAYS
+
+        _LOGGER.info("BLE lifecycle task started for %s", self.serial_number)
+        attempt = 0
+        while not self._stop_event.is_set():
+            if self.ble_device is None:
+                _LOGGER.warning(
+                    "BLE lifecycle task: ble_device is None for %s, waiting...",
+                    self.serial_number,
+                )
+                await asyncio.sleep(5)
+                continue
+
+            _LOGGER.info(
+                "BLE lifecycle task: attempting connection for %s (attempt %d)",
+                self.serial_number,
+                attempt + 1,
+            )
+            try:
+                await self.ble_device.connect_and_authenticate()
+                attempt = 0  # Reset backoff on successful connect
+                _LOGGER.info(
+                    "BLE lifecycle task: %s connected — entering keepalive loop",
+                    self.serial_number,
+                )
+                # Keepalive loop: poll state periodically and watch for disconnect
+                while not self._stop_event.is_set() and self.ble_device.is_connected:
+                    await asyncio.sleep(_KEEPALIVE_INTERVAL)
+                    if self.ble_device.is_connected:
+                        await self.ble_device.poll_state()
+                _LOGGER.info(
+                    "BLE lifecycle task: %s exited keepalive loop (connected: %s, stop: %s)",
+                    self.serial_number,
+                    self.ble_device.is_connected,
+                    self._stop_event.is_set(),
+                )
+            except asyncio.CancelledError:
+                _LOGGER.debug("BLE lifecycle task cancelled for %s", self.serial_number)
+                return
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning(
+                    "BLE lifecycle task: connection error for %s (%s: %s)",
+                    self.serial_number,
+                    type(exc).__name__,
+                    exc,
+                )
+
+            if self._stop_event.is_set():
+                _LOGGER.debug(
+                    "BLE lifecycle task: stop requested for %s, exiting",
+                    self.serial_number,
+                )
+                return
+
+            delay_index = min(attempt, len(_RECONNECT_DELAYS) - 1)
+            delay = _RECONNECT_DELAYS[delay_index]
+            _LOGGER.info(
+                "BLE %s disconnected; reconnecting in %ds (attempt %d)",
+                self.serial_number,
+                delay,
+                attempt + 1,
+            )
+            attempt += 1
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+                return  # Stop event set during sleep
+            except asyncio.TimeoutError:
+                pass
+
+    async def _handle_ble_event(self, event: Any) -> None:
+        """Handle ``EVENT_BLE_STATE_CHANGE`` and push data to entities.
+
+        Args:
+            event: Home Assistant event with ``serial_number`` and state data.
+        """
+        data: dict[str, Any] = event.data
+        if data.get("serial_number") != self.serial_number:
+            return
+        state_dict = {k: v for k, v in data.items() if k != "serial_number"}
+        self.async_set_updated_data(state_dict)
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Return current data (no-op; data arrives via events)."""
+        return self.data or {}
+
+    @property
+    def is_connected(self) -> bool:
+        """Return True if the BLE device is connected and authenticated."""
+        return self.ble_device is not None and self.ble_device.is_connected

@@ -689,6 +689,101 @@ def pure_mock_device_registry():
     return registry
 
 
+@pytest.fixture
+def mock_ble_config_entry():
+    """Config entry fixture for a BLE light device (Dyson Lightcycle Morph CD06)."""
+    from homeassistant.config_entries import ConfigEntry
+
+    from custom_components.hass_dyson.const import (
+        CONF_BLE_MAC,
+        CONF_LTK,
+        CONF_SERIAL_NUMBER,
+    )
+
+    config_entry = MagicMock(spec=ConfigEntry)
+    config_entry.entry_id = "ble-entry-id-abcdef"
+    config_entry.title = "Dyson Lightcycle Morph"
+    config_entry.version = 1
+    config_entry.minor_version = 1
+    config_entry.source = "user"
+    config_entry.state = "loaded"
+    config_entry.data = {
+        CONF_SERIAL_NUMBER: "CD06-GB-HAA0001A",
+        CONF_BLE_MAC: "AA:BB:CC:DD:EE:FF",
+        CONF_LTK: "deadbeefdeadbeefdeadbeefdeadbeef",
+    }
+    config_entry.options = {}
+    config_entry.add_update_listener = MagicMock()
+    config_entry.async_on_unload = MagicMock()
+    return config_entry
+
+
+@pytest.fixture
+def mock_ble_device():
+    """Mock DysonBLEDevice for testing without real BLE hardware."""
+    from custom_components.hass_dyson.ble_device import BLELightState, DysonBLEDevice
+
+    device = MagicMock(spec=DysonBLEDevice)
+    device.serial_number = "CD06-GB-HAA0001A"
+    device.mac_address = "AA:BB:CC:DD:EE:FF"
+    device.is_connected = True
+    device.state = BLELightState(
+        connected=True,
+        authenticated=True,
+        power=True,
+        brightness_raw=75,
+        brightness=191,
+        color_temp_kelvin=4000,
+        color_temp_mired=250,
+        motion_detected=False,
+    )
+    device.device_info = {
+        "identifiers": {("hass_dyson", "CD06-GB-HAA0001A")},
+        "name": "Dyson CD06-GB-HAA0001A",
+        "manufacturer": "Dyson",
+        "model": "Lightcycle Morph (CD06)",
+    }
+    device.connect_and_authenticate = AsyncMock()
+    device.disconnect = AsyncMock()
+    device.poll_state = AsyncMock()
+    device.set_power = AsyncMock()
+    device.set_brightness = AsyncMock()
+    device.set_color_temp_kelvin = AsyncMock()
+    device.set_color_temp_mired = AsyncMock()
+    return device
+
+
+@pytest.fixture
+def mock_ble_coordinator(pure_mock_hass, mock_ble_device):
+    """Mock DysonBLEDataUpdateCoordinator for testing light/binary_sensor entities."""
+    from custom_components.hass_dyson.coordinator import DysonBLEDataUpdateCoordinator
+
+    coordinator = MagicMock(spec=DysonBLEDataUpdateCoordinator)
+    coordinator.hass = pure_mock_hass
+    coordinator.serial_number = "CD06-GB-HAA0001A"
+    coordinator.ble_device = mock_ble_device
+    coordinator.is_connected = True
+    coordinator.last_update_success = True
+    coordinator.data = {
+        "connected": True,
+        "authenticated": True,
+        "power": True,
+        "brightness_raw": 75,
+        "brightness": 191,
+        "color_temp_kelvin": 4000,
+        "color_temp_mired": 250,
+        "motion_detected": False,
+        "last_error": "",
+    }
+    coordinator.async_setup = AsyncMock()
+    coordinator.async_shutdown = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.async_set_updated_data = MagicMock()
+    coordinator.async_update_listeners = MagicMock()
+    coordinator._listeners = {}
+    return coordinator
+
+
 # Import domain constant for fixtures
 try:
     from custom_components.hass_dyson.const import DOMAIN

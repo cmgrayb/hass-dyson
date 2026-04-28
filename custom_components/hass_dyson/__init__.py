@@ -59,6 +59,7 @@ from homeassistant.helpers import config_validation as cv
 from .config_flow import DysonConfigFlow  # noqa: F401
 from .const import (
     CONF_AUTO_ADD_DEVICES,
+    CONF_BLE_MAC,
     CONF_COUNTRY,
     CONF_CULTURE,
     CONF_POLL_FOR_DEVICES,
@@ -70,7 +71,11 @@ from .const import (
     DISCOVERY_STICKER,
     DOMAIN,
 )
-from .coordinator import DysonCloudAccountCoordinator, DysonDataUpdateCoordinator
+from .coordinator import (
+    DysonBLEDataUpdateCoordinator,
+    DysonCloudAccountCoordinator,
+    DysonDataUpdateCoordinator,
+)
 from .services import (
     async_remove_cloud_services,
     async_remove_device_services_for_coordinator,
@@ -267,6 +272,7 @@ async def _create_discovery_flow(
                 "name": device_name,
                 "product_type": device_info.get("product_type", "unknown"),
                 "category": device_info.get("category", "unknown"),
+                "connection_category": device_info.get("connection_category", ""),
                 "auth_token": entry.data.get("auth_token"),
                 "email": entry.data.get("email"),
                 "parent_entry_id": entry.entry_id,
@@ -297,6 +303,17 @@ async def _setup_account_level_entry(hass: HomeAssistant, entry: ConfigEntry) ->
     _LOGGER.info(
         "Setting up account-level entry with %d devices", len(entry.data["devices"])
     )
+
+    # If the entry has an auth_token but is missing account_uuid, trigger reauth
+    # so the user re-authenticates and the real Dyson account UUID is stored.
+    # This is needed for BLE device LTK re-auth (PayloadA requires the real UUID).
+    if entry.data.get("auth_token") and not entry.data.get("account_uuid"):
+        _LOGGER.warning(
+            "Cloud account entry '%s' is missing account_uuid — triggering reauth",
+            entry.title,
+        )
+        entry.async_start_reauth(hass)
+
     devices = entry.data["devices"]
 
     # Get auto_add_devices setting with backward-compatible default
@@ -356,7 +373,12 @@ async def _handle_new_device(
     """Handle setup for a new device."""
     device_serial = device_info["serial_number"]
 
-    if auto_add_devices:
+    # BLE-only (lecOnly) devices cannot be auto-created as MQTT devices.
+    # They require the user to go through the BLE Light config flow for pairing,
+    # so always route them to the discovery flow regardless of auto_add_devices.
+    is_ble_only = device_info.get("connection_category", "") == "lecOnly"
+
+    if auto_add_devices and not is_ble_only:
         # Create individual config entry for this device
         from .device_utils import create_cloud_device_config
 
@@ -379,10 +401,17 @@ async def _handle_new_device(
             f"dyson_create_device_{device_serial}",
         )
     else:
-        _LOGGER.info(
-            "Device %s discovered but auto-add disabled - device will be available for manual setup",
-            device_serial,
-        )
+        if is_ble_only:
+            _LOGGER.info(
+                "Device %s is a BLE-only (lecOnly) device — routing to discovery flow "
+                "for BLE Light manual pairing",
+                device_serial,
+            )
+        else:
+            _LOGGER.info(
+                "Device %s discovered but auto-add disabled - device will be available for manual setup",
+                device_serial,
+            )
         # Create discovery flow for manual device confirmation
         hass.async_create_background_task(
             _create_discovery_flow(hass, entry, device_info),
@@ -418,6 +447,35 @@ async def _setup_cloud_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> N
         )
 
 
+async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up a BLE-only Dyson light device config entry.
+
+    Creates a :class:`.coordinator.DysonBLEDataUpdateCoordinator`, starts the
+    BLE connection lifecycle, and forwards setup to the ``light`` and
+    ``binary_sensor`` platforms.
+
+    Args:
+        hass: Home Assistant instance.
+        entry: Config entry with ``CONF_BLE_MAC``, ``CONF_LTK``, and
+            ``CONF_SERIAL_NUMBER`` in its data.
+
+    Returns:
+        True on successful setup.
+    """
+    _LOGGER.info("Setting up BLE light device '%s'", entry.data.get(CONF_SERIAL_NUMBER))
+    coordinator = DysonBLEDataUpdateCoordinator(hass, entry)
+    await coordinator.async_setup()
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"ble_coordinator": coordinator, "is_ble": True}
+
+    await hass.config_entries.async_forward_entry_setups(
+        entry, ["light", "binary_sensor"]
+    )
+    _LOGGER.info("BLE light device '%s' set up successfully", coordinator.serial_number)
+    return True
+
+
 async def _setup_individual_device_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> bool:
@@ -431,13 +489,21 @@ async def _setup_individual_device_entry(
         # Perform initial data fetch
         await coordinator.async_config_entry_first_refresh()
     except UnsupportedDeviceError as err:
-        # Device doesn't support MQTT - automatically remove it
+        # Device doesn't support MQTT - schedule removal AFTER setup_lock is released.
+        # Awaiting async_remove here would deadlock because async_setup_entry already
+        # holds entry.setup_lock and async_remove tries to acquire the same lock.
         _LOGGER.info(
-            "Removing unsupported device '%s' (no MQTT support): %s",
+            "Scheduling removal of unsupported device '%s' (no MQTT support): %s",
             entry.title,
             err,
         )
-        await hass.config_entries.async_remove(entry.entry_id)
+
+        async def _remove_unsupported_entry() -> None:
+            """Remove the config entry after setup_lock has been released."""
+            if hass.config_entries.async_get_entry(entry.entry_id) is not None:
+                await hass.config_entries.async_remove(entry.entry_id)
+
+        hass.async_create_task(_remove_unsupported_entry())
         return False
 
     # Store coordinator in hass data
@@ -588,6 +654,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         # Check if this is a new account-level config entry with multiple devices
         if "devices" in entry.data and entry.data.get("devices"):
             return await _setup_account_level_entry(hass, entry)
+        elif CONF_BLE_MAC in entry.data:
+            # BLE-only light device (e.g. Lightcycle Morph CD06)
+            return await _setup_ble_device_entry(hass, entry)
         else:
             # Handle individual device config entries
             return await _setup_individual_device_entry(hass, entry)
@@ -706,8 +775,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning("No coordinator found for entry %s", entry.entry_id)
         return True
 
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+
+    # BLE light devices
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        ble_coordinator: DysonBLEDataUpdateCoordinator = entry_data["ble_coordinator"]
+        unload_ok = await hass.config_entries.async_unload_platforms(
+            entry, ["light", "binary_sensor"]
+        )
+        if unload_ok:
+            await ble_coordinator.async_shutdown()
+            hass.data[DOMAIN].pop(entry.entry_id)
+            _LOGGER.info("Successfully unloaded Dyson BLE device '%s'", entry.title)
+        return unload_ok
+
+    # MQTT-based device entries
     # Get coordinator
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: DysonDataUpdateCoordinator = entry_data
 
     # Determine platforms that were set up
     platforms_to_unload = _get_platforms_for_device(coordinator)

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
 
 
 class DysonEntity(CoordinatorEntity):
@@ -228,3 +228,48 @@ class DysonEntity(CoordinatorEntity):
             this async method → entity state update → UI refresh
         """
         super()._handle_coordinator_update()
+
+
+class DysonBLEEntity(CoordinatorEntity):
+    """Base entity class for Dyson BLE-only lights.
+
+    Inherits from :class:`homeassistant.helpers.update_coordinator.CoordinatorEntity`
+    and uses a :class:`.coordinator.DysonBLEDataUpdateCoordinator` as its
+    coordinator so that state pushed via the HA event bus is reflected
+    automatically in all child entities.
+
+    Attributes:
+        coordinator: :class:`.coordinator.DysonBLEDataUpdateCoordinator` instance.
+    """
+
+    coordinator: DysonBLEDataUpdateCoordinator
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator: DysonBLEDataUpdateCoordinator) -> None:
+        """Initialise the BLE entity.
+
+        Args:
+            coordinator: BLE coordinator for this device.
+        """
+        super().__init__(coordinator)
+
+    @property
+    def available(self) -> bool:
+        """Return True when the BLE lamp is connected and authenticated."""
+        return (
+            self.coordinator.last_update_success is not False
+            and self.coordinator.is_connected
+        )
+
+    @property
+    def device_info(self):
+        """Return device info for the Home Assistant device registry.
+
+        Returns:
+            Device info dict sourced from the underlying
+            :class:`.ble_device.DysonBLEDevice`, or ``None`` if the device is
+            not yet initialised.
+        """
+        if self.coordinator.ble_device is not None:
+            return self.coordinator.ble_device.device_info
+        return None

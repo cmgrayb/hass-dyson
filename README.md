@@ -23,7 +23,7 @@
 [![hacs][hacsbadge]][hacs]
 [![Codecov][codecov-shield]][codecov]
 
-A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, and robotic vacuums featuring real-time MQTT communication and complete platform coverage.
+A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, lights, and robotic vacuums featuring real-time MQTT communication, BLE proxy compatibility, and complete platform coverage.
 
 ## Current Features
 
@@ -50,12 +50,27 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
 - **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session (for future use)
 
+### Lights
+
+- **Basic Controls** - Lights may be set to on/off/color temp/brightness
+- **Scene Support** - Lights may be controlled as part of a Home Assistant Scene
+- **Active BLE Proxy connections** - Lights may be added as their own hub and connect through Bluetooth Proxies
+  - For more information, please see [esphome Bluetooth Proxy](https://esphome.io/components/bluetooth_proxy/)
+
 ## Planned Features
 
-### BLE Devices
+Planned features are features we cannot currently complete due to lack of access to device of that type.
 
-- **lec Support** - We hope to someday support Dyson "lec" or BLE devices such as lights via BLE proxy devices
-- **Vacuum Start Controls** - Support the start in room functionality introduced in Home Assistant 2026.2.0 as well as "global" (all defined rooms)
+If you feel you are technical enough to assist us with these features, we welcome the help.  Please reply to the issue tied to the feature and we'll be happy to work with you on it.
+
+If you feel you are not technical enough to assist, but can help financially, please consider a sponsorship.
+
+Anything helps, and all sponsorship money goes directly to development devices for this integration.
+
+### Vacuum Start
+
+- **Vacuum Start Controls** - Support the start in room functionality introduced in
+Home Assistant 2026.2.0 as well as "global" (all defined rooms)
 
 ## Quick Start
 
@@ -245,6 +260,7 @@ hass_dyson:
 - **[Device Management](docs/DEVICE_MANAGEMENT.md)** - Information on device discovery and configuration
 - **[Entities](docs/ENTITIES.md)** - Information on entities to expect for a given device type
 - **[Sensors](docs/SENSORS.md)** - Information on included sensors for devices
+- **[Lights](docs/LIGHTS.md)** - Information on Active BLE lights
 - **[Supported Devices](docs/SUPPORTED_DEVICES.md)** - Information on devices tested and known to be supported
 
 ### **Quick References**

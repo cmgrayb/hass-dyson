@@ -30,7 +30,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Dyson update entities."""
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+    # Firmware updates require MQTT/cloud — not applicable for BLE-only devices
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        return
+    coordinator: DysonDataUpdateCoordinator = entry_data
 
     # Only add update entity for cloud-discovered devices
     if config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
