@@ -100,7 +100,7 @@
       }
     },
     "error": {
-      "auth_failed": "Authentifizierung fehlgeschlagen. Bitte überprüfen Sie Ihre E-Mail und Ihr Passwort.",
+      "auth_failed": "Konto {email} auf {api_fqdn} nicht gefunden.",
       "verification_failed": "Verifizierung fehlgeschlagen. Bitte überprüfen Sie Ihr Passwort und den Code und versuchen Sie es erneut.",
       "connection_failed": "Verbindung fehlgeschlagen. Bitte versuchen Sie es später erneut.",
       "no_devices": "Keine Geräte in Ihrem Dyson-Konto gefunden.",

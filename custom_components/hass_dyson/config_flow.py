@@ -6,6 +6,7 @@ import asyncio
 import logging
 import socket
 from typing import Any
+from urllib.parse import urlparse
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -50,6 +51,16 @@ CONNECTION_TYPE_NAMES = {
 def _get_connection_type_display_name(connection_type: str) -> str:
     """Get user-friendly display name for connection type."""
     return CONNECTION_TYPE_NAMES.get(connection_type, connection_type)
+
+
+def _get_api_fqdn(country: str) -> str:
+    """Return the API FQDN for the given country code."""
+    try:
+        from libdyson_rest.utils import get_api_hostname
+
+        return urlparse(get_api_hostname(country)).netloc
+    except Exception:
+        return "appapi.cp.dyson.com"
 
 
 def _get_setup_method_options() -> dict[str, str]:
@@ -603,6 +614,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             _LOGGER.info("Email collection form schema created successfully")
 
+            _country = getattr(self, "_country", default_country)
+            _api_fqdn = _get_api_fqdn(_country)
+
             return self.async_show_form(
                 step_id="cloud_account",
                 data_schema=data_schema,
@@ -611,6 +625,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/SETUP.md",
                     "default_country": default_country,
                     "default_culture": default_culture,
+                    "email": getattr(self, "_email", ""),
+                    "api_fqdn": _api_fqdn,
                 },
             )
         except Exception as e:
@@ -1285,7 +1301,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=data_schema,
                     errors=errors,
                     description_placeholders={
-                        "email": getattr(self, "_email", "your email")
+                        "email": getattr(self, "_email", ""),
+                        "api_fqdn": _get_api_fqdn(getattr(self, "_country", "US")),
                     },
                 )
             except Exception as e:
@@ -1389,7 +1406,9 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=data_schema,
                     errors=errors,
                     description_placeholders={
-                        "phone_number": getattr(self, "_email", "your phone number")
+                        "phone_number": getattr(self, "_email", "your phone number"),
+                        "email": getattr(self, "_email", ""),
+                        "api_fqdn": _get_api_fqdn(getattr(self, "_country", "CN")),
                     },
                 )
             except Exception as e:
