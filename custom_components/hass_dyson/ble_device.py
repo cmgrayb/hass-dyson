@@ -528,39 +528,51 @@ class DysonBLEDevice:
     async def _wait_for_type(self, type_id: int, timeout: float = 10.0) -> DysonMessage:
         """Wait for a specific message type from the auth characteristic."""
         end = self.hass.loop.time() + timeout
-        while True:
-            remaining = end - self.hass.loop.time()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"Timed out waiting for BLE message type 0x{type_id:02X} "
-                    f"from {self.serial_number}"
-                )
-            # Poll with a short sub-timeout so we detect disconnects quickly
-            # rather than waiting the full remaining time with an empty queue.
-            poll_timeout = min(remaining, 1.0)
-            try:
-                msg = await asyncio.wait_for(
-                    asyncio.shield(self._message_queue.get()), timeout=poll_timeout
-                )
-            except (asyncio.TimeoutError, TimeoutError):
-                # Check if the client disconnected during the wait
-                if self._client is None or not getattr(
-                    self._client, "is_connected", True
-                ):
-                    raise RuntimeError(
-                        f"BLE device {self.serial_number} disconnected while waiting "
-                        f"for message type 0x{type_id:02X}"
+        # Create the get() task once so it is not orphaned on each timeout.
+        # asyncio.shield prevents wait_for from cancelling it on timeout, and
+        # we only create a new task after the old one has delivered a message.
+        get_task: asyncio.Task[DysonMessage] = asyncio.ensure_future(
+            self._message_queue.get()
+        )
+        try:
+            while True:
+                remaining = end - self.hass.loop.time()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"Timed out waiting for BLE message type 0x{type_id:02X} "
+                        f"from {self.serial_number}"
                     )
-                continue  # Still connected — keep waiting
-            if msg.type_id == type_id:
-                return msg
-            _LOGGER.warning(
-                "Unexpected BLE message type 0x%02X received while waiting for "
-                "0x%02X from %s — possible rejection or error response from device",
-                msg.type_id,
-                type_id,
-                self.serial_number,
-            )
+                # Poll with a short sub-timeout so we detect disconnects quickly
+                # rather than waiting the full remaining time with an empty queue.
+                poll_timeout = min(remaining, 1.0)
+                try:
+                    msg = await asyncio.wait_for(
+                        asyncio.shield(get_task), timeout=poll_timeout
+                    )
+                except (asyncio.TimeoutError, TimeoutError):
+                    # Check if the client disconnected during the wait
+                    if self._client is None or not getattr(
+                        self._client, "is_connected", True
+                    ):
+                        raise RuntimeError(
+                            f"BLE device {self.serial_number} disconnected while "
+                            f"waiting for message type 0x{type_id:02X}"
+                        )
+                    continue  # Still connected — keep waiting
+                if msg.type_id == type_id:
+                    return msg
+                _LOGGER.warning(
+                    "Unexpected BLE message type 0x%02X received while waiting for "
+                    "0x%02X from %s — possible rejection or error response from device",
+                    msg.type_id,
+                    type_id,
+                    self.serial_number,
+                )
+                # Wrong type — discard and wait for the next message
+                get_task = asyncio.ensure_future(self._message_queue.get())
+        finally:
+            if not get_task.done():
+                get_task.cancel()
 
     async def _send_message(self, type_id: int, payload: bytes = b"") -> None:
         """Fragment and write a logical message to the auth characteristic."""
