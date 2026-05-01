@@ -528,6 +528,7 @@ class DysonBLEDevice:
         self.state.connected = False
         self.state.authenticated = False
         self._client = None
+        self._fire_state_change()
 
     async def _wait_for_type(self, type_id: int, timeout: float = 10.0) -> DysonMessage:
         """Wait for a specific message type from the auth characteristic."""
