@@ -59,7 +59,7 @@ from .const import (
     BLE_MSG_TYPE_REAUTH_PAYLOAD_C,
     BLE_MSG_TYPE_REQUEST_PRODUCT_INFO,
     BLE_POWER_UUID,
-    BLE_SERVICE_UUID,
+    DOMAIN,
     EVENT_BLE_STATE_CHANGE,
 )
 
@@ -1128,7 +1128,7 @@ class DysonBLEDevice:
     def device_info(self) -> dict[str, Any]:
         """Return device info dict for the HA device registry."""
         info: dict[str, Any] = {
-            "identifiers": {(BLE_SERVICE_UUID, self.serial_number)},
+            "identifiers": {(DOMAIN, self.serial_number)},
             "name": f"Dyson {self.serial_number}",
             "manufacturer": "Dyson",
             "model": "Lightcycle Morph",

@@ -2697,12 +2697,15 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # with a warning directing the user to re-authenticate.
         account_uuid = self._config_entry.data.get("account_uuid", "")
         if not account_uuid:
-            # Try the parent cloud account entry
-            for entry in self.hass.config_entries.async_entries(DOMAIN):
-                candidate = entry.data.get("account_uuid", "")
-                if candidate:
-                    account_uuid = candidate
-                    break
+            # Try the parent cloud account entry identified by parent_entry_id.
+            # Walking all hass_dyson entries would silently pick up a UUID from
+            # an unrelated cloud account when the user has multiple accounts
+            # registered, causing LTK re-auth to fail.
+            parent_entry_id = self._config_entry.data.get("parent_entry_id")
+            if parent_entry_id:
+                parent_entry = self.hass.config_entries.async_get_entry(parent_entry_id)
+                if parent_entry:
+                    account_uuid = parent_entry.data.get("account_uuid", "")
         if not account_uuid:
             _LOGGER.warning(
                 "No Dyson account UUID found for BLE device %s. "
