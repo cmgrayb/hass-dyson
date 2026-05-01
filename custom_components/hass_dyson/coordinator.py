@@ -23,7 +23,10 @@ import asyncio
 import hashlib
 import logging
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .ble_device import DysonBLEDevice
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
