@@ -113,7 +113,8 @@
       "cloud_api_error": "Error communicating with Dyson cloud API. Please try again later.",
       "required": "This field is required.",
       "invalid_mac_address": "Invalid Bluetooth MAC address. Expected format: AA:BB:CC:DD:EE:FF.",
-      "invalid_ltk": "Invalid LTK. Must be a hexadecimal string with an even number of characters."
+      "invalid_ltk": "Invalid LTK. Must be a hexadecimal string with an even number of characters.",
+      "no_account_uuid_for_ble": "No Dyson cloud account is configured in Home Assistant. Set up a cloud account first so the BLE device can obtain its account UUID for LTK re-authentication."
     },
     "abort": {
       "already_configured": "This Dyson device is already configured.",

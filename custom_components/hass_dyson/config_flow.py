@@ -416,8 +416,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="reauth_failed")
 
         auth_token = getattr(self._cloud_client, "auth_token", None)
-        account_uuid = (
-            self._account_uuid or getattr(self._cloud_client, "account_id", None) or ""
+        # Use None (not "") when the API returns no UUID so that the
+        # _setup_account_level_entry guard (`is None`) won't re-trigger reauth.
+        account_uuid: str | None = (
+            self._account_uuid
+            or getattr(self._cloud_client, "account_id", None)
+            or None
         )
         await self._cleanup_cloud_client()
 
@@ -1169,11 +1173,30 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors[CONF_SERIAL_NUMBER] = "already_configured"
 
             if not errors:
+                # Resolve account_uuid from any existing cloud account entry so
+                # the coordinator can build a valid PayloadA for LTK re-auth.
+                account_uuid: str | None = None
+                for _e in self.hass.config_entries.async_entries(DOMAIN):
+                    candidate = _e.data.get("account_uuid")
+                    if candidate:
+                        account_uuid = candidate
+                        break
+                if account_uuid is None:
+                    _LOGGER.warning(
+                        "No cloud account entry with account_uuid found — "
+                        "BLE device %s may fail LTK re-auth (PayloadA will use "
+                        "an empty UUID). Set up a Dyson cloud account first.",
+                        serial,
+                    )
+                    errors["base"] = "no_account_uuid_for_ble"
+
+            if not errors:
                 _LOGGER.info("Creating BLE light config entry for %s (%s)", serial, mac)
                 config_data: dict[str, Any] = {
                     CONF_SERIAL_NUMBER: serial,
                     CONF_BLE_MAC: mac,
                     CONF_LTK: ltk_hex,
+                    "account_uuid": account_uuid,
                 }
                 if user_input.get(CONF_BLE_PROXY):
                     config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()

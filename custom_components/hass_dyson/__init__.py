@@ -304,10 +304,12 @@ async def _setup_account_level_entry(hass: HomeAssistant, entry: ConfigEntry) ->
         "Setting up account-level entry with %d devices", len(entry.data["devices"])
     )
 
-    # If the entry has an auth_token but is missing account_uuid, trigger reauth
-    # so the user re-authenticates and the real Dyson account UUID is stored.
-    # This is needed for BLE device LTK re-auth (PayloadA requires the real UUID).
-    if entry.data.get("auth_token") and not entry.data.get("account_uuid"):
+    # If the entry has an auth_token but account_uuid has *never* been stored
+    # (None), trigger reauth so the user re-authenticates and the real Dyson
+    # account UUID is stored.  Use an explicit `is None` check so that entries
+    # where reauth already ran but the API returned no UUID (stored as None)
+    # are not caught in an infinite reauth loop.
+    if entry.data.get("auth_token") and entry.data.get("account_uuid") is None:
         _LOGGER.warning(
             "Cloud account entry '%s' is missing account_uuid — triggering reauth",
             entry.title,
