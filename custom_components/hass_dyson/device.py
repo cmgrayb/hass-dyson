@@ -549,6 +549,9 @@ class DysonDevice:
 
     async def _attempt_local_connection(self, host: str, credential: str) -> bool:
         """Attempt local MQTT connection."""
+        # Reset before each attempt so a stale True from a previous call cannot
+        # contaminate the retry / fallback logic in this attempt.
+        self._rst_during_handshake = False
         try:
             # Stop any still-running MQTT loop before starting a new connection.
             # If the previous connection ended with an unexpected disconnect (e.g.
@@ -844,6 +847,9 @@ class DysonDevice:
 
     async def _attempt_cloud_connection(self, host: str, credential: str) -> bool:
         """Attempt AWS IoT WebSocket MQTT connection."""
+        # Reset before each attempt so a stale True from a previous call cannot
+        # contaminate the retry / fallback logic in this attempt.
+        self._rst_during_handshake = False
         try:
             # Stop any still-running MQTT loop before starting a new connection.
             # Same reasoning as in _attempt_local_connection: an orphaned paho thread
