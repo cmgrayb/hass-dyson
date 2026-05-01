@@ -19,7 +19,6 @@ from typing import Any
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
-    ATTR_COLOR_TEMP,
     ATTR_COLOR_TEMP_KELVIN,
     ColorMode,
     LightEntity,
@@ -27,6 +26,7 @@ from homeassistant.components.light import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util.color import color_temperature_mired_to_kelvin
 
 from .const import (
     BLE_MAX_KELVIN,
@@ -120,8 +120,8 @@ class DysonLightEntity(DysonBLEEntity, LightEntity):
         Args:
             **kwargs: Optional HA service call keyword arguments:
                 - ``brightness``: 0-255 HA brightness value
-                - ``color_temp_kelvin``: Color temperature in Kelvin (preferred)
-                - ``color_temp``: Color temperature in mired (fallback)
+                - ``color_temp_kelvin``: Color temperature in Kelvin
+                - ``color_temp``: Color temperature in mired (legacy callers only)
         """
         dev = self.coordinator.ble_device
         if dev is None:
@@ -137,8 +137,9 @@ class DysonLightEntity(DysonBLEEntity, LightEntity):
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             await dev.set_color_temp_kelvin(kwargs[ATTR_COLOR_TEMP_KELVIN])
-        elif ATTR_COLOR_TEMP in kwargs:  # mired fallback
-            await dev.set_color_temp_mired(kwargs[ATTR_COLOR_TEMP])
+        elif "color_temp" in kwargs:  # mired fallback (pre-2024.x callers)
+            kelvin = color_temperature_mired_to_kelvin(kwargs["color_temp"])
+            await dev.set_color_temp_kelvin(kelvin)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the lamp off.
