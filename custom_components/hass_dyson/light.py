@@ -19,6 +19,7 @@ from typing import Any
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP,
     ATTR_COLOR_TEMP_KELVIN,
     ColorMode,
     LightEntity,
@@ -136,6 +137,8 @@ class DysonLightEntity(DysonBLEEntity, LightEntity):
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
             await dev.set_color_temp_kelvin(kwargs[ATTR_COLOR_TEMP_KELVIN])
+        elif ATTR_COLOR_TEMP in kwargs:  # mired fallback
+            await dev.set_color_temp_mired(kwargs[ATTR_COLOR_TEMP])
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the lamp off.
