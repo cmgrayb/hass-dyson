@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 
 from custom_components.hass_dyson.config_flow import DysonConfigFlow
 from custom_components.hass_dyson.const import (
@@ -233,8 +233,8 @@ class TestBleConfigure:
     @pytest.mark.asyncio
     async def test_already_configured_serial_shows_error(self, flow):
         """Serial that is already configured produces an error."""
-        flow._abort_if_unique_id_configured.side_effect = Exception(
-            "already configured"
+        flow._abort_if_unique_id_configured.side_effect = AbortFlow(
+            "already_configured"
         )
         result = await flow.async_step_ble_configure(
             user_input={CONF_SERIAL_NUMBER: VALID_SERIAL, CONF_BLE_MAC: VALID_MAC}
@@ -533,6 +533,9 @@ class TestBleLightStep:
     @pytest.mark.asyncio
     async def test_valid_input_creates_entry(self, flow):
         """Valid serial, MAC, and LTK result in a config entry being created."""
+        mock_entry = MagicMock()
+        mock_entry.data = {"account_uuid": "test-account-uuid-1234"}
+        flow.hass.config_entries.async_entries.return_value = [mock_entry]
         user_input = {
             CONF_SERIAL_NUMBER: VALID_SERIAL,
             CONF_BLE_MAC: VALID_MAC,
@@ -601,6 +604,9 @@ class TestBleLightStep:
     @pytest.mark.asyncio
     async def test_proxy_included_when_provided(self, flow):
         """CONF_BLE_PROXY is stored when the user supplies a proxy host."""
+        mock_entry = MagicMock()
+        mock_entry.data = {"account_uuid": "test-account-uuid-1234"}
+        flow.hass.config_entries.async_entries.return_value = [mock_entry]
         user_input = {
             CONF_SERIAL_NUMBER: VALID_SERIAL,
             CONF_BLE_MAC: VALID_MAC,

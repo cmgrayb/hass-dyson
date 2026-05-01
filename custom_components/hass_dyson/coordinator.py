@@ -2660,37 +2660,12 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry: Config entry containing ``CONF_SERIAL_NUMBER``,
                 ``CONF_BLE_MAC``, ``CONF_LTK``, and optionally ``CONF_BLE_PROXY``.
         """
-        from .ble_device import DysonBLEDevice
-        from .const import (
-            CONF_BLE_MAC,
-            CONF_BLE_PROXY,
-            CONF_LTK,
-        )
-
         self.serial_number: str = config_entry.data[CONF_SERIAL_NUMBER]
         self.ble_device: DysonBLEDevice | None = None
         self._config_entry = config_entry
         self._unsub_event: Any | None = None
         self._ble_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
-
-        # Build the BLE device from config entry data
-        mac = config_entry.data.get(CONF_BLE_MAC, "")
-        ltk_hex = config_entry.data.get(CONF_LTK, "")
-        ble_proxy = config_entry.data.get(CONF_BLE_PROXY)
-
-        # account_uuid is derived from an HMAC of the instance id (stable, unique)
-        # Resolved lazily in async_setup via ha_instance_id.async_get(hass)
-        import uuid as _uuid
-
-        self.ble_device = DysonBLEDevice(
-            hass=hass,
-            serial_number=self.serial_number,
-            mac_address=mac,
-            ltk_hex=ltk_hex,
-            account_uuid=str(_uuid.UUID(int=0)),  # Placeholder; set during setup
-            ble_proxy=ble_proxy,
-        )
 
         super().__init__(
             hass,
