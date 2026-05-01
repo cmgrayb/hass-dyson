@@ -755,7 +755,7 @@ class DysonBLEDevice:
         iv = payload_b_msg.payload[2:18]
         ct = payload_b_msg.payload[18:50]
         mac = payload_b_msg.payload[50:82]
-        if mac:
+        if len(mac) == 32:
             expected_mac = hmac.new(enc_key, ct, hashlib.sha256).digest()
             if not hmac.compare_digest(mac, expected_mac):
                 raise RuntimeError(
