@@ -356,6 +356,8 @@ def kelvin_to_mired(kelvin: int) -> int:
     Returns:
         Color temperature in mired, rounded to nearest integer.
     """
+    if kelvin <= 0:
+        return round(1_000_000 / BLE_MIN_KELVIN)  # safe default: warmest white
     return round(1_000_000 / kelvin)
 
 
@@ -368,6 +370,8 @@ def mired_to_kelvin(mired: int) -> int:
     Returns:
         Color temperature in Kelvin, clamped to [BLE_MIN_KELVIN, BLE_MAX_KELVIN].
     """
+    if mired <= 0:
+        return BLE_MAX_KELVIN  # safe default: coolest white
     kelvin = round(1_000_000 / mired)
     return max(BLE_MIN_KELVIN, min(BLE_MAX_KELVIN, kelvin))
 
@@ -752,6 +756,12 @@ class DysonBLEDevice:
         #   [50:82] MAC (32 bytes, optional — may be absent on some firmware)
         # We verify the MAC when present for early LTK mismatch detection,
         # then decrypt and take the second 16-byte block as the device challenge.
+        if len(payload_b_msg.payload) < 50:
+            raise RuntimeError(
+                f"PayloadB from {self.serial_number} is too short "
+                f"({len(payload_b_msg.payload)} bytes, need >= 50) — "
+                "possible auth rejection or firmware mismatch"
+            )
         iv = payload_b_msg.payload[2:18]
         ct = payload_b_msg.payload[18:50]
         mac = payload_b_msg.payload[50:82]
