@@ -416,12 +416,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="reauth_failed")
 
         auth_token = getattr(self._cloud_client, "auth_token", None)
-        # Use None (not "") when the API returns no UUID so that the
+        # Use "" (not None) when the API returns no UUID so that the
         # _setup_account_level_entry guard (`is None`) won't re-trigger reauth.
+        # "" is falsy but is NOT None, so the guard only fires for entries where
+        # the key has never been written (get() returns None by default).
         account_uuid: str | None = (
-            self._account_uuid
-            or getattr(self._cloud_client, "account_id", None)
-            or None
+            self._account_uuid or getattr(self._cloud_client, "account_id", None) or ""
         )
         await self._cleanup_cloud_client()
 
