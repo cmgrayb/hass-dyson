@@ -12,6 +12,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
@@ -953,7 +954,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     await self.async_set_unique_id(serial)
                     self._abort_if_unique_id_configured()
-                except Exception:  # noqa: BLE001
+                except AbortFlow:
                     errors[CONF_SERIAL_NUMBER] = "already_configured"
 
             if not errors:
