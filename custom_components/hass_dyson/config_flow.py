@@ -18,6 +18,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
+    BLE_LTK_FALLBACK_CODE,
     BLE_SERVICE_UUID,
     CONF_AUTO_ADD_DEVICES,
     CONF_BLE_MAC,
@@ -1096,7 +1097,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "https://api.dyson.com",
             "https://linkapp-api.dyson.com",
         ]
-        api_auth_code = "80541406"
+        api_auth_code = BLE_LTK_FALLBACK_CODE
         ssl_ctx = ssl.create_default_context()
 
         for base_url in base_urls:
