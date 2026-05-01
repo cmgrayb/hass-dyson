@@ -2767,11 +2767,10 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Start the BLE connection task
         self._stop_event.clear()
-        self._ble_task = asyncio.ensure_future(
+        self._ble_task = self.hass.async_create_task(
             self._ble_lifecycle_task(),
-            loop=self.hass.loop,
+            name=f"dyson-ble-{self.serial_number}",
         )
-        self._ble_task.set_name(f"dyson-ble-{self.serial_number}")
 
     async def async_shutdown(self) -> None:
         """Shut down the BLE coordinator cleanly on config entry unload."""
