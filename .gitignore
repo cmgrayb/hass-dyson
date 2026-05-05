@@ -229,3 +229,6 @@ __marimo__/
 
 # Local development files
 .local/
+
+# VS Code Dev Containers Lock Files
+.devcontainer/devcontainer-lock.json

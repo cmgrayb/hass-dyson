@@ -5,7 +5,9 @@
     "@cmgrayb"
   ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "bluetooth"
+  ],
   "documentation": "https://github.com/cmgrayb/hass-dyson",
   "homekit": {},
   "integration_type": "hub",
@@ -18,5 +20,5 @@
   "requirements": [
     "libdyson-rest==0.12.1"
   ],
-  "version": "0.32.0"
+  "version": "0.33.0"
 }

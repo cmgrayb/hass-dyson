@@ -2097,3 +2097,144 @@ class TestDysonDeviceMQTTCallbacks:
             await device.set_target_temperature(22.0)
 
         # No MQTT client should have been used since device is not connected
+
+
+class TestDysonDeviceMQTTClientId:
+    """Test stable MQTT client ID generation."""
+
+    def test_mqtt_client_id_uses_provided_value(self, mock_hass):
+        """When mqtt_client_id is provided, it is stored on the device."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="SN-ABC-001",
+            host="192.168.1.10",
+            credential="cred",
+            mqtt_client_id="abc123def456ghi7890abcd",
+        )
+        assert device._mqtt_client_id == "abc123def456ghi7890abcd"
+
+    def test_mqtt_client_id_defaults_to_none(self, mock_hass):
+        """When mqtt_client_id is omitted, it defaults to None."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="SN-ABC-001",
+            host="192.168.1.10",
+            credential="cred",
+        )
+        assert device._mqtt_client_id is None
+
+    @pytest.mark.asyncio
+    async def test_attempt_local_connection_uses_provided_client_id(self, mock_hass):
+        """When _mqtt_client_id is set, _attempt_local_connection passes it to paho."""
+        import hashlib
+
+        ha_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        serial = "SN-TEST-001"
+        expected_id = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
+
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number=serial,
+            host="192.168.1.10",
+            credential="cred",
+            mqtt_client_id=expected_id,
+        )
+
+        mock_hass.async_add_executor_job = AsyncMock()
+
+        with (
+            patch.object(device, "_test_network_connectivity", return_value=True),
+            patch.object(device, "_wait_for_connection", return_value=True),
+            patch("paho.mqtt.client.Client") as mock_client_class,
+        ):
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            await device._attempt_local_connection("192.168.1.10", "cred")
+
+        call_kwargs = mock_client_class.call_args
+        assert call_kwargs.kwargs.get("client_id") == expected_id
+
+    @pytest.mark.asyncio
+    async def test_attempt_local_connection_fallback_uses_serial_hash(self, mock_hass):
+        """When _mqtt_client_id is None, fallback is sha256(serial)[:23]."""
+        import hashlib
+
+        serial = "SN-TEST-002"
+        expected_id = hashlib.sha256(serial.encode()).hexdigest()[:23]
+
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number=serial,
+            host="192.168.1.10",
+            credential="cred",
+        )
+
+        mock_hass.async_add_executor_job = AsyncMock()
+
+        with (
+            patch.object(device, "_test_network_connectivity", return_value=True),
+            patch.object(device, "_wait_for_connection", return_value=True),
+            patch("paho.mqtt.client.Client") as mock_client_class,
+        ):
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            await device._attempt_local_connection("192.168.1.10", "cred")
+
+        call_kwargs = mock_client_class.call_args
+        assert call_kwargs.kwargs.get("client_id") == expected_id
+
+    @pytest.mark.asyncio
+    async def test_attempt_local_connection_fallback_is_deterministic(self, mock_hass):
+        """Fallback client ID is deterministic: same serial always yields same ID."""
+        import hashlib
+
+        serial = "SN-DETERMINISTIC"
+        expected_id = hashlib.sha256(serial.encode()).hexdigest()[:23]
+
+        ids = []
+        for _ in range(3):
+            device = DysonDevice(
+                hass=mock_hass,
+                serial_number=serial,
+                host="192.168.1.10",
+                credential="cred",
+            )
+            mock_hass.async_add_executor_job = AsyncMock()
+            with (
+                patch.object(device, "_test_network_connectivity", return_value=True),
+                patch.object(device, "_wait_for_connection", return_value=True),
+                patch("paho.mqtt.client.Client") as mock_client_class,
+            ):
+                mock_client = MagicMock()
+                mock_client_class.return_value = mock_client
+                await device._attempt_local_connection("192.168.1.10", "cred")
+            ids.append(mock_client_class.call_args.kwargs.get("client_id"))
+
+        assert ids[0] == ids[1] == ids[2] == expected_id
+
+    @pytest.mark.asyncio
+    async def test_attempt_local_connection_client_id_length_within_mqtt31_limit(
+        self, mock_hass
+    ):
+        """Client ID must be at most 23 chars (MQTT 3.1 broker limit)."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="SN-LENGTH-TEST",
+            host="192.168.1.10",
+            credential="cred",
+        )
+
+        mock_hass.async_add_executor_job = AsyncMock()
+
+        with (
+            patch.object(device, "_test_network_connectivity", return_value=True),
+            patch.object(device, "_wait_for_connection", return_value=True),
+            patch("paho.mqtt.client.Client") as mock_client_class,
+        ):
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+            await device._attempt_local_connection("192.168.1.10", "cred")
+
+        client_id = mock_client_class.call_args.kwargs.get("client_id")
+        assert client_id is not None
+        assert len(client_id) <= 23

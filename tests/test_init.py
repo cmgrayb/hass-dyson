@@ -237,9 +237,43 @@ class TestInitModule:
             with pytest.raises(ConfigEntryNotReady):
                 await async_setup_entry(mock_hass, mock_config_entry)
 
-    # NOTE: Automatic removal of unsupported devices is tested in integration tests
-    # Unit testing requires HA test harness. See test_coordinator_error_handling.py
-    # for validation that UnsupportedDeviceError is raised correctly.
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_unsupported_device_schedules_removal(
+        self, mock_hass, mock_config_entry
+    ):
+        """Test that UnsupportedDeviceError schedules removal via async_create_task.
+
+        Regression test for issue #336: directly awaiting async_remove from within
+        async_setup_entry deadlocks because both paths try to acquire entry.setup_lock.
+        The fix schedules removal as a background task so it runs after the lock is
+        released.
+        """
+        from custom_components.hass_dyson.const import UnsupportedDeviceError
+
+        mock_hass.config_entries.async_get_entry = MagicMock(
+            return_value=mock_config_entry
+        )
+        mock_hass.config_entries.async_remove = AsyncMock()
+
+        with patch(
+            "custom_components.hass_dyson.DysonDataUpdateCoordinator"
+        ) as mock_coordinator_class:
+            mock_coordinator = MagicMock()
+            mock_coordinator_class.return_value = mock_coordinator
+            mock_coordinator.async_config_entry_first_refresh = AsyncMock(
+                side_effect=UnsupportedDeviceError("no MQTT support")
+            )
+
+            result = await async_setup_entry(mock_hass, mock_config_entry)
+
+        # Setup must return False (not raise, not deadlock)
+        assert result is False
+
+        # Removal must be scheduled as a task, NOT directly awaited
+        mock_hass.async_create_task.assert_called_once()
+
+        # async_remove must NOT have been called synchronously during setup
+        mock_hass.config_entries.async_remove.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_async_unload_entry(self, mock_hass, mock_config_entry):

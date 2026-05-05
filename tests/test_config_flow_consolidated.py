@@ -528,13 +528,13 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
         connected_config.mqtt = mqtt_obj
         standard_device.connected_configuration = connected_config
 
-        # Mock device without MQTT credentials (unsupported)
+        # Mock BLE-only device (lecOnly) — supported via BLE path, not MQTT
         lec_only_device = MagicMock()
         lec_only_device.name = "LEC Only Device"
         lec_only_device.connection_category = "lecOnly"
         lec_only_device.serial_number = "LEC456"
         lec_only_device.product_type = "999"
-        # No connected_configuration
+        # No connected_configuration — BLE-only devices don't have MQTT
         lec_only_device.connected_configuration = None
 
         config_flow_with_client._cloud_client.get_devices.return_value = [
@@ -549,8 +549,8 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
         # The flow proceeds to cloud_preferences after filtering devices
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "cloud_preferences"
-        # The device count should reflect filtering (1 supported device)
-        assert result["description_placeholders"]["device_count"] == "1"
+        # Both the MQTT device and the lecOnly BLE device are supported — device_count is 2
+        assert result["description_placeholders"]["device_count"] == "2"
 
     @pytest.mark.asyncio
     async def test_supported_connectivity_type_inclusion(self, config_flow_with_client):
@@ -615,8 +615,9 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
             # Supported devices (with MQTT)
             create_device_with_mqtt("Device 1", "D1", "475", None),
             create_device_with_mqtt("Device 2", "D2", "527", "standard"),
-            # Unsupported devices (no MQTT)
+            # Supported via BLE path (lecOnly) — no MQTT but still supported
             create_device_without_mqtt("Device 3", "D3", "999", "lecOnly"),
+            # Truly unsupported — no MQTT and no lecOnly connection_category
             create_device_without_mqtt("Device 4", "D4", "888", None),
         ]
 
@@ -629,16 +630,23 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
         # Should proceed to cloud_preferences after filtering
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "cloud_preferences"
-        # Should show 2 supported devices (only those with MQTT credentials)
-        assert result["description_placeholders"]["device_count"] == "2"
+        # 3 supported: D1 (MQTT), D2 (MQTT), D3 (lecOnly BLE); D4 filtered out
+        assert result["description_placeholders"]["device_count"] == "3"
 
     @pytest.mark.asyncio
     async def test_no_supported_devices_available(self, config_flow_with_client):
-        """Test behavior when no devices with MQTT credentials are available."""
-        # Mock device without MQTT credentials
+        """Test behavior when no supported devices are found on the account.
+
+        A device is unsupported if it has neither MQTT credentials nor a
+        lecOnly connection_category (e.g. a cloud-only device with no local
+        connectivity — connection_category is None and no MQTT config).
+        """
+        # Mock a device that is truly unsupported:
+        # - no connection_category (not lecOnly)
+        # - no MQTT connected_configuration
         unsupported_device = MagicMock()
         unsupported_device.name = "Unsupported Device"
-        unsupported_device.connection_category = "lecOnly"
+        unsupported_device.connection_category = None  # not lecOnly
         unsupported_device.serial_number = "UNS123"
         unsupported_device.product_type = "999"
         unsupported_device.connected_configuration = None
@@ -655,6 +663,85 @@ class TestDysonConfigFlowConnectivityTypeFiltering:
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "cloud_preferences"
         assert result["description_placeholders"]["device_count"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_lec_only_account_succeeds(self, config_flow_with_client):
+        """Test that a cloud account containing only lecOnly BLE devices can be added.
+
+        Reproduces the bug reported in issue #175 where accounts with no MQTT
+        devices caused cloud account creation to fail with 'no_supported_devices'.
+        lecOnly devices are supported via the BLE Light config flow and must be
+        accepted here so the account entry can be created.
+        """
+        lec_device_1 = MagicMock()
+        lec_device_1.name = "Dyson Lightcycle Morph"
+        lec_device_1.connection_category = "lecOnly"
+        lec_device_1.serial_number = "CD06-GB-ABC1234A"
+        lec_device_1.product_type = "CD06"
+        lec_device_1.connected_configuration = None  # No MQTT — BLE-only
+
+        lec_device_2 = MagicMock()
+        lec_device_2.name = "Dyson Lightcycle Morph Desk"
+        lec_device_2.connection_category = "lecOnly"
+        lec_device_2.serial_number = "CF06-GB-XYZ5678B"
+        lec_device_2.product_type = "CF06"
+        lec_device_2.connected_configuration = None
+
+        config_flow_with_client._cloud_client.get_devices.return_value = [
+            lec_device_1,
+            lec_device_2,
+        ]
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_connection(user_input)
+
+        # Account with only lecOnly devices must NOT be rejected with no_supported_devices.
+        # It should proceed to cloud_preferences with both devices counted.
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "cloud_preferences"
+        assert result["description_placeholders"]["device_count"] == "2"
+
+    @pytest.mark.asyncio
+    async def test_lec_only_enum_connection_category(self, config_flow_with_client):
+        """Test that lecOnly is recognised even when connection_category is an enum.
+
+        libdyson_rest may return a ConnectionCategory enum rather than a plain
+        string.  The integration must normalise it via .value before comparing.
+        """
+
+        class FakeConnectionCategory:
+            """Minimal stand-in for libdyson_rest ConnectionCategory enum."""
+
+            LEC_ONLY = None  # will be set below
+
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+            def __eq__(self, other):
+                if isinstance(other, FakeConnectionCategory):
+                    return self.value == other.value
+                return self.value == other
+
+        lec_enum = FakeConnectionCategory("lecOnly")
+
+        lec_device = MagicMock()
+        lec_device.name = "Dyson Lightcycle Morph"
+        lec_device.connection_category = lec_enum  # enum, not a plain string
+        lec_device.serial_number = "CD06-GB-ABC1234A"
+        lec_device.product_type = "CD06"
+        lec_device.connected_configuration = None
+
+        config_flow_with_client._cloud_client.get_devices.return_value = [lec_device]
+
+        user_input = {"connection_type": "local_cloud_fallback"}
+
+        result = await config_flow_with_client.async_step_connection(user_input)
+
+        # The enum value must be unwrapped — device should be accepted
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "cloud_preferences"
+        assert result["description_placeholders"]["device_count"] == "1"
 
     @pytest.mark.asyncio
     async def test_flrc_device_without_mqtt_filtered(self, config_flow_with_client):

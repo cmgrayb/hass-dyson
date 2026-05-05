@@ -80,14 +80,19 @@ class TestBinarySensorPlatformSetup:
     async def test_async_setup_entry_minimal_sensors_for_unsupported_device(
         self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
     ):
-        """Test setup creates minimal sensors for unsupported device types."""
+        """Test setup creates no sensors for unrecognised device types without capabilities.
+
+        Devices that are not EC (air purifier), robot, vacuum, etc. and have no
+        capabilities get no binary sensor entities — filter replacement is only
+        added for EC-category devices and fault sensors only for known categories.
+        """
         # Arrange
         mock_add_entities = MagicMock()
         pure_mock_hass.data[DOMAIN] = {
             pure_mock_config_entry.entry_id: pure_mock_coordinator
         }
 
-        # Configure device as unknown type with no capabilities (should have minimal sensors)
+        # Configure device as unknown type with no capabilities
         pure_mock_coordinator.device_category = "other"
         pure_mock_coordinator.device_capabilities = []
 
@@ -96,20 +101,55 @@ class TestBinarySensorPlatformSetup:
             pure_mock_hass, pure_mock_config_entry, mock_add_entities
         )
 
-        # Assert
+        # Assert — setup is called but no entities are created for this device type
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
-        # Should at least have filter replacement sensor
-        assert len(entities) >= 1
+        # No filter replacement (not EC), no fault sensors (unknown category)
+        assert len(entities) == 0
 
-        # Check filter replacement sensor is always included
+        # Filter replacement must NOT be present for a non-EC device
         filter_sensors = [
             e
             for e in entities
             if hasattr(e, "_attr_translation_key")
             and e._attr_translation_key == "filter_replacement"
         ]
-        assert len(filter_sensors) == 1
+        assert len(filter_sensors) == 0
+
+    @pytest.mark.asyncio
+    async def test_filter_replacement_excluded_for_light_devices(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        """Test filter replacement sensor is NOT created for light-category devices.
+
+        The Dyson Solarcycle Morph (floor lamp) has no air filter, so the
+        filter replacement sensor must not appear for DEVICE_CATEGORY_LIGHT.
+        """
+        # Arrange
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+
+        # Simulate a light device (Solarcycle Morph, Lightcycle Morph, etc.)
+        pure_mock_coordinator.device_category = "light"
+        pure_mock_coordinator.device_capabilities = []
+
+        # Act
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        # Assert — no filter replacement sensor for a light device
+        mock_add_entities.assert_called_once()
+        entities = mock_add_entities.call_args[0][0]
+        filter_sensors = [
+            e
+            for e in entities
+            if hasattr(e, "_attr_translation_key")
+            and e._attr_translation_key == "filter_replacement"
+        ]
+        assert len(filter_sensors) == 0
 
     @pytest.mark.asyncio
     async def test_async_setup_entry_robot_device_fault_sensors(
@@ -638,3 +678,109 @@ class TestBinarySensorIntegration:
         # State should have changed
         assert third_state != first_state
         assert third_state is False
+
+
+# ── DysonMotionBinarySensor ───────────────────────────────────────────────────
+
+
+class TestDysonMotionBinarySensor:
+    """Tests for the BLE motion binary sensor."""
+
+    def _make_sensor(self, data=None):
+        """Construct DysonMotionBinarySensor bypassing CoordinatorEntity.__init__."""
+        from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+        from custom_components.hass_dyson.binary_sensor import DysonMotionBinarySensor
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEDataUpdateCoordinator,
+        )
+
+        coordinator = MagicMock(spec=DysonBLEDataUpdateCoordinator)
+        coordinator.serial_number = "CD06-GB-HAA0001A"
+        coordinator.is_connected = True
+        coordinator.last_update_success = True
+        coordinator.data = (
+            data
+            if data is not None
+            else {
+                "power": True,
+                "motion_detected": False,
+            }
+        )
+
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr(CoordinatorEntity, "__init__", lambda s, c: None)
+            sensor = DysonMotionBinarySensor.__new__(DysonMotionBinarySensor)
+            sensor.coordinator = coordinator
+            sensor._attr_unique_id = f"{coordinator.serial_number}_motion"
+            sensor._attr_name = "Motion"
+
+        return sensor
+
+    def test_is_on_false_when_no_motion(self):
+        """is_on returns False when motion_detected is False."""
+        sensor = self._make_sensor(data={"motion_detected": False})
+        assert sensor.is_on is False
+
+    def test_is_on_true_when_motion_detected(self):
+        """is_on returns True when motion_detected is True."""
+        sensor = self._make_sensor(data={"motion_detected": True})
+        assert sensor.is_on is True
+
+    def test_is_on_none_when_no_data(self):
+        """is_on returns None when coordinator has no data."""
+        sensor = self._make_sensor()
+        sensor.coordinator.data = None
+        assert sensor.is_on is None
+
+    def test_device_class_is_motion(self):
+        """Device class is BinarySensorDeviceClass.MOTION."""
+        from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+
+        sensor = self._make_sensor()
+        assert sensor._attr_device_class == BinarySensorDeviceClass.MOTION
+
+    def test_unique_id_includes_serial_motion(self):
+        """Unique ID is serial + '_motion'."""
+        sensor = self._make_sensor()
+        assert sensor._attr_unique_id == "CD06-GB-HAA0001A_motion"
+
+    def test_motion_false_missing_key(self):
+        """is_on returns False when motion_detected key is absent."""
+        sensor = self._make_sensor(data={"power": True})
+        assert sensor.is_on is False
+
+
+class TestBLEBinarySensorSetup:
+    """Tests for async_setup_entry branching for BLE devices."""
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_ble_creates_motion_sensor(
+        self, pure_mock_hass, mock_ble_coordinator, mock_ble_config_entry
+    ):
+        """For BLE entries, async_setup_entry creates a DysonMotionBinarySensor."""
+        from unittest.mock import MagicMock
+
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonMotionBinarySensor,
+            async_setup_entry,
+        )
+        from custom_components.hass_dyson.const import DOMAIN
+
+        pure_mock_hass.data = {
+            DOMAIN: {
+                mock_ble_config_entry.entry_id: {
+                    "ble_coordinator": mock_ble_coordinator,
+                    "is_ble": True,
+                }
+            }
+        }
+        add_entities = MagicMock()
+        result = await async_setup_entry(
+            pure_mock_hass, mock_ble_config_entry, add_entities
+        )
+        assert result is True
+        add_entities.assert_called_once()
+        entities = add_entities.call_args[0][0]
+        assert len(entities) == 1
+        assert isinstance(entities[0], DysonMotionBinarySensor)

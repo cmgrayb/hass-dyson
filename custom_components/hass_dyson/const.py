@@ -72,6 +72,7 @@ SUPPORTED_DEVICE_CATEGORIES: Final = [
     DEVICE_CATEGORY_ROBOT,
     DEVICE_CATEGORY_VACUUM,
     DEVICE_CATEGORY_FLRC,
+    DEVICE_CATEGORY_LIGHT,
 ]
 
 # Available device categories for manual device setup
@@ -80,6 +81,7 @@ AVAILABLE_DEVICE_CATEGORIES: Final = {
     DEVICE_CATEGORY_ROBOT: "Robot Vacuum (self-piloting cleaning devices)",
     DEVICE_CATEGORY_VACUUM: "Vacuum Cleaner (suction cleaning devices)",
     DEVICE_CATEGORY_FLRC: "Floor Cleaner (mopping and floor cleaning devices)",
+    DEVICE_CATEGORY_LIGHT: "Light (BLE-only desk/floor lamps, e.g. Lightcycle Morph)",
 }
 
 # Device capabilities
@@ -313,6 +315,7 @@ SERVICE_GET_CLOUD_DEVICES: Final = "get_cloud_devices"
 
 # Event types
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
+EVENT_BLE_STATE_CHANGE: Final = "dyson_ble_state_change"
 
 # Fault code translations
 # Based on Dyson device fault codes - only non-OK values represent actual faults
@@ -586,3 +589,75 @@ CAPABILITY_FAULT_CODES: Final = {
         "etwd",  # Unknown humidifier fault
     ],
 }
+
+# ── BLE Light Constants ────────────────────────────────────────────────────────
+# GATT service and characteristic UUIDs for Dyson BLE lights (Lightcycle Morph
+# CD06).  UUID base: 2dd1xxxx-1c37-452d-8979-d1b4a787d0a4
+# Source: reverse-engineered by S-Termi (discussion #334, authorized for inclusion).
+
+# Primary GATT service
+BLE_SERVICE_UUID: Final = "2dd10010-1c37-452d-8979-d1b4a787d0a4"
+
+# Auth/messaging channel — write + notify; framed Dyson protocol messages
+BLE_AUTH_CHAR_UUID: Final = "2dd10011-1c37-452d-8979-d1b4a787d0a4"
+
+# RSSI proximity probe — 1-byte signed notify (used during fresh pairing only)
+BLE_RSSI_CHAR_UUID: Final = "2dd10013-1c37-452d-8979-d1b4a787d0a4"
+
+# Light control characteristics
+BLE_BRIGHTNESS_UUID: Final = "2dd11000-1c37-452d-8979-d1b4a787d0a4"  # 1 byte, 0-100 %
+BLE_COLOR_TEMP_UUID: Final = "2dd11001-1c37-452d-8979-d1b4a787d0a4"  # uint16 LE, Kelvin
+BLE_POWER_UUID: Final = "2dd11005-1c37-452d-8979-d1b4a787d0a4"  # 1 byte: 0=off, 1=on
+
+# Runtime / diagnostic characteristics (partially decoded)
+BLE_CHAR_11006_UUID: Final = (
+    "2dd11006-1c37-452d-8979-d1b4a787d0a4"  # scheduled-light flags
+)
+BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # ambient sensor
+BLE_CHAR_11009_UUID: Final = "2dd11009-1c37-452d-8979-d1b4a787d0a4"  # runtime flags
+
+# Motion detection characteristic — notify; non-zero payload = motion detected
+BLE_MOTION_UUID: Final = "2dd11008-1c37-452d-8979-d1b4a787d0a4"
+
+# Additional probe UUIDs read post-auth during device discovery
+BLE_CHAR_11004_UUID: Final = "2dd11004-1c37-452d-8979-d1b4a787d0a4"
+BLE_CHAR_10021_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
+
+# BLE message type constants (logical message type byte on char 11011)
+# Fresh pairing flow (requires physical button press — one-time operation)
+BLE_MSG_TYPE_AUTH_PAYLOAD_A: Final = 0x01  # → lamp: PayloadA (apiAuthCode)
+BLE_MSG_TYPE_AUTH_PAYLOAD_B: Final = 0x02  # ← lamp: PayloadB
+BLE_MSG_TYPE_AUTH_PAYLOAD_3: Final = 0x03  # → lamp: Payload3 (final verify)
+BLE_MSG_TYPE_HELLO: Final = 0x04  # → lamp: start fresh pairing
+BLE_MSG_TYPE_UNIQUE_PRODUCT_CODE: Final = 0x05  # ← lamp: 32-byte unique code
+BLE_MSG_TYPE_SEND_API_RAN_NUM: Final = 0x09  # → lamp: apiRanNum nonce
+BLE_MSG_TYPE_SUBSCRIBE_RSSI: Final = 0x0C  # → lamp: RSSI proximity probe
+BLE_MSG_TYPE_USER_CONFIRMED: Final = 0x0D  # ← lamp: Flash button pressed
+
+# LTK re-auth flow (silent reconnect — no button, no cloud call)
+BLE_MSG_TYPE_REAUTH_PAYLOAD_A: Final = 0x06  # → lamp: 82-byte challenge
+BLE_MSG_TYPE_REAUTH_PAYLOAD_B: Final = 0x07  # ← lamp: challenge response
+BLE_MSG_TYPE_REAUTH_PAYLOAD_C: Final = 0x08  # → lamp: 66-byte reply
+
+# Product info exchange
+BLE_MSG_TYPE_REQUEST_PRODUCT_INFO: Final = 0x0A  # → lamp: request info
+BLE_MSG_TYPE_PRODUCT_INFO: Final = 0x0B  # ← lamp: firmware/hardware info
+
+# Shared
+BLE_MSG_TYPE_CONNECTION_ESTABLISHED: Final = 0x26  # ← lamp: auth complete
+
+# BLE crypto constants
+# HKDF info string used to derive the AES key from the LTK
+BLE_HKDF_INFO: Final = b"USER_AUTH_AES\x00\x00\x00"
+
+# Hardcoded Dyson LTK auth fallback code (observed across multiple accounts)
+BLE_LTK_FALLBACK_CODE: Final = "80541406"
+
+# BLE color temperature limits (Kelvin)
+BLE_MIN_KELVIN: Final = 2700  # warmest (≈ 370 mired)
+BLE_MAX_KELVIN: Final = 6500  # coolest (≈ 154 mired)
+
+# BLE configuration keys (stored in config entry data)
+CONF_BLE_MAC: Final = "ble_mac"  # BLE MAC address (e.g. AA:BB:CC:DD:EE:FF)
+CONF_LTK: Final = "ltk"  # Long Term Key hex string (obtained via cloud pairing)
+CONF_BLE_PROXY: Final = "ble_proxy"  # Optional: pinned Bluetooth proxy host

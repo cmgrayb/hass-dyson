@@ -1339,3 +1339,146 @@ class TestCoordinatorErrorHandling:
 
             with pytest.raises(UpdateFailed, match="Unknown discovery method"):
                 await coordinator._async_setup_device()
+
+
+class TestCoordinatorMQTTClientId:
+    """Test that the coordinator computes and passes the stable MQTT client ID."""
+
+    @pytest.mark.asyncio
+    async def test_create_cloud_device_passes_mqtt_client_id(self):
+        """_create_cloud_device passes a 23-char sha256(ha_uuid+serial) client ID."""
+        import hashlib
+
+        ha_uuid = "11111111-2222-3333-4444-555555555555"
+        serial = "TEST-CLOUD-001"
+        expected_id = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            mock_hass = MagicMock()
+            coordinator.hass = mock_hass
+            mock_config_entry = MagicMock()
+            mock_config_entry.data = {CONF_SERIAL_NUMBER: serial}
+            coordinator.config_entry = mock_config_entry
+            coordinator._device_capabilities = []
+            coordinator._device_category = ["fan"]
+            coordinator._firmware_version = "Unknown"
+
+            mock_device = MagicMock()
+
+            with (
+                patch(
+                    "custom_components.hass_dyson.coordinator.ha_instance_id.async_get",
+                    return_value=ha_uuid,
+                ),
+                patch(
+                    "custom_components.hass_dyson.device.DysonDevice",
+                    return_value=mock_device,
+                ) as mock_device_class,
+            ):
+                mock_device.connect = AsyncMock(return_value=True)
+                mock_device.add_environmental_callback = MagicMock()
+                mock_device.add_message_callback = MagicMock()
+                coordinator.device = None
+
+                with patch.object(
+                    coordinator, "_refine_capabilities_from_device_state", AsyncMock()
+                ):
+                    await coordinator._create_cloud_device(
+                        device_info=MagicMock(),
+                        mqtt_credentials={
+                            "mqtt_password": "pw",
+                        },
+                        cloud_credentials={
+                            "cloud_host": None,
+                            "cloud_credentials": {},
+                        },
+                    )
+
+            _, kwargs = mock_device_class.call_args
+            assert kwargs.get("mqtt_client_id") == expected_id
+            assert len(kwargs["mqtt_client_id"]) == 23
+
+    @pytest.mark.asyncio
+    async def test_async_setup_manual_device_passes_mqtt_client_id(self):
+        """_async_setup_manual_device passes a 23-char sha256(ha_uuid+serial) client ID."""
+        import hashlib
+
+        ha_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        serial = "TEST-MANUAL-001"
+        expected_id = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            mock_hass = MagicMock()
+            coordinator.hass = mock_hass
+            coordinator._device_capabilities = []
+            coordinator._device_category = ["fan"]
+
+            mock_config_entry = MagicMock()
+            mock_config_entry.data = {
+                CONF_SERIAL_NUMBER: serial,
+                CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL,
+                CONF_CREDENTIAL: "test_cred",
+                "mqtt_prefix": "475",
+                "hostname": "192.168.1.50",
+                "device_category": ["fan"],
+                "capabilities": [],
+                "device_type": "438",
+            }
+            coordinator.config_entry = mock_config_entry
+
+            mock_device = MagicMock()
+
+            with (
+                patch(
+                    "custom_components.hass_dyson.coordinator.ha_instance_id.async_get",
+                    return_value=ha_uuid,
+                ),
+                patch(
+                    "custom_components.hass_dyson.coordinator.DysonDevice",
+                    return_value=mock_device,
+                ) as mock_device_class,
+            ):
+                mock_device.connect = AsyncMock(return_value=True)
+                mock_device.set_firmware_version = MagicMock()
+                mock_device.add_environmental_callback = MagicMock()
+                mock_device.add_message_callback = MagicMock()
+                coordinator.device = None
+
+                await coordinator._async_setup_manual_device()
+
+            _, kwargs = mock_device_class.call_args
+            assert kwargs.get("mqtt_client_id") == expected_id
+            assert len(kwargs["mqtt_client_id"]) == 23
+
+    def test_mqtt_client_id_unique_per_ha_instance(self):
+        """Different HA instance UUIDs produce different client IDs for the same device."""
+        import hashlib
+
+        serial = "SHARED-DEVICE-001"
+        ha_uuid_a = "aaaaaaaa-0000-0000-0000-000000000001"
+        ha_uuid_b = "bbbbbbbb-0000-0000-0000-000000000002"
+
+        id_a = hashlib.sha256(f"{ha_uuid_a}{serial}".encode()).hexdigest()[:23]
+        id_b = hashlib.sha256(f"{ha_uuid_b}{serial}".encode()).hexdigest()[:23]
+
+        assert id_a != id_b
+        assert len(id_a) == 23
+        assert len(id_b) == 23
+
+    def test_mqtt_client_id_stable_across_restarts(self):
+        """Same HA UUID + serial always produces the same client ID."""
+        import hashlib
+
+        serial = "STABLE-DEVICE-001"
+        ha_uuid = "12345678-abcd-ef01-2345-6789abcdef01"
+        expected = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
+
+        for _ in range(5):
+            result = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
+            assert result == expected
