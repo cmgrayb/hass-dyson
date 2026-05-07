@@ -2746,9 +2746,11 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ble_proxy or "none (will use local BT adapter)",
         )
 
-        # Start the BLE connection task
+        # Start the BLE connection task as a *background* task so it does not
+        # block HA's startup/bootstrap phase.  async_create_task() registers
+        # the task as a setup dependency; async_create_background_task() does not.
         self._stop_event.clear()
-        self._ble_task = self.hass.async_create_task(
+        self._ble_task = self.hass.async_create_background_task(
             self._ble_lifecycle_task(),
             name=f"dyson-ble-{self.serial_number}",
         )
