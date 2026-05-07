@@ -457,6 +457,7 @@ class DysonBLEDevice:
         self._assembler = DysonFragmentAssembler()
         self._message_queue: asyncio.Queue[DysonMessage] = asyncio.Queue()
         self._lock = asyncio.Lock()
+        self._consecutive_poll_failures: int = 0  # reset on successful GATT read
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -801,10 +802,15 @@ class DysonBLEDevice:
 
     # ── GATT state read / subscribe ───────────────────────────────────────────
 
-    async def _read_initial_state(self) -> None:
-        """Read current values from all light control characteristics."""
+    async def _read_initial_state(self) -> bool:
+        """Read current values from all light control characteristics.
+
+        Returns:
+            ``True`` if all primary characteristics were read successfully,
+            ``False`` if a GATT error or timeout occurred.
+        """
         if self._client is None:
-            return
+            return False
 
         try:
             power_raw = bytes(await self._client.read_gatt_char(BLE_POWER_UUID))
@@ -849,6 +855,8 @@ class DysonBLEDevice:
             _LOGGER.warning(
                 "Failed to read initial state from %s: %s", self.serial_number, exc
             )
+            return False
+        return True
 
     async def _subscribe_notifications(self) -> None:
         """Subscribe to notify characteristics for real-time updates."""
@@ -1000,8 +1008,20 @@ class DysonBLEDevice:
                 self.serial_number,
             )
 
-            # Read initial state and subscribe to runtime notifications
-            await self._read_initial_state()
+            # Read initial state and subscribe to runtime notifications.
+            # If GATT reads fail here (e.g. proxy not ready), disconnect and
+            # let the lifecycle task retry with backoff rather than reporting
+            # a false "connected" state.
+            if not await self._read_initial_state():
+                _LOGGER.warning(
+                    "Initial GATT state read failed for %s — disconnecting to retry",
+                    self.serial_number,
+                )
+                self.state.authenticated = False
+                await self._disconnect_client()
+                raise RuntimeError(
+                    f"Initial GATT state read failed for {self.serial_number}"
+                )
             await self._subscribe_notifications()
             self._fire_state_change()
 
@@ -1116,12 +1136,34 @@ class DysonBLEDevice:
     async def poll_state(self) -> None:
         """Read current device state and fire an update event.
 
-        Used by the keepalive loop in the coordinator.
+        Used by the keepalive loop in the coordinator.  After
+        ``_MAX_CONSECUTIVE_POLL_FAILURES`` consecutive GATT-read timeouts the
+        client is forcibly disconnected so the lifecycle task can apply
+        backoff and reconnect, preventing the device from being stuck in a
+        "connected but unreadable" state indefinitely.
         """
+        _MAX_CONSECUTIVE_POLL_FAILURES = 3
         if not self.is_connected:
             return
         async with self._lock:
-            await self._read_initial_state()
+            success = await self._read_initial_state()
+            if success:
+                self._consecutive_poll_failures = 0
+            else:
+                self._consecutive_poll_failures += 1
+                _LOGGER.warning(
+                    "BLE device %s: GATT poll failure %d/%d — %s",
+                    self.serial_number,
+                    self._consecutive_poll_failures,
+                    _MAX_CONSECUTIVE_POLL_FAILURES,
+                    "forcing disconnect to trigger reconnect"
+                    if self._consecutive_poll_failures >= _MAX_CONSECUTIVE_POLL_FAILURES
+                    else "will retry",
+                )
+                if self._consecutive_poll_failures >= _MAX_CONSECUTIVE_POLL_FAILURES:
+                    self._consecutive_poll_failures = 0
+                    await self._disconnect_client()
+                    return
             self._fire_state_change()
 
     @property
