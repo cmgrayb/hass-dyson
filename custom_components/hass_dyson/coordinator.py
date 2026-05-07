@@ -54,6 +54,7 @@ from .const import (
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
+    MQTT_CMD_REQUEST_ENVIRONMENT,
     UnsupportedDeviceError,
 )
 from .device import DysonDevice
@@ -1639,16 +1640,28 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "Initial refresh for device %s with environmental capability - requesting state",
                         self.serial_number,
                     )
-                    # Request current state - this triggers both CURRENT-STATE and ENVIRONMENTAL-CURRENT-SENSOR-DATA
+                    # Request current state - newer devices respond with both CURRENT-STATE
+                    # and a separate ENVIRONMENTAL-CURRENT-SENSOR-DATA message automatically.
+                    # Older devices (e.g. TP04) embed environmental data in the CURRENT-STATE
+                    # message itself but do NOT send the separate environmental message.
                     await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
 
-                    # Wait for both messages to arrive
+                    # Wait for CURRENT-STATE (and ENVIRONMENTAL-CURRENT-SENSOR-DATA if sent automatically)
                     # Typical timing: CURRENT-STATE at ~140ms, ENVIRONMENTAL-CURRENT-SENSOR-DATA at ~250ms
-                    import asyncio
+                    await asyncio.sleep(0.5)
 
-                    await asyncio.sleep(
-                        0.5
-                    )  # 500ms should be sufficient for both messages
+                    # Check whether _environmental_data was populated by an automatic
+                    # ENVIRONMENTAL-CURRENT-SENSOR-DATA response.  If not, the device
+                    # does not include it automatically (older firmware), so request it
+                    # explicitly so sensor entities can be set up correctly.
+                    if not self.device.get_environmental_data():
+                        _LOGGER.debug(
+                            "Device %s did not return environmental data with CURRENT-STATE - "
+                            "requesting explicitly (older device firmware)",
+                            self.serial_number,
+                        )
+                        await self.device.send_command(MQTT_CMD_REQUEST_ENVIRONMENT)
+                        await asyncio.sleep(0.5)
 
                     _LOGGER.debug(
                         "Completed wait for initial state messages from %s",
