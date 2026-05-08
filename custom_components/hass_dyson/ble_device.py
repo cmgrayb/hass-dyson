@@ -743,7 +743,7 @@ class DysonBLEDevice:
 
         _LOGGER.debug("Waiting for PayloadB (0x07) from %s", self.serial_number)
         payload_b_msg = await self._wait_for_type(
-            BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=20.0
+            BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=30.0
         )
         _LOGGER.debug(
             "PayloadB received from %s (%d bytes)",
@@ -788,7 +788,7 @@ class DysonBLEDevice:
         _LOGGER.debug(
             "Waiting for Connection Established (0x26) from %s", self.serial_number
         )
-        await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=20.0)
+        await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=30.0)
         _LOGGER.info("BLE LTK re-auth successful for %s", self.serial_number)
 
     def _parse_product_info(self, payload: bytes) -> None:
@@ -1062,8 +1062,10 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False
             )
-            await asyncio.sleep(0.2)
-            await self._read_initial_state()
+            # Update state optimistically from the written value.
+            # GATT reads via a BLE proxy can take several seconds each;
+            # BLE notifications will keep state current.
+            self.state.power = on
             self._fire_state_change()
 
     async def set_brightness(self, ha_brightness: int) -> None:
@@ -1082,8 +1084,11 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 BLE_BRIGHTNESS_UUID, bytes([raw]), response=False
             )
-            await asyncio.sleep(0.2)
-            await self._read_initial_state()
+            # Update state optimistically from the written value.
+            # GATT reads via a BLE proxy can take several seconds each;
+            # BLE notifications will keep state current.
+            self.state.brightness_raw = raw
+            self.state.brightness = raw_to_ha_brightness(raw)
             self._fire_state_change()
 
     async def set_color_temp_kelvin(self, kelvin: int) -> None:
@@ -1104,8 +1109,11 @@ class DysonBLEDevice:
                 kelvin_clamped.to_bytes(2, byteorder="little"),
                 response=False,
             )
-            await asyncio.sleep(0.2)
-            await self._read_initial_state()
+            # Update state optimistically from the written value.
+            # GATT reads via a BLE proxy can take several seconds each;
+            # BLE notifications will keep state current.
+            self.state.color_temp_kelvin = kelvin_clamped
+            self.state.color_temp_mired = kelvin_to_mired(kelvin_clamped)
             self._fire_state_change()
 
     async def set_color_temp_mired(self, mired: int) -> None:
