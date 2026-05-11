@@ -2073,6 +2073,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.serial_number,
                     )
 
+            if "ffoc" in product_state:
+                # Device has focus/diffuse mode state key (older HP02-type devices)
+                if "FocusMode" not in self._device_capabilities:
+                    self._device_capabilities.append("FocusMode")
+                    _LOGGER.debug(
+                        "Device %s supports focus/diffuse mode ('ffoc' key found) - capability added",
+                        self.serial_number,
+                    )
+            else:
+                # Device doesn't have focus mode state key, remove capability if present
+                if "FocusMode" in self._device_capabilities:
+                    self._device_capabilities.remove("FocusMode")
+                    _LOGGER.debug(
+                        "Device %s does not support focus/diffuse mode ('ffoc' key not found) - capability removed",
+                        self.serial_number,
+                    )
+
             # Detect HP02 power control type immediately from CURRENT-STATE response
             # This provides instant detection instead of waiting for STATE-CHANGE messages
             # HP02 devices use fmod for power control and don't have fpwr key

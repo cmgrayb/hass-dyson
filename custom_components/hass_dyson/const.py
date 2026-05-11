@@ -95,6 +95,7 @@ CAPABILITY_HEATING: Final = "Heating"
 CAPABILITY_FORMALDEHYDE: Final = "Formaldehyde"
 CAPABILITY_VOC: Final = "VOC"
 CAPABILITY_HUMIDIFIER: Final = "Humidifier"
+CAPABILITY_FOCUS_MODE: Final = "FocusMode"
 
 # Available capabilities for manual device setup
 AVAILABLE_CAPABILITIES: Final = {

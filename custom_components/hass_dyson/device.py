@@ -3342,6 +3342,21 @@ class DysonDevice:
             self.serial_number,
         )
 
+    async def set_focus_mode(self, enabled: bool) -> None:
+        """Set focus/diffuse airflow mode (older HP02-type devices only).
+
+        Args:
+            enabled: True for focused beam airflow, False for diffuse airflow
+        """
+        value = "ON" if enabled else "OFF"
+        await self.send_command("STATE-SET", {"ffoc": value})
+
+        _LOGGER.debug(
+            "Set focus mode to %s for %s",
+            value,
+            self.serial_number,
+        )
+
     async def set_fan_state(self, state: str) -> None:
         """Set fan state.
 
