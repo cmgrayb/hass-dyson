@@ -502,6 +502,45 @@ class DysonBLEDevice:
         self.state.motion_detected = motion
         self._fire_state_change()
 
+    def _on_power_notification(self, _characteristic: Any, data: bytearray) -> None:
+        """Handle notification from the power characteristic.
+
+        Called when the lamp reports a power-state change (e.g. physical button
+        press).  Updates cached state and fires to HA entities.
+        """
+        raw = bytes(data)
+        self.state.power = bool(raw and raw[0] != 0)
+        self._fire_state_change()
+
+    def _on_brightness_notification(
+        self, _characteristic: Any, data: bytearray
+    ) -> None:
+        """Handle notification from the brightness characteristic.
+
+        Called when the lamp reports a brightness change from its physical
+        controls.  Updates cached state and fires to HA entities.
+        """
+        raw = bytes(data)
+        if raw:
+            self.state.brightness_raw = raw[0]
+            self.state.brightness = raw_to_ha_brightness(raw[0])
+            self._fire_state_change()
+
+    def _on_color_temp_notification(
+        self, _characteristic: Any, data: bytearray
+    ) -> None:
+        """Handle notification from the color temperature characteristic.
+
+        Called when the lamp reports a color-temperature change from its
+        physical controls.  Updates cached state and fires to HA entities.
+        """
+        raw = bytes(data)
+        if len(raw) >= 2:  # noqa: PLR2004
+            kelvin = int.from_bytes(raw[:2], byteorder="little")
+            self.state.color_temp_kelvin = kelvin
+            self.state.color_temp_mired = kelvin_to_mired(kelvin)
+            self._fire_state_change()
+
     def _on_runtime_notification(self, short_id: str):
         """Return a notify handler for a runtime diagnostic characteristic."""
 
@@ -635,6 +674,12 @@ class DysonBLEDevice:
                         self.serial_number,
                         disconnected_callback=self._on_bleak_disconnect,
                         max_attempts=4,
+                        # Cache the service collection after the first successful
+                        # connection so reconnects skip GATT service discovery.
+                        # Discovery involves many GATT reads that can hit the BLE
+                        # proxy's 10-second timeout under the default esp32_ble_tracker
+                        # scan parameters (window=30ms, interval=320ms).
+                        use_services_cache=True,
                     )
                     _LOGGER.info(
                         "BLE connection to %s established via bleak_retry_connector",
@@ -804,60 +849,87 @@ class DysonBLEDevice:
     async def _read_initial_state(self) -> None:
         """Read current values from all light control characteristics.
 
-        Best-effort: logs a warning on failure but does not raise, so the
-        caller can proceed and let BLE notifications keep state current.
+        Each characteristic is read independently so that a proxy timeout on
+        one does not prevent the others from being read.  Best-effort: logs
+        debug messages on failure and does not raise.
+
+        With the default esp32_ble_tracker scan parameters (window=30ms /
+        interval=320ms), any individual GATT read may time out through a BLE
+        proxy.  Isolating each read limits the worst-case delay to one timeout
+        (≤10 s) per characteristic rather than aborting all reads on the first
+        failure.
         """
         if self._client is None:
             return
 
+        # Power
         try:
             power_raw = bytes(await self._client.read_gatt_char(BLE_POWER_UUID))
-            brightness_raw_bytes = bytes(
+            self.state.power = bool(power_raw and power_raw[0] != 0)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not read power state from %s: %s", self.serial_number, exc
+            )
+
+        # Brightness
+        try:
+            brightness_raw = bytes(
                 await self._client.read_gatt_char(BLE_BRIGHTNESS_UUID)
             )
+            if brightness_raw:
+                self.state.brightness_raw = brightness_raw[0]
+                self.state.brightness = raw_to_ha_brightness(brightness_raw[0])
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not read brightness from %s: %s", self.serial_number, exc
+            )
+
+        # Color temperature
+        try:
             color_temp_raw = bytes(
                 await self._client.read_gatt_char(BLE_COLOR_TEMP_UUID)
             )
-
-            power_on = bool(power_raw and power_raw[0] != 0)
-            brightness_percent = brightness_raw_bytes[0] if brightness_raw_bytes else 0
-            color_temp_kelvin = (
-                int.from_bytes(color_temp_raw, byteorder="little")
-                if color_temp_raw
-                else None
-            )
-
-            self.state.power = power_on
-            self.state.brightness_raw = brightness_percent
-            self.state.brightness = raw_to_ha_brightness(brightness_percent)
-            self.state.color_temp_kelvin = color_temp_kelvin
-            self.state.color_temp_mired = (
-                kelvin_to_mired(color_temp_kelvin)
-                if color_temp_kelvin and color_temp_kelvin > 0
-                else None
-            )
-
-            # Read diagnostic chars (best-effort)
-            for short_id, uuid in (
-                ("11006", BLE_CHAR_11006_UUID),
-                ("11007", BLE_CHAR_11007_UUID),
-                ("11009", BLE_CHAR_11009_UUID),
-            ):
-                try:
-                    raw = bytes(await self._client.read_gatt_char(uuid))
-                    setattr(self.state, f"char_{short_id}_hex", raw.hex())
-                except Exception:  # noqa: BLE001
-                    pass
-
+            if len(color_temp_raw) >= 2:  # noqa: PLR2004
+                kelvin = int.from_bytes(color_temp_raw[:2], byteorder="little")
+                self.state.color_temp_kelvin = kelvin
+                self.state.color_temp_mired = (
+                    kelvin_to_mired(kelvin) if kelvin > 0 else None
+                )
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning(
-                "Failed to read initial state from %s: %s", self.serial_number, exc
+            _LOGGER.debug(
+                "Could not read color temperature from %s: %s",
+                self.serial_number,
+                exc,
             )
 
     async def _subscribe_notifications(self) -> None:
         """Subscribe to notify characteristics for real-time updates."""
         if self._client is None:
             return
+
+        # Light-control characteristics: power, brightness, color temperature.
+        # The Dyson lamp firmware may or may not set the NOTIFY property on these
+        # characteristics.  We try to subscribe; if the characteristic doesn't
+        # support notifications we catch the exception silently.  When
+        # subscriptions succeed, physical-button changes on the lamp are reflected
+        # in HA in real time and we avoid periodic GATT reads for state refresh.
+        for uuid, handler, name in (
+            (BLE_POWER_UUID, self._on_power_notification, "power"),
+            (BLE_BRIGHTNESS_UUID, self._on_brightness_notification, "brightness"),
+            (BLE_COLOR_TEMP_UUID, self._on_color_temp_notification, "color_temp"),
+        ):
+            try:
+                await self._client.start_notify(uuid, handler)
+                _LOGGER.debug(
+                    "Subscribed to %s notifications for %s", name, self.serial_number
+                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "%s characteristic does not support notifications for %s "
+                    "(state will be read once at connect and updated optimistically)",
+                    name,
+                    self.serial_number,
+                )
 
         # Motion notifications (most important — drives binary sensor)
         try:
