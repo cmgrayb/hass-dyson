@@ -74,6 +74,14 @@ _RECONNECT_DELAYS = [5, 15, 30, 60]
 # Keepalive poll interval in seconds
 _KEEPALIVE_INTERVAL = 20.0
 
+# Maximum auth handshake attempts before giving up on a connection.
+# Each attempt resends PayloadA (0x06) with a fresh nonce and waits for
+# PayloadB (0x07).  With low-duty-cycle BLE scan windows (e.g. the
+# esp32_ble_tracker default of 30ms), PayloadB packets are sometimes dropped
+# in transit through the proxy; retrying gives the device a chance to
+# regenerate and retransmit without a full reconnect.
+_MAX_AUTH_ATTEMPTS = 3
+
 
 # ── Dyson Message Framing ─────────────────────────────────────────────────────
 
@@ -605,13 +613,24 @@ class DysonBLEDevice:
                     continue  # Still connected — keep waiting
                 if msg.type_id == type_id:
                     return msg
-                _LOGGER.warning(
+                # Log at debug for known unsolicited types (e.g. 0x0B product-info
+                # push can arrive late if it was delayed by the BLE proxy past the
+                # earlier product-info wait timeout).  Warn for truly unexpected types.
+                log_fn = (
+                    _LOGGER.debug
+                    if msg.type_id == BLE_MSG_TYPE_PRODUCT_INFO
+                    else _LOGGER.warning
+                )
+                log_fn(
                     "Unexpected BLE message type 0x%02X received while waiting for "
-                    "0x%02X from %s — possible rejection or error response from device",
+                    "0x%02X from %s — discarding and continuing",
                     msg.type_id,
                     type_id,
                     self.serial_number,
                 )
+                if msg.type_id == BLE_MSG_TYPE_PRODUCT_INFO:
+                    # Parse it opportunistically so firmware info stays current.
+                    self._parse_product_info(msg.payload)
                 # Wrong type — discard and wait for the next message
                 get_task = asyncio.ensure_future(self._message_queue.get())
         finally:
@@ -758,7 +777,6 @@ class DysonBLEDevice:
         )
         ltk = bytes.fromhex(self._ltk_hex)
         enc_key = hkdf_derive_aes_key(ltk)
-        nonce = os.urandom(16)
 
         # Request product info first (matches observed app behaviour)
         _LOGGER.debug("Requesting product info from %s", self.serial_number)
@@ -781,15 +799,47 @@ class DysonBLEDevice:
                 self.serial_number,
             )
 
-        # Challenge-response
-        _LOGGER.debug("Sending PayloadA (0x06) to %s", self.serial_number)
-        payload_a = build_reauth_payload_a(self._account_uuid, enc_key, nonce)
-        await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_A, payload_a)
+        # Challenge-response — retry PayloadA if PayloadB is dropped by the proxy.
+        # Under the default esp32_ble_tracker scan window (30ms / 320ms interval)
+        # the proxy is idle ~91% of the time; a single PayloadB packet can be lost
+        # silently.  Resending PayloadA causes the device to regenerate PayloadB
+        # without requiring a full GATT reconnect.
+        payload_b_msg: DysonMessage | None = None
+        for auth_attempt in range(1, _MAX_AUTH_ATTEMPTS + 1):
+            nonce = os.urandom(16)  # fresh nonce per attempt
+            payload_a = build_reauth_payload_a(self._account_uuid, enc_key, nonce)
+            _LOGGER.debug(
+                "Sending PayloadA (0x06) to %s (attempt %d/%d)",
+                self.serial_number,
+                auth_attempt,
+                _MAX_AUTH_ATTEMPTS,
+            )
+            await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_A, payload_a)
 
-        _LOGGER.debug("Waiting for PayloadB (0x07) from %s", self.serial_number)
-        payload_b_msg = await self._wait_for_type(
-            BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=30.0
-        )
+            _LOGGER.debug(
+                "Waiting for PayloadB (0x07) from %s (attempt %d/%d)",
+                self.serial_number,
+                auth_attempt,
+                _MAX_AUTH_ATTEMPTS,
+            )
+            try:
+                payload_b_msg = await self._wait_for_type(
+                    BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=30.0
+                )
+                break  # Received PayloadB — proceed with auth
+            except TimeoutError:
+                if auth_attempt < _MAX_AUTH_ATTEMPTS:
+                    _LOGGER.warning(
+                        "PayloadB timeout for %s on attempt %d/%d — "
+                        "resending PayloadA (BLE packet may have been dropped by proxy)",
+                        self.serial_number,
+                        auth_attempt,
+                        _MAX_AUTH_ATTEMPTS,
+                    )
+                else:
+                    raise  # All attempts exhausted — propagate original error
+
+        assert payload_b_msg is not None  # loop always breaks or raises
         _LOGGER.debug(
             "PayloadB received from %s (%d bytes)",
             self.serial_number,
