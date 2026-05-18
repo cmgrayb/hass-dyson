@@ -28,6 +28,11 @@ def tilt_coordinator():
     coordinator = Mock()
     coordinator.serial_number = "664-EU-ABC1234A"
     coordinator.device_name = "Bedroom"
+    # config_entry.data is read by select.py's Vis Nav-detection fallback
+    # (device_name lookup); without this it's a bare Mock and the `in` check
+    # blows up with `argument of type 'Mock' is not a container`.
+    coordinator.config_entry = Mock()
+    coordinator.config_entry.data = {"device_name": "Bedroom"}
     coordinator.device = Mock()
     coordinator.device_capabilities = [
         "Scheduling",

@@ -47,6 +47,7 @@ def mock_coordinator_robot():
     # Mock robot command methods
     coordinator.device.robot_pause = AsyncMock()
     coordinator.device.robot_resume = AsyncMock()
+    coordinator.device.robot_start_clean = AsyncMock()
     coordinator.device.robot_abort = AsyncMock()
     coordinator.device.robot_request_state = AsyncMock()
 
@@ -128,10 +129,13 @@ class TestDysonVacuumEntity:
         assert entity._attr_has_entity_name is True
 
         # Check supported features - battery monitoring moved to separate sensor
-        # to comply with Home Assistant deprecation (HA 2026.8)
+        # to comply with Home Assistant deprecation (HA 2026.8).
+        # START + RETURN_HOME added when zone-cleaning support landed.
         expected_features = (
-            VacuumEntityFeature.PAUSE
+            VacuumEntityFeature.START
+            | VacuumEntityFeature.PAUSE
             | VacuumEntityFeature.STOP
+            | VacuumEntityFeature.RETURN_HOME
             | VacuumEntityFeature.STATE
         )
         assert entity._attr_supported_features == expected_features
@@ -283,12 +287,32 @@ class TestDysonVacuumEntity:
 
     @pytest.mark.asyncio
     async def test_start_resume(self, mock_coordinator_robot):
-        """Test start/resume command."""
+        """Test start command resumes when the robot is paused mid-clean."""
+        # Set the device to a paused mid-clean state so async_start() takes the
+        # RESUME branch — the START-new-clean branch is covered in
+        # test_start_from_dock_calls_robot_start_clean.
+        mock_coordinator_robot.device.robot_state = "FULL_CLEAN_PAUSED"
         entity = DysonVacuumEntity(mock_coordinator_robot)
 
         await entity.async_start()
 
         mock_coordinator_robot.device.robot_resume.assert_called_once()
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_start_from_dock_calls_robot_start_clean(
+        self, mock_coordinator_robot
+    ):
+        """Test start command begins a new clean when the robot is on the dock."""
+        # INACTIVE_CHARGED is the default in the fixture — set explicitly here
+        # so the test stays correct if the fixture default ever changes.
+        mock_coordinator_robot.device.robot_state = "INACTIVE_CHARGED"
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        await entity.async_start()
+
+        mock_coordinator_robot.device.robot_start_clean.assert_called_once()
+        mock_coordinator_robot.device.robot_resume.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_start_unavailable_device(self, mock_coordinator_robot):
