@@ -191,17 +191,23 @@ SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
     }
 )
 
-# Per-zone behaviour override schema. power_mode: Auto/Quick/Quiet/Boost/Default.
-# cleaning_strategy: auto/quick/deep (cloud accepts other values too).
-_VIS_NAV_POWER_MODES = {
-    "Auto": 1, "Quick": 2, "Quiet": 3, "Boost": 4, "Default": None,
-}
+# Per-zone behaviour override schema.
+# Real endpoint (captured from MyDyson iOS app via mitmproxy):
+#   PUT /v1/app/{serial}/{mapId}/zones/{zoneId}/zone-behaviours
+#   Body: {"cleaningStrategy": "auto" | "quick" | "quiet" | "boost"}
+# (Note: NOT /persistent-maps/{mapId}/.../behaviour as documented by
+# thoukydides/matterbridge-dyson-robot — the path is shorter and the
+# resource is `zone-behaviours` plural.)
+#
+# vacuumPowerMode is present in the persistent-map metadata response but the
+# MyDyson app never writes it — only cleaningStrategy. The named strategies
+# correspond to the same 4 power modes as the global Vis Nav power select.
+_ZONE_CLEANING_STRATEGIES = ("auto", "quick", "quiet", "boost")
 SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA = vol.Schema(
     {
         vol.Required("device_id"): str,
         vol.Required("zone"): vol.All(str, vol.Length(min=1)),
-        vol.Optional("power_mode"): vol.In(list(_VIS_NAV_POWER_MODES.keys())),
-        vol.Optional("cleaning_strategy"): vol.In(["auto", "quick", "deep"]),
+        vol.Required("cleaning_strategy"): vol.In(_ZONE_CLEANING_STRATEGIES),
     }
 )
 
@@ -745,20 +751,20 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
 
 
 async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> None:
-    """PUT a zone's vacuumPowerMode / cleaningStrategy override on the cloud.
+    """PUT a zone's cleaningStrategy override on the cloud.
 
-    Endpoint: /v1/app/{serial}/persistent-maps/{mapId}/zones/{zoneId}/behaviour
-    Discovered via thoukydides/matterbridge-dyson-robot setZoneBehaviour360().
+    Endpoint (captured from MyDyson iOS app via mitmproxy):
+      PUT /v1/app/{serial}/{mapId}/zones/{zoneId}/zone-behaviours
+      Body: {"cleaningStrategy": "auto" | "quick" | "quiet" | "boost"}
+
+    The path documented in thoukydides/matterbridge-dyson-robot
+    (`persistent-maps/{mapId}/zones/{zoneId}/behaviour`) returns 404 — the
+    real path drops the `persistent-maps/` segment and uses the plural
+    resource `zone-behaviours`.
     """
     device_id = call.data["device_id"]
     zone_in = str(call.data["zone"]).strip()
-    power_mode_label = call.data.get("power_mode")
-    cleaning_strategy = call.data.get("cleaning_strategy")
-
-    if not power_mode_label and not cleaning_strategy:
-        raise ServiceValidationError(
-            "Provide at least one of: power_mode, cleaning_strategy"
-        )
+    cleaning_strategy = call.data["cleaning_strategy"]
 
     coordinator = await _get_coordinator_from_device_id(hass, device_id)
     if not coordinator:
@@ -786,22 +792,6 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
             f"{sorted(z['name'] for z in pmap.get('zones', []))}"
         )
 
-    # Build the behaviour payload. We always send a complete zoneBehaviours
-    # block — fields we're not changing get the existing cached value.
-    existing_behaviours = {
-        "vacuumPowerMode": None,
-        "cleaningStrategy": "auto",
-    }
-    for zp in pmap.get("zoneProperties") or []:
-        if zone_id in (str(z) for z in (zp.get("zones") or [])):
-            existing_behaviours.update(zp.get("zoneBehaviours") or {})
-            break
-
-    if power_mode_label:
-        existing_behaviours["vacuumPowerMode"] = _VIS_NAV_POWER_MODES[power_mode_label]
-    if cleaning_strategy:
-        existing_behaviours["cleaningStrategy"] = cleaning_strategy
-
     auth_token = coordinator.config_entry.data.get("auth_token")
     if not auth_token:
         raise HomeAssistantError(
@@ -810,15 +800,17 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
 
     url = (
         f"https://appapi.cp.dyson.com/v1/app/{coordinator.serial_number}"
-        f"/persistent-maps/{pmap_id}/zones/{zone_id}/behaviour"
+        f"/{pmap_id}/zones/{zone_id}/zone-behaviours"
     )
     headers = {
         "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "android client",
         "Accept": "application/json",
         "Content-Type": "application/json",
+        "User-Agent": "DysonLink/226342 CFNetwork/3860.600.12 Darwin/25.5.0",
+        "X-Platform": "ios",
+        "X-App-Version": "6.4.26181",
     }
-    body = {"zoneBehaviours": existing_behaviours}
+    body = {"cleaningStrategy": cleaning_strategy}
     timeout = aiohttp.ClientTimeout(total=10)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -836,11 +828,11 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
     # Invalidate map cache so the next read picks up the new behaviour.
     _persistent_map_cache.pop(coordinator.serial_number, None)
     _LOGGER.info(
-        "Set zone behaviour on %s zone %s (%s): %s",
+        "Set zone behaviour on %s zone %s (%s): cleaningStrategy=%s",
         coordinator.serial_number,
         zone_id,
         zone_in,
-        existing_behaviours,
+        cleaning_strategy,
     )
 
 

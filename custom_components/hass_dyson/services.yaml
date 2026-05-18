@@ -144,9 +144,9 @@ start_zone_clean:
 set_zone_behaviour:
   name: Set Zone Behaviour (Vis Nav)
   description: >-
-    Override the power mode and/or cleaning strategy for a specific zone on
-    a Dyson 360 Vis Nav. Persists to Dyson cloud so the override applies on
-    every subsequent clean — same as setting it in the MyDyson app.
+    Override the cleaning strategy for a specific zone on a Dyson 360 Vis Nav.
+    Persists to Dyson cloud so the override applies to every subsequent clean —
+    same as changing the zone's cleaning behaviour in the MyDyson app.
   fields:
     device_id:
       name: Device
@@ -161,25 +161,16 @@ set_zone_behaviour:
       required: true
       selector:
         text:
-    power_mode:
-      name: Power Mode Override
-      description: 'Default uses the robot''s global mode for that zone.'
-      required: false
-      selector:
-        select:
-          options:
-            - Default
-            - Auto
-            - Quick
-            - Quiet
-            - Boost
     cleaning_strategy:
       name: Cleaning Strategy
-      description: ''
-      required: false
+      description: >-
+        Per-zone cleaning strategy. Maps to the same four behaviours as the
+        global Vis Nav power-level select.
+      required: true
       selector:
         select:
           options:
             - auto
             - quick
-            - deep
+            - quiet
+            - boost
