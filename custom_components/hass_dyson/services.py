@@ -217,6 +217,40 @@ def _convert_to_string(item) -> str:
     return str(item)
 
 
+def _mask_email(email: str) -> str:
+    """Partially mask an email address for safe display in sanitized output.
+
+    Shows the first character of the local part and the TLD of the domain,
+    masking all other characters to protect user privacy.
+
+    Args:
+        email: The email address to mask.
+
+    Returns:
+        Partially masked email string, e.g. ``u***@e***.com``.
+        Returns ``***`` if the email is empty or not a valid format.
+
+    Example:
+        >>> _mask_email("user@example.com")
+        'u***@e***.com'
+        >>> _mask_email("a@b.org")
+        'a***@b***.org'
+    """
+    if not email or "@" not in email:
+        return "***"
+
+    local, _, domain = email.partition("@")
+    masked_local = local[0] + "***" if local else "***"
+
+    if "." in domain:
+        domain_name, _, tld = domain.rpartition(".")
+        masked_domain = (domain_name[0] + "***" if domain_name else "***") + "." + tld
+    else:
+        masked_domain = domain[0] + "***" if domain else "***"
+
+    return f"{masked_local}@{masked_domain}"
+
+
 def _decrypt_device_mqtt_credentials(cloud_client, device) -> str:
     """Decrypt MQTT credentials from device's connected_configuration."""
     try:
@@ -677,7 +711,7 @@ async def _handle_get_cloud_devices(
         # Use first coordinator if not specified
         selected_coordinator = cloud_coordinators[0]
 
-    _LOGGER.info(
+    _LOGGER.debug(
         "Retrieving cloud devices for account: %s", selected_coordinator["email"]
     )
 
@@ -687,7 +721,11 @@ async def _handle_get_cloud_devices(
         )
 
         response_data = {
-            "account_email": selected_coordinator["email"],
+            "account_email": (
+                _mask_email(selected_coordinator["email"])
+                if sanitize
+                else selected_coordinator["email"]
+            ),
             "total_devices": len(device_data["devices"]),
             "devices": device_data["devices"],
             "sanitized": sanitize,
@@ -696,7 +734,7 @@ async def _handle_get_cloud_devices(
         if not sanitize:
             response_data["summary"] = device_data["summary"]
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Successfully retrieved %d devices from cloud account %s (sanitized: %s)",
             len(device_data["devices"]),
             selected_coordinator["email"],
