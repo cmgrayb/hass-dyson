@@ -1430,6 +1430,18 @@ async def async_setup_entry(  # noqa: C901
                     entities.append(DysonLastCleanSensor(coordinator, slot=i))
                 entities.append(DysonRecommendedCleanSensor(coordinator))
 
+        # Cloud-fetched purifier sensors (outdoor AQI, daily history,
+        # MyDyson scheduled events). Only for ec-category devices (air
+        # purifiers / heaters / fans with environmental sensing) that have
+        # a usable cloud auth token.
+        if (
+            any(cat == "ec" for cat in device_category)
+            and coordinator.config_entry.data.get("auth_token")
+        ):
+            entities.append(DysonOutdoorAQISensor(coordinator))
+            entities.append(DysonDailyAirQualitySensor(coordinator))
+            entities.append(DysonScheduledEventsSensor(coordinator))
+
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
             len(entities),
@@ -3414,4 +3426,266 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
                 predictions[0]["total_dust_mg"] if predictions else 0
             ),
             "predictions": predictions,
+        }
+
+
+# ============================================================================
+# Cloud-fetched purifier sensors (Master Bedroom Purifier, Guest Room, etc.)
+# ============================================================================
+# Three new sensors driven by REST endpoints discovered via mitmproxy capture
+# of the MyDyson iOS app:
+#   - DysonOutdoorAQISensor:        /v1/environment/devices/{serial}/data
+#   - DysonDailyAirQualitySensor:   /v1/messageprocessor/devices/{serial}/environmentdata/daily
+#   - DysonScheduledEventsSensor:   /v1/unifiedscheduler/{serial}/events
+#
+# Each sensor manages its own in-process cache (TTLs tuned for the underlying
+# data volatility) so multiple polls don't hammer the Dyson cloud.
+
+_outdoor_aqi_cache: dict[str, tuple[float, dict]] = {}
+_OUTDOOR_AQI_TTL_S = 15 * 60          # outdoor aqi updates every ~15 min
+_daily_env_cache: dict[str, tuple[float, dict]] = {}
+_DAILY_ENV_TTL_S = 60 * 60            # daily series only needs an hourly refresh
+_schedule_cache: dict[str, tuple[float, dict]] = {}
+_SCHEDULE_TTL_S = 60 * 60             # schedules rarely change
+
+
+def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
+    """Return the device's productType code (e.g. '438K') for query params.
+
+    Priority: config-entry product_type → device-registry model → None.
+    cmgrayb's manifest extractor often stores 'unknown'; the device registry
+    'model' field carries the real code in that case.
+    """
+    pt = coordinator.config_entry.data.get("product_type")
+    if pt and str(pt).lower() != "unknown":
+        return str(pt)
+    # Fall back to the device-registry model. coordinator doesn't expose this
+    # directly; query the registry through hass if available.
+    try:
+        from homeassistant.helpers import device_registry as dr
+
+        dev_reg = dr.async_get(coordinator.hass)
+        for d in dev_reg.devices.values():
+            if any(
+                idn[0] == DOMAIN and idn[1] == coordinator.serial_number
+                for idn in d.identifiers
+            ):
+                if d.model and str(d.model).lower() not in ("unknown", ""):
+                    return d.model
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+async def _http_get_dyson(coordinator: DysonDataUpdateCoordinator, path: str) -> Any:
+    """Bearer GET to Dyson cloud. Returns parsed JSON, or None on failure."""
+    auth_token = coordinator.config_entry.data.get("auth_token")
+    if not auth_token:
+        return None
+    url = f"https://appapi.cp.dyson.com{path}"
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "Accept": "application/json",
+        "User-Agent": "DysonLink/226342 CFNetwork/3860.600.12 Darwin/25.5.0",
+        "X-Platform": "ios",
+        "X-App-Version": "6.4.26181",
+    }
+    timeout = _aiohttp.ClientTimeout(total=15)
+    try:
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    _LOGGER.debug(
+                        "Dyson cloud GET %s → HTTP %d (silently degrading)",
+                        path, resp.status,
+                    )
+                    return None
+                return await resp.json()
+    except _aiohttp.ClientError as err:
+        _LOGGER.debug("Dyson cloud GET %s failed: %s", path, err)
+        return None
+
+
+class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
+    """Outdoor air-quality at the device's registered location (Tuart Hill etc).
+
+    Source: GET /v1/environment/devices/{serial}/data?language=en-AU
+    Returns Dyson's third-party outdoor AQI feed for the device's location.
+    State = AQI value (1-500 scale); attributes carry PM2.5/PM10/NO2/weather.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_icon = "mdi:weather-windy"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.AQI
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_outdoor_aqi"
+        self._attr_name = "Outdoor AQI"
+
+    async def async_update(self) -> None:
+        import time as _time
+
+        serial = self.coordinator.serial_number
+        now = _time.monotonic()
+        cached = _outdoor_aqi_cache.get(serial)
+        if cached and (now - cached[0]) < _OUTDOOR_AQI_TTL_S:
+            data = cached[1]
+        else:
+            data = await _http_get_dyson(
+                self.coordinator,
+                f"/v1/environment/devices/{serial}/data?language=en-AU",
+            )
+            if isinstance(data, dict):
+                _outdoor_aqi_cache[serial] = (now, data)
+            elif cached:
+                data = cached[1]
+            else:
+                data = None
+
+        if not data:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+
+        self._attr_native_value = data.get("AqiValue")
+        self._attr_extra_state_attributes = {
+            "aqi_name": data.get("AqiName"),
+            "aqi_description": data.get("AqiDescription"),
+            "pm2_5": data.get("Pm25Value"),
+            "pm10": data.get("Pm10Value"),
+            "no2": data.get("No2Value"),
+            "humidity": data.get("Humidity"),
+            "temperature": data.get("Temperature"),
+            "weather_state": data.get("WeatherState"),
+            "location": data.get("LocationName"),
+            "dominant_pollen": data.get("DominantPollen"),
+            "as_of": data.get("DateTime"),
+        }
+
+
+class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
+    """Indoor air-quality series from the device, 15-min resolution.
+
+    Source: GET /v1/messageprocessor/devices/{serial}/environmentdata/daily
+    State = the most recent 15-min AQI sample (effectively "now"). Attributes
+    carry the full series + resolution so dashboards can chart history.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_icon = "mdi:chart-line"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_daily_aqi"
+        self._attr_name = "Indoor AQI (15-min)"
+
+    async def async_update(self) -> None:
+        import time as _time
+
+        serial = self.coordinator.serial_number
+        now = _time.monotonic()
+        cached = _daily_env_cache.get(serial)
+        if cached and (now - cached[0]) < _DAILY_ENV_TTL_S:
+            data = cached[1]
+        else:
+            data = await _http_get_dyson(
+                self.coordinator,
+                f"/v1/messageprocessor/devices/{serial}/environmentdata/daily",
+            )
+            if isinstance(data, dict):
+                _daily_env_cache[serial] = (now, data)
+            elif cached:
+                data = cached[1]
+            else:
+                data = None
+
+        if not data:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+
+        series = data.get("aqlm") or []
+        # The most recent 15-min sample is the last numeric in the series.
+        latest = None
+        for v in reversed(series):
+            if isinstance(v, (int, float)):
+                latest = round(float(v), 1)
+                break
+
+        self._attr_native_value = latest
+        self._attr_extra_state_attributes = {
+            "start_time": data.get("start_time"),
+            "resolution": data.get("resolution"),
+            "sample_count": len(series),
+            "min": round(min((v for v in series if isinstance(v, (int, float))), default=0), 1) if series else None,
+            "max": round(max((v for v in series if isinstance(v, (int, float))), default=0), 1) if series else None,
+            # Keep the last 96 samples (24h at 15min) on the attribute; full
+            # week's worth is too much for entity attributes.
+            "last_24h": [
+                round(float(v), 1) if isinstance(v, (int, float)) else None
+                for v in series[-96:]
+            ],
+        }
+
+
+class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
+    """Read-only view of MyDyson-app scheduled events for this device.
+
+    Source: GET /v1/unifiedscheduler/{serial}/events?productType={code}
+    State = "<N> active" (count of enabled events). Attributes carry the
+    full schedule list including each event's days, startTime, and MQTT
+    state-set payload that Dyson would push at trigger time.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_scheduled_events"
+        self._attr_name = "Scheduled Events"
+
+    async def async_update(self) -> None:
+        import time as _time
+
+        serial = self.coordinator.serial_number
+        now = _time.monotonic()
+        cached = _schedule_cache.get(serial)
+        if cached and (now - cached[0]) < _SCHEDULE_TTL_S:
+            data = cached[1]
+        else:
+            product_type = _device_product_type(self.coordinator) or ""
+            qs = f"?productType={product_type}" if product_type else ""
+            data = await _http_get_dyson(
+                self.coordinator,
+                f"/v1/unifiedscheduler/{serial}/events{qs}",
+            )
+            if isinstance(data, dict):
+                _schedule_cache[serial] = (now, data)
+            elif cached:
+                data = cached[1]
+            else:
+                data = None
+
+        if not data:
+            self._attr_native_value = "unknown"
+            self._attr_extra_state_attributes = {}
+            return
+
+        events = data.get("events") or []
+        enabled_events = [e for e in events if isinstance(e, dict) and e.get("enabled")]
+        self._attr_native_value = (
+            f"{len(enabled_events)} active" if enabled_events
+            else ("0 active" if data.get("enabled") else "disabled")
+        )
+        self._attr_extra_state_attributes = {
+            "schedule_enabled": data.get("enabled"),
+            "event_count": len(events),
+            "events": events,
         }
