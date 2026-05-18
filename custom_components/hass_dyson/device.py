@@ -3218,13 +3218,20 @@ class DysonDevice:
         full_clean_type: str = "immediate",
         cleaning_programme: dict | None = None,
     ) -> None:
-        # Begin a new clean from the dock. Payload mirrors libdyson-neon's
-        # proven START format for the 360 Heurist / Vis Nav family. Use
-        # robot_resume() to continue a paused clean instead.
+        # Begin a new clean from the dock. Use robot_resume() to continue a
+        # paused clean instead.
+        #
+        # Payload structure: START's parameters MUST be top-level siblings of
+        # `msg`/`time`, NOT nested under a `data` key. libdyson-neon's
+        # _send_command and thoukydides/matterbridge-dyson-robot both splat at
+        # top level. Our earlier attempt to wrap them in `data` caused the
+        # device to silently ignore cleaningMode and default to global —
+        # whole-house cleans appeared to work, but zoneConfigured was dropped.
         #
         # cleaning_programme (Vis Nav only): when cleaning_mode is
-        # "zoneConfigured", embed {persistentMapId, orderedZones, unorderedZones}.
-        # The device echoes these fields back on the status topic during the run.
+        # "zoneConfigured", supply {persistentMapId, orderedZones,
+        # unorderedZones, zonesDefinitionLastUpdatedDate}. The device echoes
+        # these fields back on the status topic during the run.
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
@@ -3236,19 +3243,15 @@ class DysonDevice:
             cleaning_programme.get("unorderedZones") if cleaning_programme else None,
         )
 
-        data: dict = {
+        command_data: dict = {
+            "msg": "START",
+            "time": self._get_command_timestamp(),
+            "mode-reason": "LAPP",
             "cleaningMode": cleaning_mode,
             "fullCleanType": full_clean_type,
         }
         if cleaning_programme is not None:
-            data["cleaningProgramme"] = cleaning_programme
-
-        command_data = {
-            "msg": "START",
-            "time": self._get_command_timestamp(),
-            "mode-reason": "LAPP",
-            "data": data,
-        }
+            command_data["cleaningProgramme"] = cleaning_programme
 
         await self._send_robot_command(command_data)
 

@@ -710,11 +710,20 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
             f"Known: {known_names}"
         )
 
+    # IMPORTANT: zonesDefinitionLastUpdatedDate must be included for the
+    # device to honour the zoneConfigured request. Without it, the device
+    # silently downgrades the START to a global (whole-house) clean.
+    # Discovered during live testing — the field appears alongside the
+    # zoneIds in the device's STATE-CHANGE echo when MyDyson triggers a
+    # zone clean.
     cleaning_programme = {
         "persistentMapId": pmap_id,
         "orderedZones": [],
         "unorderedZones": resolved_ids,
     }
+    zdlud = pmap.get("zonesDefinitionLastUpdatedDate")
+    if zdlud:
+        cleaning_programme["zonesDefinitionLastUpdatedDate"] = zdlud
 
     try:
         await coordinator.device.robot_start_clean(
