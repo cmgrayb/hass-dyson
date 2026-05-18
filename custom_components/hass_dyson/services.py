@@ -62,10 +62,8 @@ Example Usage:
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
-import aiohttp
 import voluptuous as vol
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
@@ -74,6 +72,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from libdyson_rest import DysonAPIError, DysonAuthError, DysonConnectionError
 
+from ._cloud import TTLCache, dyson_cloud_get, dyson_cloud_put
 from .const import (
     CONF_COUNTRY,
     CONF_CULTURE,
@@ -613,10 +612,10 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
         ) from err
 
 
-# In-process cache of persistent-map metadata per serial. Refreshed when older
-# than _MAP_CACHE_TTL or when the device reports a newer zonesDefinitionLastUpdatedDate.
-_persistent_map_cache: dict[str, tuple[float, list[dict]]] = {}
-_MAP_CACHE_TTL = 3600  # 1 hour
+# Persistent-map metadata cache per serial (1h TTL — the device reports a
+# newer zonesDefinitionLastUpdatedDate when the map is edited, but for
+# normal use the cache is fine).
+_persistent_map_cache = TTLCache(3600)
 
 
 async def _fetch_persistent_map_metadata(
@@ -627,47 +626,29 @@ async def _fetch_persistent_map_metadata(
     Endpoint: GET /v1/app/{serial}/persistent-map-metadata (Bearer auth).
     Discovered via thoukydides/matterbridge-dyson-robot; not in libdyson-rest.
     Returns list of maps; each has id, name, zones[{id,name,icon,area}], etc.
+
+    Raises HomeAssistantError on hard failures (service callers want the
+    exception surfaced rather than getting an empty list back).
     """
     serial = coordinator.serial_number
-    now = time.monotonic()
-    cached = _persistent_map_cache.get(serial)
-    if cached and (now - cached[0]) < _MAP_CACHE_TTL:
-        return cached[1]
+    fresh = _persistent_map_cache.get(serial)
+    if fresh is not None:
+        return fresh
 
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        raise HomeAssistantError(
-            f"No auth_token on config entry for {serial} — cannot fetch zones"
-        )
-
-    url = f"https://appapi.cp.dyson.com/v1/app/{serial}/persistent-map-metadata"
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "android client",
-        "Accept": "application/json",
-    }
-    timeout = aiohttp.ClientTimeout(total=10)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    raise HomeAssistantError(
-                        f"Persistent-map fetch for {serial} returned HTTP "
-                        f"{resp.status}: {body[:200]}"
-                    )
-                maps = await resp.json()
-    except aiohttp.ClientError as err:
-        raise HomeAssistantError(
-            f"Network error fetching persistent map for {serial}: {err}"
-        ) from err
-
+    maps = await dyson_cloud_get(
+        coordinator, f"/v1/app/{serial}/persistent-map-metadata"
+    )
     if not isinstance(maps, list):
+        stale = _persistent_map_cache.get_stale(serial)
+        if stale is not None:
+            return stale
         raise HomeAssistantError(
-            f"Unexpected persistent-map response for {serial}: {type(maps).__name__}"
+            f"Unable to fetch persistent map for {serial} — "
+            "check Dyson cloud connectivity and that the account has an "
+            "auth_token (re-authenticate the integration if not)"
         )
 
-    _persistent_map_cache[serial] = (now, maps)
+    _persistent_map_cache.set(serial, maps)
     _LOGGER.info(
         "Fetched %d persistent map(s) for %s (%d zones total)",
         len(maps),
@@ -792,41 +773,14 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
             f"{sorted(z['name'] for z in pmap.get('zones', []))}"
         )
 
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        raise HomeAssistantError(
-            f"No auth_token on config entry for {coordinator.serial_number}"
-        )
-
-    url = (
-        f"https://appapi.cp.dyson.com/v1/app/{coordinator.serial_number}"
-        f"/{pmap_id}/zones/{zone_id}/zone-behaviours"
+    await dyson_cloud_put(
+        coordinator,
+        f"/v1/app/{coordinator.serial_number}/{pmap_id}/zones/{zone_id}/zone-behaviours",
+        {"cleaningStrategy": cleaning_strategy},
     )
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "DysonLink/226342 CFNetwork/3860.600.12 Darwin/25.5.0",
-        "X-Platform": "ios",
-        "X-App-Version": "6.4.26181",
-    }
-    body = {"cleaningStrategy": cleaning_strategy}
-    timeout = aiohttp.ClientTimeout(total=10)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.put(url, headers=headers, json=body) as resp:
-                if resp.status not in (200, 204):
-                    text = await resp.text()
-                    raise HomeAssistantError(
-                        f"setZoneBehaviour returned HTTP {resp.status}: {text[:200]}"
-                    )
-    except aiohttp.ClientError as err:
-        raise HomeAssistantError(
-            f"Network error setting zone behaviour: {err}"
-        ) from err
 
     # Invalidate map cache so the next read picks up the new behaviour.
-    _persistent_map_cache.pop(coordinator.serial_number, None)
+    _persistent_map_cache.invalidate(coordinator.serial_number)
     _LOGGER.info(
         "Set zone behaviour on %s zone %s (%s): cleaningStrategy=%s",
         coordinator.serial_number,

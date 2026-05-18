@@ -74,6 +74,7 @@ from .const import (
     CAPABILITY_VOC,
     DOMAIN,
 )
+from ._cloud import TTLCache, dyson_cloud_get, fetch_clean_maps
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -3108,58 +3109,9 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
 # Uses HA's built-in polling (should_poll=True, scan_interval=30min) — independent
 # of the MQTT coordinator since this is REST cloud data.
 
-from datetime import timedelta as _td  # noqa: E402
-
-import aiohttp as _aiohttp  # noqa: E402
-
-from homeassistant.components.sensor import SensorDeviceClass as _SDC  # noqa: E402
-
-# Module-level cache shared across all DysonLastCleanSensor instances per serial.
-# Avoids hammering Dyson cloud — one fetch per ~30 minutes covers all 5 slots.
-_clean_maps_cache: dict[str, tuple[float, list[dict]]] = {}
-_CLEAN_MAPS_TTL_S = 30 * 60  # 30 minutes
-
-
-async def _fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list[dict]:
-    """Fetch the last N cleaning runs (cached). Newest first."""
-    import time as _time
-
-    serial = coordinator.serial_number
-    now = _time.monotonic()
-    cached = _clean_maps_cache.get(serial)
-    if cached and (now - cached[0]) < _CLEAN_MAPS_TTL_S:
-        return cached[1]
-
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        return []
-
-    url = f"https://appapi.cp.dyson.com/v1/{serial}/clean-maps?dustMap=total"
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "android client",
-        "Accept": "application/json",
-    }
-    timeout = _aiohttp.ClientTimeout(total=15)
-    try:
-        async with _aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning(
-                        "clean-maps fetch for %s returned HTTP %d", serial, resp.status
-                    )
-                    return cached[1] if cached else []
-                cleans = await resp.json()
-    except _aiohttp.ClientError as err:
-        _LOGGER.warning("Network error fetching clean-maps for %s: %s", serial, err)
-        return cached[1] if cached else []
-
-    if not isinstance(cleans, list):
-        return cached[1] if cached else []
-    # Sort newest first by start time, defensively (API usually returns newest first already)
-    cleans.sort(key=lambda c: _extract_start_time(c) or "", reverse=True)
-    _clean_maps_cache[serial] = (now, cleans)
-    return cleans
+# Note: the clean-maps endpoint is fetched via the shared `fetch_clean_maps`
+# in _cloud.py so this module and image.py share one cache (the dust-map
+# image consumes the same blob seconds after we do).
 
 
 def _extract_start_time(clean: dict) -> str | None:
@@ -3242,7 +3194,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
 
     coordinator: DysonDataUpdateCoordinator
     _attr_should_poll = True
-    _attr_device_class = _SDC.TIMESTAMP
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
 
     def __init__(
         self, coordinator: DysonDataUpdateCoordinator, slot: int
@@ -3262,7 +3214,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
     async def async_update(self) -> None:
         from datetime import datetime, timezone
 
-        cleans = await _fetch_clean_maps(self.coordinator)
+        cleans = await fetch_clean_maps(self.coordinator)
         if len(cleans) <= self._slot:
             self._attr_native_value = None
             self._attr_extra_state_attributes = {}
@@ -3287,10 +3239,14 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
             try:
                 from .services import _persistent_map_cache
 
-                cached = _persistent_map_cache.get(self.coordinator.serial_number)
-                if cached:
+                maps = _persistent_map_cache.get(self.coordinator.serial_number)
+                if maps is None:
+                    maps = _persistent_map_cache.get_stale(
+                        self.coordinator.serial_number
+                    )
+                if maps:
                     id_to_name: dict[str, str] = {}
-                    for pmap in cached[1]:
+                    for pmap in maps:
                         for z in pmap.get("zones", []):
                             id_to_name[str(z.get("id"))] = str(z.get("name") or z.get("id"))
                     zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
@@ -3315,46 +3271,21 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
 # /v1/app/{serial}/recommended-cleans returns Dyson's suggestion of which
 # zones to clean next based on how long since each was last visited.
 
-_recommended_cleans_cache: dict[str, tuple[float, list]] = {}
-_RECOMMENDED_CLEANS_TTL_S = 30 * 60  # 30 min
+_recommended_cleans_cache = TTLCache(30 * 60)
 
 
 async def _fetch_recommended_cleans(coordinator: DysonDataUpdateCoordinator) -> list:
-    import time as _time
-
     serial = coordinator.serial_number
-    now = _time.monotonic()
-    cached = _recommended_cleans_cache.get(serial)
-    if cached and (now - cached[0]) < _RECOMMENDED_CLEANS_TTL_S:
-        return cached[1]
-
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        return {}
-    url = f"https://appapi.cp.dyson.com/v1/app/{serial}/recommended-cleans"
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "android client",
-        "Accept": "application/json",
-    }
-    timeout = _aiohttp.ClientTimeout(total=15)
-    try:
-        async with _aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    _LOGGER.debug(
-                        "recommended-cleans fetch for %s → HTTP %d", serial, resp.status
-                    )
-                    return cached[1] if cached else {}
-                data = await resp.json()
-    except _aiohttp.ClientError as err:
-        _LOGGER.debug("recommended-cleans fetch for %s failed: %s", serial, err)
-        return cached[1] if cached else {}
-
-    # Endpoint returns a LIST of maps (each with zonePredictions)
+    fresh = _recommended_cleans_cache.get(serial)
+    if fresh is not None:
+        return fresh
+    # Endpoint returns a LIST of maps (each with zonePredictions).
+    data = await dyson_cloud_get(
+        coordinator, f"/v1/app/{serial}/recommended-cleans"
+    )
     if not isinstance(data, list):
-        return cached[1] if cached else []
-    _recommended_cleans_cache[serial] = (now, data)
+        return _recommended_cleans_cache.get_stale(serial) or []
+    _recommended_cleans_cache.set(serial, data)
     return data
 
 
@@ -3376,14 +3307,20 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
 
     async def async_update(self) -> None:
         data = await _fetch_recommended_cleans(self.coordinator)
-        # Cross-reference zone IDs with cached persistent-map names
+        # Cross-reference zone IDs with cached persistent-map names. Use the
+        # stale-cache fallback so we still get friendly names even if the
+        # main metadata TTL has expired since the last fetch.
         id_to_name: dict[str, str] = {}
         try:
             from .services import _persistent_map_cache
 
-            cached = _persistent_map_cache.get(self.coordinator.serial_number)
-            if cached:
-                for pmap in cached[1]:
+            maps = _persistent_map_cache.get(self.coordinator.serial_number)
+            if maps is None:
+                maps = _persistent_map_cache.get_stale(
+                    self.coordinator.serial_number
+                )
+            if maps:
+                for pmap in maps:
                     for z in pmap.get("zones", []):
                         id_to_name[str(z.get("id"))] = str(z.get("name") or z.get("id"))
         except Exception:  # noqa: BLE001
@@ -3441,12 +3378,11 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
 # Each sensor manages its own in-process cache (TTLs tuned for the underlying
 # data volatility) so multiple polls don't hammer the Dyson cloud.
 
-_outdoor_aqi_cache: dict[str, tuple[float, dict]] = {}
-_OUTDOOR_AQI_TTL_S = 15 * 60          # outdoor aqi updates every ~15 min
-_daily_env_cache: dict[str, tuple[float, dict]] = {}
-_DAILY_ENV_TTL_S = 60 * 60            # daily series only needs an hourly refresh
-_schedule_cache: dict[str, tuple[float, dict]] = {}
-_SCHEDULE_TTL_S = 60 * 60             # schedules rarely change
+# TTLs tuned per data volatility — outdoor AQI refreshes every ~15min,
+# the daily series and per-device schedules barely change.
+_outdoor_aqi_cache = TTLCache(15 * 60)
+_daily_env_cache = TTLCache(60 * 60)
+_schedule_cache = TTLCache(60 * 60)
 
 
 def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
@@ -3477,35 +3413,6 @@ def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
     return None
 
 
-async def _http_get_dyson(coordinator: DysonDataUpdateCoordinator, path: str) -> Any:
-    """Bearer GET to Dyson cloud. Returns parsed JSON, or None on failure."""
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        return None
-    url = f"https://appapi.cp.dyson.com{path}"
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "Accept": "application/json",
-        "User-Agent": "DysonLink/226342 CFNetwork/3860.600.12 Darwin/25.5.0",
-        "X-Platform": "ios",
-        "X-App-Version": "6.4.26181",
-    }
-    timeout = _aiohttp.ClientTimeout(total=15)
-    try:
-        async with _aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    _LOGGER.debug(
-                        "Dyson cloud GET %s → HTTP %d (silently degrading)",
-                        path, resp.status,
-                    )
-                    return None
-                return await resp.json()
-    except _aiohttp.ClientError as err:
-        _LOGGER.debug("Dyson cloud GET %s failed: %s", path, err)
-        return None
-
-
 class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
     """Outdoor air-quality at the device's registered location (Tuart Hill etc).
 
@@ -3526,24 +3433,17 @@ class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
         self._attr_name = "Outdoor AQI"
 
     async def async_update(self) -> None:
-        import time as _time
-
         serial = self.coordinator.serial_number
-        now = _time.monotonic()
-        cached = _outdoor_aqi_cache.get(serial)
-        if cached and (now - cached[0]) < _OUTDOOR_AQI_TTL_S:
-            data = cached[1]
-        else:
-            data = await _http_get_dyson(
+        data = _outdoor_aqi_cache.get(serial)
+        if data is None:
+            data = await dyson_cloud_get(
                 self.coordinator,
                 f"/v1/environment/devices/{serial}/data?language=en-AU",
             )
             if isinstance(data, dict):
-                _outdoor_aqi_cache[serial] = (now, data)
-            elif cached:
-                data = cached[1]
+                _outdoor_aqi_cache.set(serial, data)
             else:
-                data = None
+                data = _outdoor_aqi_cache.get_stale(serial)
 
         if not data:
             self._attr_native_value = None
@@ -3585,24 +3485,17 @@ class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
         self._attr_name = "Indoor AQI (15-min)"
 
     async def async_update(self) -> None:
-        import time as _time
-
         serial = self.coordinator.serial_number
-        now = _time.monotonic()
-        cached = _daily_env_cache.get(serial)
-        if cached and (now - cached[0]) < _DAILY_ENV_TTL_S:
-            data = cached[1]
-        else:
-            data = await _http_get_dyson(
+        data = _daily_env_cache.get(serial)
+        if data is None:
+            data = await dyson_cloud_get(
                 self.coordinator,
                 f"/v1/messageprocessor/devices/{serial}/environmentdata/daily",
             )
             if isinstance(data, dict):
-                _daily_env_cache[serial] = (now, data)
-            elif cached:
-                data = cached[1]
+                _daily_env_cache.set(serial, data)
             else:
-                data = None
+                data = _daily_env_cache.get_stale(serial)
 
         if not data:
             self._attr_native_value = None
@@ -3652,26 +3545,19 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
         self._attr_name = "Scheduled Events"
 
     async def async_update(self) -> None:
-        import time as _time
-
         serial = self.coordinator.serial_number
-        now = _time.monotonic()
-        cached = _schedule_cache.get(serial)
-        if cached and (now - cached[0]) < _SCHEDULE_TTL_S:
-            data = cached[1]
-        else:
+        data = _schedule_cache.get(serial)
+        if data is None:
             product_type = _device_product_type(self.coordinator) or ""
             qs = f"?productType={product_type}" if product_type else ""
-            data = await _http_get_dyson(
+            data = await dyson_cloud_get(
                 self.coordinator,
                 f"/v1/unifiedscheduler/{serial}/events{qs}",
             )
             if isinstance(data, dict):
-                _schedule_cache[serial] = (now, data)
-            elif cached:
-                data = cached[1]
+                _schedule_cache.set(serial, data)
             else:
-                data = None
+                data = _schedule_cache.get_stale(serial)
 
         if not data:
             self._attr_native_value = "unknown"

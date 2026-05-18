@@ -17,18 +17,15 @@ from __future__ import annotations
 import base64
 import io
 import logging
-import time
 import zlib
 from datetime import datetime, timezone
-from typing import Any
-
-import aiohttp
 
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from ._cloud import TTLCache, dyson_cloud_get, fetch_clean_maps
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
@@ -86,82 +83,33 @@ async def async_setup_entry(
 
 
 # ----------------------------------------------------------------------------
-# Cloud fetch helpers (module-level caches, shared across image instances)
+# Cloud fetch helpers.
+#
+# Recent cleaning runs (the clean-maps endpoint) are fetched via the SHARED
+# `fetch_clean_maps` in _cloud.py — the cleaning-history sensors in sensor.py
+# read the same blob, so one cache covers both consumers.
+#
+# The single-map endpoint (persistent-maps/{id}) is only consumed here, so
+# the cache stays local. Persistent maps change rarely → generous TTL.
 # ----------------------------------------------------------------------------
 
-_CLEAN_MAPS_TTL_S = 30 * 60   # 30 minutes
-_PERSIST_MAP_TTL_S = 6 * 3600  # 6 hours
-_clean_maps_cache: dict[str, tuple[float, list[dict]]] = {}
-_persist_map_cache: dict[str, tuple[float, dict]] = {}
-
-
-async def _fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list[dict]:
-    serial = coordinator.serial_number
-    now = time.monotonic()
-    cached = _clean_maps_cache.get(serial)
-    if cached and (now - cached[0]) < _CLEAN_MAPS_TTL_S:
-        return cached[1]
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        return []
-    url = f"https://appapi.cp.dyson.com/v1/{serial}/clean-maps?dustMap=total"
-    data = await _http_get_json(url, auth_token)
-    if isinstance(data, list):
-        # newest-first defensive sort
-        data.sort(
-            key=lambda c: (
-                min(
-                    (e.get("time") for e in (c.get("cleanTimeline") or []) if e.get("time")),
-                    default="",
-                )
-            ),
-            reverse=True,
-        )
-        _clean_maps_cache[serial] = (now, data)
-        return data
-    return cached[1] if cached else []
+_persist_map_cache = TTLCache(6 * 3600)
 
 
 async def _fetch_persist_map(
     coordinator: DysonDataUpdateCoordinator, map_id: str
 ) -> dict:
-    serial = coordinator.serial_number
-    key = f"{serial}:{map_id}"
-    now = time.monotonic()
-    cached = _persist_map_cache.get(key)
-    if cached and (now - cached[0]) < _PERSIST_MAP_TTL_S:
-        return cached[1]
-    auth_token = coordinator.config_entry.data.get("auth_token")
-    if not auth_token:
-        return {}
-    url = f"https://appapi.cp.dyson.com/v1/app/{serial}/persistent-maps/{map_id}"
-    data = await _http_get_json(url, auth_token)
-    if isinstance(data, dict):
-        _persist_map_cache[key] = (now, data)
-        return data
-    return cached[1] if cached else {}
-
-
-async def _http_get_json(url: str, auth_token: str) -> Any:
-    """GET an auth'd JSON endpoint. Returns parsed JSON or None on failure."""
-    headers = {
-        "Authorization": f"Bearer {auth_token}",
-        "User-Agent": "android client",
-        "Accept": "application/json",
-    }
-    timeout = aiohttp.ClientTimeout(total=20)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning(
-                        "Dyson cloud GET %s → HTTP %d", url, resp.status
-                    )
-                    return None
-                return await resp.json()
-    except aiohttp.ClientError as err:
-        _LOGGER.warning("Dyson cloud GET %s failed: %s", url, err)
-        return None
+    key = f"{coordinator.serial_number}:{map_id}"
+    fresh = _persist_map_cache.get(key)
+    if fresh is not None:
+        return fresh
+    data = await dyson_cloud_get(
+        coordinator, f"/v1/app/{coordinator.serial_number}/persistent-maps/{map_id}"
+    )
+    if not isinstance(data, dict):
+        return _persist_map_cache.get_stale(key) or {}
+    _persist_map_cache.set(key, data)
+    return data
 
 
 # ----------------------------------------------------------------------------
@@ -372,7 +320,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         self._cached_png: bytes | None = None
 
     async def _build(self) -> bytes | None:
-        cleans = await _fetch_clean_maps(self.coordinator)
+        cleans = await fetch_clean_maps(self.coordinator)
         if not cleans:
             return None
         latest = cleans[0]
@@ -463,7 +411,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         self._cached_png: bytes | None = None
 
     async def _build(self) -> bytes | None:
-        cleans = await _fetch_clean_maps(self.coordinator)
+        cleans = await fetch_clean_maps(self.coordinator)
         if not cleans:
             return None
         persistent = (cleans[0].get("persistentMap") or {})
