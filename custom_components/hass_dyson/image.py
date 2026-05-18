@@ -222,14 +222,20 @@ def _render_dust_map_png(
     cleaned_footprint_png: bytes | None,
     presentation_png: bytes | None,
     rotation_deg: int = 0,
+    map_offset_mm: tuple[float, float] | None = None,
+    clean_position_mm: tuple[float, float] | None = None,
+    map_resolution_mm_per_px: int = 20,
 ) -> bytes | None:
-    """Render the dust-level bitmap as a PNG, overlaying it on the floor plan.
+    """Render the dust map as a PNG, correctly positioned over the floor plan.
 
-    The dust map is a zlib-compressed raw octet bitmap (one byte per pixel,
-    0-255 dust level). We convert to a colour gradient. If a presentation map
-    PNG is supplied, we composite it underneath as a clearly-visible floor
-    plan; the dust overlay rides on top with full opacity for dusty regions
-    and transparent for clean ones.
+    Critical alignment math (ported from matterbridge-dyson-robot map.ts):
+        dust_origin_in_pres_pixels = (cleanMapPosition - mapOffset) / mmPerPixel
+
+    The dust map is a CROP of the world in clean-coordinates, smaller than the
+    presentation map. To overlay it correctly we paste it onto a copy of the
+    presentation map at the computed pixel offset. Just resizing the dust map
+    to the presentation map's dimensions (the old approach) stretched it and
+    made every pixel land in the wrong room.
     """
     try:
         from PIL import Image
@@ -250,14 +256,11 @@ def _render_dust_map_png(
     if len(raw) < width * height:
         _LOGGER.warning(
             "Dust map size mismatch: declared %dx%d but only %d bytes",
-            width,
-            height,
-            len(raw),
+            width, height, len(raw),
         )
         return None
 
-    # Build the dust heatmap as RGBA. Zero dust → transparent so the floor plan
-    # background shows through.
+    # Build the dust heatmap as RGBA in its native (clean-coordinate) space.
     rgba = bytearray(width * height * 4)
     n_levels = len(_DUST_GRADIENT_RGB)
     for i in range(width * height):
@@ -271,26 +274,44 @@ def _render_dust_map_png(
         rgba[i * 4] = r
         rgba[i * 4 + 1] = g
         rgba[i * 4 + 2] = b
-        rgba[i * 4 + 3] = 200  # slightly transparent so floor plan shows through
+        rgba[i * 4 + 3] = 220
     dust_img = Image.frombytes("RGBA", (width, height), bytes(rgba))
-    dust_img = _apply_orientation(dust_img, rotation_deg)
 
-    # Floor-plan background — recoloured for clarity, sized to match dust map
-    composite = dust_img
-    if presentation_png:
+    # No floor plan → render dust map alone with orientation
+    if not presentation_png:
+        composite = _apply_orientation(dust_img, rotation_deg)
+    else:
         try:
             bg = _palette_from_floor_plan(presentation_png)
-            bg = _apply_orientation(bg, rotation_deg)
-            if bg.size != dust_img.size:
-                bg = bg.resize(dust_img.size, resample=Image.NEAREST)
-            composite = Image.alpha_composite(bg, dust_img)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Presentation map overlay skipped: %s", err)
+            _LOGGER.debug("Floor plan palette failed: %s", err)
+            composite = _apply_orientation(dust_img, rotation_deg)
+        else:
+            # Composite the dust map onto the presentation canvas at the right offset.
+            # Apply orientation AFTER compositing so both layers transform together.
+            if map_offset_mm is not None and clean_position_mm is not None:
+                ox = int(round(
+                    (clean_position_mm[0] - map_offset_mm[0]) / map_resolution_mm_per_px
+                ))
+                oy = int(round(
+                    (clean_position_mm[1] - map_offset_mm[1]) / map_resolution_mm_per_px
+                ))
+            else:
+                # Fallback: centre the dust map on the presentation map
+                ox = max(0, (bg.size[0] - width) // 2)
+                oy = max(0, (bg.size[1] - height) // 2)
 
-    # Scale up small bitmaps for legibility
+            canvas = bg.copy()
+            # Pillow alpha_composite needs a transparent backing the same size.
+            # We use paste with the dust map's own alpha as mask for in-place
+            # compositing at an offset (alpha_composite has no offset variant).
+            canvas.paste(dust_img, (ox, oy), dust_img)
+            composite = _apply_orientation(canvas, rotation_deg)
+
+    # Scale up for legibility
     max_dim = max(composite.size)
-    if max_dim < 600:
-        factor = max(1, 600 // max_dim)
+    if max_dim < 800:
+        factor = max(1, 800 // max_dim)
         composite = composite.resize(
             (composite.size[0] * factor, composite.size[1] * factor),
             resample=Image.NEAREST,
@@ -363,10 +384,19 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if not dust_map:
             return None
 
-        # Fetch presentation map for overlay if persistentMap is referenced.
+        # Coordinate info for correctly positioning the dust crop on the
+        # presentation map. Both maps quote positions in world mm; resolution
+        # is mm/pixel (typically 20 for Vis Nav).
+        resolution_mm_per_px = int(dust_map.get("resolution") or 20)
+        clean_position_mm: tuple[float, float] | None = None
+        map_offset_mm: tuple[float, float] | None = None
+        persistent = latest.get("persistentMap") or {}
+        if "cleanMapPosition" in persistent:
+            cp = persistent["cleanMapPosition"]
+            clean_position_mm = (float(cp.get("x", 0)), float(cp.get("y", 0)))
+
         presentation_png: bytes | None = None
         rotation_deg = 0
-        persistent = latest.get("persistentMap") or {}
         pmap_id = persistent.get("id")
         if pmap_id:
             pmap = await _fetch_persist_map(self.coordinator, pmap_id)
@@ -376,14 +406,15 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                     presentation_png = base64.b64decode(pres)
                 except (ValueError, TypeError):
                     presentation_png = None
-            # persistentMapDisplayOrientation is the rotation in degrees
-            # set by the user in MyDyson when they orient the map.
             rotation_deg = int(
                 (pmap.get("zonesDefinition") or {}).get(
                     "persistentMapDisplayOrientation"
                 )
                 or 0
             )
+            offset = pmap.get("offset") or {}
+            if "x" in offset and "y" in offset:
+                map_offset_mm = (float(offset["x"]), float(offset["y"]))
 
         cleaned_fp_png: bytes | None = None
         fp = (latest.get("cleanedFootprint") or {}).get("data")
@@ -394,7 +425,10 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                 cleaned_fp_png = None
 
         png = _render_dust_map_png(
-            dust_map, cleaned_fp_png, presentation_png, rotation_deg
+            dust_map, cleaned_fp_png, presentation_png, rotation_deg,
+            map_offset_mm=map_offset_mm,
+            clean_position_mm=clean_position_mm,
+            map_resolution_mm_per_px=resolution_mm_per_px,
         )
         if png:
             self._cached_clean_id = clean_id
