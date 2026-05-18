@@ -185,6 +185,8 @@ async def _discover_device_via_mdns(
     """
     from homeassistant.components import zeroconf
 
+    from .device_utils import mask_serial
+
     try:
         # Get Home Assistant's shared zeroconf instance
         zeroconf_instance = await zeroconf.async_get_instance(hass)
@@ -212,7 +214,9 @@ async def _discover_device_via_mdns(
                     pass
 
             except Exception as e:
-                _LOGGER.debug("mDNS discovery error for %s: %s", serial_number, e)
+                _LOGGER.debug(
+                    "mDNS discovery error for %s: %s", mask_serial(serial_number), e
+                )
                 return None
 
         # Run discovery in executor to avoid blocking
@@ -222,7 +226,9 @@ async def _discover_device_via_mdns(
                 timeout=timeout,
             )
         except TimeoutError:
-            _LOGGER.debug("mDNS discovery timeout for device %s", serial_number)
+            _LOGGER.debug(
+                "mDNS discovery timeout for device %s", mask_serial(serial_number)
+            )
             return None
     except Exception as e:
         _LOGGER.debug("Error getting zeroconf instance: %s", e)
@@ -753,6 +759,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any]
     ) -> ConfigFlowResult:
         """Create the manual device entry."""
+        from .device_utils import create_manual_device_config, mask_serial
+
         # Get device information from user input
         serial_number = user_input.get(CONF_SERIAL_NUMBER, "").strip()
         credential = user_input.get(CONF_CREDENTIAL, "").strip()
@@ -764,14 +772,12 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )  # Default to Environment Cleaner list
         capabilities = user_input.get("capabilities", [])
 
-        _LOGGER.info("Manual setup for device: %s", serial_number)
+        _LOGGER.info("Manual setup for device: %s", mask_serial(serial_number))
 
         # Determine hostname: use provided value or discover via mDNS
         hostname = await self._resolve_device_hostname(serial_number, hostname)
 
         # Create the device entry with manual discovery method
-        from .device_utils import create_manual_device_config
-
         config_data = create_manual_device_config(
             serial_number=serial_number,
             credential=credential,
@@ -1142,6 +1148,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         import re
 
+        from .device_utils import mask_serial
+
         errors: dict[str, str] = {}
         _MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
@@ -1191,7 +1199,11 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "no_account_uuid_for_ble"
 
             if not errors:
-                _LOGGER.info("Creating BLE light config entry for %s (%s)", serial, mac)
+                _LOGGER.info(
+                    "Creating BLE light config entry for %s (%s)",
+                    mask_serial(serial),
+                    mac,
+                )
                 config_data: dict[str, Any] = {
                     CONF_SERIAL_NUMBER: serial,
                     CONF_BLE_MAC: mac,
@@ -1789,13 +1801,13 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Get better display name for device type
         from .const import AVAILABLE_DEVICE_CATEGORIES
-        from .device_utils import normalize_device_category
+        from .device_utils import mask_serial, normalize_device_category
 
         category = discovery_info.get("category", "unknown")
         product_type = discovery_info.get("product_type", "unknown")
 
         # Debug logging for device categorization
-        _LOGGER.debug("Device categorization debug for %s:", device_serial)
+        _LOGGER.debug("Device categorization debug for %s:", mask_serial(device_serial))
         _LOGGER.debug("  - Raw category value: %r (type: %s)", category, type(category))
         _LOGGER.debug(
             "  - Raw product_type value: %r (type: %s)",
