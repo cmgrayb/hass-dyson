@@ -62,6 +62,7 @@ from .const import (
     DOMAIN,
     EVENT_BLE_STATE_CHANGE,
 )
+from .device_utils import mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -486,7 +487,9 @@ class DysonBLEDevice:
         try:
             message = self._assembler.feed(fragment)
         except ValueError as exc:
-            _LOGGER.warning("BLE fragment error for %s: %s", self.serial_number, exc)
+            _LOGGER.warning(
+                "BLE fragment error for %s: %s", mask_serial(self.serial_number), exc
+            )
             self._assembler.reset()
             return
 
@@ -884,7 +887,9 @@ class DysonBLEDevice:
             "Waiting for Connection Established (0x26) from %s", self.serial_number
         )
         await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=30.0)
-        _LOGGER.info("BLE LTK re-auth successful for %s", self.serial_number)
+        _LOGGER.info(
+            "BLE LTK re-auth successful for %s", mask_serial(self.serial_number)
+        )
 
     def _parse_product_info(self, payload: bytes) -> None:
         """Parse product info response (type 0x0B) and update firmware fields."""

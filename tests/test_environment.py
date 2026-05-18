@@ -1,8 +1,36 @@
 """Test project structure and development environment."""
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+def _run_dev_tool(module_name: str, *args: str) -> subprocess.CompletedProcess:
+    """Run a dev tool via Python module, falling back to PATH binary.
+
+    When tests run under the VS Code pydevd test runner, subprocess calls
+    to ``sys.executable -m <tool>`` can produce empty stdout even when the
+    tool is installed (debugger intercepts the output).  This helper falls
+    back to the standalone binary found on PATH in that case.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", module_name, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # Fall back to binary on PATH if module invocation produced no usable output
+    if not result.stdout.strip():
+        binary = shutil.which(module_name)
+        if binary:
+            result = subprocess.run(
+                [binary, *args],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+    return result
 
 
 def test_project_structure():
@@ -34,59 +62,34 @@ def test_project_structure():
 
 def test_ruff_works():
     """Test that ruff is installed and working."""
-    result = subprocess.run(
-        [sys.executable, "-m", "ruff", "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_dev_tool("ruff", "--version")
     assert result.returncode == 0
     assert "ruff" in result.stdout.lower()
 
 
 def test_ruff_format_works():
     """Test that ruff format command is working."""
-    result = subprocess.run(
-        [sys.executable, "-m", "ruff", "format", "--check", "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_dev_tool("ruff", "format", "--check", "--help")
     assert result.returncode == 0
     assert "format" in result.stdout.lower()
 
 
 def test_ruff_check_works():
     """Test that ruff check command is working."""
-    result = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "--help"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_dev_tool("ruff", "check", "--help")
     assert result.returncode == 0
     assert "check" in result.stdout.lower()
 
 
 def test_mypy_works():
     """Test that mypy is installed and working."""
-    result = subprocess.run(
-        [sys.executable, "-m", "mypy", "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_dev_tool("mypy", "--version")
     assert result.returncode == 0
     assert "mypy" in result.stdout.lower()
 
 
 def test_pytest_works():
     """Test that pytest is installed and working."""
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "--version"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_dev_tool("pytest", "--version")
     assert result.returncode == 0
     assert "pytest" in result.stdout.lower()

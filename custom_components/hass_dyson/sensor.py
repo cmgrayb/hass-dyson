@@ -75,6 +75,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -210,7 +211,9 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No P25R data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No P25R data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -311,7 +314,9 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No P10R data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No P10R data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -404,7 +409,9 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No CO2 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No CO2 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -507,7 +514,9 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No VOC data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No VOC data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -775,7 +784,9 @@ class DysonAQISensor(DysonEntity, SensorEntity):
                     aqi_category,
                 )
             else:
-                _LOGGER.debug("No AQI data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No AQI data available for device %s", mask_serial(device_serial)
+                )
 
         except Exception as err:
             _LOGGER.error(
@@ -1183,7 +1194,9 @@ async def async_setup_entry(  # noqa: C901
 
         # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
         if any(cat in ["ec", "robot"] for cat in device_category):
-            _LOGGER.debug("Adding WiFi sensors for device %s", device_serial)
+            _LOGGER.debug(
+                "Adding WiFi sensors for device %s", mask_serial(device_serial)
+            )
             entities.extend(
                 [
                     DysonWiFiSensor(coordinator),
@@ -1210,7 +1223,9 @@ async def async_setup_entry(  # noqa: C901
                 "extendedAQ",
             ],
         ):
-            _LOGGER.debug("Adding HEPA filter sensors for device %s", device_serial)
+            _LOGGER.debug(
+                "Adding HEPA filter sensors for device %s", mask_serial(device_serial)
+            )
             entities.extend(
                 [
                     DysonHEPAFilterLifeSensor(coordinator),
@@ -1825,7 +1840,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No PM2.5 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No PM2.5 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -1947,7 +1964,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No PM10 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No PM10 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2198,7 +2217,10 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No VOC Link data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No VOC Link data available for device %s",
+                    mask_serial(device_serial),
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2291,7 +2313,9 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No NO2 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No NO2 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2398,7 +2422,9 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No HCHO data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No HCHO data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(

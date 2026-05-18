@@ -87,6 +87,7 @@ from .const import (
     SLEEP_TIMER_MIN,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -217,40 +218,6 @@ def _convert_to_string(item) -> str:
     return str(item)
 
 
-def _mask_email(email: str) -> str:
-    """Partially mask an email address for safe display in sanitized output.
-
-    Shows the first character of the local part and the TLD of the domain,
-    masking all other characters to protect user privacy.
-
-    Args:
-        email: The email address to mask.
-
-    Returns:
-        Partially masked email string, e.g. ``u***@e***.com``.
-        Returns ``***`` if the email is empty or not a valid format.
-
-    Example:
-        >>> _mask_email("user@example.com")
-        'u***@e***.com'
-        >>> _mask_email("a@b.org")
-        'a***@b***.org'
-    """
-    if not email or "@" not in email:
-        return "***"
-
-    local, _, domain = email.partition("@")
-    masked_local = local[0] + "***" if local else "***"
-
-    if "." in domain:
-        domain_name, _, tld = domain.rpartition(".")
-        masked_domain = (domain_name[0] + "***" if domain_name else "***") + "." + tld
-    else:
-        masked_domain = domain[0] + "***" if domain else "***"
-
-    return f"{masked_local}@{masked_domain}"
-
-
 def _decrypt_device_mqtt_credentials(cloud_client, device) -> str:
     """Decrypt MQTT credentials from device's connected_configuration."""
     try:
@@ -367,19 +334,19 @@ async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> Non
         _LOGGER.info(
             "Set sleep timer to %d minutes for device %s",
             minutes,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
         )
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error setting sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
     except (ValueError, TypeError) as err:
         _LOGGER.warning(
             "Invalid timer value for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Invalid timer value: {err}") from err
@@ -393,7 +360,7 @@ async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> Non
     except Exception as err:
         _LOGGER.error(
             "Unexpected error setting sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Failed to set sleep timer: {err}") from err
@@ -412,11 +379,14 @@ async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> 
         await coordinator.device.set_sleep_timer(0)
         # Request refresh to update the coordinator with new sleep timer state
         await coordinator.async_request_refresh()
-        _LOGGER.info("Cancelled sleep timer for device %s", coordinator.serial_number)
+        _LOGGER.info(
+            "Cancelled sleep timer for device %s",
+            mask_serial(coordinator.serial_number),
+        )
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error cancelling sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
@@ -430,7 +400,7 @@ async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> 
     except Exception as err:
         _LOGGER.error(
             "Unexpected error cancelling sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Failed to cancel sleep timer: {err}") from err
@@ -457,19 +427,19 @@ async def _handle_set_oscillation_angles(
             "Set oscillation angles %d°-%d° for device %s",
             lower_angle,
             upper_angle,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
         )
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error setting oscillation angles for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
     except (ValueError, TypeError) as err:
         _LOGGER.warning(
             "Invalid angle values for device %s (lower=%s, upper=%s): %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             lower_angle,
             upper_angle,
             err,
@@ -485,7 +455,7 @@ async def _handle_set_oscillation_angles(
     except Exception as err:
         _LOGGER.error(
             "Unexpected error setting oscillation angles for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Failed to set oscillation angles: {err}") from err
@@ -506,19 +476,20 @@ async def async_handle_refresh_account_data(
         try:
             await coordinator.async_refresh()
             _LOGGER.info(
-                "Refreshed account data for device %s", coordinator.serial_number
+                "Refreshed account data for device %s",
+                mask_serial(coordinator.serial_number),
             )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error refreshing account data for device %s: %s",
-                coordinator.serial_number,
+                mask_serial(coordinator.serial_number),
                 err,
             )
             raise HomeAssistantError(f"Device communication failed: {err}") from err
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error refreshing account data for device %s: %s",
-                coordinator.serial_number,
+                mask_serial(coordinator.serial_number),
                 err,
             )
             raise HomeAssistantError(f"Failed to refresh account data: {err}") from err
@@ -539,13 +510,13 @@ async def async_handle_refresh_account_data(
             except (ConnectionError, TimeoutError) as err:
                 _LOGGER.warning(
                     "Communication error refreshing account data for device %s: %s",
-                    coordinator.serial_number,
+                    mask_serial(coordinator.serial_number),
                     err,
                 )
             except Exception as err:
                 _LOGGER.error(
                     "Unexpected error refreshing account data for device %s: %s",
-                    coordinator.serial_number,
+                    mask_serial(coordinator.serial_number),
                     err,
                 )
 
@@ -565,25 +536,28 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
         if filter_type == "hepa":
             await coordinator.device.reset_hepa_filter_life()
             _LOGGER.info(
-                "Reset HEPA filter life for device %s", coordinator.serial_number
+                "Reset HEPA filter life for device %s",
+                mask_serial(coordinator.serial_number),
             )
         elif filter_type == "carbon":
             await coordinator.device.reset_carbon_filter_life()
             _LOGGER.info(
-                "Reset carbon filter life for device %s", coordinator.serial_number
+                "Reset carbon filter life for device %s",
+                mask_serial(coordinator.serial_number),
             )
         elif filter_type == "both":
             await coordinator.device.reset_hepa_filter_life()
             await coordinator.device.reset_carbon_filter_life()
             _LOGGER.info(
-                "Reset both filter lives for device %s", coordinator.serial_number
+                "Reset both filter lives for device %s",
+                mask_serial(coordinator.serial_number),
             )
 
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error resetting %s filter for device %s: %s",
             filter_type,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
@@ -601,7 +575,7 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
         _LOGGER.error(
             "Unexpected error resetting %s filter for device %s: %s",
             filter_type,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(
@@ -712,7 +686,8 @@ async def _handle_get_cloud_devices(
         selected_coordinator = cloud_coordinators[0]
 
     _LOGGER.debug(
-        "Retrieving cloud devices for account: %s", selected_coordinator["email"]
+        "Retrieving cloud devices for account: %s",
+        mask_email(selected_coordinator["email"]),
     )
 
     try:
@@ -722,7 +697,7 @@ async def _handle_get_cloud_devices(
 
         response_data = {
             "account_email": (
-                _mask_email(selected_coordinator["email"])
+                mask_email(selected_coordinator["email"])
                 if sanitize
                 else selected_coordinator["email"]
             ),
@@ -737,7 +712,7 @@ async def _handle_get_cloud_devices(
         _LOGGER.debug(
             "Successfully retrieved %d devices from cloud account %s (sanitized: %s)",
             len(device_data["devices"]),
-            selected_coordinator["email"],
+            mask_email(selected_coordinator["email"]),
             sanitize,
         )
 
@@ -745,12 +720,16 @@ async def _handle_get_cloud_devices(
 
     except (DysonAuthError, DysonConnectionError, DysonAPIError) as err:
         _LOGGER.error(
-            "Dyson service error for account %s: %s", selected_coordinator["email"], err
+            "Dyson service error for account %s: %s",
+            mask_email(selected_coordinator["email"]),
+            err,
         )
         raise HomeAssistantError(f"Dyson service error: {err}") from err
     except Exception as err:
         _LOGGER.error(
-            "Unexpected error for account %s: %s", selected_coordinator["email"], err
+            "Unexpected error for account %s: %s",
+            mask_email(selected_coordinator["email"]),
+            err,
         )
         raise HomeAssistantError(f"Unexpected error: {err}") from err
 
@@ -961,7 +940,8 @@ async def _fetch_live_cloud_devices(config_entry):
         raise HomeAssistantError(f"No auth token available for cloud account {email}")
 
     _LOGGER.debug(
-        "Fetching live device data from Dyson cloud API for account: %s", email
+        "Fetching live device data from Dyson cloud API for account: %s",
+        mask_email(email),
     )
 
     # Create client with auth token and fetch devices
@@ -971,7 +951,7 @@ async def _fetch_live_cloud_devices(config_entry):
         devices = await client.get_devices()
 
         if not devices:
-            _LOGGER.debug("No devices found in cloud account %s", email)
+            _LOGGER.debug("No devices found in cloud account %s", mask_email(email))
             return []
 
         # Enhance devices with decrypted MQTT credentials
@@ -980,7 +960,7 @@ async def _fetch_live_cloud_devices(config_entry):
         _LOGGER.info(
             "Successfully fetched %d devices from cloud API for account %s",
             len(enhanced_devices),
-            email,
+            mask_email(email),
         )
         return enhanced_devices
 
@@ -1003,30 +983,30 @@ async def _get_device_data_from_config_entry(
             _LOGGER.info(
                 "Using live cloud API data for %d devices from account %s",
                 len(live_devices),
-                email,
+                mask_email(email),
             )
             return await _build_device_data_from_live_api(live_devices, email, sanitize)
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.warning(
             "Communication timeout getting live cloud data for account %s, falling back to stored config: %s",
-            email,
+            mask_email(email),
             err,
         )
     except (KeyError, AttributeError) as err:
         _LOGGER.debug(
             "Missing data getting live cloud data for account %s, falling back to stored config: %s",
-            email,
+            mask_email(email),
             err,
         )
     except Exception as err:
         _LOGGER.warning(
             "Unexpected error getting live cloud data for account %s, falling back to stored config: %s",
-            email,
+            mask_email(email),
             err,
         )
 
     # Fallback to stored config data
-    _LOGGER.debug("Using stored config data for account %s", email)
+    _LOGGER.debug("Using stored config data for account %s", mask_email(email))
     device_list = []
 
     for device_data in devices_data:

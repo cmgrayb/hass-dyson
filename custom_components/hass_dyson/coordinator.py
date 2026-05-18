@@ -58,6 +58,7 @@ from .const import (
     UnsupportedDeviceError,
 )
 from .device import DysonDevice
+from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -629,17 +630,19 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return device serial number."""
         # Debug logging to see what's in the config data
         _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
-        _LOGGER.debug("Config entry data: %s", self.config_entry.data)
+        # Full config entry data is intentionally NOT logged to prevent credential leaks
 
         # Handle both legacy single-device entries and new account-level entries
         if CONF_SERIAL_NUMBER in self.config_entry.data:
             serial = self.config_entry.data[CONF_SERIAL_NUMBER]
-            _LOGGER.debug("Found serial_number in config: %s", serial)
+            _LOGGER.debug("Found serial_number in config: %s", mask_serial(serial))
             return serial
         else:
             # For account-level entries, serial number should be passed differently
             serial = self.config_entry.data.get("device_serial_number", "unknown")
-            _LOGGER.debug("Using device_serial_number fallback: %s", serial)
+            _LOGGER.debug(
+                "Using device_serial_number fallback: %s", mask_serial(serial)
+            )
             return serial
 
     @property
@@ -707,7 +710,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Already logged at INFO level in _async_setup_cloud_device()
             raise
         except Exception as err:
-            _LOGGER.error("Failed to setup device %s: %s", self.serial_number, err)
+            _LOGGER.error(
+                "Failed to setup device %s: %s", mask_serial(self.serial_number), err
+            )
             raise
 
     async def _async_setup_device(self) -> None:
@@ -1500,7 +1505,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_setup_manual_device(self) -> None:
         """Set up device configured manually."""
         try:
-            _LOGGER.info("Setting up manual device: %s", self.serial_number)
+            _LOGGER.info(
+                "Setting up manual device: %s", mask_serial(self.serial_number)
+            )
 
             # Get configuration from config entry
             serial_number = self.config_entry.data[CONF_SERIAL_NUMBER]
@@ -1581,11 +1588,15 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Register for message updates to get real-time state changes
             self.device.add_message_callback(self._on_message_update)
 
-            _LOGGER.info("Successfully set up manual device %s", self.serial_number)
+            _LOGGER.info(
+                "Successfully set up manual device %s", mask_serial(self.serial_number)
+            )
 
         except Exception as err:
             _LOGGER.error(
-                "Failed to set up manual device %s: %s", self.serial_number, err
+                "Failed to set up manual device %s: %s",
+                mask_serial(self.serial_number),
+                err,
             )
             raise UpdateFailed(f"Manual device setup failed: {err}") from err
 
@@ -2303,11 +2314,13 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval = timedelta(seconds=DEFAULT_CLOUD_POLLING_INTERVAL)
             _LOGGER.info(
                 "Cloud device polling enabled for %s, interval: %d seconds",
-                self._email,
+                mask_email(self._email),
                 DEFAULT_CLOUD_POLLING_INTERVAL,
             )
         else:
-            _LOGGER.info("Cloud device polling disabled for %s", self._email)
+            _LOGGER.info(
+                "Cloud device polling disabled for %s", mask_email(self._email)
+            )
 
         super().__init__(
             hass,
@@ -2322,13 +2335,18 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data by checking for new devices in the cloud account."""
-        _LOGGER.info("Cloud coordinator update triggered for account: %s", self._email)
+        _LOGGER.info(
+            "Cloud coordinator update triggered for account: %s",
+            mask_email(self._email),
+        )
 
         if not self.config_entry.data.get(
             CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
         ):
             # Polling is disabled, return empty data
-            _LOGGER.debug("Device polling disabled for account %s", self._email)
+            _LOGGER.debug(
+                "Device polling disabled for account %s", mask_email(self._email)
+            )
             return {"devices": []}
 
         try:
@@ -2348,25 +2366,30 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.error(
                 "Error checking for new devices in cloud account %s: %s",
-                self._email,
+                mask_email(self._email),
                 err,
             )
             raise UpdateFailed(f"Failed to check for new devices: {err}") from err
 
     async def _fetch_cloud_devices(self):
         """Fetch devices from cloud API."""
-        _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
+        _LOGGER.info(
+            "Checking for new devices in Dyson cloud account: %s",
+            mask_email(self._email),
+        )
 
         # Initialize libdyson-rest client
         from libdyson_rest import AsyncDysonClient
 
         if not self._auth_token:
-            _LOGGER.warning("No auth token available for cloud account %s", self._email)
+            _LOGGER.warning(
+                "No auth token available for cloud account %s", mask_email(self._email)
+            )
             return []
 
         _LOGGER.debug(
             "Fetching cloud devices for %s - country: %s, culture: %s",
-            self._email,
+            mask_email(self._email),
             self._country,
             self._culture,
         )
@@ -2382,7 +2405,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             devices = await client.get_devices()
 
             if not devices:
-                _LOGGER.debug("No devices found in cloud account %s", self._email)
+                _LOGGER.debug(
+                    "No devices found in cloud account %s", mask_email(self._email)
+                )
                 return []
 
             return devices
@@ -2414,7 +2439,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if new_devices:
             await self._handle_new_devices(devices, new_devices, updated_devices)
         else:
-            _LOGGER.debug("No new devices found in cloud account %s", self._email)
+            _LOGGER.debug(
+                "No new devices found in cloud account %s", mask_email(self._email)
+            )
 
         return new_devices
 
@@ -2423,7 +2450,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.info(
             "Found %d new device(s) in cloud account %s: %s",
             len(new_devices),
-            self._email,
+            mask_email(self._email),
             list(new_devices),
         )
 
@@ -2809,7 +2836,9 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         from .ble_device import _KEEPALIVE_INTERVAL, _RECONNECT_DELAYS
 
-        _LOGGER.info("BLE lifecycle task started for %s", self.serial_number)
+        _LOGGER.info(
+            "BLE lifecycle task started for %s", mask_serial(self.serial_number)
+        )
         attempt = 0
         while not self._stop_event.is_set():
             if self.ble_device is None:
