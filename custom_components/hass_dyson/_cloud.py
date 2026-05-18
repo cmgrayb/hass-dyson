@@ -17,7 +17,6 @@ import time
 from typing import Any
 
 import aiohttp
-
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -92,12 +91,12 @@ async def dyson_cloud_get(coordinator, path: str) -> Any:
     session = async_get_clientsession(coordinator.hass)
     url = f"{_BASE_URL}{path}"
     try:
-        async with session.get(
-            url, headers=headers, timeout=_DEFAULT_TIMEOUT
-        ) as resp:
+        async with session.get(url, headers=headers, timeout=_DEFAULT_TIMEOUT) as resp:
             if resp.status != 200:
                 _LOGGER.debug(
-                    "Dyson cloud GET %s → HTTP %d", path, resp.status,
+                    "Dyson cloud GET %s → HTTP %d",
+                    path,
+                    resp.status,
                 )
                 return None
             return await resp.json()
@@ -138,13 +137,10 @@ async def dyson_cloud_put(
             if resp.status not in ok_statuses:
                 text = await resp.text()
                 raise HomeAssistantError(
-                    f"Dyson cloud PUT {path} returned HTTP "
-                    f"{resp.status}: {text[:200]}"
+                    f"Dyson cloud PUT {path} returned HTTP {resp.status}: {text[:200]}"
                 )
     except aiohttp.ClientError as err:
-        raise HomeAssistantError(
-            f"Network error on PUT {path}: {err}"
-        ) from err
+        raise HomeAssistantError(f"Network error on PUT {path}: {err}") from err
 
 
 # ----------------------------------------------------------------------------
@@ -171,9 +167,7 @@ async def fetch_clean_maps(coordinator) -> list[dict]:
     fresh = _clean_maps_cache.get(serial)
     if fresh is not None:
         return fresh
-    data = await dyson_cloud_get(
-        coordinator, f"/v1/{serial}/clean-maps?dustMap=total"
-    )
+    data = await dyson_cloud_get(coordinator, f"/v1/{serial}/clean-maps?dustMap=total")
     if not isinstance(data, list):
         return _clean_maps_cache.get_stale(serial) or []
     # Newest-first defensive sort. The API generally returns newest first

@@ -204,7 +204,9 @@ def _render_dust_map_png(
     if len(raw) < width * height:
         _LOGGER.warning(
             "Dust map size mismatch: declared %dx%d but only %d bytes",
-            width, height, len(raw),
+            width,
+            height,
+            len(raw),
         )
         return None
 
@@ -238,12 +240,18 @@ def _render_dust_map_png(
             # Composite the dust map onto the presentation canvas at the right offset.
             # Apply orientation AFTER compositing so both layers transform together.
             if map_offset_mm is not None and clean_position_mm is not None:
-                ox = int(round(
-                    (clean_position_mm[0] - map_offset_mm[0]) / map_resolution_mm_per_px
-                ))
-                oy = int(round(
-                    (clean_position_mm[1] - map_offset_mm[1]) / map_resolution_mm_per_px
-                ))
+                ox = int(
+                    round(
+                        (clean_position_mm[0] - map_offset_mm[0])
+                        / map_resolution_mm_per_px
+                    )
+                )
+                oy = int(
+                    round(
+                        (clean_position_mm[1] - map_offset_mm[1])
+                        / map_resolution_mm_per_px
+                    )
+                )
             else:
                 # Fallback: centre the dust map on the presentation map
                 ox = max(0, (bg.size[0] - width) // 2)
@@ -373,7 +381,10 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                 cleaned_fp_png = None
 
         png = _render_dust_map_png(
-            dust_map, cleaned_fp_png, presentation_png, rotation_deg,
+            dust_map,
+            cleaned_fp_png,
+            presentation_png,
+            rotation_deg,
             map_offset_mm=map_offset_mm,
             clean_position_mm=clean_position_mm,
             map_resolution_mm_per_px=resolution_mm_per_px,
@@ -414,7 +425,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         cleans = await fetch_clean_maps(self.coordinator)
         if not cleans:
             return None
-        persistent = (cleans[0].get("persistentMap") or {})
+        persistent = cleans[0].get("persistentMap") or {}
         pmap_id = persistent.get("id")
         if not pmap_id:
             return None
@@ -431,9 +442,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             return None
 
         rotation_deg = int(
-            (pmap.get("zonesDefinition") or {}).get(
-                "persistentMapDisplayOrientation"
-            )
+            (pmap.get("zonesDefinition") or {}).get("persistentMapDisplayOrientation")
             or 0
         )
         png = _render_presentation_png(png_in, rotation_deg)

@@ -64,9 +64,7 @@ async def async_setup_entry(
         # Detect specific robot model.
         # Cloud-discovered devices often have empty device_capabilities, so fall
         # back to matching on device_name when the capability strings are absent.
-        device_name = (
-            coordinator.config_entry.data.get("device_name") or ""
-        ).lower()
+        device_name = (coordinator.config_entry.data.get("device_name") or "").lower()
 
         is_vis_nav = (
             all(cap in device_capabilities for cap in ["Mapping", "DirectedCleaning"])

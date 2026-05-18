@@ -135,9 +135,7 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
         self._zone_id: str = str(zone["id"])
         self._zone_name: str = str(zone.get("name") or f"Zone {self._zone_id}")
         # unique_id uses zone_id (stable in MyDyson app even if user renames the zone)
-        self._attr_unique_id = (
-            f"{coordinator.serial_number}_clean_zone_{self._zone_id}"
-        )
+        self._attr_unique_id = f"{coordinator.serial_number}_clean_zone_{self._zone_id}"
         self._attr_name = f"Clean {self._zone_name}"
         self._attr_icon = _icon_for_zone(zone.get("icon"))
 
@@ -188,7 +186,7 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     async def async_press(self) -> None:
-        from .services import _persistent_map_cache, _fetch_persistent_map_metadata
+        from .services import _fetch_persistent_map_metadata, _persistent_map_cache
 
         _persistent_map_cache.pop(self.coordinator.serial_number, None)
         try:

@@ -68,8 +68,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from libdyson_rest import DysonAPIError, DysonAuthError, DysonConnectionError
 
 from ._cloud import TTLCache, dyson_cloud_get, dyson_cloud_put
@@ -754,9 +753,7 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
     # Resolve zone name → ID via cached map metadata
     maps = await _fetch_persistent_map_metadata(coordinator)
     if not maps:
-        raise HomeAssistantError(
-            f"No persistent maps for {coordinator.serial_number}"
-        )
+        raise HomeAssistantError(f"No persistent maps for {coordinator.serial_number}")
     pmap = maps[0]
     pmap_id = pmap["id"]
     zones_by_id = {str(z["id"]): z for z in pmap.get("zones", [])}

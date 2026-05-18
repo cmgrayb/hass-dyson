@@ -68,13 +68,13 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from ._cloud import TTLCache, dyson_cloud_get, fetch_clean_maps
 from .const import (
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
     DOMAIN,
 )
-from ._cloud import TTLCache, dyson_cloud_get, fetch_clean_maps
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -1435,10 +1435,9 @@ async def async_setup_entry(  # noqa: C901
         # MyDyson scheduled events). Only for ec-category devices (air
         # purifiers / heaters / fans with environmental sensing) that have
         # a usable cloud auth token.
-        if (
-            any(cat == "ec" for cat in device_category)
-            and coordinator.config_entry.data.get("auth_token")
-        ):
+        if any(
+            cat == "ec" for cat in device_category
+        ) and coordinator.config_entry.data.get("auth_token"):
             entities.append(DysonOutdoorAQISensor(coordinator))
             entities.append(DysonDailyAirQualitySensor(coordinator))
             entities.append(DysonScheduledEventsSensor(coordinator))
@@ -3129,7 +3128,7 @@ def _extract_end_time(clean: dict) -> str | None:
 
 def _extract_duration_minutes(clean: dict) -> int | None:
     """Compute end - start in minutes from the cleanTimeline."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     start, end = _extract_start_time(clean), _extract_end_time(clean)
     if not start or not end:
@@ -3179,9 +3178,13 @@ def _extract_clean_type(clean: dict) -> str:
 def _extract_fault_count(clean: dict) -> int:
     timeline = clean.get("cleanTimeline") or []
     return sum(
-        1 for e in timeline
+        1
+        for e in timeline
         if isinstance(e, dict)
-        and (e.get("faultLocation") is not None or "fault" in str(e.get("eventName", "")).lower())
+        and (
+            e.get("faultLocation") is not None
+            or "fault" in str(e.get("eventName", "")).lower()
+        )
     )
 
 
@@ -3196,9 +3199,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
     _attr_should_poll = True
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
-    def __init__(
-        self, coordinator: DysonDataUpdateCoordinator, slot: int
-    ) -> None:
+    def __init__(self, coordinator: DysonDataUpdateCoordinator, slot: int) -> None:
         super().__init__(coordinator)
         self._slot = slot
         suffix = "" if slot == 0 else f"_{slot + 1}"
@@ -3212,7 +3213,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
         return True
 
     async def async_update(self) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         cleans = await fetch_clean_maps(self.coordinator)
         if len(cleans) <= self._slot:
@@ -3248,7 +3249,9 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
                     id_to_name: dict[str, str] = {}
                     for pmap in maps:
                         for z in pmap.get("zones", []):
-                            id_to_name[str(z.get("id"))] = str(z.get("name") or z.get("id"))
+                            id_to_name[str(z.get("id"))] = str(
+                                z.get("name") or z.get("id")
+                            )
                     zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
             except Exception:  # noqa: BLE001 — names are a nice-to-have
                 zone_names = []
@@ -3280,9 +3283,7 @@ async def _fetch_recommended_cleans(coordinator: DysonDataUpdateCoordinator) -> 
     if fresh is not None:
         return fresh
     # Endpoint returns a LIST of maps (each with zonePredictions).
-    data = await dyson_cloud_get(
-        coordinator, f"/v1/app/{serial}/recommended-cleans"
-    )
+    data = await dyson_cloud_get(coordinator, f"/v1/app/{serial}/recommended-cleans")
     if not isinstance(data, list):
         return _recommended_cleans_cache.get_stale(serial) or []
     _recommended_cleans_cache.set(serial, data)
@@ -3316,9 +3317,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
 
             maps = _persistent_map_cache.get(self.coordinator.serial_number)
             if maps is None:
-                maps = _persistent_map_cache.get_stale(
-                    self.coordinator.serial_number
-                )
+                maps = _persistent_map_cache.get_stale(self.coordinator.serial_number)
             if maps:
                 for pmap in maps:
                     for z in pmap.get("zones", []):
@@ -3359,9 +3358,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
         else:
             self._attr_native_value = "None"
         self._attr_extra_state_attributes = {
-            "top_zone_dust_mg": (
-                predictions[0]["total_dust_mg"] if predictions else 0
-            ),
+            "top_zone_dust_mg": (predictions[0]["total_dust_mg"] if predictions else 0),
             "predictions": predictions,
         }
 
@@ -3515,8 +3512,16 @@ class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
             "start_time": data.get("start_time"),
             "resolution": data.get("resolution"),
             "sample_count": len(series),
-            "min": round(min((v for v in series if isinstance(v, (int, float))), default=0), 1) if series else None,
-            "max": round(max((v for v in series if isinstance(v, (int, float))), default=0), 1) if series else None,
+            "min": round(
+                min((v for v in series if isinstance(v, (int, float))), default=0), 1
+            )
+            if series
+            else None,
+            "max": round(
+                max((v for v in series if isinstance(v, (int, float))), default=0), 1
+            )
+            if series
+            else None,
             # Keep the last 96 samples (24h at 15min) on the attribute; full
             # week's worth is too much for entity attributes.
             "last_24h": [
@@ -3567,7 +3572,8 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
         events = data.get("events") or []
         enabled_events = [e for e in events if isinstance(e, dict) and e.get("enabled")]
         self._attr_native_value = (
-            f"{len(enabled_events)} active" if enabled_events
+            f"{len(enabled_events)} active"
+            if enabled_events
             else ("0 active" if data.get("enabled") else "disabled")
         )
         self._attr_extra_state_attributes = {
