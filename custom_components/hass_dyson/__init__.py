@@ -125,6 +125,7 @@ PLATFORMS_MAP = {
     Platform.VACUUM: "vacuum",
     Platform.CLIMATE: "climate",
     Platform.HUMIDIFIER: "humidifier",
+    Platform.IMAGE: "image",
 }
 
 
@@ -847,6 +848,12 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
         cat in ["robot", "vacuum", "flrc"] for cat in device_category
     ):  # Cleaning devices
         platforms.append("vacuum")
+        # Robot/vacuum models expose a power-level select (Auto/Quick/Quiet/Boost
+        # on Vis Nav; Quiet/High/Max on Heurist; etc.) — see select.py.
+        platforms.append("select")
+        # Vis Nav exposes a dust-map image (rendered from cloud-fetched data)
+        # and floor-plan presentation map. See image.py.
+        platforms.append("image")
 
     # Add capability-based platforms for enhanced functionality
     if (

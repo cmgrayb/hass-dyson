@@ -3212,6 +3212,46 @@ class DysonDevice:
 
         await self._send_robot_command(command_data)
 
+    async def robot_start_clean(
+        self,
+        cleaning_mode: str = "global",
+        full_clean_type: str = "immediate",
+        cleaning_programme: dict | None = None,
+    ) -> None:
+        # Begin a new clean from the dock. Payload mirrors libdyson-neon's
+        # proven START format for the 360 Heurist / Vis Nav family. Use
+        # robot_resume() to continue a paused clean instead.
+        #
+        # cleaning_programme (Vis Nav only): when cleaning_mode is
+        # "zoneConfigured", embed {persistentMapId, orderedZones, unorderedZones}.
+        # The device echoes these fields back on the status topic during the run.
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.info(
+            "Sending START to robot %s (cleaningMode=%s, fullCleanType=%s, zones=%s)",
+            self.serial_number,
+            cleaning_mode,
+            full_clean_type,
+            cleaning_programme.get("unorderedZones") if cleaning_programme else None,
+        )
+
+        data: dict = {
+            "cleaningMode": cleaning_mode,
+            "fullCleanType": full_clean_type,
+        }
+        if cleaning_programme is not None:
+            data["cleaningProgramme"] = cleaning_programme
+
+        command_data = {
+            "msg": "START",
+            "time": self._get_command_timestamp(),
+            "mode-reason": "LAPP",
+            "data": data,
+        }
+
+        await self._send_robot_command(command_data)
+
     async def robot_abort(self) -> None:
         """Abort robot vacuum cleaning and return to dock.
 

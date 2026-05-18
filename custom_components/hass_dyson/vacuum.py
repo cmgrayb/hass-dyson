@@ -138,8 +138,10 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         # Note: Battery monitoring is now handled by a separate battery sensor
         # to comply with Home Assistant deprecation (HA 2026.8)
         self._attr_supported_features = (
-            VacuumEntityFeature.PAUSE
+            VacuumEntityFeature.START
+            | VacuumEntityFeature.PAUSE
             | VacuumEntityFeature.STOP
+            | VacuumEntityFeature.RETURN_HOME
             | VacuumEntityFeature.STATE
         )
 
@@ -247,31 +249,37 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             raise HomeAssistantError(f"Failed to pause vacuum: {ex}") from ex
 
     async def async_start(self) -> None:
-        """Start or resume vacuum cleaning operation.
-
-        If robot is paused, sends RESUME command to continue cleaning.
-        If robot is idle/docked, this would typically start a new cleaning
-        cycle, but the specific behavior depends on robot state and model.
-
-        Note:
-            Starting new cleaning cycles may require additional commands
-            not yet implemented. This primarily serves as resume functionality.
-
-        Raises:
-            HomeAssistantError: If device is not available or command fails
-        """
+        """Start a new clean (if docked) or resume a paused clean."""
         if not self.available or not self.coordinator.device:
             raise HomeAssistantError("Device not available for start command")
 
+        device = self.coordinator.device
+        robot_state = device.robot_state or ""
+
+        # Anything in an INACTIVE_* / FULL_CLEAN_FINISHED / FAULT_ON_DOCK
+        # state means the robot isn't mid-clean, so vacuum.start must begin a
+        # new cycle rather than send RESUME (which the device would ignore).
+        dock_states = {
+            "INACTIVE_CHARGED",
+            "INACTIVE_CHARGING",
+            "INACTIVE_DISCHARGING",
+            "FULL_CLEAN_FINISHED",
+            "FAULT_ON_DOCK",
+        }
+        start_new = robot_state in dock_states
+
         _LOGGER.info(
-            "Starting/resuming robot vacuum %s", self.coordinator.serial_number
+            "vacuum.start on %s: state=%s → %s",
+            self.coordinator.serial_number,
+            robot_state,
+            "START new clean" if start_new else "RESUME paused clean",
         )
 
         try:
-            await self.coordinator.device.robot_resume()
-            _LOGGER.debug(
-                "Resume command sent successfully to %s", self.coordinator.serial_number
-            )
+            if start_new:
+                await device.robot_start_clean()
+            else:
+                await device.robot_resume()
         except Exception as ex:
             _LOGGER.error(
                 "Failed to start/resume robot vacuum %s: %s",

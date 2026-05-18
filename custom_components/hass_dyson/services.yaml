@@ -118,3 +118,68 @@ get_cloud_devices:
       required: false
       selector:
         boolean:
+
+start_zone_clean:
+  name: Start Zone Clean (Vis Nav)
+  description: >-
+    Start a zone-specific clean on a Dyson 360 Vis Nav, targeting one or more
+    named rooms from the device's persistent map. Zones can be specified by ID
+    (e.g. "4") or by name (e.g. "Living room"). Persistent map metadata is
+    fetched from the Dyson cloud and cached for 1 hour.
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson robot vacuum device to clean with.
+      required: true
+      selector:
+        device:
+          integration: hass_dyson
+    zones:
+      name: Zones
+      description: List of zone IDs or zone names to clean (e.g. ["Living room", "Hallway"]).
+      required: true
+      selector:
+        object:
+
+set_zone_behaviour:
+  name: Set Zone Behaviour (Vis Nav)
+  description: >-
+    Override the power mode and/or cleaning strategy for a specific zone on
+    a Dyson 360 Vis Nav. Persists to Dyson cloud so the override applies on
+    every subsequent clean — same as setting it in the MyDyson app.
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson robot vacuum device.
+      required: true
+      selector:
+        device:
+          integration: hass_dyson
+    zone:
+      name: Zone
+      description: Zone ID or name (e.g. "Living room" or "4").
+      required: true
+      selector:
+        text:
+    power_mode:
+      name: Power Mode Override
+      description: 'Default uses the robot''s global mode for that zone.'
+      required: false
+      selector:
+        select:
+          options:
+            - Default
+            - Auto
+            - Quick
+            - Quiet
+            - Boost
+    cleaning_strategy:
+      name: Cleaning Strategy
+      description: ''
+      required: false
+      selector:
+        select:
+          options:
+            - auto
+            - quick
+            - deep

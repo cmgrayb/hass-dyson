@@ -62,12 +62,15 @@ Example Usage:
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from libdyson_rest import DysonAPIError, DysonAuthError, DysonConnectionError
 
@@ -83,6 +86,8 @@ from .const import (
     SERVICE_RESET_FILTER,
     SERVICE_SET_OSCILLATION_ANGLES,
     SERVICE_SET_SLEEP_TIMER,
+    SERVICE_SET_ZONE_BEHAVIOUR,
+    SERVICE_START_ZONE_CLEAN,
     SLEEP_TIMER_MAX,
     SLEEP_TIMER_MIN,
 )
@@ -117,6 +122,8 @@ DEVICE_CATEGORY_SERVICES = {
     ],
     "robot": [  # Robot vacuum/cleaning devices
         SERVICE_RESET_FILTER,  # Different filter types for cleaning devices
+        SERVICE_START_ZONE_CLEAN,  # Vis Nav zone cleaning via cleaningProgramme
+        SERVICE_SET_ZONE_BEHAVIOUR,  # Vis Nav per-zone power/strategy overrides
     ],
     "vacuum": [  # Vacuum devices
         SERVICE_RESET_FILTER,
@@ -170,6 +177,31 @@ SERVICE_GET_CLOUD_DEVICES_SCHEMA = vol.Schema(
     {
         vol.Optional("account_email"): str,
         vol.Optional("sanitize", default=False): bool,
+    }
+)
+
+# Zone-cleaning schema: device + list of zone IDs or names. Names are resolved
+# against the persistent-map metadata fetched from the Dyson cloud.
+SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Required("zones"): vol.All(
+            cv.ensure_list, [vol.All(str, vol.Length(min=1))], vol.Length(min=1)
+        ),
+    }
+)
+
+# Per-zone behaviour override schema. power_mode: Auto/Quick/Quiet/Boost/Default.
+# cleaning_strategy: auto/quick/deep (cloud accepts other values too).
+_VIS_NAV_POWER_MODES = {
+    "Auto": 1, "Quick": 2, "Quiet": 3, "Boost": 4, "Default": None,
+}
+SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Required("zone"): vol.All(str, vol.Length(min=1)),
+        vol.Optional("power_mode"): vol.In(list(_VIS_NAV_POWER_MODES.keys())),
+        vol.Optional("cleaning_strategy"): vol.In(["auto", "quick", "deep"]),
     }
 )
 
@@ -573,6 +605,234 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
         raise HomeAssistantError(
             f"Failed to reset {filter_type} filter: {err}"
         ) from err
+
+
+# In-process cache of persistent-map metadata per serial. Refreshed when older
+# than _MAP_CACHE_TTL or when the device reports a newer zonesDefinitionLastUpdatedDate.
+_persistent_map_cache: dict[str, tuple[float, list[dict]]] = {}
+_MAP_CACHE_TTL = 3600  # 1 hour
+
+
+async def _fetch_persistent_map_metadata(
+    coordinator: DysonDataUpdateCoordinator,
+) -> list[dict]:
+    """Fetch and cache the Vis Nav persistent-map metadata.
+
+    Endpoint: GET /v1/app/{serial}/persistent-map-metadata (Bearer auth).
+    Discovered via thoukydides/matterbridge-dyson-robot; not in libdyson-rest.
+    Returns list of maps; each has id, name, zones[{id,name,icon,area}], etc.
+    """
+    serial = coordinator.serial_number
+    now = time.monotonic()
+    cached = _persistent_map_cache.get(serial)
+    if cached and (now - cached[0]) < _MAP_CACHE_TTL:
+        return cached[1]
+
+    auth_token = coordinator.config_entry.data.get("auth_token")
+    if not auth_token:
+        raise HomeAssistantError(
+            f"No auth_token on config entry for {serial} — cannot fetch zones"
+        )
+
+    url = f"https://appapi.cp.dyson.com/v1/app/{serial}/persistent-map-metadata"
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "User-Agent": "android client",
+        "Accept": "application/json",
+    }
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise HomeAssistantError(
+                        f"Persistent-map fetch for {serial} returned HTTP "
+                        f"{resp.status}: {body[:200]}"
+                    )
+                maps = await resp.json()
+    except aiohttp.ClientError as err:
+        raise HomeAssistantError(
+            f"Network error fetching persistent map for {serial}: {err}"
+        ) from err
+
+    if not isinstance(maps, list):
+        raise HomeAssistantError(
+            f"Unexpected persistent-map response for {serial}: {type(maps).__name__}"
+        )
+
+    _persistent_map_cache[serial] = (now, maps)
+    _LOGGER.info(
+        "Fetched %d persistent map(s) for %s (%d zones total)",
+        len(maps),
+        serial,
+        sum(len(m.get("zones", [])) for m in maps),
+    )
+    return maps
+
+
+async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle hass_dyson.start_zone_clean — Vis Nav zone-specific cleaning."""
+    device_id = call.data["device_id"]
+    requested_zones: list[str] = call.data["zones"]
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
+
+    # Fetch zones from the cloud (cached).
+    maps = await _fetch_persistent_map_metadata(coordinator)
+    if not maps:
+        raise HomeAssistantError(
+            f"No persistent maps returned for {coordinator.serial_number} — "
+            "has the robot finished its initial map run?"
+        )
+    # Use the first (most-recently-visited) map. Multi-map handling is a v2 concern.
+    pmap = maps[0]
+    pmap_id = pmap["id"]
+    zones_by_id = {z["id"]: z for z in pmap.get("zones", [])}
+    zones_by_name_lc = {z["name"].lower(): z for z in pmap.get("zones", [])}
+
+    resolved_ids: list[str] = []
+    unknown: list[str] = []
+    for entry in requested_zones:
+        entry_str = str(entry).strip()
+        if entry_str in zones_by_id:
+            resolved_ids.append(entry_str)
+        elif entry_str.lower() in zones_by_name_lc:
+            resolved_ids.append(zones_by_name_lc[entry_str.lower()]["id"])
+        else:
+            unknown.append(entry_str)
+    if unknown:
+        known_names = sorted(z["name"] for z in pmap.get("zones", []))
+        raise ServiceValidationError(
+            f"Unknown zone(s) {unknown!r} for map {pmap.get('name')!r}. "
+            f"Known: {known_names}"
+        )
+
+    cleaning_programme = {
+        "persistentMapId": pmap_id,
+        "orderedZones": [],
+        "unorderedZones": resolved_ids,
+    }
+
+    try:
+        await coordinator.device.robot_start_clean(
+            cleaning_mode="zoneConfigured",
+            full_clean_type="immediate",
+            cleaning_programme=cleaning_programme,
+        )
+        _LOGGER.info(
+            "Started zone clean on %s: zones=%s (map %s)",
+            coordinator.serial_number,
+            resolved_ids,
+            pmap.get("name"),
+        )
+    except Exception as err:
+        _LOGGER.error(
+            "Failed to start zone clean on %s: %s", coordinator.serial_number, err
+        )
+        raise HomeAssistantError(f"Failed to start zone clean: {err}") from err
+
+
+async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> None:
+    """PUT a zone's vacuumPowerMode / cleaningStrategy override on the cloud.
+
+    Endpoint: /v1/app/{serial}/persistent-maps/{mapId}/zones/{zoneId}/behaviour
+    Discovered via thoukydides/matterbridge-dyson-robot setZoneBehaviour360().
+    """
+    device_id = call.data["device_id"]
+    zone_in = str(call.data["zone"]).strip()
+    power_mode_label = call.data.get("power_mode")
+    cleaning_strategy = call.data.get("cleaning_strategy")
+
+    if not power_mode_label and not cleaning_strategy:
+        raise ServiceValidationError(
+            "Provide at least one of: power_mode, cleaning_strategy"
+        )
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator:
+        raise ServiceValidationError(f"Device {device_id} not found")
+
+    # Resolve zone name → ID via cached map metadata
+    maps = await _fetch_persistent_map_metadata(coordinator)
+    if not maps:
+        raise HomeAssistantError(
+            f"No persistent maps for {coordinator.serial_number}"
+        )
+    pmap = maps[0]
+    pmap_id = pmap["id"]
+    zones_by_id = {str(z["id"]): z for z in pmap.get("zones", [])}
+    zones_by_name_lc = {
+        str(z["name"]).lower(): z for z in pmap.get("zones", []) if z.get("name")
+    }
+    if zone_in in zones_by_id:
+        zone_id = zone_in
+    elif zone_in.lower() in zones_by_name_lc:
+        zone_id = str(zones_by_name_lc[zone_in.lower()]["id"])
+    else:
+        raise ServiceValidationError(
+            f"Unknown zone {zone_in!r}. Known: "
+            f"{sorted(z['name'] for z in pmap.get('zones', []))}"
+        )
+
+    # Build the behaviour payload. We always send a complete zoneBehaviours
+    # block — fields we're not changing get the existing cached value.
+    existing_behaviours = {
+        "vacuumPowerMode": None,
+        "cleaningStrategy": "auto",
+    }
+    for zp in pmap.get("zoneProperties") or []:
+        if zone_id in (str(z) for z in (zp.get("zones") or [])):
+            existing_behaviours.update(zp.get("zoneBehaviours") or {})
+            break
+
+    if power_mode_label:
+        existing_behaviours["vacuumPowerMode"] = _VIS_NAV_POWER_MODES[power_mode_label]
+    if cleaning_strategy:
+        existing_behaviours["cleaningStrategy"] = cleaning_strategy
+
+    auth_token = coordinator.config_entry.data.get("auth_token")
+    if not auth_token:
+        raise HomeAssistantError(
+            f"No auth_token on config entry for {coordinator.serial_number}"
+        )
+
+    url = (
+        f"https://appapi.cp.dyson.com/v1/app/{coordinator.serial_number}"
+        f"/persistent-maps/{pmap_id}/zones/{zone_id}/behaviour"
+    )
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "User-Agent": "android client",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    body = {"zoneBehaviours": existing_behaviours}
+    timeout = aiohttp.ClientTimeout(total=10)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.put(url, headers=headers, json=body) as resp:
+                if resp.status not in (200, 204):
+                    text = await resp.text()
+                    raise HomeAssistantError(
+                        f"setZoneBehaviour returned HTTP {resp.status}: {text[:200]}"
+                    )
+    except aiohttp.ClientError as err:
+        raise HomeAssistantError(
+            f"Network error setting zone behaviour: {err}"
+        ) from err
+
+    # Invalidate map cache so the next read picks up the new behaviour.
+    _persistent_map_cache.pop(coordinator.serial_number, None)
+    _LOGGER.info(
+        "Set zone behaviour on %s zone %s (%s): %s",
+        coordinator.serial_number,
+        zone_id,
+        zone_in,
+        existing_behaviours,
+    )
 
 
 async def _handle_get_cloud_devices(
@@ -1538,6 +1798,22 @@ async def _register_services(
 
         service_handlers[SERVICE_RESET_FILTER] = async_handle_reset_filter
         service_schemas[SERVICE_RESET_FILTER] = SERVICE_RESET_FILTER_SCHEMA
+
+    if SERVICE_START_ZONE_CLEAN in services_to_register:
+
+        async def async_handle_start_zone_clean(call: ServiceCall) -> None:
+            await _handle_start_zone_clean(hass, call)
+
+        service_handlers[SERVICE_START_ZONE_CLEAN] = async_handle_start_zone_clean
+        service_schemas[SERVICE_START_ZONE_CLEAN] = SERVICE_START_ZONE_CLEAN_SCHEMA
+
+    if SERVICE_SET_ZONE_BEHAVIOUR in services_to_register:
+
+        async def async_handle_set_zone_behaviour(call: ServiceCall) -> None:
+            await _handle_set_zone_behaviour(hass, call)
+
+        service_handlers[SERVICE_SET_ZONE_BEHAVIOUR] = async_handle_set_zone_behaviour
+        service_schemas[SERVICE_SET_ZONE_BEHAVIOUR] = SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA
 
     # Register services that aren't already registered
     registered_services = []

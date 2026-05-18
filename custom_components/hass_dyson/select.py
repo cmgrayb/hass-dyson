@@ -38,6 +38,14 @@ async def async_setup_entry(
     # Add additional selects based on capabilities
     device_capabilities = coordinator.device_capabilities
 
+    # Fan control mode select (Auto / Manual / Sleep) for air-cleaner devices.
+    # The class has always existed in this file but cmgrayb never wired it up.
+    device_categories = getattr(coordinator, "device_category", []) or []
+    if isinstance(device_categories, list) and any(
+        cat == "ec" for cat in device_categories
+    ):
+        entities.append(DysonFanControlModeSelect(coordinator))
+
     # Only show oscillation mode select for devices with advanced oscillation capability
     if "AdvanceOscillationDay1" in device_capabilities:
         entities.append(DysonOscillationModeSelect(coordinator))
@@ -53,20 +61,26 @@ async def async_setup_entry(
     if isinstance(device_categories, list) and any(
         cat == DEVICE_CATEGORY_ROBOT for cat in device_categories
     ):
-        # Determine which power level select to show based on capabilities
-        # Since we don't have specific capability names yet, we'll need to detect
-        # based on other device information. For now, create placeholder logic.
+        # Detect specific robot model.
+        # Cloud-discovered devices often have empty device_capabilities, so fall
+        # back to matching on device_name when the capability strings are absent.
+        device_name = (
+            coordinator.config_entry.data.get("device_name") or ""
+        ).lower()
 
-        # Detect specific robot model based on device capabilities
-        # 360 Vis Nav has Mapping, Restrictions, DirectedCleaning capabilities
-        if all(cap in device_capabilities for cap in ["Mapping", "DirectedCleaning"]):
+        is_vis_nav = (
+            all(cap in device_capabilities for cap in ["Mapping", "DirectedCleaning"])
+            or "vis nav" in device_name
+        )
+        is_heurist = "Heat" in device_capabilities or "heurist" in device_name
+
+        if is_vis_nav:
             entities.append(DysonRobotPowerVisNavSelect(coordinator))
-        elif "Heat" in device_capabilities:  # Heurist has Heat capability
+        elif is_heurist:
             entities.append(DysonRobotPowerHeuristSelect(coordinator))
         else:
             # Default to 360 Eye for other robot devices
             entities.append(DysonRobotPower360EyeSelect(coordinator))
-            # This will need to be refined once we have real device data
             _LOGGER.debug(
                 "Robot device %s has unknown power capabilities, using generic power select",
                 coordinator.serial_number,

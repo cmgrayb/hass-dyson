@@ -1423,6 +1423,12 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
             entities.append(DysonRobotBatterySensor(coordinator))
+            # Cloud-fetched cleaning history + Dyson's recommended-next-room
+            # sensor. Both gated on cloud auth.
+            if coordinator.config_entry.data.get("auth_token"):
+                for i in range(5):
+                    entities.append(DysonLastCleanSensor(coordinator, slot=i))
+                entities.append(DysonRecommendedCleanSensor(coordinator))
 
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
@@ -3080,3 +3086,332 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
+
+
+# ============================================================================
+# Cleaning history sensor (Vis Nav)
+# ============================================================================
+# Pulls the last N cleaning runs from /v1/{serial}/clean-maps?dustMap=total and
+# exposes one sensor per slot (state = clean timestamp, attrs = area/duration/zones).
+# Uses HA's built-in polling (should_poll=True, scan_interval=30min) — independent
+# of the MQTT coordinator since this is REST cloud data.
+
+from datetime import timedelta as _td  # noqa: E402
+
+import aiohttp as _aiohttp  # noqa: E402
+
+from homeassistant.components.sensor import SensorDeviceClass as _SDC  # noqa: E402
+
+# Module-level cache shared across all DysonLastCleanSensor instances per serial.
+# Avoids hammering Dyson cloud — one fetch per ~30 minutes covers all 5 slots.
+_clean_maps_cache: dict[str, tuple[float, list[dict]]] = {}
+_CLEAN_MAPS_TTL_S = 30 * 60  # 30 minutes
+
+
+async def _fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list[dict]:
+    """Fetch the last N cleaning runs (cached). Newest first."""
+    import time as _time
+
+    serial = coordinator.serial_number
+    now = _time.monotonic()
+    cached = _clean_maps_cache.get(serial)
+    if cached and (now - cached[0]) < _CLEAN_MAPS_TTL_S:
+        return cached[1]
+
+    auth_token = coordinator.config_entry.data.get("auth_token")
+    if not auth_token:
+        return []
+
+    url = f"https://appapi.cp.dyson.com/v1/{serial}/clean-maps?dustMap=total"
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "User-Agent": "android client",
+        "Accept": "application/json",
+    }
+    timeout = _aiohttp.ClientTimeout(total=15)
+    try:
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    _LOGGER.warning(
+                        "clean-maps fetch for %s returned HTTP %d", serial, resp.status
+                    )
+                    return cached[1] if cached else []
+                cleans = await resp.json()
+    except _aiohttp.ClientError as err:
+        _LOGGER.warning("Network error fetching clean-maps for %s: %s", serial, err)
+        return cached[1] if cached else []
+
+    if not isinstance(cleans, list):
+        return cached[1] if cached else []
+    # Sort newest first by start time, defensively (API usually returns newest first already)
+    cleans.sort(key=lambda c: _extract_start_time(c) or "", reverse=True)
+    _clean_maps_cache[serial] = (now, cleans)
+    return cleans
+
+
+def _extract_start_time(clean: dict) -> str | None:
+    """Pull the earliest timestamp from the cleanTimeline events."""
+    timeline = clean.get("cleanTimeline") or []
+    times = [e.get("time") for e in timeline if isinstance(e, dict) and e.get("time")]
+    return min(times) if times else None
+
+
+def _extract_end_time(clean: dict) -> str | None:
+    timeline = clean.get("cleanTimeline") or []
+    times = [e.get("time") for e in timeline if isinstance(e, dict) and e.get("time")]
+    return max(times) if times else None
+
+
+def _extract_duration_minutes(clean: dict) -> int | None:
+    """Compute end - start in minutes from the cleanTimeline."""
+    from datetime import datetime, timezone
+
+    start, end = _extract_start_time(clean), _extract_end_time(clean)
+    if not start or not end:
+        return None
+    try:
+        s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        return max(0, int((e - s).total_seconds() // 60))
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_cleaned_area_m2(clean: dict) -> float | None:
+    """The cleanedFootprint dict often has an 'area' summary; fall back to None."""
+    fp = clean.get("cleanedFootprint") or {}
+    area = fp.get("area") or fp.get("cleanedArea")
+    if isinstance(area, (int, float)):
+        return round(float(area), 2)
+    return None
+
+
+def _extract_zone_ids(clean: dict) -> list[str]:
+    """Return the zone IDs targeted by this clean.
+
+    Whole-house ("global") cleans → empty list. The 'zones' top-level key in
+    the API response holds per-zone bitmap data (not names), so we read from
+    cleaningProgramme.unorderedZones / orderedZones instead.
+    """
+    programme = clean.get("cleaningProgramme") or {}
+    ids: list[str] = []
+    for key in ("unorderedZones", "orderedZones"):
+        for z in programme.get(key) or []:
+            ids.append(str(z))
+    return ids
+
+
+def _extract_clean_type(clean: dict) -> str:
+    """'zoneConfigured', 'global', or 'unknown'."""
+    programme = clean.get("cleaningProgramme") or {}
+    if programme.get("unorderedZones") or programme.get("orderedZones"):
+        return "zoneConfigured"
+    if programme:
+        return "global"
+    return "unknown"
+
+
+def _extract_fault_count(clean: dict) -> int:
+    timeline = clean.get("cleanTimeline") or []
+    return sum(
+        1 for e in timeline
+        if isinstance(e, dict)
+        and (e.get("faultLocation") is not None or "fault" in str(e.get("eventName", "")).lower())
+    )
+
+
+class DysonLastCleanSensor(DysonEntity, SensorEntity):
+    """Sensor for one of the last N cleans (slot 0 = most recent).
+
+    State: ISO timestamp of the clean's start. Attributes carry the full summary.
+    Polled every 30 minutes; cache shared across all 5 slot sensors.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_device_class = _SDC.TIMESTAMP
+
+    def __init__(
+        self, coordinator: DysonDataUpdateCoordinator, slot: int
+    ) -> None:
+        super().__init__(coordinator)
+        self._slot = slot
+        suffix = "" if slot == 0 else f"_{slot + 1}"
+        self._attr_unique_id = f"{coordinator.serial_number}_last_clean{suffix}"
+        label = "Last Clean" if slot == 0 else f"Last Clean #{slot + 1}"
+        self._attr_name = label
+        self._attr_icon = "mdi:vacuum"
+
+    @property
+    def should_poll(self) -> bool:
+        return True
+
+    async def async_update(self) -> None:
+        from datetime import datetime, timezone
+
+        cleans = await _fetch_clean_maps(self.coordinator)
+        if len(cleans) <= self._slot:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+        clean = cleans[self._slot]
+
+        start_str = _extract_start_time(clean)
+        try:
+            self._attr_native_value = (
+                datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                if start_str
+                else None
+            )
+        except (ValueError, AttributeError):
+            self._attr_native_value = None
+
+        # Cross-reference zone IDs with the persistent-map metadata cache
+        # (populated by services.py) to resolve human-readable room names.
+        zone_ids = _extract_zone_ids(clean)
+        zone_names: list[str] = []
+        if zone_ids:
+            try:
+                from .services import _persistent_map_cache
+
+                cached = _persistent_map_cache.get(self.coordinator.serial_number)
+                if cached:
+                    id_to_name: dict[str, str] = {}
+                    for pmap in cached[1]:
+                        for z in pmap.get("zones", []):
+                            id_to_name[str(z.get("id"))] = str(z.get("name") or z.get("id"))
+                    zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
+            except Exception:  # noqa: BLE001 — names are a nice-to-have
+                zone_names = []
+
+        self._attr_extra_state_attributes = {
+            "clean_id": clean.get("cleanId"),
+            "clean_type": _extract_clean_type(clean),
+            "duration_minutes": _extract_duration_minutes(clean),
+            "area_m2": _extract_cleaned_area_m2(clean),
+            "zone_ids": zone_ids,
+            "zone_names": zone_names,
+            "fault_count": _extract_fault_count(clean),
+            "sequence_number": clean.get("sequenceNumber"),
+        }
+
+
+# ============================================================================
+# Cleaning recommendations sensor (Vis Nav)
+# ============================================================================
+# /v1/app/{serial}/recommended-cleans returns Dyson's suggestion of which
+# zones to clean next based on how long since each was last visited.
+
+_recommended_cleans_cache: dict[str, tuple[float, list]] = {}
+_RECOMMENDED_CLEANS_TTL_S = 30 * 60  # 30 min
+
+
+async def _fetch_recommended_cleans(coordinator: DysonDataUpdateCoordinator) -> list:
+    import time as _time
+
+    serial = coordinator.serial_number
+    now = _time.monotonic()
+    cached = _recommended_cleans_cache.get(serial)
+    if cached and (now - cached[0]) < _RECOMMENDED_CLEANS_TTL_S:
+        return cached[1]
+
+    auth_token = coordinator.config_entry.data.get("auth_token")
+    if not auth_token:
+        return {}
+    url = f"https://appapi.cp.dyson.com/v1/app/{serial}/recommended-cleans"
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "User-Agent": "android client",
+        "Accept": "application/json",
+    }
+    timeout = _aiohttp.ClientTimeout(total=15)
+    try:
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    _LOGGER.debug(
+                        "recommended-cleans fetch for %s → HTTP %d", serial, resp.status
+                    )
+                    return cached[1] if cached else {}
+                data = await resp.json()
+    except _aiohttp.ClientError as err:
+        _LOGGER.debug("recommended-cleans fetch for %s failed: %s", serial, err)
+        return cached[1] if cached else {}
+
+    # Endpoint returns a LIST of maps (each with zonePredictions)
+    if not isinstance(data, list):
+        return cached[1] if cached else []
+    _recommended_cleans_cache[serial] = (now, data)
+    return data
+
+
+class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
+    """Dyson's recommendation for the next zone to clean (Vis Nav).
+
+    State: human-readable name of the top recommended zone (or 'None').
+    Attributes: full list of {zone_id, zone_name, days_since_last_visit, priority}.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_icon = "mdi:lightbulb-on-outline"
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_recommended_clean"
+        self._attr_name = "Recommended Clean"
+
+    async def async_update(self) -> None:
+        data = await _fetch_recommended_cleans(self.coordinator)
+        # Cross-reference zone IDs with cached persistent-map names
+        id_to_name: dict[str, str] = {}
+        try:
+            from .services import _persistent_map_cache
+
+            cached = _persistent_map_cache.get(self.coordinator.serial_number)
+            if cached:
+                for pmap in cached[1]:
+                    for z in pmap.get("zones", []):
+                        id_to_name[str(z.get("id"))] = str(z.get("name") or z.get("id"))
+        except Exception:  # noqa: BLE001
+            pass
+
+        # API returns: [{persistentMapId, zonePredictions: [{zoneId, zoneDustMilligrams: [{name, weight}, ...]}]}]
+        # Each zone's dust list has entries for extraFine/fine/medium/large/other/total.
+        # We sort zones by total weight (descending) so the dirtiest is first.
+        predictions: list[dict] = []
+        if data and isinstance(data, list):
+            for pmap in data:
+                if not isinstance(pmap, dict):
+                    continue
+                for pred in pmap.get("zonePredictions") or []:
+                    if not isinstance(pred, dict):
+                        continue
+                    zid = str(pred.get("zoneId") or "")
+                    dust_breakdown = {
+                        d["name"]: float(d.get("weight", 0))
+                        for d in (pred.get("zoneDustMilligrams") or [])
+                        if isinstance(d, dict) and d.get("name")
+                    }
+                    predictions.append(
+                        {
+                            "zone_id": zid,
+                            "zone_name": id_to_name.get(zid, zid),
+                            "total_dust_mg": round(dust_breakdown.get("total", 0.0), 1),
+                            "dust_breakdown_mg": dust_breakdown,
+                        }
+                    )
+        # Sort by total dust descending (dirtiest first)
+        predictions.sort(key=lambda p: p["total_dust_mg"], reverse=True)
+
+        if predictions and predictions[0]["total_dust_mg"] > 0:
+            self._attr_native_value = predictions[0]["zone_name"]
+        else:
+            self._attr_native_value = "None"
+        self._attr_extra_state_attributes = {
+            "top_zone_dust_mg": (
+                predictions[0]["total_dust_mg"] if predictions else 0
+            ),
+            "predictions": predictions,
+        }
