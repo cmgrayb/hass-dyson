@@ -323,7 +323,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
 
         try:
             if start_new:
-                await device.robot_start_clean()
+                await device.robot_start_clean(cleaning_mode="global")
             else:
                 await device.robot_resume()
         except Exception as ex:

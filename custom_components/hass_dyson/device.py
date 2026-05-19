@@ -3153,6 +3153,52 @@ class DysonDevice:
     # Robot Vacuum Control Methods
     # ============================
 
+    async def robot_start_clean(
+        self,
+        cleaning_mode: str = "global",
+        full_clean_type: str = "immediate",
+        cleaning_programme: dict | None = None,
+    ) -> None:
+        """Start a robot vacuum cleaning operation.
+
+        Sends a START command via MQTT. Pass ``cleaning_mode="global"`` for a
+        full-home clean (equivalent to pressing the button on the dock), or
+        ``cleaning_mode="zoneConfigured"`` together with a ``cleaning_programme``
+        dict for zone-specific cleaning (Vis Nav only).
+
+        Args:
+            cleaning_mode: ``"global"`` (default) or ``"zoneConfigured"``.
+            full_clean_type: Clean trigger type; ``"immediate"`` for on-demand.
+            cleaning_programme: Zone cleaning plan dict required when
+                ``cleaning_mode="zoneConfigured"``.
+
+        Raises:
+            RuntimeError: If device is not connected.
+            Exception: If command transmission fails.
+        """
+        if not self.is_connected:
+            raise RuntimeError(f"Device {self.serial_number} is not connected")
+
+        _LOGGER.info(
+            "Sending start clean command to robot %s (mode=%s)",
+            mask_serial(self.serial_number),
+            cleaning_mode,
+        )
+
+        from .const import ROBOT_CMD_START
+
+        command_data: dict = {
+            "msg": ROBOT_CMD_START,
+            "cleaningMode": cleaning_mode,
+            "fullCleanType": full_clean_type,
+            "mode-reason": "LAPP",
+            "time": self._get_command_timestamp(),
+        }
+        if cleaning_programme is not None:
+            command_data["cleaningProgramme"] = cleaning_programme
+
+        await self._send_robot_command(command_data)
+
     async def robot_pause(self) -> None:
         """Pause robot vacuum cleaning operation.
 
