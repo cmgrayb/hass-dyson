@@ -628,16 +628,22 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def serial_number(self) -> str:
         """Return device serial number."""
+        # Debug logging to see what's in the config data
+        _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
+        # Full config entry data is intentionally NOT logged to prevent credential leaks
+
         # Handle both legacy single-device entries and new account-level entries
         if CONF_SERIAL_NUMBER in self.config_entry.data:
-            return self.config_entry.data[CONF_SERIAL_NUMBER]
-        # For account-level entries, serial number should be passed differently
-        return self.config_entry.data.get("device_serial_number", "unknown")
-
-    @property
-    def _log_serial(self) -> str:
-        """Return masked serial number for log messages."""
-        return mask_serial(self.serial_number)
+            serial = self.config_entry.data[CONF_SERIAL_NUMBER]
+            _LOGGER.debug("Found serial_number in config: %s", mask_serial(serial))
+            return serial
+        else:
+            # For account-level entries, serial number should be passed differently
+            serial = self.config_entry.data.get("device_serial_number", "unknown")
+            _LOGGER.debug(
+                "Using device_serial_number fallback: %s", mask_serial(serial)
+            )
+            return serial
 
     @property
     def device_name(self) -> str:
