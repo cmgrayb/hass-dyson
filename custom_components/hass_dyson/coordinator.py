@@ -61,6 +61,37 @@ from .device import DysonDevice
 _LOGGER = logging.getLogger(__name__)
 
 
+# Sensitive config-entry field names that must be redacted from logs.
+# Token, password, secret, credential, key (case-insensitive substring match).
+_SENSITIVE_FIELD_SUBSTRINGS = ("token", "password", "secret", "credential", "key")
+
+
+def _redact_sensitive(data: Any) -> Any:
+    """Return a deep copy of *data* with sensitive fields redacted for logging.
+
+    Recursively redacts any mapping key whose lowercased name contains one of
+    _SENSITIVE_FIELD_SUBSTRINGS. Lists are processed element-wise. Accepts
+    any Mapping (HA's config_entry.data is a MappingProxyType, NOT a dict).
+    """
+    from collections.abc import Mapping  # local import keeps module top tidy
+
+    if isinstance(data, Mapping):
+        out: dict[str, Any] = {}
+        for k, v in data.items():
+            k_lower = str(k).lower()
+            if any(sub in k_lower for sub in _SENSITIVE_FIELD_SUBSTRINGS):
+                if v in (None, "", 0, False):
+                    out[k] = v
+                else:
+                    out[k] = f"<REDACTED {type(v).__name__}:{len(str(v))} chars>"
+            else:
+                out[k] = _redact_sensitive(v)
+        return out
+    if isinstance(data, list):
+        return [_redact_sensitive(item) for item in data]
+    return data
+
+
 def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
     """Get default country and culture from Home Assistant configuration for coordinator.
 
@@ -626,9 +657,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def serial_number(self) -> str:
         """Return device serial number."""
-        # Debug logging to see what's in the config data
+        # Debug logging to see what's in the config data. Sensitive fields like
+        # auth_token are redacted before logging so user-shared logs don't leak
+        # account credentials.
         _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
-        _LOGGER.debug("Config entry data: %s", self.config_entry.data)
+        _LOGGER.debug(
+            "Config entry data: %s", _redact_sensitive(self.config_entry.data)
+        )
 
         # Handle both legacy single-device entries and new account-level entries
         if CONF_SERIAL_NUMBER in self.config_entry.data:
