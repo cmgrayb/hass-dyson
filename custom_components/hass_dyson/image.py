@@ -25,10 +25,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._cloud import TTLCache, dyson_cloud_get, fetch_clean_maps
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .entity import DysonEntity
+from .vacuum import fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,30 +86,44 @@ async def async_setup_entry(
 # Cloud fetch helpers.
 #
 # Recent cleaning runs (the clean-maps endpoint) are fetched via the SHARED
-# `fetch_clean_maps` in _cloud.py — the cleaning-history sensors in sensor.py
+# `fetch_clean_maps` in vacuum.py — the cleaning-history sensors in sensor.py
 # read the same blob, so one cache covers both consumers.
 #
-# The single-map endpoint (persistent-maps/{id}) is only consumed here, so
+# The persistent-map endpoint (persistent-maps/{id}) is only consumed here, so
 # the cache stays local. Persistent maps change rarely → generous TTL.
 # ----------------------------------------------------------------------------
 
 _persist_map_cache = TTLCache(6 * 3600)
 
 
-async def _fetch_persist_map(
-    coordinator: DysonDataUpdateCoordinator, map_id: str
-) -> dict:
+async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: str):
+    """Fetch a persistent map via libdyson-rest (cached 6 h).
+
+    Returns a ``PersistentMap`` object or the stale cached value on failure.
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
     key = f"{coordinator.serial_number}:{map_id}"
     fresh = _persist_map_cache.get(key)
     if fresh is not None:
         return fresh
-    data = await dyson_cloud_get(
-        coordinator, f"/v1/app/{coordinator.serial_number}/persistent-maps/{map_id}"
-    )
-    if not isinstance(data, dict):
-        return _persist_map_cache.get_stale(key) or {}
-    _persist_map_cache.set(key, data)
-    return data
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return _persist_map_cache.get_stale(key)
+        try:
+            pmap = await client.get_persistent_map(coordinator.serial_number, map_id)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug(
+                "Failed to fetch persistent map %s for %s: %s",
+                map_id,
+                coordinator.serial_number,
+                err,
+            )
+            return _persist_map_cache.get_stale(key)
+
+    _persist_map_cache.set(key, pmap)
+    return pmap
 
 
 # ----------------------------------------------------------------------------
@@ -332,56 +346,56 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if not cleans:
             return None
         latest = cleans[0]
-        clean_id = latest.get("cleanId")
+        clean_id = latest.clean_id
         if clean_id and clean_id == self._cached_clean_id and self._cached_png:
             return self._cached_png
 
-        dust_map = latest.get("dustMap")
-        if not dust_map:
+        dust_map_model = latest.dust_map
+        if not dust_map_model:
             return None
+
+        # Convert DustMapData to the dict shape expected by _render_dust_map_png.
+        dust_map_dict = {
+            "width": dust_map_model.width,
+            "height": dust_map_model.height,
+            "resolution": dust_map_model.resolution,
+            "dustData": dust_map_model.dust_data,
+        }
 
         # Coordinate info for correctly positioning the dust crop on the
         # presentation map. Both maps quote positions in world mm; resolution
         # is mm/pixel (typically 20 for Vis Nav).
-        resolution_mm_per_px = int(dust_map.get("resolution") or 20)
+        resolution_mm_per_px = dust_map_model.resolution
         clean_position_mm: tuple[float, float] | None = None
         map_offset_mm: tuple[float, float] | None = None
-        persistent = latest.get("persistentMap") or {}
-        if "cleanMapPosition" in persistent:
-            cp = persistent["cleanMapPosition"]
-            clean_position_mm = (float(cp.get("x", 0)), float(cp.get("y", 0)))
+        if latest.clean_map_position:
+            pos = latest.clean_map_position
+            clean_position_mm = (pos.x, pos.y)
 
         presentation_png: bytes | None = None
         rotation_deg = 0
-        pmap_id = persistent.get("id")
+        pmap_id = latest.persistent_map_id
         if pmap_id:
             pmap = await _fetch_persist_map(self.coordinator, pmap_id)
-            pres = (pmap.get("presentationMap") or {}).get("data")
-            if pres:
+            if pmap and pmap.presentation_map_data:
                 try:
-                    presentation_png = base64.b64decode(pres)
+                    presentation_png = base64.b64decode(pmap.presentation_map_data)
                 except (ValueError, TypeError):
                     presentation_png = None
-            rotation_deg = int(
-                (pmap.get("zonesDefinition") or {}).get(
-                    "persistentMapDisplayOrientation"
-                )
-                or 0
-            )
-            offset = pmap.get("offset") or {}
-            if "x" in offset and "y" in offset:
-                map_offset_mm = (float(offset["x"]), float(offset["y"]))
+            if pmap:
+                rotation_deg = pmap.display_orientation
+                if pmap.offset_x is not None and pmap.offset_y is not None:
+                    map_offset_mm = (pmap.offset_x, pmap.offset_y)
 
         cleaned_fp_png: bytes | None = None
-        fp = (latest.get("cleanedFootprint") or {}).get("data")
-        if fp:
+        if latest.cleaned_footprint and latest.cleaned_footprint.data:
             try:
-                cleaned_fp_png = base64.b64decode(fp)
+                cleaned_fp_png = base64.b64decode(latest.cleaned_footprint.data)
             except (ValueError, TypeError):
                 cleaned_fp_png = None
 
         png = _render_dust_map_png(
-            dust_map,
+            dust_map_dict,
             cleaned_fp_png,
             presentation_png,
             rotation_deg,
@@ -425,27 +439,21 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         cleans = await fetch_clean_maps(self.coordinator)
         if not cleans:
             return None
-        persistent = cleans[0].get("persistentMap") or {}
-        pmap_id = persistent.get("id")
+        pmap_id = cleans[0].persistent_map_id
         if not pmap_id:
             return None
         if pmap_id == self._cached_pmap_id and self._cached_png:
             return self._cached_png
 
         pmap = await _fetch_persist_map(self.coordinator, pmap_id)
-        pres_b64 = (pmap.get("presentationMap") or {}).get("data")
-        if not pres_b64:
+        if not pmap or not pmap.presentation_map_data:
             return None
         try:
-            png_in = base64.b64decode(pres_b64)
+            png_in = base64.b64decode(pmap.presentation_map_data)
         except (ValueError, TypeError):
             return None
 
-        rotation_deg = int(
-            (pmap.get("zonesDefinition") or {}).get("persistentMapDisplayOrientation")
-            or 0
-        )
-        png = _render_presentation_png(png_in, rotation_deg)
+        png = _render_presentation_png(png_in, pmap.display_orientation)
         if png:
             self._cached_pmap_id = pmap_id
             self._cached_png = png

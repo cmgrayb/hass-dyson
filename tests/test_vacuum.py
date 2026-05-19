@@ -330,7 +330,8 @@ class TestDysonVacuumEntity:
     async def test_start_command_failure(self, mock_coordinator_robot):
         """Test start command failure handling."""
         entity = DysonVacuumEntity(mock_coordinator_robot)
-        mock_coordinator_robot.device.robot_resume.side_effect = Exception(
+        # State is INACTIVE_CHARGED so async_start calls robot_start_clean, not robot_resume
+        mock_coordinator_robot.device.robot_start_clean.side_effect = Exception(
             "Connection lost"
         )
 
@@ -502,8 +503,8 @@ class TestVacuumEntityErrorHandling:
     async def test_connection_error_handling(self, mock_coordinator_robot):
         """Test handling of connection errors."""
         entity = DysonVacuumEntity(mock_coordinator_robot)
-
-        mock_coordinator_robot.device.robot_resume.side_effect = ConnectionError(
+        # State is INACTIVE_CHARGED so async_start calls robot_start_clean, not robot_resume
+        mock_coordinator_robot.device.robot_start_clean.side_effect = ConnectionError(
             "Lost connection"
         )
 

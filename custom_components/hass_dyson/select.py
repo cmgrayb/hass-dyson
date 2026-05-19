@@ -33,18 +33,8 @@ async def async_setup_entry(
 
     entities: list[SelectEntity] = []
 
-    # Fan control mode moved to fan platform preset modes
-
     # Add additional selects based on capabilities
     device_capabilities = coordinator.device_capabilities
-
-    # Fan control mode select (Auto / Manual / Sleep) for air-cleaner devices.
-    # The class has always existed in this file but cmgrayb never wired it up.
-    device_categories = getattr(coordinator, "device_category", []) or []
-    if isinstance(device_categories, list) and any(
-        cat == "ec" for cat in device_categories
-    ):
-        entities.append(DysonFanControlModeSelect(coordinator))
 
     # Only show oscillation mode select for devices with advanced oscillation capability
     if "AdvanceOscillationDay1" in device_capabilities:
@@ -100,103 +90,6 @@ async def async_setup_entry(
     # No separate heating mode select needed
 
     async_add_entities(entities, True)
-
-
-class DysonFanControlModeSelect(DysonEntity, SelectEntity):
-    """Select entity for fan control mode."""
-
-    coordinator: DysonDataUpdateCoordinator
-
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
-        """Initialize the fan control mode select."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_fan_control_mode"
-        self._attr_translation_key = "fan_control_mode"
-        self._attr_icon = "mdi:fan-auto"
-
-        # For manual devices, only show Auto and Manual (no Sleep)
-        connection_type = coordinator.config_entry.data.get(
-            "connection_type", "unknown"
-        )
-        if connection_type == "local_only":
-            self._attr_options = ["Auto", "Manual"]
-        else:
-            self._attr_options = ["Auto", "Manual", "Sleep"]
-
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        if self.coordinator.device:
-            product_state = self.coordinator.data.get("product-state", {})
-
-            # Use device auto_mode property which handles both fmod="AUTO" and auto="ON"
-            auto_mode = self.coordinator.device.auto_mode
-            night_mode = self.coordinator.device.get_state_value(
-                product_state, "nmod", "OFF"
-            )
-
-            # For manual devices, Sleep mode is handled by Night Mode switch
-            connection_type = self.coordinator.config_entry.data.get(
-                "connection_type", "unknown"
-            )
-            if connection_type == "local_only":
-                if auto_mode:
-                    self._attr_current_option = "Auto"
-                else:
-                    self._attr_current_option = "Manual"
-            else:
-                if night_mode == "ON":
-                    self._attr_current_option = "Sleep"
-                elif auto_mode:
-                    self._attr_current_option = "Auto"
-                else:
-                    self._attr_current_option = "Manual"
-        else:
-            self._attr_current_option = None
-
-        super()._handle_coordinator_update()
-
-    async def async_select_option(self, option: str) -> None:
-        """Select the air quality mode."""
-        if not self.coordinator.device:
-            return
-
-        try:
-            if option == "Auto":
-                await self.coordinator.device.set_auto_mode(True)
-            elif option == "Sleep":
-                # Only for cloud devices
-                await self.coordinator.device.set_night_mode(True)
-                await self.coordinator.device.set_auto_mode(False)
-            else:  # Manual
-                await self.coordinator.device.set_auto_mode(False)
-
-            # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug(
-                "Set air quality mode to %s for %s",
-                option,
-                self.coordinator.serial_number,
-            )
-        except (ConnectionError, TimeoutError) as err:
-            _LOGGER.error(
-                "Communication error setting air quality mode to '%s' for %s: %s",
-                option,
-                self.coordinator.serial_number,
-                err,
-            )
-        except ValueError as err:
-            _LOGGER.error(
-                "Invalid air quality mode '%s' for %s: %s",
-                option,
-                self.coordinator.serial_number,
-                err,
-            )
-        except Exception as err:
-            _LOGGER.error(
-                "Unexpected error setting air quality mode to '%s' for %s: %s",
-                option,
-                self.coordinator.serial_number,
-                err,
-            )
 
 
 class DysonOscillationModeSelect(DysonEntity, SelectEntity):

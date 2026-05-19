@@ -55,11 +55,54 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Clean-maps fetch helper (shared by sensor.py and image.py for vacuum data)
+# ---------------------------------------------------------------------------
+
+# Cache cleaning runs for 30 minutes to avoid hammering the cloud API.
+_clean_maps_cache: TTLCache = TTLCache(30 * 60)
+
+
+async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
+    """Fetch recent cleaning runs via libdyson-rest (cached 30 min, newest-first).
+
+    Uses ``AsyncDysonClient.get_clean_maps()`` which requests the dust-map
+    blob (``include_dust_map=True``) and returns typed ``CleanRecord`` objects.
+
+    Returns an empty list (or stale cache) on any failure.
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    serial = coordinator.serial_number
+    fresh = _clean_maps_cache.get(serial)
+    if fresh is not None:
+        return fresh
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return _clean_maps_cache.get_stale(serial) or []
+        try:
+            records = await client.get_clean_maps(serial, include_dust_map=True)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
+            return _clean_maps_cache.get_stale(serial) or []
+
+    # Newest-first: sort by earliest timeline event timestamp.
+    records.sort(
+        key=lambda c: min(
+            (e.time for e in c.timeline if e.time),
+            default="",
+        ),
+        reverse=True,
+    )
+    _clean_maps_cache.set(serial, records)
+    return records
 
 
 async def async_setup_entry(

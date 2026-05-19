@@ -71,7 +71,6 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from libdyson_rest import DysonAPIError, DysonAuthError, DysonConnectionError
 
-from ._cloud import TTLCache, dyson_cloud_get, dyson_cloud_put
 from .const import (
     CONF_COUNTRY,
     CONF_CULTURE,
@@ -89,7 +88,7 @@ from .const import (
     SLEEP_TIMER_MAX,
     SLEEP_TIMER_MIN,
 )
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
@@ -627,40 +626,46 @@ _persistent_map_cache = TTLCache(3600)
 
 async def _fetch_persistent_map_metadata(
     coordinator: DysonDataUpdateCoordinator,
-) -> list[dict]:
-    """Fetch and cache the Vis Nav persistent-map metadata.
+) -> list:
+    """Fetch and cache the Vis Nav persistent-map metadata via libdyson-rest.
 
-    Endpoint: GET /v1/app/{serial}/persistent-map-metadata (Bearer auth).
-    Discovered via thoukydides/matterbridge-dyson-robot; not in libdyson-rest.
-    Returns list of maps; each has id, name, zones[{id,name,icon,area}], etc.
-
-    Raises HomeAssistantError on hard failures (service callers want the
-    exception surfaced rather than getting an empty list back).
+    Returns a list of ``PersistentMapMeta`` objects (one per stored map).
+    Raises ``HomeAssistantError`` on hard failures so service callers can
+    surface the error rather than getting a silent empty list.
     """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
     serial = coordinator.serial_number
     fresh = _persistent_map_cache.get(serial)
     if fresh is not None:
         return fresh
 
-    maps = await dyson_cloud_get(
-        coordinator, f"/v1/app/{serial}/persistent-map-metadata"
-    )
-    if not isinstance(maps, list):
-        stale = _persistent_map_cache.get_stale(serial)
-        if stale is not None:
-            return stale
-        raise HomeAssistantError(
-            f"Unable to fetch persistent map for {serial} — "
-            "check Dyson cloud connectivity and that the account has an "
-            "auth_token (re-authenticate the integration if not)"
-        )
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            stale = _persistent_map_cache.get_stale(serial)
+            if stale is not None:
+                return stale
+            raise HomeAssistantError(
+                f"No auth_token available for {serial} — "
+                "re-authenticate the integration to enable cloud features"
+            )
+        try:
+            maps = await client.get_persistent_map_metadata(serial)
+        except (DysonAPIError, DysonAuthError) as err:
+            stale = _persistent_map_cache.get_stale(serial)
+            if stale is not None:
+                return stale
+            raise HomeAssistantError(
+                f"Unable to fetch persistent map for {serial}: {err} — "
+                "check Dyson cloud connectivity"
+            ) from err
 
     _persistent_map_cache.set(serial, maps)
     _LOGGER.info(
         "Fetched %d persistent map(s) for %s (%d zones total)",
         len(maps),
         serial,
-        sum(len(m.get("zones", [])) for m in maps),
+        sum(len(m.zones) for m in maps),
     )
     return maps
 
@@ -683,9 +688,9 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
         )
     # Use the first (most-recently-visited) map. Multi-map handling is a v2 concern.
     pmap = maps[0]
-    pmap_id = pmap["id"]
-    zones_by_id = {z["id"]: z for z in pmap.get("zones", [])}
-    zones_by_name_lc = {z["name"].lower(): z for z in pmap.get("zones", [])}
+    pmap_id = pmap.id
+    zones_by_id = {z.id: z for z in pmap.zones}
+    zones_by_name_lc = {(z.name or "").lower(): z for z in pmap.zones if z.name}
 
     resolved_ids: list[str] = []
     unknown: list[str] = []
@@ -694,28 +699,24 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
         if entry_str in zones_by_id:
             resolved_ids.append(entry_str)
         elif entry_str.lower() in zones_by_name_lc:
-            resolved_ids.append(zones_by_name_lc[entry_str.lower()]["id"])
+            resolved_ids.append(zones_by_name_lc[entry_str.lower()].id)
         else:
             unknown.append(entry_str)
     if unknown:
-        known_names = sorted(z["name"] for z in pmap.get("zones", []))
+        known_names = sorted(z.name for z in pmap.zones if z.name)
         raise ServiceValidationError(
-            f"Unknown zone(s) {unknown!r} for map {pmap.get('name')!r}. "
-            f"Known: {known_names}"
+            f"Unknown zone(s) {unknown!r} for map {pmap.name!r}. Known: {known_names}"
         )
 
     # IMPORTANT: zonesDefinitionLastUpdatedDate must be included for the
     # device to honour the zoneConfigured request. Without it, the device
     # silently downgrades the START to a global (whole-house) clean.
-    # Discovered during live testing — the field appears alongside the
-    # zoneIds in the device's STATE-CHANGE echo when MyDyson triggers a
-    # zone clean.
     cleaning_programme = {
         "persistentMapId": pmap_id,
         "orderedZones": [],
         "unorderedZones": resolved_ids,
     }
-    zdlud = pmap.get("zonesDefinitionLastUpdatedDate")
+    zdlud = pmap.zones_definition_last_updated_date
     if zdlud:
         cleaning_programme["zonesDefinitionLastUpdatedDate"] = zdlud
 
@@ -729,7 +730,7 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
             "Started zone clean on %s: zones=%s (map %s)",
             coordinator.serial_number,
             resolved_ids,
-            pmap.get("name"),
+            pmap.name,
         )
     except Exception as err:
         _LOGGER.error(
@@ -763,26 +764,35 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
     if not maps:
         raise HomeAssistantError(f"No persistent maps for {coordinator.serial_number}")
     pmap = maps[0]
-    pmap_id = pmap["id"]
-    zones_by_id = {str(z["id"]): z for z in pmap.get("zones", [])}
-    zones_by_name_lc = {
-        str(z["name"]).lower(): z for z in pmap.get("zones", []) if z.get("name")
-    }
+    pmap_id = pmap.id
+    zones_by_id = {z.id: z for z in pmap.zones}
+    zones_by_name_lc = {(z.name or "").lower(): z for z in pmap.zones if z.name}
     if zone_in in zones_by_id:
         zone_id = zone_in
     elif zone_in.lower() in zones_by_name_lc:
-        zone_id = str(zones_by_name_lc[zone_in.lower()]["id"])
+        zone_id = zones_by_name_lc[zone_in.lower()].id
     else:
         raise ServiceValidationError(
             f"Unknown zone {zone_in!r}. Known: "
-            f"{sorted(z['name'] for z in pmap.get('zones', []))}"
+            f"{sorted(z.name for z in pmap.zones if z.name)}"
         )
 
-    await dyson_cloud_put(
-        coordinator,
-        f"/v1/app/{coordinator.serial_number}/{pmap_id}/zones/{zone_id}/zone-behaviours",
-        {"cleaningStrategy": cleaning_strategy},
-    )
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            raise HomeAssistantError(
+                f"No auth_token for {coordinator.serial_number} — "
+                "re-authenticate to enable cloud features"
+            )
+        try:
+            await client.set_zone_behaviour(
+                coordinator.serial_number, pmap_id, zone_id, cleaning_strategy
+            )
+        except (DysonAPIError, DysonAuthError) as err:
+            raise HomeAssistantError(
+                f"Failed to set zone behaviour on {coordinator.serial_number}: {err}"
+            ) from err
 
     # Invalidate map cache so the next read picks up the new behaviour.
     _persistent_map_cache.invalidate(coordinator.serial_number)

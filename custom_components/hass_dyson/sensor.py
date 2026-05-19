@@ -68,16 +68,16 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ._cloud import TTLCache, dyson_cloud_get, fetch_clean_maps
 from .const import (
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
     DOMAIN,
 )
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
+from .vacuum import fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -3152,21 +3152,19 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
 # image consumes the same blob seconds after we do).
 
 
-def _extract_start_time(clean: dict) -> str | None:
-    """Pull the earliest timestamp from the cleanTimeline events."""
-    timeline = clean.get("cleanTimeline") or []
-    times = [e.get("time") for e in timeline if isinstance(e, dict) and e.get("time")]
+def _extract_start_time(clean) -> str | None:
+    """Pull the earliest timestamp from the CleanRecord timeline."""
+    times = [e.time for e in clean.timeline if e.time]
     return min(times) if times else None
 
 
-def _extract_end_time(clean: dict) -> str | None:
-    timeline = clean.get("cleanTimeline") or []
-    times = [e.get("time") for e in timeline if isinstance(e, dict) and e.get("time")]
+def _extract_end_time(clean) -> str | None:
+    times = [e.time for e in clean.timeline if e.time]
     return max(times) if times else None
 
 
-def _extract_duration_minutes(clean: dict) -> int | None:
-    """Compute end - start in minutes from the cleanTimeline."""
+def _extract_duration_minutes(clean) -> int | None:
+    """Compute end - start in minutes from the CleanRecord timeline."""
     from datetime import datetime
 
     start, end = _extract_start_time(clean), _extract_end_time(clean)
@@ -3180,50 +3178,39 @@ def _extract_duration_minutes(clean: dict) -> int | None:
         return None
 
 
-def _extract_cleaned_area_m2(clean: dict) -> float | None:
-    """The cleanedFootprint dict often has an 'area' summary; fall back to None."""
-    fp = clean.get("cleanedFootprint") or {}
-    area = fp.get("area") or fp.get("cleanedArea")
-    if isinstance(area, (int, float)):
-        return round(float(area), 2)
+def _extract_cleaned_area_m2(clean) -> float | None:
+    """Return cleaned area in m² from the CleanRecord's cleaned_footprint."""
+    if clean.cleaned_footprint and clean.cleaned_footprint.area is not None:
+        return round(clean.cleaned_footprint.area, 2)
     return None
 
 
-def _extract_zone_ids(clean: dict) -> list[str]:
-    """Return the zone IDs targeted by this clean.
+def _extract_zone_ids(clean) -> list[str]:
+    """Return the zone IDs targeted by this CleanRecord.
 
-    Whole-house ("global") cleans → empty list. The 'zones' top-level key in
-    the API response holds per-zone bitmap data (not names), so we read from
-    cleaningProgramme.unorderedZones / orderedZones instead.
+    Whole-house ("global") cleans → empty list.
     """
-    programme = clean.get("cleaningProgramme") or {}
-    ids: list[str] = []
-    for key in ("unorderedZones", "orderedZones"):
-        for z in programme.get(key) or []:
-            ids.append(str(z))
-    return ids
+    if not clean.cleaning_programme:
+        return []
+    prog = clean.cleaning_programme
+    return list(prog.unordered_zones) + list(prog.ordered_zones)
 
 
-def _extract_clean_type(clean: dict) -> str:
+def _extract_clean_type(clean) -> str:
     """'zoneConfigured', 'global', or 'unknown'."""
-    programme = clean.get("cleaningProgramme") or {}
-    if programme.get("unorderedZones") or programme.get("orderedZones"):
+    if not clean.cleaning_programme:
+        return "unknown"
+    prog = clean.cleaning_programme
+    if prog.unordered_zones or prog.ordered_zones:
         return "zoneConfigured"
-    if programme:
-        return "global"
-    return "unknown"
+    return "global"
 
 
-def _extract_fault_count(clean: dict) -> int:
-    timeline = clean.get("cleanTimeline") or []
+def _extract_fault_count(clean) -> int:
     return sum(
         1
-        for e in timeline
-        if isinstance(e, dict)
-        and (
-            e.get("faultLocation") is not None
-            or "fault" in str(e.get("eventName", "")).lower()
-        )
+        for e in clean.timeline
+        if e.fault_location is not None or "fault" in (e.event_name or "").lower()
     )
 
 
@@ -3287,23 +3274,21 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
                 if maps:
                     id_to_name: dict[str, str] = {}
                     for pmap in maps:
-                        for z in pmap.get("zones", []):
-                            id_to_name[str(z.get("id"))] = str(
-                                z.get("name") or z.get("id")
-                            )
+                        for z in pmap.zones:
+                            id_to_name[z.id] = z.name or z.id
                     zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
             except Exception:  # noqa: BLE001 — names are a nice-to-have
                 zone_names = []
 
         self._attr_extra_state_attributes = {
-            "clean_id": clean.get("cleanId"),
+            "clean_id": clean.clean_id,
             "clean_type": _extract_clean_type(clean),
             "duration_minutes": _extract_duration_minutes(clean),
             "area_m2": _extract_cleaned_area_m2(clean),
             "zone_ids": zone_ids,
             "zone_names": zone_names,
             "fault_count": _extract_fault_count(clean),
-            "sequence_number": clean.get("sequenceNumber"),
+            "sequence_number": clean.sequence_number,
         }
 
 
@@ -3317,16 +3302,29 @@ _recommended_cleans_cache = TTLCache(30 * 60)
 
 
 async def _fetch_recommended_cleans(coordinator: DysonDataUpdateCoordinator) -> list:
+    """Fetch recommended zone cleans via libdyson-rest (cached 30 min).
+
+    Returns a list of ``RecommendedCleanMap`` objects (or stale cache / [] on
+    failure).
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
     serial = coordinator.serial_number
     fresh = _recommended_cleans_cache.get(serial)
     if fresh is not None:
         return fresh
-    # Endpoint returns a LIST of maps (each with zonePredictions).
-    data = await dyson_cloud_get(coordinator, f"/v1/app/{serial}/recommended-cleans")
-    if not isinstance(data, list):
-        return _recommended_cleans_cache.get_stale(serial) or []
-    _recommended_cleans_cache.set(serial, data)
-    return data
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return _recommended_cleans_cache.get_stale(serial) or []
+        try:
+            records = await client.get_recommended_cleans(serial)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug("Failed to fetch recommended cleans for %s: %s", serial, err)
+            return _recommended_cleans_cache.get_stale(serial) or []
+
+    _recommended_cleans_cache.set(serial, records)
+    return records
 
 
 class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
@@ -3359,36 +3357,33 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
                 maps = _persistent_map_cache.get_stale(self.coordinator.serial_number)
             if maps:
                 for pmap in maps:
-                    for z in pmap.get("zones", []):
-                        id_to_name[str(z.get("id"))] = str(z.get("name") or z.get("id"))
+                    for z in pmap.zones:
+                        id_to_name[z.id] = z.name or z.id
         except Exception:  # noqa: BLE001
             pass
 
-        # API returns: [{persistentMapId, zonePredictions: [{zoneId, zoneDustMilligrams: [{name, weight}, ...]}]}]
-        # Each zone's dust list has entries for extraFine/fine/medium/large/other/total.
-        # We sort zones by total weight (descending) so the dirtiest is first.
+        # data is a list of RecommendedCleanMap objects from libdyson-rest.
+        # Each has .zone_predictions (list[ZonePrediction]) with .dust.total etc.
         predictions: list[dict] = []
-        if data and isinstance(data, list):
-            for pmap in data:
-                if not isinstance(pmap, dict):
-                    continue
-                for pred in pmap.get("zonePredictions") or []:
-                    if not isinstance(pred, dict):
-                        continue
-                    zid = str(pred.get("zoneId") or "")
-                    dust_breakdown = {
-                        d["name"]: float(d.get("weight", 0))
-                        for d in (pred.get("zoneDustMilligrams") or [])
-                        if isinstance(d, dict) and d.get("name")
+        for rcm in data:
+            for pred in rcm.zone_predictions:
+                zid = pred.zone_id
+                dust_breakdown = {
+                    "extra_fine": round(pred.dust.extra_fine, 1),
+                    "fine": round(pred.dust.fine, 1),
+                    "medium": round(pred.dust.medium, 1),
+                    "large": round(pred.dust.large, 1),
+                    "other": round(pred.dust.other, 1),
+                    "total": round(pred.dust.total, 1),
+                }
+                predictions.append(
+                    {
+                        "zone_id": zid,
+                        "zone_name": id_to_name.get(zid, zid),
+                        "total_dust_mg": round(pred.dust.total, 1),
+                        "dust_breakdown_mg": dust_breakdown,
                     }
-                    predictions.append(
-                        {
-                            "zone_id": zid,
-                            "zone_name": id_to_name.get(zid, zid),
-                            "total_dust_mg": round(dust_breakdown.get("total", 0.0), 1),
-                            "dust_breakdown_mg": dust_breakdown,
-                        }
-                    )
+                )
         # Sort by total dust descending (dirtiest first)
         predictions.sort(key=lambda p: p["total_dust_mg"], reverse=True)
 
@@ -3450,9 +3445,9 @@ def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
 
 
 class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
-    """Outdoor air-quality at the device's registered location (Tuart Hill etc).
+    """Outdoor air-quality at the device's registered location.
 
-    Source: GET /v1/environment/devices/{serial}/data?language=en-AU
+    Source: ``AsyncDysonClient.get_outdoor_environment_data()`` (libdyson-rest).
     Returns Dyson's third-party outdoor AQI feed for the device's location.
     State = AQI value (1-500 scale); attributes carry PM2.5/PM10/NO2/weather.
     """
@@ -3469,36 +3464,40 @@ class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
         self._attr_name = "Outdoor AQI"
 
     async def async_update(self) -> None:
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
         serial = self.coordinator.serial_number
         data = _outdoor_aqi_cache.get(serial)
         if data is None:
-            data = await dyson_cloud_get(
-                self.coordinator,
-                f"/v1/environment/devices/{serial}/data?language=en-AU",
-            )
-            if isinstance(data, dict):
-                _outdoor_aqi_cache.set(serial, data)
-            else:
-                data = _outdoor_aqi_cache.get_stale(serial)
+            async with self.coordinator.async_cloud_client() as client:
+                if client is not None:
+                    try:
+                        data = await client.get_outdoor_environment_data(serial)
+                        _outdoor_aqi_cache.set(serial, data)
+                    except (DysonAPIError, DysonAuthError) as err:
+                        _LOGGER.debug(
+                            "Failed to fetch outdoor AQI for %s: %s", serial, err
+                        )
+                        data = _outdoor_aqi_cache.get_stale(serial)
 
         if not data:
             self._attr_native_value = None
             self._attr_extra_state_attributes = {}
             return
 
-        self._attr_native_value = data.get("AqiValue")
+        self._attr_native_value = data.aqi_value
         self._attr_extra_state_attributes = {
-            "aqi_name": data.get("AqiName"),
-            "aqi_description": data.get("AqiDescription"),
-            "pm2_5": data.get("Pm25Value"),
-            "pm10": data.get("Pm10Value"),
-            "no2": data.get("No2Value"),
-            "humidity": data.get("Humidity"),
-            "temperature": data.get("Temperature"),
-            "weather_state": data.get("WeatherState"),
-            "location": data.get("LocationName"),
-            "dominant_pollen": data.get("DominantPollen"),
-            "as_of": data.get("DateTime"),
+            "aqi_name": data.aqi_name,
+            "aqi_description": data.aqi_description,
+            "pm2_5": data.pm25_value,
+            "pm10": data.pm10_value,
+            "no2": data.no2_value,
+            "humidity": data.humidity,
+            "temperature": data.temperature,
+            "weather_state": data.weather_state,
+            "location": data.location_name,
+            "dominant_pollen": data.dominant_pollen,
+            "as_of": data.date_time,
         }
 
 
@@ -3521,51 +3520,40 @@ class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
         self._attr_name = "Indoor AQI (15-min)"
 
     async def async_update(self) -> None:
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
         serial = self.coordinator.serial_number
         data = _daily_env_cache.get(serial)
         if data is None:
-            data = await dyson_cloud_get(
-                self.coordinator,
-                f"/v1/messageprocessor/devices/{serial}/environmentdata/daily",
-            )
-            if isinstance(data, dict):
-                _daily_env_cache.set(serial, data)
-            else:
-                data = _daily_env_cache.get_stale(serial)
+            async with self.coordinator.async_cloud_client() as client:
+                if client is not None:
+                    try:
+                        data = await client.get_daily_environment_data(serial)
+                        _daily_env_cache.set(serial, data)
+                    except (DysonAPIError, DysonAuthError) as err:
+                        _LOGGER.debug(
+                            "Failed to fetch daily AQI for %s: %s", serial, err
+                        )
+                        data = _daily_env_cache.get_stale(serial)
 
         if not data:
             self._attr_native_value = None
             self._attr_extra_state_attributes = {}
             return
 
-        series = data.get("aqlm") or []
-        # The most recent 15-min sample is the last numeric in the series.
-        latest = None
-        for v in reversed(series):
-            if isinstance(v, (int, float)):
-                latest = round(float(v), 1)
-                break
-
-        self._attr_native_value = latest
+        latest = data.latest_sample
+        series = data.samples
+        self._attr_native_value = round(latest, 1) if latest is not None else None
+        numeric = [v for v in series if v is not None]
         self._attr_extra_state_attributes = {
-            "start_time": data.get("start_time"),
-            "resolution": data.get("resolution"),
+            "start_time": data.start_time,
+            "resolution": data.resolution_minutes,
             "sample_count": len(series),
-            "min": round(
-                min((v for v in series if isinstance(v, (int, float))), default=0), 1
-            )
-            if series
-            else None,
-            "max": round(
-                max((v for v in series if isinstance(v, (int, float))), default=0), 1
-            )
-            if series
-            else None,
-            # Keep the last 96 samples (24h at 15min) on the attribute; full
-            # week's worth is too much for entity attributes.
+            "min": round(min(numeric, default=0), 1) if numeric else None,
+            "max": round(max(numeric, default=0), 1) if numeric else None,
+            # Keep the last 96 samples (24h at 15min) on the attribute.
             "last_24h": [
-                round(float(v), 1) if isinstance(v, (int, float)) else None
-                for v in series[-96:]
+                round(float(v), 1) if v is not None else None for v in series[-96:]
             ],
         }
 
@@ -3589,34 +3577,39 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
         self._attr_name = "Scheduled Events"
 
     async def async_update(self) -> None:
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
         serial = self.coordinator.serial_number
         data = _schedule_cache.get(serial)
         if data is None:
-            product_type = _device_product_type(self.coordinator) or ""
-            qs = f"?productType={product_type}" if product_type else ""
-            data = await dyson_cloud_get(
-                self.coordinator,
-                f"/v1/unifiedscheduler/{serial}/events{qs}",
-            )
-            if isinstance(data, dict):
-                _schedule_cache.set(serial, data)
-            else:
-                data = _schedule_cache.get_stale(serial)
+            product_type = _device_product_type(self.coordinator) or None
+            async with self.coordinator.async_cloud_client() as client:
+                if client is not None:
+                    try:
+                        data = await client.get_scheduled_events(
+                            serial, product_type=product_type
+                        )
+                        _schedule_cache.set(serial, data)
+                    except (DysonAPIError, DysonAuthError) as err:
+                        _LOGGER.debug(
+                            "Failed to fetch scheduled events for %s: %s", serial, err
+                        )
+                        data = _schedule_cache.get_stale(serial)
 
         if not data:
             self._attr_native_value = "unknown"
             self._attr_extra_state_attributes = {}
             return
 
-        events = data.get("events") or []
-        enabled_events = [e for e in events if isinstance(e, dict) and e.get("enabled")]
+        events = data.events
+        enabled_events = [e for e in events if e.enabled]
         self._attr_native_value = (
             f"{len(enabled_events)} active"
             if enabled_events
-            else ("0 active" if data.get("enabled") else "disabled")
+            else ("0 active" if data.schedule_enabled else "disabled")
         )
         self._attr_extra_state_attributes = {
-            "schedule_enabled": data.get("enabled"),
+            "schedule_enabled": data.schedule_enabled,
             "event_count": len(events),
-            "events": events,
+            "events": [e.raw for e in events],
         }

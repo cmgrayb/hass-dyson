@@ -22,6 +22,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -121,6 +123,40 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
     except (AttributeError, TypeError):
         # Fallback for any unexpected issues (e.g., during testing)
         return "US", "en-US"
+
+
+class TTLCache:
+    """Tiny in-process TTL cache keyed by string.
+
+    All entries share the same TTL; entries expire lazily on ``get()``.
+    """
+
+    def __init__(self, ttl_seconds: int) -> None:
+        """Initialise the cache with *ttl_seconds* time-to-live."""
+        self._ttl = ttl_seconds
+        self._store: dict[str, tuple[float, Any]] = {}
+
+    def get(self, key: str) -> Any | None:
+        """Return the cached value for *key*, or ``None`` if absent/expired."""
+        cached = self._store.get(key)
+        if cached is None:
+            return None
+        if (time.monotonic() - cached[0]) >= self._ttl:
+            return None
+        return cached[1]
+
+    def set(self, key: str, value: Any) -> None:
+        """Store *value* under *key*, resetting the TTL."""
+        self._store[key] = (time.monotonic(), value)
+
+    def get_stale(self, key: str) -> Any | None:
+        """Return the cached value regardless of TTL (use only as a fallback)."""
+        cached = self._store.get(key)
+        return cached[1] if cached else None
+
+    def invalidate(self, key: str) -> None:
+        """Remove *key* from the cache."""
+        self._store.pop(key, None)
 
 
 class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -881,6 +917,35 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "Missing cloud credentials (auth_token or email/password)"
             )
 
+    @asynccontextmanager
+    async def async_cloud_client(self):
+        """Async context manager yielding an authenticated ``AsyncDysonClient``.
+
+        Wraps :meth:`_authenticate_cloud_client` with proper close handling so
+        callers don't need to manage client lifecycle.  Yields ``None`` when no
+        ``auth_token`` is available so callers can fall back gracefully.
+
+        Example::
+
+            async with self.coordinator.async_cloud_client() as client:
+                if client is None:
+                    return  # no credentials
+                data = await client.some_method(self.coordinator.serial_number)
+        """
+        if not self.config_entry.data.get("auth_token"):
+            _LOGGER.debug(
+                "No auth_token for %s — skipping REST call",
+                getattr(self, "serial_number", "unknown"),
+            )
+            yield None
+            return
+
+        client = await self._authenticate_cloud_client()
+        try:
+            yield client
+        finally:
+            await client.close()
+
     async def _find_cloud_device(self, cloud_client):
         """Find our device in the cloud device list."""
         devices = await cloud_client.get_devices()
@@ -898,10 +963,44 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             mask_serial(str(getattr(device_info, "serial_number", "unknown"))),
             getattr(device_info, "model", "unknown"),
         )
+        self._debug_connected_configuration(device_info)
         self._extract_device_type(device_info)
         self._extract_device_category(device_info)
         self._extract_device_capabilities(device_info)
         self._extract_firmware_version(device_info)
+
+    def _debug_connected_configuration(self, device_info) -> None:
+        """Log debug information about the device's connected configuration."""
+        connected_config = getattr(device_info, "connected_configuration", None)
+        if connected_config is None:
+            _LOGGER.debug(
+                "No connected_configuration for %s",
+                getattr(self, "serial_number", "unknown"),
+            )
+            return
+        _LOGGER.debug(
+            "Connected configuration for %s: %s",
+            getattr(self, "serial_number", "unknown"),
+            connected_config,
+        )
+        self._debug_mqtt_object(connected_config)
+
+    def _debug_mqtt_object(self, connected_config) -> None:
+        """Log debug information about the MQTT configuration, masking the password."""
+        mqtt_obj = getattr(connected_config, "mqtt", None)
+        if mqtt_obj is None:
+            _LOGGER.debug("No MQTT object in connected configuration")
+            return
+        # Mask the password field for safe logging
+        password = getattr(mqtt_obj, "password", None)
+        masked = "***" if password else None
+        _LOGGER.debug(
+            "MQTT config: %s (password=%s)",
+            {k: v for k, v in vars(mqtt_obj).items() if k != "password"}
+            if hasattr(mqtt_obj, "__dict__")
+            else mqtt_obj,
+            masked,
+        )
 
     def _extract_device_type(self, device_info) -> None:
         """Extract device type from device info."""
