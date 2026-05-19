@@ -661,7 +661,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # auth_token are redacted before logging so user-shared logs don't leak
         # account credentials.
         _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
-        _LOGGER.debug("Config entry data: %s", _redact_sensitive(self.config_entry.data))
+        _LOGGER.debug(
+            "Config entry data: %s", _redact_sensitive(self.config_entry.data)
+        )
 
         # Handle both legacy single-device entries and new account-level entries
         if CONF_SERIAL_NUMBER in self.config_entry.data:
