@@ -871,3 +871,168 @@ class TestClimateIntegration:
         # Verify that the temperature is suitable for display on thermostat card
         assert isinstance(entity._attr_current_temperature, float)
         assert entity.temperature_unit == UnitOfTemperature.CELSIUS
+
+
+class TestFocusDiffuseMode:
+    """Tests for focus/diffuse airflow mode on older HP02-type devices."""
+
+    @pytest.fixture
+    def mock_coordinator_focus(self, mock_coordinator):
+        """Create a coordinator fixture with FocusMode capability."""
+        mock_coordinator.device_capabilities = ["Heating", "FocusMode"]
+        mock_coordinator.device.set_focus_mode = AsyncMock()
+        return mock_coordinator
+
+    def test_init_with_focus_mode_capability(self, mock_coordinator_focus):
+        """FocusMode capability enables FAN_MODE feature and populates fan_modes."""
+        from homeassistant.components.climate import FAN_DIFFUSE, FAN_FOCUS
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+
+        assert ClimateEntityFeature.FAN_MODE in entity._attr_supported_features
+        assert entity._attr_fan_modes == [FAN_FOCUS, FAN_DIFFUSE]
+        assert entity._attr_fan_mode == FAN_FOCUS  # default
+
+    def test_init_without_focus_mode_capability(self, mock_coordinator):
+        """Without FocusMode capability, FAN_MODE feature is absent."""
+        mock_coordinator.device_capabilities = ["Heating"]
+
+        entity = DysonClimateEntity(mock_coordinator)
+
+        assert ClimateEntityFeature.FAN_MODE not in entity._attr_supported_features
+        assert not hasattr(entity, "_attr_fan_modes") or entity._attr_fan_modes is None
+
+    def test_update_fan_mode_focus(self, mock_coordinator_focus):
+        """_update_fan_mode sets FAN_FOCUS when ffoc == 'ON'."""
+        from homeassistant.components.climate import FAN_FOCUS
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        mock_coordinator_focus.device.get_state_value = MagicMock(
+            side_effect=lambda state, key, default: "ON" if key == "ffoc" else default
+        )
+
+        entity._update_fan_mode({"product-state": {}})
+
+        assert entity._attr_fan_mode == FAN_FOCUS
+
+    def test_update_fan_mode_diffuse(self, mock_coordinator_focus):
+        """_update_fan_mode sets FAN_DIFFUSE when ffoc == 'OFF'."""
+        from homeassistant.components.climate import FAN_DIFFUSE
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        mock_coordinator_focus.device.get_state_value = MagicMock(
+            side_effect=lambda state, key, default: "OFF" if key == "ffoc" else default
+        )
+
+        entity._update_fan_mode({"product-state": {}})
+
+        assert entity._attr_fan_mode == FAN_DIFFUSE
+
+    def test_update_fan_mode_skipped_without_capability(self, mock_coordinator):
+        """_update_fan_mode is a no-op when FocusMode capability is absent."""
+        mock_coordinator.device_capabilities = ["Heating"]
+        entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_fan_mode = None  # ensure it stays None
+
+        entity._update_fan_mode({"product-state": {}})
+
+        assert entity._attr_fan_mode is None
+
+    def test_update_fan_mode_skipped_without_device(self, mock_coordinator_focus):
+        """_update_fan_mode is a no-op when device is None."""
+        from homeassistant.components.climate import FAN_FOCUS
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        mock_coordinator_focus.device = None
+
+        # Should not raise and should leave fan_mode unchanged
+        entity._update_fan_mode({"product-state": {}})
+
+        assert entity._attr_fan_mode == FAN_FOCUS  # default set in __init__
+
+    @pytest.mark.asyncio
+    async def test_async_set_fan_mode_focus(self, mock_coordinator_focus):
+        """async_set_fan_mode(FAN_FOCUS) calls set_focus_mode(True)."""
+        from homeassistant.components.climate import FAN_FOCUS
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        entity.async_write_ha_state = MagicMock()
+
+        await entity.async_set_fan_mode(FAN_FOCUS)
+
+        mock_coordinator_focus.device.set_focus_mode.assert_called_once_with(True)
+        assert entity._attr_fan_mode == FAN_FOCUS
+        entity.async_write_ha_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_set_fan_mode_diffuse(self, mock_coordinator_focus):
+        """async_set_fan_mode(FAN_DIFFUSE) calls set_focus_mode(False)."""
+        from homeassistant.components.climate import FAN_DIFFUSE
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        entity.async_write_ha_state = MagicMock()
+
+        await entity.async_set_fan_mode(FAN_DIFFUSE)
+
+        mock_coordinator_focus.device.set_focus_mode.assert_called_once_with(False)
+        assert entity._attr_fan_mode == FAN_DIFFUSE
+        entity.async_write_ha_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_set_fan_mode_without_capability(self, mock_coordinator):
+        """async_set_fan_mode is a no-op when FocusMode capability is absent."""
+        from homeassistant.components.climate import FAN_FOCUS
+
+        mock_coordinator.device_capabilities = ["Heating"]
+        mock_coordinator.device.set_focus_mode = AsyncMock()
+        entity = DysonClimateEntity(mock_coordinator)
+
+        await entity.async_set_fan_mode(FAN_FOCUS)
+
+        mock_coordinator.device.set_focus_mode.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_set_fan_mode_no_device(self, mock_coordinator_focus):
+        """async_set_fan_mode is a no-op when device is None."""
+        from homeassistant.components.climate import FAN_FOCUS
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        mock_coordinator_focus.device = None
+
+        await entity.async_set_fan_mode(FAN_FOCUS)
+        # No exception and set_focus_mode not called (device is None)
+
+    @pytest.mark.asyncio
+    async def test_async_set_fan_mode_connection_error(self, mock_coordinator_focus):
+        """async_set_fan_mode logs error and does not raise on ConnectionError."""
+        from homeassistant.components.climate import FAN_FOCUS
+
+        mock_coordinator_focus.device.set_focus_mode = AsyncMock(
+            side_effect=ConnectionError("MQTT disconnected")
+        )
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        entity.async_write_ha_state = MagicMock()
+
+        # Should not raise
+        await entity.async_set_fan_mode(FAN_FOCUS)
+
+        entity.async_write_ha_state.assert_not_called()
+
+    def test_handle_coordinator_update_updates_fan_mode(self, mock_coordinator_focus):
+        """_handle_coordinator_update also refreshes the fan mode from device state."""
+        from homeassistant.components.climate import FAN_DIFFUSE
+
+        entity = DysonClimateEntity(mock_coordinator_focus)
+        mock_coordinator_focus.data = {
+            "product-state": {"ffoc": "OFF"},
+            "environmental-data": {},
+        }
+        mock_coordinator_focus.device.get_state_value = MagicMock(
+            side_effect=lambda state, key, default: state.get(key, default)
+        )
+        mock_coordinator_focus.device.fan_power = True
+
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+
+        assert entity._attr_fan_mode == FAN_DIFFUSE

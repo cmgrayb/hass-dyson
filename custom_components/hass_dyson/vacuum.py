@@ -56,6 +56,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -233,7 +234,9 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         if not self.available or not self.coordinator.device:
             raise HomeAssistantError("Device not available for pause command")
 
-        _LOGGER.info("Pausing robot vacuum %s", self.coordinator.serial_number)
+        _LOGGER.info(
+            "Pausing robot vacuum %s", mask_serial(self.coordinator.serial_number)
+        )
 
         try:
             await self.coordinator.device.robot_pause()
@@ -304,7 +307,9 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         if not self.available or not self.coordinator.device:
             raise HomeAssistantError("Device not available for stop command")
 
-        _LOGGER.info("Stopping robot vacuum %s", self.coordinator.serial_number)
+        _LOGGER.info(
+            "Stopping robot vacuum %s", mask_serial(self.coordinator.serial_number)
+        )
 
         try:
             await self.coordinator.device.robot_abort()

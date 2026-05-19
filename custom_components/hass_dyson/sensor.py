@@ -76,6 +76,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -211,7 +212,9 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No P25R data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No P25R data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -312,7 +315,9 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No P10R data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No P10R data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -405,7 +410,9 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No CO2 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No CO2 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -508,7 +515,9 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No VOC data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No VOC data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -776,7 +785,9 @@ class DysonAQISensor(DysonEntity, SensorEntity):
                     aqi_category,
                 )
             else:
-                _LOGGER.debug("No AQI data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No AQI data available for device %s", mask_serial(device_serial)
+                )
 
         except Exception as err:
             _LOGGER.error(
@@ -1184,7 +1195,9 @@ async def async_setup_entry(  # noqa: C901
 
         # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
         if any(cat in ["ec", "robot"] for cat in device_category):
-            _LOGGER.debug("Adding WiFi sensors for device %s", device_serial)
+            _LOGGER.debug(
+                "Adding WiFi sensors for device %s", mask_serial(device_serial)
+            )
             entities.extend(
                 [
                     DysonWiFiSensor(coordinator),
@@ -1211,7 +1224,9 @@ async def async_setup_entry(  # noqa: C901
                 "extendedAQ",
             ],
         ):
-            _LOGGER.debug("Adding HEPA filter sensors for device %s", device_serial)
+            _LOGGER.debug(
+                "Adding HEPA filter sensors for device %s", mask_serial(device_serial)
+            )
             entities.extend(
                 [
                     DysonHEPAFilterLifeSensor(coordinator),
@@ -1272,15 +1287,22 @@ async def async_setup_entry(  # noqa: C901
             ["EnvironmentalData", "environmental_data", "environmentalData"],
         )
 
-        if has_temp_capability and "tact" in env_data:
+        # Create temperature sensor if capability is present AND either:
+        # (a) env_data has the 'tact' key (regardless of value - 'OFF' is valid when device is off), or
+        # (b) env_data is empty because coordinator data hasn't arrived yet at setup time
+        env_data_available = coordinator.data is not None and bool(env_data)
+        if has_temp_capability and ("tact" in env_data or not env_data_available):
             _LOGGER.debug(
-                "Adding temperature sensor for device %s - capability and temperature data detected",
+                "Adding temperature sensor for device %s - %s",
                 device_serial,
+                "tact key present"
+                if "tact" in env_data
+                else "capability present, no env data yet at setup time",
             )
             entities.append(DysonTemperatureSensor(coordinator))
         elif has_temp_capability:
             _LOGGER.debug(
-                "Skipping temperature sensor for device %s - capability present but no temperature data in environmental response",
+                "Skipping temperature sensor for device %s - capability present but tact key absent from environmental data",
                 device_serial,
             )
         else:
@@ -1298,15 +1320,21 @@ async def async_setup_entry(  # noqa: C901
             ["EnvironmentalData", "environmental_data", "environmentalData"],
         )
 
-        if has_humidity_capability and "hact" in env_data:
+        # Create humidity sensor if capability is present AND either:
+        # (a) env_data has the 'hact' key (regardless of value - 'OFF' is valid when device is off), or
+        # (b) env_data is empty because coordinator data hasn't arrived yet at setup time
+        if has_humidity_capability and ("hact" in env_data or not env_data_available):
             _LOGGER.debug(
-                "Adding humidity sensor for device %s - capability and humidity data detected",
+                "Adding humidity sensor for device %s - %s",
                 device_serial,
+                "hact key present"
+                if "hact" in env_data
+                else "capability present, no env data yet at setup time",
             )
             entities.append(DysonHumiditySensor(coordinator))
         elif has_humidity_capability:
             _LOGGER.debug(
-                "Skipping humidity sensor for device %s - capability present but no humidity data in environmental response",
+                "Skipping humidity sensor for device %s - capability present but hact key absent from environmental data",
                 device_serial,
             )
         else:
@@ -1830,7 +1858,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No PM2.5 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No PM2.5 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -1952,7 +1982,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No PM10 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No PM10 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2203,7 +2235,10 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No VOC Link data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No VOC Link data available for device %s",
+                    mask_serial(device_serial),
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2296,7 +2331,9 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No NO2 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No NO2 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2403,7 +2440,9 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No HCHO data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No HCHO data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(

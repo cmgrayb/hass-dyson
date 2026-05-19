@@ -76,6 +76,7 @@ from .coordinator import (
     DysonCloudAccountCoordinator,
     DysonDataUpdateCoordinator,
 )
+from .device_utils import mask_serial
 from .services import (
     async_remove_cloud_services,
     async_remove_device_services_for_coordinator,
@@ -209,7 +210,9 @@ async def _create_device_entry(
     device_serial = device_data.get(CONF_SERIAL_NUMBER, "unknown")
 
     try:
-        _LOGGER.info("Background task: Creating device entry for %s", device_serial)
+        _LOGGER.info(
+            "Background task: Creating device entry for %s", mask_serial(device_serial)
+        )
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
@@ -258,7 +261,10 @@ async def _create_discovery_flow(
         ]
 
         if existing_flows:
-            _LOGGER.debug("Discovery flow already exists for device %s", device_serial)
+            _LOGGER.debug(
+                "Discovery flow already exists for device %s",
+                mask_serial(device_serial),
+            )
             return
 
         result = await hass.config_entries.flow.async_init(
@@ -475,7 +481,10 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     await hass.config_entries.async_forward_entry_setups(
         entry, ["light", "binary_sensor"]
     )
-    _LOGGER.info("BLE light device '%s' set up successfully", coordinator.serial_number)
+    _LOGGER.info(
+        "BLE light device '%s' set up successfully",
+        mask_serial(coordinator.serial_number),
+    )
     return True
 
 
@@ -522,7 +531,9 @@ async def _setup_individual_device_entry(
     # Set up platforms and services
     await _setup_platforms_and_services(hass, entry, coordinator)
 
-    _LOGGER.info("Successfully set up Dyson device '%s'", coordinator.serial_number)
+    _LOGGER.info(
+        "Successfully set up Dyson device '%s'", mask_serial(coordinator.serial_number)
+    )
     return True
 
 

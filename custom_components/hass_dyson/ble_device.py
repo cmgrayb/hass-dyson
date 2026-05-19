@@ -62,6 +62,7 @@ from .const import (
     DOMAIN,
     EVENT_BLE_STATE_CHANGE,
 )
+from .device_utils import mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +74,14 @@ _RECONNECT_DELAYS = [5, 15, 30, 60]
 
 # Keepalive poll interval in seconds
 _KEEPALIVE_INTERVAL = 20.0
+
+# Maximum auth handshake attempts before giving up on a connection.
+# Each attempt resends PayloadA (0x06) with a fresh nonce and waits for
+# PayloadB (0x07).  With low-duty-cycle BLE scan windows (e.g. the
+# esp32_ble_tracker default of 30ms), PayloadB packets are sometimes dropped
+# in transit through the proxy; retrying gives the device a chance to
+# regenerate and retransmit without a full reconnect.
+_MAX_AUTH_ATTEMPTS = 3
 
 
 # ── Dyson Message Framing ─────────────────────────────────────────────────────
@@ -478,7 +487,9 @@ class DysonBLEDevice:
         try:
             message = self._assembler.feed(fragment)
         except ValueError as exc:
-            _LOGGER.warning("BLE fragment error for %s: %s", self.serial_number, exc)
+            _LOGGER.warning(
+                "BLE fragment error for %s: %s", mask_serial(self.serial_number), exc
+            )
             self._assembler.reset()
             return
 
@@ -501,6 +512,45 @@ class DysonBLEDevice:
             self.state.last_motion_at = time.time()
         self.state.motion_detected = motion
         self._fire_state_change()
+
+    def _on_power_notification(self, _characteristic: Any, data: bytearray) -> None:
+        """Handle notification from the power characteristic.
+
+        Called when the lamp reports a power-state change (e.g. physical button
+        press).  Updates cached state and fires to HA entities.
+        """
+        raw = bytes(data)
+        self.state.power = bool(raw and raw[0] != 0)
+        self._fire_state_change()
+
+    def _on_brightness_notification(
+        self, _characteristic: Any, data: bytearray
+    ) -> None:
+        """Handle notification from the brightness characteristic.
+
+        Called when the lamp reports a brightness change from its physical
+        controls.  Updates cached state and fires to HA entities.
+        """
+        raw = bytes(data)
+        if raw:
+            self.state.brightness_raw = raw[0]
+            self.state.brightness = raw_to_ha_brightness(raw[0])
+            self._fire_state_change()
+
+    def _on_color_temp_notification(
+        self, _characteristic: Any, data: bytearray
+    ) -> None:
+        """Handle notification from the color temperature characteristic.
+
+        Called when the lamp reports a color-temperature change from its
+        physical controls.  Updates cached state and fires to HA entities.
+        """
+        raw = bytes(data)
+        if len(raw) >= 2:  # noqa: PLR2004
+            kelvin = int.from_bytes(raw[:2], byteorder="little")
+            self.state.color_temp_kelvin = kelvin
+            self.state.color_temp_mired = kelvin_to_mired(kelvin)
+            self._fire_state_change()
 
     def _on_runtime_notification(self, short_id: str):
         """Return a notify handler for a runtime diagnostic characteristic."""
@@ -566,13 +616,24 @@ class DysonBLEDevice:
                     continue  # Still connected — keep waiting
                 if msg.type_id == type_id:
                     return msg
-                _LOGGER.warning(
+                # Log at debug for known unsolicited types (e.g. 0x0B product-info
+                # push can arrive late if it was delayed by the BLE proxy past the
+                # earlier product-info wait timeout).  Warn for truly unexpected types.
+                log_fn = (
+                    _LOGGER.debug
+                    if msg.type_id == BLE_MSG_TYPE_PRODUCT_INFO
+                    else _LOGGER.warning
+                )
+                log_fn(
                     "Unexpected BLE message type 0x%02X received while waiting for "
-                    "0x%02X from %s — possible rejection or error response from device",
+                    "0x%02X from %s — discarding and continuing",
                     msg.type_id,
                     type_id,
                     self.serial_number,
                 )
+                if msg.type_id == BLE_MSG_TYPE_PRODUCT_INFO:
+                    # Parse it opportunistically so firmware info stays current.
+                    self._parse_product_info(msg.payload)
                 # Wrong type — discard and wait for the next message
                 get_task = asyncio.ensure_future(self._message_queue.get())
         finally:
@@ -635,6 +696,12 @@ class DysonBLEDevice:
                         self.serial_number,
                         disconnected_callback=self._on_bleak_disconnect,
                         max_attempts=4,
+                        # Cache the service collection after the first successful
+                        # connection so reconnects skip GATT service discovery.
+                        # Discovery involves many GATT reads that can hit the BLE
+                        # proxy's 10-second timeout under the default esp32_ble_tracker
+                        # scan parameters (window=30ms, interval=320ms).
+                        use_services_cache=True,
                     )
                     _LOGGER.info(
                         "BLE connection to %s established via bleak_retry_connector",
@@ -713,7 +780,6 @@ class DysonBLEDevice:
         )
         ltk = bytes.fromhex(self._ltk_hex)
         enc_key = hkdf_derive_aes_key(ltk)
-        nonce = os.urandom(16)
 
         # Request product info first (matches observed app behaviour)
         _LOGGER.debug("Requesting product info from %s", self.serial_number)
@@ -736,15 +802,47 @@ class DysonBLEDevice:
                 self.serial_number,
             )
 
-        # Challenge-response
-        _LOGGER.debug("Sending PayloadA (0x06) to %s", self.serial_number)
-        payload_a = build_reauth_payload_a(self._account_uuid, enc_key, nonce)
-        await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_A, payload_a)
+        # Challenge-response — retry PayloadA if PayloadB is dropped by the proxy.
+        # Under the default esp32_ble_tracker scan window (30ms / 320ms interval)
+        # the proxy is idle ~91% of the time; a single PayloadB packet can be lost
+        # silently.  Resending PayloadA causes the device to regenerate PayloadB
+        # without requiring a full GATT reconnect.
+        payload_b_msg: DysonMessage | None = None
+        for auth_attempt in range(1, _MAX_AUTH_ATTEMPTS + 1):
+            nonce = os.urandom(16)  # fresh nonce per attempt
+            payload_a = build_reauth_payload_a(self._account_uuid, enc_key, nonce)
+            _LOGGER.debug(
+                "Sending PayloadA (0x06) to %s (attempt %d/%d)",
+                self.serial_number,
+                auth_attempt,
+                _MAX_AUTH_ATTEMPTS,
+            )
+            await self._send_message(BLE_MSG_TYPE_REAUTH_PAYLOAD_A, payload_a)
 
-        _LOGGER.debug("Waiting for PayloadB (0x07) from %s", self.serial_number)
-        payload_b_msg = await self._wait_for_type(
-            BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=20.0
-        )
+            _LOGGER.debug(
+                "Waiting for PayloadB (0x07) from %s (attempt %d/%d)",
+                self.serial_number,
+                auth_attempt,
+                _MAX_AUTH_ATTEMPTS,
+            )
+            try:
+                payload_b_msg = await self._wait_for_type(
+                    BLE_MSG_TYPE_REAUTH_PAYLOAD_B, timeout=30.0
+                )
+                break  # Received PayloadB — proceed with auth
+            except TimeoutError:
+                if auth_attempt < _MAX_AUTH_ATTEMPTS:
+                    _LOGGER.warning(
+                        "PayloadB timeout for %s on attempt %d/%d — "
+                        "resending PayloadA (BLE packet may have been dropped by proxy)",
+                        self.serial_number,
+                        auth_attempt,
+                        _MAX_AUTH_ATTEMPTS,
+                    )
+                else:
+                    raise  # All attempts exhausted — propagate original error
+
+        assert payload_b_msg is not None  # loop always breaks or raises
         _LOGGER.debug(
             "PayloadB received from %s (%d bytes)",
             self.serial_number,
@@ -788,8 +886,10 @@ class DysonBLEDevice:
         _LOGGER.debug(
             "Waiting for Connection Established (0x26) from %s", self.serial_number
         )
-        await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=20.0)
-        _LOGGER.info("BLE LTK re-auth successful for %s", self.serial_number)
+        await self._wait_for_type(BLE_MSG_TYPE_CONNECTION_ESTABLISHED, timeout=30.0)
+        _LOGGER.info(
+            "BLE LTK re-auth successful for %s", mask_serial(self.serial_number)
+        )
 
     def _parse_product_info(self, payload: bytes) -> None:
         """Parse product info response (type 0x0B) and update firmware fields."""
@@ -802,58 +902,89 @@ class DysonBLEDevice:
     # ── GATT state read / subscribe ───────────────────────────────────────────
 
     async def _read_initial_state(self) -> None:
-        """Read current values from all light control characteristics."""
+        """Read current values from all light control characteristics.
+
+        Each characteristic is read independently so that a proxy timeout on
+        one does not prevent the others from being read.  Best-effort: logs
+        debug messages on failure and does not raise.
+
+        With the default esp32_ble_tracker scan parameters (window=30ms /
+        interval=320ms), any individual GATT read may time out through a BLE
+        proxy.  Isolating each read limits the worst-case delay to one timeout
+        (≤10 s) per characteristic rather than aborting all reads on the first
+        failure.
+        """
         if self._client is None:
             return
 
+        # Power
         try:
             power_raw = bytes(await self._client.read_gatt_char(BLE_POWER_UUID))
-            brightness_raw_bytes = bytes(
+            self.state.power = bool(power_raw and power_raw[0] != 0)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not read power state from %s: %s", self.serial_number, exc
+            )
+
+        # Brightness
+        try:
+            brightness_raw = bytes(
                 await self._client.read_gatt_char(BLE_BRIGHTNESS_UUID)
             )
+            if brightness_raw:
+                self.state.brightness_raw = brightness_raw[0]
+                self.state.brightness = raw_to_ha_brightness(brightness_raw[0])
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not read brightness from %s: %s", self.serial_number, exc
+            )
+
+        # Color temperature
+        try:
             color_temp_raw = bytes(
                 await self._client.read_gatt_char(BLE_COLOR_TEMP_UUID)
             )
-
-            power_on = bool(power_raw and power_raw[0] != 0)
-            brightness_percent = brightness_raw_bytes[0] if brightness_raw_bytes else 0
-            color_temp_kelvin = (
-                int.from_bytes(color_temp_raw, byteorder="little")
-                if color_temp_raw
-                else None
-            )
-
-            self.state.power = power_on
-            self.state.brightness_raw = brightness_percent
-            self.state.brightness = raw_to_ha_brightness(brightness_percent)
-            self.state.color_temp_kelvin = color_temp_kelvin
-            self.state.color_temp_mired = (
-                kelvin_to_mired(color_temp_kelvin)
-                if color_temp_kelvin and color_temp_kelvin > 0
-                else None
-            )
-
-            # Read diagnostic chars (best-effort)
-            for short_id, uuid in (
-                ("11006", BLE_CHAR_11006_UUID),
-                ("11007", BLE_CHAR_11007_UUID),
-                ("11009", BLE_CHAR_11009_UUID),
-            ):
-                try:
-                    raw = bytes(await self._client.read_gatt_char(uuid))
-                    setattr(self.state, f"char_{short_id}_hex", raw.hex())
-                except Exception:  # noqa: BLE001
-                    pass
-
+            if len(color_temp_raw) >= 2:  # noqa: PLR2004
+                kelvin = int.from_bytes(color_temp_raw[:2], byteorder="little")
+                self.state.color_temp_kelvin = kelvin
+                self.state.color_temp_mired = (
+                    kelvin_to_mired(kelvin) if kelvin > 0 else None
+                )
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning(
-                "Failed to read initial state from %s: %s", self.serial_number, exc
+            _LOGGER.debug(
+                "Could not read color temperature from %s: %s",
+                self.serial_number,
+                exc,
             )
 
     async def _subscribe_notifications(self) -> None:
         """Subscribe to notify characteristics for real-time updates."""
         if self._client is None:
             return
+
+        # Light-control characteristics: power, brightness, color temperature.
+        # The Dyson lamp firmware may or may not set the NOTIFY property on these
+        # characteristics.  We try to subscribe; if the characteristic doesn't
+        # support notifications we catch the exception silently.  When
+        # subscriptions succeed, physical-button changes on the lamp are reflected
+        # in HA in real time and we avoid periodic GATT reads for state refresh.
+        for uuid, handler, name in (
+            (BLE_POWER_UUID, self._on_power_notification, "power"),
+            (BLE_BRIGHTNESS_UUID, self._on_brightness_notification, "brightness"),
+            (BLE_COLOR_TEMP_UUID, self._on_color_temp_notification, "color_temp"),
+        ):
+            try:
+                await self._client.start_notify(uuid, handler)
+                _LOGGER.debug(
+                    "Subscribed to %s notifications for %s", name, self.serial_number
+                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug(
+                    "%s characteristic does not support notifications for %s "
+                    "(state will be read once at connect and updated optimistically)",
+                    name,
+                    self.serial_number,
+                )
 
         # Motion notifications (most important — drives binary sensor)
         try:
@@ -1000,7 +1131,9 @@ class DysonBLEDevice:
                 self.serial_number,
             )
 
-            # Read initial state and subscribe to runtime notifications
+            # Read initial state (best-effort) and subscribe to notifications.
+            # GATT reads can fail via proxy at connect time; notifications will
+            # keep state current so we proceed even if the initial read fails.
             await self._read_initial_state()
             await self._subscribe_notifications()
             self._fire_state_change()
@@ -1056,8 +1189,10 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False
             )
-            await asyncio.sleep(0.2)
-            await self._read_initial_state()
+            # Update state optimistically from the written value.
+            # GATT reads via a BLE proxy can take several seconds each;
+            # BLE notifications will keep state current.
+            self.state.power = on
             self._fire_state_change()
 
     async def set_brightness(self, ha_brightness: int) -> None:
@@ -1076,8 +1211,11 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 BLE_BRIGHTNESS_UUID, bytes([raw]), response=False
             )
-            await asyncio.sleep(0.2)
-            await self._read_initial_state()
+            # Update state optimistically from the written value.
+            # GATT reads via a BLE proxy can take several seconds each;
+            # BLE notifications will keep state current.
+            self.state.brightness_raw = raw
+            self.state.brightness = raw_to_ha_brightness(raw)
             self._fire_state_change()
 
     async def set_color_temp_kelvin(self, kelvin: int) -> None:
@@ -1098,8 +1236,11 @@ class DysonBLEDevice:
                 kelvin_clamped.to_bytes(2, byteorder="little"),
                 response=False,
             )
-            await asyncio.sleep(0.2)
-            await self._read_initial_state()
+            # Update state optimistically from the written value.
+            # GATT reads via a BLE proxy can take several seconds each;
+            # BLE notifications will keep state current.
+            self.state.color_temp_kelvin = kelvin_clamped
+            self.state.color_temp_mired = kelvin_to_mired(kelvin_clamped)
             self._fire_state_change()
 
     async def set_color_temp_mired(self, mired: int) -> None:
@@ -1114,15 +1255,20 @@ class DysonBLEDevice:
         await self.set_color_temp_kelvin(mired_to_kelvin(mired))
 
     async def poll_state(self) -> None:
-        """Read current device state and fire an update event.
+        """Fire the current cached state to HA.
 
-        Used by the keepalive loop in the coordinator.
+        Called by the keepalive loop to ensure entities reflect the latest
+        known state.  State is primarily updated via BLE notifications;
+        this is a backstop to push cached state that may not have been fired
+        yet (e.g., after reconnection).
+
+        Deliberately does *not* perform GATT reads: reads take up to 30 s to
+        time out via a proxy, and holding ``_lock`` that long blocks all
+        concurrent service calls (set_power, set_brightness, etc.).
         """
         if not self.is_connected:
             return
-        async with self._lock:
-            await self._read_initial_state()
-            self._fire_state_change()
+        self._fire_state_change()
 
     @property
     def device_info(self) -> dict[str, Any]:

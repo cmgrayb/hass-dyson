@@ -52,6 +52,7 @@ from .const import (
     FAULT_TRANSLATIONS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
 )
+from .device_utils import mask_serial, mask_token
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -158,6 +159,7 @@ class DysonDevice:
         """Initialize the device wrapper."""
         self.hass = hass
         self.serial_number = serial_number
+        self._log_serial = mask_serial(serial_number)
         self.host = host  # Local host
         self.credential = credential  # Local credential
         self.mqtt_prefix = mqtt_prefix
@@ -209,7 +211,8 @@ class DysonDevice:
         ] = []  # Environmental update callbacks
 
         _LOGGER.debug(
-            "Initialized environmental data as empty dict for %s", serial_number
+            "Initialized environmental data as empty dict for %s",
+            mask_serial(serial_number),
         )
 
         # Device info from successful connection
@@ -309,7 +312,7 @@ class DysonDevice:
         if force:
             _LOGGER.debug(
                 "Bypassing reconnection backoff for %s due to forced connection attempt",
-                self.serial_number,
+                self._log_serial,
             )
             return True
 
@@ -319,7 +322,7 @@ class DysonDevice:
             )
             _LOGGER.debug(
                 "Reconnection backoff active for %s, waiting %.1f more seconds",
-                self.serial_number,
+                self._log_serial,
                 time_remaining,
             )
             return False
@@ -330,7 +333,7 @@ class DysonDevice:
         if not self._connected and self._using_fallback:
             _LOGGER.debug(
                 "Attempting to reconnect to preferred connection after disconnection for %s",
-                self.serial_number,
+                self._log_serial,
             )
 
             preferred_host, preferred_credential = self._get_connection_details(
@@ -351,7 +354,7 @@ class DysonDevice:
                     _LOGGER.info(
                         "Successfully reconnected to preferred connection (%s) after disconnection for %s",
                         self._preferred_connection_type.upper(),
-                        self.serial_number,
+                        self._log_serial,
                     )
                     return True
 
@@ -365,7 +368,7 @@ class DysonDevice:
         if self._using_fallback and self._should_retry_preferred():
             _LOGGER.debug(
                 "Attempting to reconnect to preferred connection type for %s",
-                self.serial_number,
+                self._log_serial,
             )
 
             preferred_host, preferred_credential = self._get_connection_details(
@@ -386,7 +389,7 @@ class DysonDevice:
                     _LOGGER.info(
                         "Successfully reconnected to preferred connection (%s) for %s",
                         self._preferred_connection_type.upper(),
-                        self.serial_number,
+                        self._log_serial,
                     )
                     return True
 
@@ -409,7 +412,7 @@ class DysonDevice:
                 "Attempting %s connection to %s for device %s",
                 conn_type,
                 host,
-                self.serial_number,
+                self._log_serial,
             )
 
             if await self._attempt_connection(conn_type, host, credential):
@@ -423,15 +426,13 @@ class DysonDevice:
 
                 _LOGGER.info(
                     "Successfully connected to %s via %s%s",
-                    self.serial_number,
+                    self._log_serial,
                     conn_type.upper(),
                     " (fallback)" if self._using_fallback else "",
                 )
                 return True
 
-        _LOGGER.error(
-            "Failed to connect to device %s via any method", self.serial_number
-        )
+        _LOGGER.error("Failed to connect to device %s via any method", self._log_serial)
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
         self._using_fallback = False
         return False
@@ -480,7 +481,7 @@ class DysonDevice:
         """Attempt a single connection method."""
 
         try:
-            _LOGGER.debug("Connecting to device %s at %s", self.serial_number, host)
+            _LOGGER.debug("Connecting to device %s at %s", self._log_serial, host)
             _LOGGER.debug(
                 "Using credential length: %s", len(credential) if credential else 0
             )
@@ -491,7 +492,7 @@ class DysonDevice:
                 _LOGGER.debug(
                     "Missing host or credential for %s connection to %s",
                     conn_type,
-                    self.serial_number,
+                    self._log_serial,
                 )
                 return False
 
@@ -501,9 +502,7 @@ class DysonDevice:
                 return await self._attempt_cloud_connection(host, credential)
 
         except Exception as err:
-            _LOGGER.error(
-                "Connection attempt failed for %s: %s", self.serial_number, err
-            )
+            _LOGGER.error("Connection attempt failed for %s: %s", self._log_serial, err)
             return False
 
     async def _test_network_connectivity(self, host: str, port: int = 1883) -> bool:
@@ -575,7 +574,7 @@ class DysonDevice:
                 except Exception as stop_err:
                     _LOGGER.debug(
                         "Failed to stop previous MQTT loop for %s: %s",
-                        self.serial_number,
+                        self._log_serial,
                         stop_err,
                     )
                 self._mqtt_client = None
@@ -619,7 +618,7 @@ class DysonDevice:
                         "Stable client ID rejected by %s broker (connection reset, "
                         "likely stale session from previous connection) – "
                         "retrying with random client ID",
-                        self.serial_number,
+                        self._log_serial,
                     )
                 else:
                     client_id = client_id_or_sentinel
@@ -644,10 +643,10 @@ class DysonDevice:
 
                 _LOGGER.debug(
                     "Using MQTT client ID: %s (attempt %d)",
-                    client_id,
+                    mask_token(client_id),
                     attempt_index + 1,
                 )
-                _LOGGER.debug("Using MQTT username: %s", username)
+                _LOGGER.debug("Using MQTT username: %s", mask_serial(username))
 
                 # Robot vacuums require MQTT protocol version 3.1.
                 # Other devices (fans, purifiers) use the default (3.1.1).
@@ -658,7 +657,7 @@ class DysonDevice:
                         protocol=mqtt.MQTTv31,
                     )
                     _LOGGER.debug(
-                        "Using MQTT 3.1 for robot vacuum %s", self.serial_number
+                        "Using MQTT 3.1 for robot vacuum %s", self._log_serial
                     )
                 else:
                     mqtt_client = mqtt.Client(
@@ -666,7 +665,7 @@ class DysonDevice:
                         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                     )
                     _LOGGER.debug(
-                        "Using default MQTT protocol for %s", self.serial_number
+                        "Using default MQTT protocol for %s", self._log_serial
                     )
                 self._mqtt_client = mqtt_client
 
@@ -695,7 +694,7 @@ class DysonDevice:
                     # than returning MQTT_ERR_CONN_LOST — handle both paths.
                     _LOGGER.info(
                         "Local broker for %s reset connection for client_id %s: %s",
-                        self.serial_number,
+                        self._log_serial,
                         client_id,
                         rst_err,
                     )
@@ -713,7 +712,7 @@ class DysonDevice:
                         "Local broker for %s rejected client_id %s with CONN_LOST "
                         "(likely stale session RST — broker does not comply with "
                         "MQTT §3.1.4 clean-session eviction)",
-                        self.serial_number,
+                        self._log_serial,
                         client_id,
                     )
                     rst_detected = True
@@ -735,7 +734,7 @@ class DysonDevice:
                     _LOGGER.warning(
                         "Both stable and random client IDs rejected by %s broker; "
                         "falling back to cloud and retrying local in ~2 minutes",
-                        self.serial_number,
+                        self._log_serial,
                     )
                     # _last_preferred_retry semantics: _should_retry_preferred()
                     # returns True when (now - _last_preferred_retry) >=
@@ -774,12 +773,12 @@ class DysonDevice:
                             self._mqtt_client = None
                             _LOGGER.debug(
                                 "Cleaned up failed local connection attempt for %s",
-                                self.serial_number,
+                                self._log_serial,
                             )
                         except Exception as cleanup_err:
                             _LOGGER.debug(
                                 "Failed to clean up connection for %s: %s",
-                                self.serial_number,
+                                self._log_serial,
                                 cleanup_err,
                             )
 
@@ -794,7 +793,7 @@ class DysonDevice:
                                 "Stable client ID rejected by %s broker via async "
                                 "handshake RST (likely stale session from previous "
                                 "connection) — retrying with random client ID",
-                                self.serial_number,
+                                self._log_serial,
                             )
                             if attempt_index == 0:
                                 continue
@@ -802,7 +801,7 @@ class DysonDevice:
                                 "Both stable and random client IDs rejected by %s "
                                 "broker via handshake RST; falling back to cloud "
                                 "and retrying local in ~2 minutes",
-                                self.serial_number,
+                                self._log_serial,
                             )
                             self._last_preferred_retry = (
                                 time.time() - self._preferred_retry_interval + 120
@@ -868,7 +867,7 @@ class DysonDevice:
                 except Exception as stop_err:
                     _LOGGER.debug(
                         "Failed to stop previous MQTT loop for %s: %s",
-                        self.serial_number,
+                        self._log_serial,
                         stop_err,
                     )
                 self._mqtt_client = None
@@ -898,8 +897,8 @@ class DysonDevice:
 
                 _LOGGER.debug(
                     "Parsed AWS IoT credentials: client_id=%s, authorizer=%s",
-                    client_id,
-                    custom_authorizer_name,
+                    mask_token(client_id),
+                    mask_token(custom_authorizer_name),
                 )
                 _LOGGER.debug("AWS IoT client_id length: %s", len(client_id))
 
@@ -911,8 +910,12 @@ class DysonDevice:
             # Note: For AWS IoT, the client_id must be exact - no prefixes allowed
             mqtt_client = mqtt.Client(client_id=client_id, transport="websockets")
 
-            _LOGGER.debug("Created MQTT client with exact ID: %s", client_id)
-            _LOGGER.debug("MQTT client internal ID: %s", mqtt_client._client_id)
+            _LOGGER.debug(
+                "Created MQTT client with exact ID: %s", mask_token(client_id)
+            )
+            _LOGGER.debug(
+                "MQTT client internal ID: %s", mask_token(str(mqtt_client._client_id))
+            )
 
             self._mqtt_client = mqtt_client
 
@@ -985,12 +988,12 @@ class DysonDevice:
                         self._mqtt_client = None
                         _LOGGER.debug(
                             "Cleaned up failed cloud connection attempt for %s",
-                            self.serial_number,
+                            self._log_serial,
                         )
                     except Exception as cleanup_err:
                         _LOGGER.debug(
                             "Failed to clean up connection for %s: %s",
-                            self.serial_number,
+                            self._log_serial,
                             cleanup_err,
                         )
 
@@ -1015,7 +1018,7 @@ class DysonDevice:
             if self._connected:
                 _LOGGER.info(
                     "Successfully connected to device %s via %s after %.1f seconds",
-                    self.serial_number,
+                    self._log_serial,
                     conn_type,
                     elapsed_time,
                 )
@@ -1029,7 +1032,7 @@ class DysonDevice:
             if self._rst_during_handshake:
                 _LOGGER.debug(
                     "RST detected during handshake for %s via %s after %.1f seconds — aborting connection wait",
-                    self.serial_number,
+                    self._log_serial,
                     conn_type,
                     elapsed_time,
                 )
@@ -1040,7 +1043,7 @@ class DysonDevice:
 
         _LOGGER.debug(
             "Connection timeout for device %s via %s after %.1f seconds",
-            self.serial_number,
+            self._log_serial,
             conn_type,
             elapsed_time,
         )
@@ -1061,7 +1064,7 @@ class DysonDevice:
 
         if self._mqtt_client and self._connected:
             try:
-                _LOGGER.debug("Disconnecting from device %s", self.serial_number)
+                _LOGGER.debug("Disconnecting from device %s", self._log_serial)
                 await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
                 await self.hass.async_add_executor_job(self._mqtt_client.disconnect)
                 self._connected = False
@@ -1070,7 +1073,7 @@ class DysonDevice:
                 # for the next reconnection attempt
             except Exception as err:
                 _LOGGER.error(
-                    "Failed to disconnect from device %s: %s", self.serial_number, err
+                    "Failed to disconnect from device %s: %s", self._log_serial, err
                 )
 
     async def _start_heartbeat(self) -> None:
@@ -1082,14 +1085,14 @@ class DysonDevice:
         if not self.hass.is_running:
             _LOGGER.debug(
                 "Home Assistant is starting, delaying heartbeat for device %s",
-                self.serial_number,
+                self._log_serial,
             )
 
             def start_heartbeat_after_startup(event: Any) -> None:  # noqa: ARG001
                 """Start heartbeat after HA startup completes."""
                 _LOGGER.debug(
                     "Home Assistant startup complete, starting heartbeat for device %s",
-                    self.serial_number,
+                    self._log_serial,
                 )
                 # Use call_soon_threadsafe to schedule task from potentially different thread
                 self.hass.loop.call_soon_threadsafe(
@@ -1107,7 +1110,7 @@ class DysonDevice:
 
     async def _start_heartbeat_now(self) -> None:
         """Actually start the heartbeat loop."""
-        _LOGGER.debug("Starting heartbeat for device %s", self.serial_number)
+        _LOGGER.debug("Starting heartbeat for device %s", self._log_serial)
         self._last_heartbeat = time.time()  # Initialize heartbeat time
         self._heartbeat_task = self.hass.async_create_task(self._heartbeat_loop())
 
@@ -1128,7 +1131,7 @@ class DysonDevice:
             self._ha_stop_unsub()
             self._ha_stop_unsub = None
         if self._heartbeat_task and not self._heartbeat_task.done():
-            _LOGGER.debug("Stopping heartbeat for device %s", self.serial_number)
+            _LOGGER.debug("Stopping heartbeat for device %s", self._log_serial)
             self._heartbeat_task.cancel()
             try:
                 await self._heartbeat_task
@@ -1138,7 +1141,7 @@ class DysonDevice:
 
     async def _heartbeat_loop(self) -> None:
         """Heartbeat loop that sends REQUEST-CURRENT-STATE every 30 seconds."""
-        _LOGGER.debug("Heartbeat loop started for device %s", self.serial_number)
+        _LOGGER.debug("Heartbeat loop started for device %s", self._log_serial)
 
         while self._connected:
             try:
@@ -1149,7 +1152,7 @@ class DysonDevice:
 
                 current_time = time.time()
                 if current_time - self._last_heartbeat >= self._heartbeat_interval:
-                    _LOGGER.debug("Sending heartbeat to device %s", self.serial_number)
+                    _LOGGER.debug("Sending heartbeat to device %s", self._log_serial)
                     await self._request_current_state()
                     # Check for faults on each heartbeat per discovery.md requirements
                     await self._request_current_faults()
@@ -1157,12 +1160,12 @@ class DysonDevice:
 
             except asyncio.CancelledError:
                 _LOGGER.debug(
-                    "Heartbeat loop cancelled for device %s", self.serial_number
+                    "Heartbeat loop cancelled for device %s", self._log_serial
                 )
                 raise
             except Exception as err:
                 _LOGGER.error(
-                    "Error in heartbeat loop for %s: %s", self.serial_number, err
+                    "Error in heartbeat loop for %s: %s", self._log_serial, err
                 )
                 # Brief pause before retry, but allow cancellation to propagate cleanly
                 try:
@@ -1170,13 +1173,13 @@ class DysonDevice:
                 except asyncio.CancelledError:
                     _LOGGER.debug(
                         "Heartbeat retry sleep cancelled for device %s",
-                        self.serial_number,
+                        self._log_serial,
                     )
                     raise
 
     async def force_reconnect(self) -> bool:
         """Force a reconnection attempt with preferred connection priority."""
-        _LOGGER.info("Force reconnect triggered for %s", self.serial_number)
+        _LOGGER.info("Force reconnect triggered for %s", self._log_serial)
 
         # Disconnect if currently connected
         if self._connected:
@@ -1193,7 +1196,7 @@ class DysonDevice:
     ) -> None:
         """Handle MQTT connection callback."""
         if rc == mqtt.CONNACK_ACCEPTED:
-            _LOGGER.info("MQTT connected to device %s", self.serial_number)
+            _LOGGER.info("MQTT connected to device %s", self._log_serial)
             self._connected = True
             self._had_stable_connection = (
                 True  # Mark that we've had a successful connection
@@ -1211,7 +1214,10 @@ class DysonDevice:
 
             for topic in topics_to_subscribe:
                 client.subscribe(topic)
-                _LOGGER.debug("Subscribed to topic: %s", topic)
+                _LOGGER.debug(
+                    "Subscribed to topic: %s",
+                    topic.replace(self._log_serial, self._log_serial),
+                )
 
             # Request initial device state (schedule safely from callback)
             # Note: REQUEST-CURRENT-STATE automatically includes environmental data
@@ -1226,7 +1232,7 @@ class DysonDevice:
         else:
             _LOGGER.error(
                 "MQTT connection failed for device %s with code: %s",
-                self.serial_number,
+                self._log_serial,
                 rc,
             )
 
@@ -1242,13 +1248,13 @@ class DysonDevice:
         if was_intentional:
             _LOGGER.debug(
                 "MQTT client disconnected for %s (intentional), code: %s",
-                self.serial_number,
+                self._log_serial,
                 rc,
             )
             self._intentional_disconnect = False
         else:
             _LOGGER.warning(
-                "MQTT client disconnected for %s, code: %s", self.serial_number, rc
+                "MQTT client disconnected for %s, code: %s", self._log_serial, rc
             )
 
         # Track RST-during-handshake: the broker closed the TCP connection before
@@ -1284,13 +1290,13 @@ class DysonDevice:
         ):
             _LOGGER.info(
                 "Unexpected disconnection for %s, will stay on fallback connection for 15 minutes unless manually reconnected",
-                self.serial_number,
+                self._log_serial,
             )
             self._last_preferred_retry = time.time() + 900  # 15 minutes = 900 seconds
         elif rc != mqtt.MQTT_ERR_SUCCESS:
             _LOGGER.debug(
                 "Disconnection during connection attempt for %s, not applying fallback timer",
-                self.serial_number,
+                self._log_serial,
             )
 
     def _on_message(
@@ -1303,27 +1309,25 @@ class DysonDevice:
 
             _LOGGER.debug("Received MQTT message on %s: %s", topic, payload[:100])
             _LOGGER.debug(
-                "MQTT MESSAGE RECEIVED for %s - Topic: %s", self.serial_number, topic
+                "MQTT MESSAGE RECEIVED for %s - Topic: %s", self._log_serial, topic
             )
 
             # Log the full payload for filter debugging
-            _LOGGER.debug(
-                "Full message payload for %s: %s", self.serial_number, payload
-            )
+            _LOGGER.debug("Full message payload for %s: %s", self._log_serial, payload)
 
             # Parse JSON payload
             if isinstance(payload, bytes):
                 payload = payload.decode("utf-8")
 
             data = json.loads(payload)
-            _LOGGER.debug("Parsed message data for %s: %s", self.serial_number, data)
-            _LOGGER.debug("MQTT PARSED DATA for %s: %s", self.serial_number, data)
+            _LOGGER.debug("Parsed message data for %s: %s", self._log_serial, data)
+            _LOGGER.debug("MQTT PARSED DATA for %s: %s", self._log_serial, data)
 
             self._process_message_data(data, topic)
 
         except Exception as err:
             _LOGGER.error(
-                "Error handling MQTT message for %s: %s", self.serial_number, err
+                "Error handling MQTT message for %s: %s", self._log_serial, err
             )
 
     def _process_message_data(self, data: dict[str, Any], topic: str) -> None:
@@ -1332,26 +1336,24 @@ class DysonDevice:
         _LOGGER.debug(
             "Processing message type '%s' for device %s",
             message_type,
-            self.serial_number,
+            self._log_serial,
         )
 
         # Handle different message types based on our successful test
         if message_type == "CURRENT-STATE":
-            _LOGGER.debug("Processing CURRENT-STATE message for %s", self.serial_number)
+            _LOGGER.debug("Processing CURRENT-STATE message for %s", self._log_serial)
             self._handle_current_state(data, topic)
         elif message_type == "ENVIRONMENTAL-CURRENT-SENSOR-DATA":
             _LOGGER.debug(
                 "Processing ENVIRONMENTAL-CURRENT-SENSOR-DATA message for %s",
-                self.serial_number,
+                self._log_serial,
             )
             self._handle_environmental_data(data)
         elif message_type == "CURRENT-FAULTS":
-            _LOGGER.debug(
-                "Processing CURRENT-FAULTS message for %s", self.serial_number
-            )
+            _LOGGER.debug("Processing CURRENT-FAULTS message for %s", self._log_serial)
             self._handle_faults_data(data)
         elif message_type == "STATE-CHANGE":
-            _LOGGER.debug("Processing STATE-CHANGE message for %s", self.serial_number)
+            _LOGGER.debug("Processing STATE-CHANGE message for %s", self._log_serial)
 
             # Track power control capability patterns for device type detection
             self._total_state_messages += 1
@@ -1369,7 +1371,7 @@ class DysonDevice:
                     self._power_control_type = detected_type
                     _LOGGER.info(
                         "Device %s fallback detection: %s-based power control (fpwr_msgs: %d, fmod_msgs: %d, total: %d)",
-                        self.serial_number,
+                        self._log_serial,
                         detected_type,
                         self._fpwr_message_count,
                         self._fmod_message_count,
@@ -1377,7 +1379,7 @@ class DysonDevice:
                     )
                     _LOGGER.debug(
                         "Fallback detection completed for %s after %d STATE-CHANGE message(s)",
-                        self.serial_number,
+                        self._log_serial,
                         self._total_state_messages,
                     )
 
@@ -1386,7 +1388,7 @@ class DysonDevice:
             _LOGGER.debug(
                 "Unknown message type '%s' for device %s: %s",
                 message_type,
-                self.serial_number,
+                self._log_serial,
                 data,
             )
 
@@ -1395,9 +1397,7 @@ class DysonDevice:
 
     def _handle_current_state(self, data: dict[str, Any], topic: str) -> None:
         """Handle current state message."""
-        _LOGGER.debug(
-            "Received current state data for %s: %s", self.serial_number, data
-        )
+        _LOGGER.debug("Received current state data for %s: %s", self._log_serial, data)
 
         # Check specifically for filter data
         product_state = data.get("product-state", {})
@@ -1413,7 +1413,7 @@ class DysonDevice:
 
         # For CURRENT-STATE messages, values are already strings - store directly
         self._state_data.update(data)
-        _LOGGER.debug("Updated device state for %s", self.serial_number)
+        _LOGGER.debug("Updated device state for %s", self._log_serial)
 
         # Notify callbacks (including coordinator)
         self._notify_callbacks(topic, data)
@@ -1423,7 +1423,7 @@ class DysonDevice:
         env_data = data.get("data", {})
         _LOGGER.debug(
             "Processing environmental data for %s: received_keys=%s",
-            self.serial_number,
+            self._log_serial,
             list(env_data.keys()),
         )
 
@@ -1432,7 +1432,7 @@ class DysonDevice:
         pm10_in_message = env_data.get("pm10")
         _LOGGER.debug(
             "Environmental message PM data for %s: pm25='%s', pm10='%s'",
-            self.serial_number,
+            self._log_serial,
             pm25_in_message,
             pm10_in_message,
         )
@@ -1440,26 +1440,24 @@ class DysonDevice:
         # Log PM2.5, PM10, and level updates specifically
         if "pm25" in env_data:
             _LOGGER.debug(
-                "PM2.5 updated for %s: %s", self.serial_number, env_data["pm25"]
+                "PM2.5 updated for %s: %s", self._log_serial, env_data["pm25"]
             )
         if "pm10" in env_data:
-            _LOGGER.debug(
-                "PM10 updated for %s: %s", self.serial_number, env_data["pm10"]
-            )
+            _LOGGER.debug("PM10 updated for %s: %s", self._log_serial, env_data["pm10"])
         if "p25r" in env_data:
-            _LOGGER.debug("P25R value for %s: %s", self.serial_number, env_data["p25r"])
+            _LOGGER.debug("P25R value for %s: %s", self._log_serial, env_data["p25r"])
         if "p10r" in env_data:
-            _LOGGER.debug("P10R value for %s: %s", self.serial_number, env_data["p10r"])
+            _LOGGER.debug("P10R value for %s: %s", self._log_serial, env_data["p10r"])
 
         # Log gaseous sensor updates (ExtendedAQ capability)
         if "co2" in env_data:
-            _LOGGER.debug("CO2 updated for %s: %s", self.serial_number, env_data["co2"])
+            _LOGGER.debug("CO2 updated for %s: %s", self._log_serial, env_data["co2"])
         if "no2" in env_data:
-            _LOGGER.debug("NO2 updated for %s: %s", self.serial_number, env_data["no2"])
+            _LOGGER.debug("NO2 updated for %s: %s", self._log_serial, env_data["no2"])
         if "hcho" in env_data:
             _LOGGER.debug(
                 "HCHO (Formaldehyde) updated for %s: %s",
-                self.serial_number,
+                self._log_serial,
                 env_data["hcho"],
             )
 
@@ -1470,12 +1468,12 @@ class DysonDevice:
         self._environmental_data.update(env_data)
         _LOGGER.debug(
             "Updated environmental data for %s: keys=%s",
-            self.serial_number,
+            self._log_serial,
             list(env_data.keys()),
         )
         _LOGGER.debug(
             "Environmental data state before callback for %s: pm25=%s->%s, pm10=%s->%s",
-            self.serial_number,
+            self._log_serial,
             previous_pm25,
             env_data.get("pm25"),
             previous_pm10,
@@ -1489,14 +1487,14 @@ class DysonDevice:
         if pm25_changed or pm10_changed:
             _LOGGER.debug(
                 "PM data changed for %s, triggering environmental update",
-                self.serial_number,
+                self._log_serial,
             )
             # Trigger immediate environmental sensor batch update
             self._trigger_environmental_update()
         else:
             _LOGGER.debug(
                 "PM data unchanged for %s, skipping environmental update",
-                self.serial_number,
+                self._log_serial,
             )
 
     def _trigger_environmental_update(self) -> None:
@@ -1539,7 +1537,7 @@ class DysonDevice:
         # Check if there are any faults reported
         if fault_data:
             _LOGGER.warning(
-                "Device faults detected for %s: %s", self.serial_number, fault_data
+                "Device faults detected for %s: %s", self._log_serial, fault_data
             )
 
             # Create Home Assistant event for device fault detection
@@ -1558,19 +1556,19 @@ class DysonDevice:
             for fault_key, fault_value in fault_data.items():
                 _LOGGER.warning(
                     "Fault detected on %s - %s: %s",
-                    self.serial_number,
+                    self._log_serial,
                     fault_key,
                     fault_value,
                 )
         else:
-            _LOGGER.debug("No faults reported for %s", self.serial_number)
+            _LOGGER.debug("No faults reported for %s", self._log_serial)
 
         self._faults_data.update(data)
-        _LOGGER.debug("Updated faults data for %s", self.serial_number)
+        _LOGGER.debug("Updated faults data for %s", self._log_serial)
 
     def _handle_state_change(self, data: dict[str, Any]) -> None:
         """Handle state change message."""
-        _LOGGER.debug("Received state change data for %s: %s", self.serial_number, data)
+        _LOGGER.debug("Received state change data for %s: %s", self._log_serial, data)
 
         product_state = data.get("product-state", {})
         if product_state:
@@ -1609,7 +1607,7 @@ class DysonDevice:
         if "product-state" not in self._state_data:
             self._state_data["product-state"] = {}
         self._state_data["product-state"].update(normalized_product_state)
-        _LOGGER.debug("State change for %s", self.serial_number)
+        _LOGGER.debug("State change for %s", self._log_serial)
 
     def _notify_callbacks(self, topic: str, data: dict[str, Any]) -> None:
         """Notify registered callbacks of new message."""
@@ -1635,22 +1633,23 @@ class DysonDevice:
                 }
             )
 
-            _LOGGER.debug("Publishing to topic: %s", command_topic)
+            _LOGGER.debug(
+                "Publishing to topic: %s",
+                command_topic.replace(self._log_serial, self._log_serial),
+            )
             _LOGGER.debug("Publishing command: %s", command)
 
             result = await self.hass.async_add_executor_job(
                 self._mqtt_client.publish, command_topic, command
             )
             _LOGGER.debug("Publish result: %s", result)
-            _LOGGER.debug("Requested current state from %s", self.serial_number)
+            _LOGGER.debug("Requested current state from %s", self._log_serial)
 
             # Give device time to respond
             await asyncio.sleep(3.0)
 
         except Exception as err:
-            _LOGGER.error(
-                "Failed to request state from %s: %s", self.serial_number, err
-            )
+            _LOGGER.error("Failed to request state from %s: %s", self._log_serial, err)
 
     async def _request_current_faults(self) -> None:
         """Request current faults from device."""
@@ -1671,12 +1670,10 @@ class DysonDevice:
             await self.hass.async_add_executor_job(
                 self._mqtt_client.publish, command_topic, command
             )
-            _LOGGER.debug("Requested current faults from %s", self.serial_number)
+            _LOGGER.debug("Requested current faults from %s", self._log_serial)
 
         except Exception as err:
-            _LOGGER.error(
-                "Failed to request faults from %s: %s", self.serial_number, err
-            )
+            _LOGGER.error("Failed to request faults from %s: %s", self._log_serial, err)
 
     async def _request_environmental_data(self) -> None:
         """Request current environmental data from device."""
@@ -1697,12 +1694,12 @@ class DysonDevice:
             await self.hass.async_add_executor_job(
                 self._mqtt_client.publish, command_topic, command
             )
-            _LOGGER.debug("Requested environmental data from %s", self.serial_number)
+            _LOGGER.debug("Requested environmental data from %s", self._log_serial)
 
         except Exception as err:
             _LOGGER.error(
                 "Failed to request environmental data from %s: %s",
-                self.serial_number,
+                self._log_serial,
                 err,
             )
 
@@ -1723,14 +1720,14 @@ class DysonDevice:
                 if not mqtt_connected and self._connected:
                     _LOGGER.warning(
                         "MQTT client disconnected for %s, updating connection state",
-                        self.serial_number,
+                        self._log_serial,
                     )
                     self._connected = False
                 return mqtt_connected
         except Exception as err:
             _LOGGER.warning(
                 "Failed to check MQTT connection status for %s: %s",
-                self.serial_number,
+                self._log_serial,
                 err,
             )
             self._connected = False
@@ -1804,9 +1801,7 @@ class DysonDevice:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
         try:
-            _LOGGER.debug(
-                "Sending command %s to device %s", command, self.serial_number
-            )
+            _LOGGER.debug("Sending command %s to device %s", command, self._log_serial)
 
             # Handle heartbeat commands (REQUEST-CURRENT-STATE and REQUEST-CURRENT-FAULTS)
             if command == "REQUEST-CURRENT-STATE":
@@ -1844,13 +1839,13 @@ class DysonDevice:
             await self.hass.async_add_executor_job(
                 self._mqtt_client.publish, command_topic, command_json
             )
-            _LOGGER.debug("Sent command %s to %s", command, self.serial_number)
+            _LOGGER.debug("Sent command %s to %s", command, self._log_serial)
 
         except Exception as err:
             _LOGGER.error(
                 "Failed to send command %s to device %s: %s",
                 command,
-                self.serial_number,
+                self._log_serial,
                 err,
             )
             raise
@@ -1859,7 +1854,7 @@ class DysonDevice:
         """Get current device state."""
         if not self._connected or not self._mqtt_client:
             _LOGGER.debug(
-                "Device %s not connected, returning cached state", self.serial_number
+                "Device %s not connected, returning cached state", self._log_serial
             )
             return self._state_data
 
@@ -1872,13 +1867,13 @@ class DysonDevice:
                 )
                 if state:
                     _LOGGER.debug(
-                        "Received state data for %s: %s", self.serial_number, state
+                        "Received state data for %s: %s", self._log_serial, state
                     )
                     self._state_data.update(state)
                 else:
                     _LOGGER.debug(
                         "No state data returned from get_state for %s",
-                        self.serial_number,
+                        self._log_serial,
                     )
             elif hasattr(self._mqtt_client, "state"):
                 # Some MQTT clients might have a state property
@@ -1886,23 +1881,19 @@ class DysonDevice:
                 if state:
                     _LOGGER.debug(
                         "Received state from property for %s: %s",
-                        self.serial_number,
+                        self._log_serial,
                         state,
                     )
                     self._state_data.update(state)
                 else:
-                    _LOGGER.debug(
-                        "No state data in property for %s", self.serial_number
-                    )
+                    _LOGGER.debug("No state data in property for %s", self._log_serial)
 
         except Exception as err:
             _LOGGER.warning(
-                "Failed to get state from device %s: %s", self.serial_number, err
+                "Failed to get state from device %s: %s", self._log_serial, err
             )
 
-        _LOGGER.debug(
-            "Final state data for %s: %s", self.serial_number, self._state_data
-        )
+        _LOGGER.debug("Final state data for %s: %s", self._log_serial, self._state_data)
         return self._state_data
 
     def _normalize_faults_to_list(self, faults: Any) -> list[dict[str, Any]]:
@@ -1990,7 +1981,7 @@ class DysonDevice:
                 return faults
         except Exception as err:
             _LOGGER.warning(
-                "Failed to get faults from device %s: %s", self.serial_number, err
+                "Failed to get faults from device %s: %s", self._log_serial, err
             )
 
         return self._normalize_faults_to_list(self._faults_data)
@@ -2008,7 +1999,7 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.debug("Requesting current faults from %s", self.serial_number)
+        _LOGGER.debug("Requesting current faults from %s", self._log_serial)
 
         await self._request_current_faults()
 
@@ -2017,7 +2008,7 @@ class DysonDevice:
         if firmware_version and firmware_version != "Unknown":
             self._firmware_version = firmware_version
             _LOGGER.debug(
-                "Set firmware version for %s: %s", self.serial_number, firmware_version
+                "Set firmware version for %s: %s", self._log_serial, firmware_version
             )
 
     @property
@@ -2090,7 +2081,7 @@ class DysonDevice:
             fmod = self.get_state_value(product_state, "fmod", "OFF")
             _LOGGER.debug(
                 "Device %s fan_power using fmod (HP02-style): %s",
-                self.serial_number,
+                self._log_serial,
                 fmod,
             )
             return fmod in ["FAN", "AUTO"]
@@ -2100,7 +2091,7 @@ class DysonDevice:
 
             if fpwr != "MISSING":
                 _LOGGER.debug(
-                    "Device %s fan_power using fpwr: %s", self.serial_number, fpwr
+                    "Device %s fan_power using fpwr: %s", self._log_serial, fpwr
                 )
                 return fpwr == "ON"
 
@@ -2108,7 +2099,7 @@ class DysonDevice:
             # This handles cases where STATE-CHANGE messages don't include fpwr
             fnst = self.get_state_value(product_state, "fnst", "OFF")
             _LOGGER.debug(
-                "Device %s fan_power using fnst fallback: %s", self.serial_number, fnst
+                "Device %s fan_power using fnst fallback: %s", self._log_serial, fnst
             )
             return fnst == "FAN"
 
@@ -2146,7 +2137,7 @@ class DysonDevice:
             pm25_raw = env_data_snapshot.get("pm25")
             if pm25_raw is None:
                 _LOGGER.debug(
-                    "PM2.5 property for %s: no data available", self.serial_number
+                    "PM2.5 property for %s: no data available", self._log_serial
                 )
                 return None
 
@@ -2155,7 +2146,7 @@ class DysonDevice:
                 _LOGGER.debug(
                     "PM2.5 sensor %s for %s",
                     "inactive" if pm25_raw == "OFF" else "initializing",
-                    self.serial_number,
+                    self._log_serial,
                 )
                 return None
 
@@ -2164,7 +2155,7 @@ class DysonDevice:
 
             _LOGGER.debug(
                 "PM2.5 property accessed for %s at %s: raw='%s', value=%d",
-                self.serial_number,
+                self._log_serial,
                 datetime.datetime.now().isoformat(),
                 pm25_raw,
                 value,
@@ -2173,7 +2164,7 @@ class DysonDevice:
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Invalid PM2.5 value for %s: %s, error: %s",
-                self.serial_number,
+                self._log_serial,
                 self._environmental_data.get("pm25"),
                 e,
             )
@@ -2188,7 +2179,7 @@ class DysonDevice:
             pm10_raw = env_data_snapshot.get("pm10")
             if pm10_raw is None:
                 _LOGGER.debug(
-                    "PM10 property for %s: no data available", self.serial_number
+                    "PM10 property for %s: no data available", self._log_serial
                 )
                 return None
 
@@ -2197,7 +2188,7 @@ class DysonDevice:
                 _LOGGER.debug(
                     "PM10 sensor %s for %s",
                     "inactive" if pm10_raw == "OFF" else "initializing",
-                    self.serial_number,
+                    self._log_serial,
                 )
                 return None
 
@@ -2206,7 +2197,7 @@ class DysonDevice:
 
             _LOGGER.debug(
                 "PM10 property accessed for %s at %s: raw='%s', value=%d",
-                self.serial_number,
+                self._log_serial,
                 datetime.datetime.now().isoformat(),
                 pm10_raw,
                 value,
@@ -2215,7 +2206,7 @@ class DysonDevice:
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Invalid PM10 value for %s: %s, error: %s",
-                self.serial_number,
+                self._log_serial,
                 self._environmental_data.get("pm10"),
                 e,
             )
@@ -2230,7 +2221,7 @@ class DysonDevice:
             voc_raw = env_data_snapshot.get("va10")
             if voc_raw is None:
                 _LOGGER.debug(
-                    "VOC property for %s: no data available", self.serial_number
+                    "VOC property for %s: no data available", self._log_serial
                 )
                 return None
 
@@ -2239,7 +2230,7 @@ class DysonDevice:
                 _LOGGER.debug(
                     "VOC sensor %s for %s",
                     "inactive" if voc_raw == "OFF" else "initializing",
-                    self.serial_number,
+                    self._log_serial,
                 )
                 return None
 
@@ -2249,7 +2240,7 @@ class DysonDevice:
 
             _LOGGER.debug(
                 "VOC property accessed for %s at %s: raw='%s', value=%.1f ppb",
-                self.serial_number,
+                self._log_serial,
                 datetime.datetime.now().isoformat(),
                 voc_raw,
                 value,
@@ -2258,7 +2249,7 @@ class DysonDevice:
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Invalid VOC value for %s: %s, error: %s",
-                self.serial_number,
+                self._log_serial,
                 self._environmental_data.get("va10"),
                 e,
             )
@@ -2273,7 +2264,7 @@ class DysonDevice:
             no2_raw = env_data_snapshot.get("noxl")
             if no2_raw is None:
                 _LOGGER.debug(
-                    "NO2 property for %s: no data available", self.serial_number
+                    "NO2 property for %s: no data available", self._log_serial
                 )
                 return None
 
@@ -2281,7 +2272,7 @@ class DysonDevice:
             if no2_raw in ("OFF", "INIT"):
                 _LOGGER.debug(
                     "NO2 sensor for %s is %s, returning None",
-                    self.serial_number,
+                    self._log_serial,
                     "inactive" if no2_raw == "OFF" else "initializing",
                 )
                 return None
@@ -2292,7 +2283,7 @@ class DysonDevice:
 
             _LOGGER.debug(
                 "NO2 property accessed for %s at %s: raw='%s', value=%.1f ppb",
-                self.serial_number,
+                self._log_serial,
                 datetime.datetime.now().isoformat(),
                 no2_raw,
                 value,
@@ -2301,7 +2292,7 @@ class DysonDevice:
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Invalid NO2 value for %s: %s, error: %s",
-                self.serial_number,
+                self._log_serial,
                 self._environmental_data.get("noxl"),
                 e,
             )
@@ -2317,7 +2308,7 @@ class DysonDevice:
             if formaldehyde_raw is None:
                 _LOGGER.debug(
                     "Formaldehyde property for %s: no data available",
-                    self.serial_number,
+                    self._log_serial,
                 )
                 return None
 
@@ -2326,7 +2317,7 @@ class DysonDevice:
                 _LOGGER.debug(
                     "Formaldehyde sensor %s for %s",
                     "inactive" if formaldehyde_raw == "OFF" else "initializing",
-                    self.serial_number,
+                    self._log_serial,
                 )
                 return None
 
@@ -2336,7 +2327,7 @@ class DysonDevice:
 
             _LOGGER.debug(
                 "Formaldehyde property accessed for %s at %s: raw='%s', value=%.3f ppb",
-                self.serial_number,
+                self._log_serial,
                 datetime.datetime.now().isoformat(),
                 formaldehyde_raw,
                 value,
@@ -2345,7 +2336,7 @@ class DysonDevice:
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Invalid formaldehyde value for %s: %s, error: %s",
-                self.serial_number,
+                self._log_serial,
                 self._environmental_data.get("hchr"),
                 e,
             )
@@ -2376,7 +2367,7 @@ class DysonDevice:
             cflt = product_state.get("cflt", "NONE")
 
             # Debug logging to troubleshoot filter life issue
-            _LOGGER.debug("HEPA filter life debug for %s:", self.serial_number)
+            _LOGGER.debug("HEPA filter life debug for %s:", self._log_serial)
             _LOGGER.debug("  HEPA filter type (hflt): %s", hflt)
             _LOGGER.debug("  Carbon filter type (cflt): %s", cflt)
             _LOGGER.debug("  Product state keys: %s", list(product_state.keys()))
@@ -2408,7 +2399,7 @@ class DysonDevice:
             return result
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
-                "Failed to parse HEPA filter life for %s: %s", self.serial_number, e
+                "Failed to parse HEPA filter life for %s: %s", self._log_serial, e
             )
             return 0
 
@@ -2429,7 +2420,7 @@ class DysonDevice:
         """Return HEPA filter type."""
         product_state = self._state_data.get("product-state", {})
         filter_type = self.get_state_value(product_state, "hflt", "NONE")
-        _LOGGER.debug("HEPA filter type for %s: %s", self.serial_number, filter_type)
+        _LOGGER.debug("HEPA filter type for %s: %s", self._log_serial, filter_type)
         return filter_type
 
     @property
@@ -2437,7 +2428,7 @@ class DysonDevice:
         """Return carbon filter type."""
         product_state = self._state_data.get("product-state", {})
         filter_type = self.get_state_value(product_state, "cflt", "NONE")
-        _LOGGER.debug("Carbon filter type for %s: %s", self.serial_number, filter_type)
+        _LOGGER.debug("Carbon filter type for %s: %s", self._log_serial, filter_type)
         return filter_type
 
     # Robot Vacuum Properties
@@ -2467,10 +2458,10 @@ class DysonDevice:
                 )
 
             if robot_state:
-                _LOGGER.debug("Robot state for %s: %s", self.serial_number, robot_state)
+                _LOGGER.debug("Robot state for %s: %s", self._log_serial, robot_state)
             return robot_state
         except (KeyError, TypeError) as e:
-            _LOGGER.debug("Failed to get robot state for %s: %s", self.serial_number, e)
+            _LOGGER.debug("Failed to get robot state for %s: %s", self._log_serial, e)
             return None
 
     @property
@@ -2492,13 +2483,11 @@ class DysonDevice:
             if battery is not None:
                 battery_int = int(battery)
                 _LOGGER.debug(
-                    "Robot battery for %s: %d%%", self.serial_number, battery_int
+                    "Robot battery for %s: %d%%", self._log_serial, battery_int
                 )
                 return battery_int
         except (ValueError, TypeError, KeyError) as e:
-            _LOGGER.debug(
-                "Failed to get robot battery for %s: %s", self.serial_number, e
-            )
+            _LOGGER.debug("Failed to get robot battery for %s: %s", self._log_serial, e)
         return None
 
     @property
@@ -2519,13 +2508,11 @@ class DysonDevice:
 
             if position and isinstance(position, list) and len(position) == 2:
                 pos_coords = [int(position[0]), int(position[1])]
-                _LOGGER.debug(
-                    "Robot position for %s: %s", self.serial_number, pos_coords
-                )
+                _LOGGER.debug("Robot position for %s: %s", self._log_serial, pos_coords)
                 return pos_coords
         except (ValueError, TypeError, KeyError, IndexError) as e:
             _LOGGER.debug(
-                "Failed to get robot position for %s: %s", self.serial_number, e
+                "Failed to get robot position for %s: %s", self._log_serial, e
             )
         return None
 
@@ -2547,12 +2534,12 @@ class DysonDevice:
 
             if clean_type:
                 _LOGGER.debug(
-                    "Robot clean type for %s: %s", self.serial_number, clean_type
+                    "Robot clean type for %s: %s", self._log_serial, clean_type
                 )
             return clean_type
         except (KeyError, TypeError) as e:
             _LOGGER.debug(
-                "Failed to get robot clean type for %s: %s", self.serial_number, e
+                "Failed to get robot clean type for %s: %s", self._log_serial, e
             )
             return None
 
@@ -2572,11 +2559,11 @@ class DysonDevice:
             if not clean_id:
                 clean_id = self._state_data.get("cleanId")
             if clean_id:
-                _LOGGER.debug("Robot clean ID for %s: %s", self.serial_number, clean_id)
+                _LOGGER.debug("Robot clean ID for %s: %s", self._log_serial, clean_id)
             return clean_id
         except (KeyError, TypeError) as e:
             _LOGGER.debug(
-                "Failed to get robot clean ID for %s: %s", self.serial_number, e
+                "Failed to get robot clean ID for %s: %s", self._log_serial, e
             )
             return None
 
@@ -2704,7 +2691,7 @@ class DysonDevice:
         """
         _LOGGER.debug(
             "=== DEBUG set_night_mode called for %s: enabled=%s ===",
-            self.serial_number,
+            self._log_serial,
             enabled,
         )
         _LOGGER.debug(
@@ -2721,12 +2708,12 @@ class DysonDevice:
             await self.send_command("STATE-SET", {"nmod": nmod_value})
             _LOGGER.debug(
                 "=== Successfully sent night mode command to %s ===",
-                self.serial_number,
+                self._log_serial,
             )
         except Exception as err:
             _LOGGER.error(
                 "=== Failed to publish night mode command to %s: %s ===",
-                self.serial_number,
+                self._log_serial,
                 err,
             )
 
@@ -2787,7 +2774,7 @@ class DysonDevice:
             fmod_value = "FAN" if enabled else "OFF"
             _LOGGER.debug(
                 "Device %s setting power via fmod (HP02-style): %s",
-                self.serial_number,
+                self._log_serial,
                 fmod_value,
             )
             await self.send_command("STATE-SET", {"fmod": fmod_value})
@@ -2795,7 +2782,7 @@ class DysonDevice:
             # Most devices: use fpwr for power control
             fpwr_value = "ON" if enabled else "OFF"
             _LOGGER.debug(
-                "Device %s setting power via fpwr: %s", self.serial_number, fpwr_value
+                "Device %s setting power via fpwr: %s", self._log_serial, fpwr_value
             )
             await self.send_command("STATE-SET", {"fpwr": fpwr_value})
 
@@ -2924,7 +2911,7 @@ class DysonDevice:
             "Set oscillation preset to %s° (ancp=%s) for %s",
             preset_angle,
             ancp_str,
-            self.serial_number,
+            self._log_serial,
         )
 
     async def set_oscillation_breeze(self) -> None:
@@ -2947,7 +2934,7 @@ class DysonDevice:
 
         _LOGGER.debug(
             "Set Breeze oscillation mode for %s",
-            self.serial_number,
+            self._log_serial,
         )
 
     async def set_tilt_oscillation(self, option: str) -> None:
@@ -2991,7 +2978,7 @@ class DysonDevice:
         _LOGGER.debug(
             "Set tilt oscillation to '%s' for %s",
             option,
-            self.serial_number,
+            self._log_serial,
         )
 
     async def set_oscillation_angles_day0(
@@ -3028,14 +3015,14 @@ class DysonDevice:
                 lower_angle,
                 upper_angle,
                 ancp_value,
-                self.serial_number,
+                self._log_serial,
             )
         else:
             _LOGGER.debug(
                 "Setting Day0 oscillation: angles %s°-%s° (no ancp) for %s",
                 lower_angle,
                 upper_angle,
-                self.serial_number,
+                self._log_serial,
             )
 
         # Send the complete command
@@ -3053,7 +3040,7 @@ class DysonDevice:
             fmod_value = "AUTO" if enabled else "FAN"
             _LOGGER.debug(
                 "Device %s setting auto mode via fmod (TP02/HP02 Link): %s",
-                self.serial_number,
+                self._log_serial,
                 fmod_value,
             )
             await self.send_command("STATE-SET", {"fmod": fmod_value})
@@ -3062,7 +3049,7 @@ class DysonDevice:
             auto_value = "ON" if enabled else "OFF"
             _LOGGER.debug(
                 "Device %s setting auto mode via auto key: %s",
-                self.serial_number,
+                self._log_serial,
                 auto_value,
             )
             await self.send_command("STATE-SET", {"auto": auto_value})
@@ -3177,7 +3164,7 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.info("Sending pause command to robot %s", self.serial_number)
+        _LOGGER.info("Sending pause command to robot %s", self._log_serial)
 
         from .const import ROBOT_CMD_PAUSE
 
@@ -3201,7 +3188,7 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.info("Sending resume command to robot %s", self.serial_number)
+        _LOGGER.info("Sending resume command to robot %s", self._log_serial)
 
         from .const import ROBOT_CMD_RESUME
 
@@ -3209,49 +3196,6 @@ class DysonDevice:
             "msg": ROBOT_CMD_RESUME,
             "time": self._get_command_timestamp(),
         }
-
-        await self._send_robot_command(command_data)
-
-    async def robot_start_clean(
-        self,
-        cleaning_mode: str = "global",
-        full_clean_type: str = "immediate",
-        cleaning_programme: dict | None = None,
-    ) -> None:
-        # Begin a new clean from the dock. Use robot_resume() to continue a
-        # paused clean instead.
-        #
-        # Payload structure: START's parameters MUST be top-level siblings of
-        # `msg`/`time`, NOT nested under a `data` key. libdyson-neon's
-        # _send_command and thoukydides/matterbridge-dyson-robot both splat at
-        # top level. Our earlier attempt to wrap them in `data` caused the
-        # device to silently ignore cleaningMode and default to global —
-        # whole-house cleans appeared to work, but zoneConfigured was dropped.
-        #
-        # cleaning_programme (Vis Nav only): when cleaning_mode is
-        # "zoneConfigured", supply {persistentMapId, orderedZones,
-        # unorderedZones, zonesDefinitionLastUpdatedDate}. The device echoes
-        # these fields back on the status topic during the run.
-        if not self.is_connected:
-            raise RuntimeError(f"Device {self.serial_number} is not connected")
-
-        _LOGGER.info(
-            "Sending START to robot %s (cleaningMode=%s, fullCleanType=%s, zones=%s)",
-            self.serial_number,
-            cleaning_mode,
-            full_clean_type,
-            cleaning_programme.get("unorderedZones") if cleaning_programme else None,
-        )
-
-        command_data: dict = {
-            "msg": "START",
-            "time": self._get_command_timestamp(),
-            "mode-reason": "LAPP",
-            "cleaningMode": cleaning_mode,
-            "fullCleanType": full_clean_type,
-        }
-        if cleaning_programme is not None:
-            command_data["cleaningProgramme"] = cleaning_programme
 
         await self._send_robot_command(command_data)
 
@@ -3268,7 +3212,7 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.info("Sending abort command to robot %s", self.serial_number)
+        _LOGGER.info("Sending abort command to robot %s", self._log_serial)
 
         from .const import ROBOT_CMD_ABORT
 
@@ -3292,7 +3236,7 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.debug("Requesting current state from robot %s", self.serial_number)
+        _LOGGER.debug("Requesting current state from robot %s", self._log_serial)
 
         from .const import ROBOT_CMD_REQUEST_STATE
 
@@ -3325,7 +3269,7 @@ class DysonDevice:
 
         _LOGGER.debug(
             "Sending robot command to %s on topic %s: %s",
-            self.serial_number,
+            self._log_serial,
             topic,
             command_data,
         )
@@ -3343,11 +3287,11 @@ class DysonDevice:
 
             await loop.run_in_executor(None, _publish_command)
 
-            _LOGGER.debug("Robot command sent successfully to %s", self.serial_number)
+            _LOGGER.debug("Robot command sent successfully to %s", self._log_serial)
 
         except Exception as ex:
             _LOGGER.error(
-                "Failed to send robot command to %s: %s", self.serial_number, ex
+                "Failed to send robot command to %s: %s", self._log_serial, ex
             )
             raise
 
@@ -3368,7 +3312,7 @@ class DysonDevice:
             "Set fan direction to %s (%s) for %s",
             direction,
             direction_value,
-            self.serial_number,
+            self._log_serial,
         )
 
     async def set_heating_mode(self, mode: str) -> None:
@@ -3382,7 +3326,22 @@ class DysonDevice:
         _LOGGER.debug(
             "Set heating mode to %s for %s",
             mode,
-            self.serial_number,
+            self._log_serial,
+        )
+
+    async def set_focus_mode(self, enabled: bool) -> None:
+        """Set focus/diffuse airflow mode (older HP02-type devices only).
+
+        Args:
+            enabled: True for focused beam airflow, False for diffuse airflow
+        """
+        value = "ON" if enabled else "OFF"
+        await self.send_command("STATE-SET", {"ffoc": value})
+
+        _LOGGER.debug(
+            "Set focus mode to %s for %s",
+            value,
+            self._log_serial,
         )
 
     async def set_fan_state(self, state: str) -> None:
@@ -3396,7 +3355,7 @@ class DysonDevice:
         _LOGGER.debug(
             "Set fan state to %s for %s",
             state,
-            self.serial_number,
+            self._log_serial,
         )
 
     async def set_water_hardness(self, hardness: str) -> None:
@@ -3423,7 +3382,7 @@ class DysonDevice:
             "Set water hardness to %s (%s) for %s",
             hardness,
             hardness_map[hardness],
-            self.serial_number,
+            self._log_serial,
         )
 
     async def set_robot_power(
@@ -3450,5 +3409,5 @@ class DysonDevice:
             "Set %s robot power to %s for %s",
             model_type,
             power_level,
-            self.serial_number,
+            self._log_serial,
         )

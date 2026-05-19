@@ -54,9 +54,11 @@ from .const import (
     DOMAIN,
     EVENT_DEVICE_FAULT,
     MQTT_CMD_REQUEST_CURRENT_STATE,
+    MQTT_CMD_REQUEST_ENVIRONMENT,
     UnsupportedDeviceError,
 )
 from .device import DysonDevice
+from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -626,20 +628,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def serial_number(self) -> str:
         """Return device serial number."""
-        # Debug logging to see what's in the config data
-        _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
-        _LOGGER.debug("Config entry data: %s", self.config_entry.data)
-
         # Handle both legacy single-device entries and new account-level entries
         if CONF_SERIAL_NUMBER in self.config_entry.data:
-            serial = self.config_entry.data[CONF_SERIAL_NUMBER]
-            _LOGGER.debug("Found serial_number in config: %s", serial)
-            return serial
-        else:
-            # For account-level entries, serial number should be passed differently
-            serial = self.config_entry.data.get("device_serial_number", "unknown")
-            _LOGGER.debug("Using device_serial_number fallback: %s", serial)
-            return serial
+            return self.config_entry.data[CONF_SERIAL_NUMBER]
+        # For account-level entries, serial number should be passed differently
+        return self.config_entry.data.get("device_serial_number", "unknown")
+
+    @property
+    def _log_serial(self) -> str:
+        """Return masked serial number for log messages."""
+        return mask_serial(self.serial_number)
 
     @property
     def device_name(self) -> str:
@@ -692,7 +690,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh and device setup."""
-        _LOGGER.debug("Performing first refresh for device %s", self.serial_number)
+        _LOGGER.debug(
+            "Performing first refresh for device %s", mask_serial(self.serial_number)
+        )
 
         try:
             # Initialize device connection
@@ -706,7 +706,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Already logged at INFO level in _async_setup_cloud_device()
             raise
         except Exception as err:
-            _LOGGER.error("Failed to setup device %s: %s", self.serial_number, err)
+            _LOGGER.error(
+                "Failed to setup device %s: %s", mask_serial(self.serial_number), err
+            )
             raise
 
     async def _async_setup_device(self) -> None:
@@ -730,7 +732,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_setup_cloud_device(self) -> None:
         """Set up device discovered via cloud API."""
-        _LOGGER.debug("Setting up cloud device for %s", self.serial_number)
+        _LOGGER.debug("Setting up cloud device for %s", mask_serial(self.serial_number))
 
         try:
             cloud_client = await self._authenticate_cloud_client()
@@ -792,8 +794,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         _LOGGER.debug(
             "Cloud authentication for %s - credential: %s, auth_token: %s",
-            self.serial_number,
-            credential,
+            mask_serial(self.serial_number),
+            mask_email(credential) if credential else "None",
             "***" if auth_token else "None",
         )
 
@@ -806,7 +808,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             _LOGGER.debug(
                 "Authenticating with token for %s - country: %s, culture: %s, credential: %s",
-                self.serial_number,
+                mask_serial(self.serial_number),
                 country,
                 culture,
                 credential,
@@ -885,82 +887,15 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _extract_device_info(self, device_info) -> None:
         """Extract device category and capabilities from device info."""
-        _LOGGER.debug("Device info object: %s", device_info)
         _LOGGER.debug(
-            "Device info dir: %s",
-            [attr for attr in dir(device_info) if not attr.startswith("_")],
+            "Extracting device info for %s (model=%s)",
+            mask_serial(str(getattr(device_info, "serial_number", "unknown"))),
+            getattr(device_info, "model", "unknown"),
         )
-
-        self._debug_connected_configuration(device_info)
         self._extract_device_type(device_info)
         self._extract_device_category(device_info)
         self._extract_device_capabilities(device_info)
         self._extract_firmware_version(device_info)
-
-    def _debug_connected_configuration(self, device_info) -> None:
-        """Debug connected configuration details."""
-        connected_config = getattr(device_info, "connected_configuration", None)
-        if connected_config:
-            _LOGGER.debug("Connected configuration: %s", connected_config)
-            _LOGGER.debug("Connected config type: %s", type(connected_config))
-            if hasattr(connected_config, "__dict__"):
-                _LOGGER.debug("Connected config attributes: %s", vars(connected_config))
-            _LOGGER.debug(
-                "Connected config dir: %s",
-                [attr for attr in dir(connected_config) if not attr.startswith("_")],
-            )
-            self._debug_mqtt_object(connected_config)
-
-    def _debug_mqtt_object(self, connected_config) -> None:
-        """Debug MQTT object details."""
-        mqtt_obj = getattr(connected_config, "mqtt", None)
-        if mqtt_obj:
-            _LOGGER.debug("MQTT object: %s", mqtt_obj)
-            _LOGGER.debug(
-                "MQTT object dir: %s",
-                [attr for attr in dir(mqtt_obj) if not attr.startswith("_")],
-            )
-            if hasattr(mqtt_obj, "__dict__"):
-                _LOGGER.debug("MQTT object attributes: %s", vars(mqtt_obj))
-
-            # Check for decoded password attributes that libdyson-rest might provide
-            possible_password_attrs = [
-                "password",
-                "decoded_password",
-                "mqtt_password",
-                "local_broker_password",
-                "broker_password",
-                "credentials",
-            ]
-            for attr in possible_password_attrs:
-                if hasattr(mqtt_obj, attr):
-                    value = getattr(mqtt_obj, attr)
-                    _LOGGER.debug(
-                        "Found MQTT attribute %s: %s (length: %d)",
-                        attr,
-                        "***" if value else "None",
-                        len(value) if value else 0,
-                    )
-
-            # Check for MQTT root topic level (the actual MQTT prefix field)
-            mqtt_root_topic = getattr(mqtt_obj, "mqtt_root_topic_level", None)
-            if mqtt_root_topic:
-                _LOGGER.debug("Found MQTT root topic level: %s", mqtt_root_topic)
-
-            # Check for decoded password attributes
-            for attr_name in [
-                "password",
-                "decoded_password",
-                "local_password",
-                "device_password",
-            ]:
-                if hasattr(mqtt_obj, attr_name):
-                    attr_value = getattr(mqtt_obj, attr_name, "")
-                    _LOGGER.debug(
-                        "Found MQTT %s: length=%s, value=***",
-                        attr_name,
-                        len(attr_value) if attr_value else 0,
-                    )
 
     def _extract_device_type(self, device_info) -> None:
         """Extract device type from device info."""
@@ -1039,7 +974,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Log final capability state for debugging
         _LOGGER.info(
             "Final capabilities for device %s: %s",
-            self.serial_number,
+            mask_serial(self.serial_number),
             self._device_capabilities,
         )
 
@@ -1052,7 +987,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._device_capabilities = normalize_capabilities(api_capabilities)
             _LOGGER.debug(
                 "Extracted capabilities from API for %s: %s",
-                self.serial_number,
+                mask_serial(self.serial_number),
                 self._device_capabilities,
             )
 
@@ -1060,13 +995,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not self._device_capabilities:
                 _LOGGER.warning(
                     "API capabilities for %s resulted in empty list after normalization: %s",
-                    self.serial_number,
+                    mask_serial(self.serial_number),
                     api_capabilities,
                 )
         except Exception as api_error:
             _LOGGER.error(
                 "Failed to extract capabilities from API for %s: %s",
-                self.serial_number,
+                mask_serial(self.serial_number),
                 api_error,
             )
             self._device_capabilities = []
@@ -1257,18 +1192,15 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         encrypted_credentials = getattr(mqtt_obj, "local_broker_credentials", "")
 
         _LOGGER.debug(
-            "Attempting to decrypt local_broker_credentials for %s - encrypted length: %s, value: %s",
-            self.serial_number,
+            "Attempting to decrypt local_broker_credentials for %s - encrypted length: %s",
+            mask_serial(self.serial_number),
             len(encrypted_credentials) if encrypted_credentials else 0,
-            encrypted_credentials[:20] + "..."
-            if len(encrypted_credentials) > 20
-            else encrypted_credentials,
         )
 
         if not encrypted_credentials:
             _LOGGER.warning(
                 "No local_broker_credentials field found for device %s - device may only support cloud connection",
-                self.serial_number,
+                mask_serial(self.serial_number),
             )
             return ""
 
@@ -1280,12 +1212,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Log what we got back for debugging multi-chunk responses
             _LOGGER.debug(
-                "Decryption result for %s - type: %s, value: %s",
-                self.serial_number,
+                "Decryption result for %s - type: %s, length: %s",
+                mask_serial(self.serial_number),
                 type(decrypted_result).__name__,
-                decrypted_result
-                if len(str(decrypted_result)) < 100
-                else str(decrypted_result)[:100] + "...",
+                len(str(decrypted_result)) if decrypted_result is not None else 0,
             )
 
             # Handle multi-chunk responses (e.g., N223 360 robot vacuums)
@@ -1298,7 +1228,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     mqtt_password = decrypted_result[1]
                     _LOGGER.debug(
                         "Multi-chunk credentials for %s - extracted password from index 1 (length: %s)",
-                        self.serial_number,
+                        mask_serial(self.serial_number),
                         len(mqtt_password) if mqtt_password else 0,
                     )
                 elif len(decrypted_result) == 1:
@@ -1306,7 +1236,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     mqtt_password = decrypted_result[0]
                     _LOGGER.debug(
                         "Single-chunk credentials in list for %s (length: %s)",
-                        self.serial_number,
+                        mask_serial(self.serial_number),
                         len(mqtt_password) if mqtt_password else 0,
                     )
             elif isinstance(decrypted_result, str):
@@ -1314,13 +1244,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mqtt_password = decrypted_result
                 _LOGGER.debug(
                     "String credentials for %s (length: %s)",
-                    self.serial_number,
+                    mask_serial(self.serial_number),
                     len(mqtt_password) if mqtt_password else 0,
                 )
             else:
                 _LOGGER.warning(
                     "Unexpected decryption result type for %s: %s",
-                    self.serial_number,
+                    mask_serial(self.serial_number),
                     type(decrypted_result).__name__,
                 )
                 mqtt_password = str(decrypted_result) if decrypted_result else ""
@@ -1328,7 +1258,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not mqtt_password:
                 _LOGGER.warning(
                     "Decryption succeeded but resulted in empty password for %s",
-                    self.serial_number,
+                    mask_serial(self.serial_number),
                 )
 
             return mqtt_password
@@ -1336,7 +1266,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as e:
             _LOGGER.error(
                 "Failed to decrypt local credentials for %s: %s (encrypted length: %s)",
-                self.serial_number,
+                mask_serial(self.serial_number),
                 e,
                 len(encrypted_credentials) if encrypted_credentials else 0,
             )
@@ -1345,11 +1275,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _log_mqtt_credentials(self, mqtt_username: str, mqtt_password: str) -> None:
         """Log MQTT credentials for debugging (partially masked)."""
         _LOGGER.debug(
-            "MQTT credentials for device %s - Username: %s, Password: %s...%s (length: %s)",
-            self.serial_number,
-            mqtt_username,
-            mqtt_password[:10] if mqtt_password else "None",
-            mqtt_password[-10:] if len(mqtt_password) > 20 else "",
+            "MQTT credentials for device %s - Username: %s, Password: *** (length: %s)",
+            mask_serial(self.serial_number),
+            mask_serial(mqtt_username),
             len(mqtt_password),
         )
 
@@ -1361,7 +1289,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             # Check for IoT credentials using separate API call
             _LOGGER.debug(
-                "Requesting IoT credentials for device %s", self.serial_number
+                "Requesting IoT credentials for device %s",
+                mask_serial(self.serial_number),
             )
             iot_data = await cloud_client.get_iot_credentials(self.serial_number)
 
@@ -1499,7 +1428,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_setup_manual_device(self) -> None:
         """Set up device configured manually."""
         try:
-            _LOGGER.info("Setting up manual device: %s", self.serial_number)
+            _LOGGER.info(
+                "Setting up manual device: %s", mask_serial(self.serial_number)
+            )
 
             # Get configuration from config entry
             serial_number = self.config_entry.data[CONF_SERIAL_NUMBER]
@@ -1580,11 +1511,15 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Register for message updates to get real-time state changes
             self.device.add_message_callback(self._on_message_update)
 
-            _LOGGER.info("Successfully set up manual device %s", self.serial_number)
+            _LOGGER.info(
+                "Successfully set up manual device %s", mask_serial(self.serial_number)
+            )
 
         except Exception as err:
             _LOGGER.error(
-                "Failed to set up manual device %s: %s", self.serial_number, err
+                "Failed to set up manual device %s: %s",
+                mask_serial(self.serial_number),
+                err,
             )
             raise UpdateFailed(f"Manual device setup failed: {err}") from err
 
@@ -1639,16 +1574,28 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "Initial refresh for device %s with environmental capability - requesting state",
                         self.serial_number,
                     )
-                    # Request current state - this triggers both CURRENT-STATE and ENVIRONMENTAL-CURRENT-SENSOR-DATA
+                    # Request current state - newer devices respond with both CURRENT-STATE
+                    # and a separate ENVIRONMENTAL-CURRENT-SENSOR-DATA message automatically.
+                    # Older devices (e.g. TP04) embed environmental data in the CURRENT-STATE
+                    # message itself but do NOT send the separate environmental message.
                     await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
 
-                    # Wait for both messages to arrive
+                    # Wait for CURRENT-STATE (and ENVIRONMENTAL-CURRENT-SENSOR-DATA if sent automatically)
                     # Typical timing: CURRENT-STATE at ~140ms, ENVIRONMENTAL-CURRENT-SENSOR-DATA at ~250ms
-                    import asyncio
+                    await asyncio.sleep(0.5)
 
-                    await asyncio.sleep(
-                        0.5
-                    )  # 500ms should be sufficient for both messages
+                    # Check whether _environmental_data was populated by an automatic
+                    # ENVIRONMENTAL-CURRENT-SENSOR-DATA response.  If not, the device
+                    # does not include it automatically (older firmware), so request it
+                    # explicitly so sensor entities can be set up correctly.
+                    if not self.device.get_environmental_data():
+                        _LOGGER.debug(
+                            "Device %s did not return environmental data with CURRENT-STATE - "
+                            "requesting explicitly (older device firmware)",
+                            self.serial_number,
+                        )
+                        await self.device.send_command(MQTT_CMD_REQUEST_ENVIRONMENT)
+                        await asyncio.sleep(0.5)
 
                     _LOGGER.debug(
                         "Completed wait for initial state messages from %s",
@@ -2060,6 +2007,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.serial_number,
                     )
 
+            if "ffoc" in product_state:
+                # Device has focus/diffuse mode state key (older HP02-type devices)
+                if "FocusMode" not in self._device_capabilities:
+                    self._device_capabilities.append("FocusMode")
+                    _LOGGER.debug(
+                        "Device %s supports focus/diffuse mode ('ffoc' key found) - capability added",
+                        self.serial_number,
+                    )
+            else:
+                # Device doesn't have focus mode state key, remove capability if present
+                if "FocusMode" in self._device_capabilities:
+                    self._device_capabilities.remove("FocusMode")
+                    _LOGGER.debug(
+                        "Device %s does not support focus/diffuse mode ('ffoc' key not found) - capability removed",
+                        self.serial_number,
+                    )
+
             # Detect HP02 power control type immediately from CURRENT-STATE response
             # This provides instant detection instead of waiting for STATE-CHANGE messages
             # HP02 devices use fmod for power control and don't have fpwr key
@@ -2154,9 +2118,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Fall back to mDNS resolution using {serial}.local
         fallback_hostname = f"{self.serial_number}.local"
         _LOGGER.debug(
-            "Using fallback hostname for device %s: %s",
-            self.serial_number,
-            fallback_hostname,
+            "Using fallback hostname for device %s: %s.local",
+            mask_serial(self.serial_number),
+            mask_serial(self.serial_number),
         )
         return fallback_hostname
 
@@ -2273,16 +2237,18 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval = timedelta(seconds=DEFAULT_CLOUD_POLLING_INTERVAL)
             _LOGGER.info(
                 "Cloud device polling enabled for %s, interval: %d seconds",
-                self._email,
+                mask_email(self._email),
                 DEFAULT_CLOUD_POLLING_INTERVAL,
             )
         else:
-            _LOGGER.info("Cloud device polling disabled for %s", self._email)
+            _LOGGER.info(
+                "Cloud device polling disabled for %s", mask_email(self._email)
+            )
 
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_cloud_account_{self._email}",
+            name=f"{DOMAIN}_cloud_account_{mask_email(self._email)}",
             update_interval=update_interval,
         )
 
@@ -2292,13 +2258,18 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data by checking for new devices in the cloud account."""
-        _LOGGER.info("Cloud coordinator update triggered for account: %s", self._email)
+        _LOGGER.info(
+            "Cloud coordinator update triggered for account: %s",
+            mask_email(self._email),
+        )
 
         if not self.config_entry.data.get(
             CONF_POLL_FOR_DEVICES, DEFAULT_POLL_FOR_DEVICES
         ):
             # Polling is disabled, return empty data
-            _LOGGER.debug("Device polling disabled for account %s", self._email)
+            _LOGGER.debug(
+                "Device polling disabled for account %s", mask_email(self._email)
+            )
             return {"devices": []}
 
         try:
@@ -2318,25 +2289,30 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.error(
                 "Error checking for new devices in cloud account %s: %s",
-                self._email,
+                mask_email(self._email),
                 err,
             )
             raise UpdateFailed(f"Failed to check for new devices: {err}") from err
 
     async def _fetch_cloud_devices(self):
         """Fetch devices from cloud API."""
-        _LOGGER.info("Checking for new devices in Dyson cloud account: %s", self._email)
+        _LOGGER.info(
+            "Checking for new devices in Dyson cloud account: %s",
+            mask_email(self._email),
+        )
 
         # Initialize libdyson-rest client
         from libdyson_rest import AsyncDysonClient
 
         if not self._auth_token:
-            _LOGGER.warning("No auth token available for cloud account %s", self._email)
+            _LOGGER.warning(
+                "No auth token available for cloud account %s", mask_email(self._email)
+            )
             return []
 
         _LOGGER.debug(
             "Fetching cloud devices for %s - country: %s, culture: %s",
-            self._email,
+            mask_email(self._email),
             self._country,
             self._culture,
         )
@@ -2352,7 +2328,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             devices = await client.get_devices()
 
             if not devices:
-                _LOGGER.debug("No devices found in cloud account %s", self._email)
+                _LOGGER.debug(
+                    "No devices found in cloud account %s", mask_email(self._email)
+                )
                 return []
 
             return devices
@@ -2384,7 +2362,9 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if new_devices:
             await self._handle_new_devices(devices, new_devices, updated_devices)
         else:
-            _LOGGER.debug("No new devices found in cloud account %s", self._email)
+            _LOGGER.debug(
+                "No new devices found in cloud account %s", mask_email(self._email)
+            )
 
         return new_devices
 
@@ -2393,7 +2373,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.info(
             "Found %d new device(s) in cloud account %s: %s",
             len(new_devices),
-            self._email,
+            mask_email(self._email),
             list(new_devices),
         )
 
@@ -2746,9 +2726,11 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ble_proxy or "none (will use local BT adapter)",
         )
 
-        # Start the BLE connection task
+        # Start the BLE connection task as a *background* task so it does not
+        # block HA's startup/bootstrap phase.  async_create_task() registers
+        # the task as a setup dependency; async_create_background_task() does not.
         self._stop_event.clear()
-        self._ble_task = self.hass.async_create_task(
+        self._ble_task = self.hass.async_create_background_task(
             self._ble_lifecycle_task(),
             name=f"dyson-ble-{self.serial_number}",
         )
@@ -2777,7 +2759,9 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         from .ble_device import _KEEPALIVE_INTERVAL, _RECONNECT_DELAYS
 
-        _LOGGER.info("BLE lifecycle task started for %s", self.serial_number)
+        _LOGGER.info(
+            "BLE lifecycle task started for %s", mask_serial(self.serial_number)
+        )
         attempt = 0
         while not self._stop_event.is_set():
             if self.ble_device is None:

@@ -22,6 +22,7 @@ from .const import (
     FAULT_TRANSLATIONS,
 )
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
+from .device_utils import mask_serial
 from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -254,7 +255,9 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                     )
                 else:
                     self._attr_is_on = False
-                    _LOGGER.debug("No filters to check for device %s", device_serial)
+                    _LOGGER.debug(
+                        "No filters to check for device %s", mask_serial(device_serial)
+                    )
             else:
                 self._attr_is_on = False
                 _LOGGER.debug(
