@@ -578,10 +578,13 @@ class TestDysonRefreshZonesButton:
     async def test_async_press_invalidates_cache_and_refetches(
         self, mock_robot_coordinator
     ):
-        """async_press pops the cache entry and re-fetches map metadata."""
+        """async_press invalidates the cache entry and re-fetches map metadata."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
         btn = DysonRefreshZonesButton(mock_robot_coordinator)
         fake_maps = [{"id": "map-1", "zones": [{"id": "z1"}]}]
-        fake_cache: dict = {"VS9-GB-HJA0000A": "stale_data"}
+        fake_cache = TTLCache(3600)
+        fake_cache.set("VS9-GB-HJA0000A", "stale_data")
         with (
             patch(
                 "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
@@ -594,8 +597,8 @@ class TestDysonRefreshZonesButton:
         ):
             await btn.async_press()
 
-        # Cache entry should be removed
-        assert "VS9-GB-HJA0000A" not in fake_cache
+        # Cache entry should be removed after invalidation
+        assert fake_cache.get_stale("VS9-GB-HJA0000A") is None
 
     @pytest.mark.asyncio
     async def test_async_press_exception_raises_ha_error(self, mock_robot_coordinator):
@@ -606,7 +609,10 @@ class TestDysonRefreshZonesButton:
                 "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
                 AsyncMock(side_effect=Exception("cloud down")),
             ),
-            patch("custom_components.hass_dyson.services._persistent_map_cache", {}),
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache",
+                MagicMock(),
+            ),
         ):
             with pytest.raises(HomeAssistantError, match="Failed to refresh zones"):
                 await btn.async_press()
