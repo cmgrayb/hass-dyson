@@ -54,8 +54,9 @@ async def async_setup_entry(
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     device_category: list[str] = coordinator.device_category
+    _CALENDAR_CATEGORIES: set[str] = {"ec", "robot", "vacuum", "flrc"}
     if any(
-        cat == "ec" for cat in device_category
+        cat in _CALENDAR_CATEGORIES for cat in device_category
     ) and coordinator.config_entry.data.get("auth_token"):
         async_add_entities([DysonScheduleCalendar(coordinator)])
 

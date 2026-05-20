@@ -900,5 +900,11 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
     ) and coordinator.config_entry.data.get("auth_token"):
         platforms.append("calendar")
 
+    # Add calendar platform for robot vacuum devices with cloud auth (exposes schedule events)
+    if any(
+        cat in {"robot", "vacuum", "flrc"} for cat in device_category
+    ) and coordinator.config_entry.data.get("auth_token"):
+        platforms.append("calendar")
+
     # Remove duplicates and return
     return list(set(platforms))

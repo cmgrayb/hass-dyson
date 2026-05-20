@@ -477,15 +477,86 @@ class TestCalendarSetupEntry:
         add_entities.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_setup_entry_skips_non_ec_devices(self):
-        """No entity is created for non-EC devices (e.g. robot vacuums)."""
+    async def test_setup_entry_skips_unsupported_category(self):
+        """No entity is created for device categories that don't support scheduling."""
+        from custom_components.hass_dyson.calendar import async_setup_entry
+        from custom_components.hass_dyson.const import DOMAIN
+
+        coordinator = MagicMock()
+        coordinator.device_category = ["light"]
+        coordinator.config_entry = MagicMock()
+        coordinator.config_entry.data = {"auth_token": "tok"}
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "eid"
+        hass.data = {DOMAIN: {"eid": coordinator}}
+
+        add_entities = MagicMock()
+        await async_setup_entry(hass, config_entry, add_entities)
+
+        add_entities.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_adds_entity_for_robot_with_auth(self):
+        """Entity is created for robot vacuum devices that have an auth_token."""
+        from custom_components.hass_dyson.calendar import async_setup_entry
+        from custom_components.hass_dyson.const import DOMAIN
+
+        coordinator = MagicMock()
+        coordinator.device_category = ["robot"]
+        coordinator.serial_number = "RB-001"
+        coordinator.device_name = "Robot Vacuum"
+        coordinator.config_entry = MagicMock()
+        coordinator.config_entry.data = {"auth_token": "tok"}
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "eid"
+        hass.data = {DOMAIN: {"eid": coordinator}}
+
+        add_entities = MagicMock()
+        await async_setup_entry(hass, config_entry, add_entities)
+
+        add_entities.assert_called_once()
+        entities = add_entities.call_args[0][0]
+        assert len(entities) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_adds_entity_for_vacuum_with_auth(self):
+        """Entity is created for vacuum category devices that have an auth_token."""
+        from custom_components.hass_dyson.calendar import async_setup_entry
+        from custom_components.hass_dyson.const import DOMAIN
+
+        coordinator = MagicMock()
+        coordinator.device_category = ["vacuum"]
+        coordinator.serial_number = "VC-001"
+        coordinator.device_name = "Vacuum"
+        coordinator.config_entry = MagicMock()
+        coordinator.config_entry.data = {"auth_token": "tok"}
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "eid"
+        hass.data = {DOMAIN: {"eid": coordinator}}
+
+        add_entities = MagicMock()
+        await async_setup_entry(hass, config_entry, add_entities)
+
+        add_entities.assert_called_once()
+        entities = add_entities.call_args[0][0]
+        assert len(entities) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_skips_robot_without_auth(self):
+        """No entity is created for robot vacuum devices without an auth_token."""
         from custom_components.hass_dyson.calendar import async_setup_entry
         from custom_components.hass_dyson.const import DOMAIN
 
         coordinator = MagicMock()
         coordinator.device_category = ["robot"]
         coordinator.config_entry = MagicMock()
-        coordinator.config_entry.data = {"auth_token": "tok"}
+        coordinator.config_entry.data = {}  # no auth_token
 
         hass = MagicMock()
         config_entry = MagicMock()
