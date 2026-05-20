@@ -7,7 +7,6 @@ from homeassistant.components.select import SelectEntity
 
 from custom_components.hass_dyson.const import CONF_HOSTNAME
 from custom_components.hass_dyson.select import (
-    DysonFanControlModeSelect,
     DysonHeatingModeSelect,
     DysonOscillationModeDay0Select,
     DysonOscillationModeSelect,
@@ -152,284 +151,6 @@ class TestSelectPlatformSetup:
         mock_add_entities.assert_called_once()
         entities = mock_add_entities.call_args[0][0]
         assert len(entities) == 0
-
-
-class TestDysonFanControlModeSelect:
-    """Test fan control mode select entity."""
-
-    def test_initialization_cloud_device(self, mock_coordinator):
-        """Test initialization for cloud device."""
-        mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        assert entity._attr_unique_id == "NK6-EU-MHA0000A_fan_control_mode"
-        assert entity._attr_translation_key == "fan_control_mode"
-        assert entity._attr_icon == "mdi:fan-auto"
-        assert entity._attr_options == ["Auto", "Manual", "Sleep"]
-
-    def test_initialization_local_device(self, mock_coordinator):
-        """Test initialization for local device."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        assert entity._attr_unique_id == "NK6-EU-MHA0000A_fan_control_mode"
-        assert entity._attr_translation_key == "fan_control_mode"
-        assert entity._attr_icon == "mdi:fan-auto"
-        assert entity._attr_options == ["Auto", "Manual"]
-
-    def test_handle_coordinator_update_auto_mode(self, mock_coordinator):
-        """Test coordinator update with auto mode on."""
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "auto": "ON",
-                "nmod": "OFF",
-            }.get(key, default)
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        # Manually implement the logic to test without calling super()
-        if entity.coordinator.device:
-            product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
-            night_mode = entity.coordinator.device.get_state_value(
-                product_state, "nmod", "OFF"
-            )
-
-            connection_type = entity.coordinator.config_entry.data.get(
-                "connection_type", "unknown"
-            )
-            if connection_type == "local_only":
-                if auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-            else:
-                if night_mode == "ON":
-                    entity._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-
-        assert entity._attr_current_option == "Auto"
-
-    def test_handle_coordinator_update_manual_mode(self, mock_coordinator):
-        """Test coordinator update with manual mode."""
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "auto": "OFF",
-                "nmod": "OFF",
-            }.get(key, default)
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        # Manually implement the logic to test without calling super()
-        if entity.coordinator.device:
-            product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
-            night_mode = entity.coordinator.device.get_state_value(
-                product_state, "nmod", "OFF"
-            )
-
-            connection_type = entity.coordinator.config_entry.data.get(
-                "connection_type", "unknown"
-            )
-            if connection_type == "local_only":
-                if auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-            else:
-                if night_mode == "ON":
-                    entity._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-
-        assert entity._attr_current_option == "Manual"
-
-    def test_handle_coordinator_update_sleep_mode_cloud(self, mock_coordinator):
-        """Test coordinator update with sleep mode on cloud device."""
-        mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "auto": "OFF",
-                "nmod": "ON",
-            }.get(key, default)
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        # Manually implement the logic to test without calling super()
-        if entity.coordinator.device:
-            product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
-            night_mode = entity.coordinator.device.get_state_value(
-                product_state, "nmod", "OFF"
-            )
-
-            connection_type = entity.coordinator.config_entry.data.get(
-                "connection_type", "unknown"
-            )
-            if connection_type == "local_only":
-                if auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-            else:
-                if night_mode == "ON":
-                    entity._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-
-        assert entity._attr_current_option == "Sleep"
-
-    def test_handle_coordinator_update_local_device_no_sleep(self, mock_coordinator):
-        """Test coordinator update with local device ignores sleep mode."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda data, key, default: {
-                "auto": "OFF",
-                "nmod": "ON",  # Sleep mode on but local device
-            }.get(key, default)
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        # Manually implement the logic to test without calling super()
-        if entity.coordinator.device:
-            product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
-            night_mode = entity.coordinator.device.get_state_value(
-                product_state, "nmod", "OFF"
-            )
-
-            connection_type = entity.coordinator.config_entry.data.get(
-                "connection_type", "unknown"
-            )
-            if connection_type == "local_only":
-                if auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-            else:
-                if night_mode == "ON":
-                    entity._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-
-        assert (
-            entity._attr_current_option == "Manual"
-        )  # Local device ignores sleep mode
-
-    def test_handle_coordinator_update_no_device(self, mock_coordinator):
-        """Test coordinator update with no device."""
-        mock_coordinator.device = None
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        # Test that it doesn't crash with no device
-        initial_value = entity._attr_current_option  # Should be None initially
-
-        # Manually implement the logic to test without calling super()
-        if entity.coordinator.device:
-            product_state = entity.coordinator.data.get("product-state", {})
-            auto_mode = entity.coordinator.device.get_state_value(
-                product_state, "auto", "OFF"
-            )
-            night_mode = entity.coordinator.device.get_state_value(
-                product_state, "nmod", "OFF"
-            )
-
-            connection_type = entity.coordinator.config_entry.data.get(
-                "connection_type", "unknown"
-            )
-            if connection_type == "local_only":
-                if auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-            else:
-                if night_mode == "ON":
-                    entity._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
-                    entity._attr_current_option = "Auto"
-                else:
-                    entity._attr_current_option = "Manual"
-        # No device so no update
-
-        # Attribute should remain unchanged
-        assert entity._attr_current_option == initial_value
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_auto(self, mock_coordinator):
-        """Test selecting auto mode."""
-        mock_coordinator.device.set_auto_mode = AsyncMock()
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        await entity.async_select_option("Auto")
-
-        mock_coordinator.device.set_auto_mode.assert_called_once_with(True)
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_manual(self, mock_coordinator):
-        """Test selecting manual mode."""
-        mock_coordinator.device.set_auto_mode = AsyncMock()
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        await entity.async_select_option("Manual")
-
-        mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_sleep(self, mock_coordinator):
-        """Test selecting sleep mode."""
-        mock_coordinator.device.set_night_mode = AsyncMock()
-        mock_coordinator.device.set_auto_mode = AsyncMock()
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        await entity.async_select_option("Sleep")
-
-        mock_coordinator.device.set_night_mode.assert_called_once_with(True)
-        mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_no_device(self, mock_coordinator):
-        """Test selecting option with no device."""
-        mock_coordinator.device = None
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        await entity.async_select_option("Auto")
-
-        # Should return early without error
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_exception(self, mock_coordinator):
-        """Test selecting option with device error."""
-        mock_coordinator.device.set_auto_mode = AsyncMock(
-            side_effect=Exception("Device error")
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        with patch("custom_components.hass_dyson.select._LOGGER") as mock_logger:
-            await entity.async_select_option("Auto")
-            mock_logger.error.assert_called_once()
 
 
 class TestDysonOscillationModeSelect:
@@ -1011,7 +732,6 @@ class TestSelectIntegration:
     def test_all_select_types_inherit_correctly(self, mock_coordinator):
         """Test that all select entities inherit from correct base classes."""
         entities = [
-            DysonFanControlModeSelect(mock_coordinator),
             DysonOscillationModeSelect(mock_coordinator),
             DysonHeatingModeSelect(mock_coordinator),
         ]
@@ -1023,7 +743,6 @@ class TestSelectIntegration:
     def test_coordinator_type_annotation(self, mock_coordinator):
         """Test that coordinator type annotations are correct."""
         entities = [
-            DysonFanControlModeSelect(mock_coordinator),
             DysonOscillationModeSelect(mock_coordinator),
             DysonHeatingModeSelect(mock_coordinator),
         ]
@@ -1035,7 +754,6 @@ class TestSelectIntegration:
     def test_unique_ids_are_unique(self, mock_coordinator):
         """Test that all select entities have unique IDs."""
         entities = [
-            DysonFanControlModeSelect(mock_coordinator),
             DysonOscillationModeSelect(mock_coordinator),
             DysonHeatingModeSelect(mock_coordinator),
         ]
@@ -1046,7 +764,6 @@ class TestSelectIntegration:
     def test_select_entities_have_required_attributes(self, mock_coordinator):
         """Test that select entities have all required attributes."""
         entities = [
-            DysonFanControlModeSelect(mock_coordinator),
             DysonOscillationModeSelect(mock_coordinator),
             DysonHeatingModeSelect(mock_coordinator),
         ]
@@ -1058,126 +775,6 @@ class TestSelectIntegration:
             assert hasattr(entity, "_attr_options")
             assert isinstance(entity._attr_options, list)
             assert len(entity._attr_options) > 0
-
-
-class TestDysonFanControlModeSelectCoverage:
-    """Test uncovered paths in DysonFanControlModeSelect."""
-
-    @pytest.fixture
-    def mock_coordinator(self):
-        """Create a mock coordinator for fan control tests."""
-        coordinator = Mock()
-        coordinator.serial_number = "NK6-EU-MHA0000A"
-        coordinator.device_name = "Test Device"
-        coordinator.device = Mock()
-        coordinator.config_entry = Mock()
-        coordinator.data = {
-            "product-state": {
-                "auto": "OFF",
-                "nmod": "OFF",
-            }
-        }
-        return coordinator
-
-    def test_handle_coordinator_update_logic_local_device_auto_mode(
-        self, mock_coordinator
-    ):
-        """Test coordinator update logic for local device with auto mode on."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda state, key, default: {
-                "auto": "ON",
-                "nmod": "OFF",
-            }.get(key, default)
-        )
-
-        select = DysonFanControlModeSelect(mock_coordinator)
-
-        # Test the update logic directly without calling super()
-        if mock_coordinator.device:
-            connection_type = mock_coordinator.config_entry.data.get(
-                "connection_type", "local_only"
-            )
-            if connection_type == "local_only":
-                auto_mode = mock_coordinator.device.get_state_value(
-                    "product-state", "auto", "OFF"
-                )
-                if auto_mode == "ON":
-                    select._attr_current_option = "Auto"
-                else:
-                    select._attr_current_option = "Manual"
-
-        assert select._attr_current_option == "Auto"
-
-    def test_handle_coordinator_update_logic_cloud_device_sleep_mode(
-        self, mock_coordinator
-    ):
-        """Test coordinator update logic for cloud device with sleep mode."""
-        mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device.get_state_value.side_effect = (
-            lambda state, key, default: {
-                "auto": "OFF",
-                "nmod": "ON",
-            }.get(key, default)
-        )
-
-        select = DysonFanControlModeSelect(mock_coordinator)
-
-        # Test the update logic directly
-        if mock_coordinator.device:
-            connection_type = mock_coordinator.config_entry.data.get(
-                "connection_type", "local_only"
-            )
-            if connection_type != "local_only":
-                auto_mode = mock_coordinator.device.get_state_value(
-                    "product-state", "auto", "OFF"
-                )
-                night_mode = mock_coordinator.device.get_state_value(
-                    "product-state", "nmod", "OFF"
-                )
-                if night_mode == "ON":
-                    select._attr_current_option = "Sleep"
-                elif auto_mode == "ON":
-                    select._attr_current_option = "Auto"
-                else:
-                    select._attr_current_option = "Manual"
-
-        assert select._attr_current_option == "Sleep"
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_sleep_mode(self, mock_coordinator):
-        """Test selecting sleep mode."""
-        mock_coordinator.device.set_night_mode = AsyncMock()
-        mock_coordinator.device.set_auto_mode = AsyncMock()
-
-        select = DysonFanControlModeSelect(mock_coordinator)
-        await select.async_select_option("Sleep")
-
-        mock_coordinator.device.set_night_mode.assert_called_once_with(True)
-        mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_manual_mode(self, mock_coordinator):
-        """Test selecting manual mode."""
-        mock_coordinator.device.set_auto_mode = AsyncMock()
-
-        select = DysonFanControlModeSelect(mock_coordinator)
-        await select.async_select_option("Manual")
-
-        mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_device_exception(self, mock_coordinator):
-        """Test exception handling during option selection."""
-        mock_coordinator.device.set_auto_mode = AsyncMock(
-            side_effect=Exception("Device error")
-        )
-
-        select = DysonFanControlModeSelect(mock_coordinator)
-
-        with patch("custom_components.hass_dyson.select._LOGGER") as mock_logger:
-            await select.async_select_option("Auto")
-            mock_logger.error.assert_called_once()
 
 
 class TestDysonOscillationModeSelectCoverage:

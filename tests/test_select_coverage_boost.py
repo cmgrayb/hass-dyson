@@ -21,7 +21,6 @@ from custom_components.hass_dyson.const import (
     ROBOT_POWER_OPTIONS_VIS_NAV,
 )
 from custom_components.hass_dyson.select import (
-    DysonFanControlModeSelect,
     DysonOscillationModeSelect,
     DysonRobotPower360EyeSelect,
     DysonRobotPowerGenericSelect,
@@ -145,111 +144,6 @@ class TestRobotPowerSetup:
         assert "DysonRobotPowerGenericSelect" in entity_types
         assert "DysonRobotPowerVisNavSelect" not in entity_types
         assert "DysonRobotPowerHeuristSelect" not in entity_types
-
-
-# ===== DysonFanControlModeSelect tests =====
-
-
-class TestFanControlModeSelectLocalOnly:
-    """Test DysonFanControlModeSelect local_only connection type paths."""
-
-    def test_initialization_local_only_options(self, mock_coordinator):
-        """Test local_only devices show only Auto and Manual options."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        entity = DysonFanControlModeSelect(mock_coordinator)
-
-        assert entity._attr_options == ["Auto", "Manual"]
-        assert "Sleep" not in entity._attr_options
-
-    def test_handle_update_local_only_auto(self, mock_coordinator):
-        """Test coordinator update sets Auto for local_only device in auto mode."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device.auto_mode = True
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        entity.async_write_ha_state = MagicMock()
-
-        with patch(
-            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
-        ):
-            entity._handle_coordinator_update()
-
-        assert entity._attr_current_option == "Auto"
-
-    def test_handle_update_local_only_manual(self, mock_coordinator):
-        """Test coordinator update sets Manual for local_only device not in auto mode."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device.auto_mode = False
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        entity.async_write_ha_state = MagicMock()
-
-        with patch(
-            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
-        ):
-            entity._handle_coordinator_update()
-
-        assert entity._attr_current_option == "Manual"
-
-    def test_handle_update_no_device(self, mock_coordinator):
-        """Test coordinator update when device is None sets option to None."""
-        mock_coordinator.config_entry.data = {"connection_type": "local_only"}
-        mock_coordinator.device = None
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        entity.async_write_ha_state = MagicMock()
-
-        with patch(
-            "homeassistant.helpers.update_coordinator.CoordinatorEntity._handle_coordinator_update"
-        ):
-            entity._handle_coordinator_update()
-
-        assert entity._attr_current_option is None
-
-    @pytest.mark.asyncio
-    async def test_select_option_sleep_calls_night_mode(self, mock_coordinator):
-        """Test selecting Sleep calls set_night_mode and set_auto_mode(False)."""
-        mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device.set_night_mode = AsyncMock()
-        mock_coordinator.device.set_auto_mode = AsyncMock()
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        await entity.async_select_option("Sleep")
-
-        mock_coordinator.device.set_night_mode.assert_called_once_with(True)
-        mock_coordinator.device.set_auto_mode.assert_called_once_with(False)
-
-    @pytest.mark.asyncio
-    async def test_select_option_sleep_connection_error(self, mock_coordinator):
-        """Test Sleep option handles ConnectionError gracefully."""
-        mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device.set_night_mode = AsyncMock(
-            side_effect=ConnectionError("Network error")
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        # Should not raise
-        await entity.async_select_option("Sleep")
-
-    @pytest.mark.asyncio
-    async def test_select_option_sleep_value_error(self, mock_coordinator):
-        """Test Sleep option handles ValueError gracefully."""
-        mock_coordinator.config_entry.data = {"connection_type": "cloud"}
-        mock_coordinator.device.set_night_mode = AsyncMock(
-            side_effect=ValueError("Bad value")
-        )
-
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        # Should not raise
-        await entity.async_select_option("Sleep")
-
-    @pytest.mark.asyncio
-    async def test_select_option_no_device(self, mock_coordinator):
-        """Test selecting option when device is None returns early."""
-        mock_coordinator.device = None
-        entity = DysonFanControlModeSelect(mock_coordinator)
-        # Should return without error
-        await entity.async_select_option("Auto")
 
 
 # ===== DysonOscillationModeSelect midpoint transition tests =====

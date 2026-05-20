@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from custom_components.hass_dyson.select import (
-    DysonFanControlModeSelect,
     DysonHeatingModeSelect,
     DysonOscillationModeDay0Select,
     DysonOscillationModeSelect,
@@ -25,95 +24,6 @@ from custom_components.hass_dyson.select import (
     DysonRobotPowerVisNavSelect,
     DysonWaterHardnessSelect,
 )
-
-
-class TestFanControlModeSelectErrorHandling:
-    """Test error handling in DysonFanControlModeSelect."""
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_connection_error_auto_mode(self):
-        """Test ConnectionError handling when setting auto mode."""
-        coordinator = Mock()
-        coordinator.serial_number = "TEST-SERIAL-123"
-        coordinator.device = Mock()
-        coordinator.device.set_auto_mode = AsyncMock(
-            side_effect=ConnectionError("Connection lost")
-        )
-        coordinator.config_entry = Mock()
-        coordinator.config_entry.data = {"connection_type": "cloud"}
-
-        select = DysonFanControlModeSelect(coordinator)
-
-        # Should not raise, error logged
-        with patch.object(select, "async_write_ha_state"):
-            await select.async_select_option("Auto")
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_timeout_error_sleep_mode(self):
-        """Test TimeoutError handling when setting sleep mode."""
-        coordinator = Mock()
-        coordinator.serial_number = "TEST-SERIAL-123"
-        coordinator.device = Mock()
-        coordinator.device.set_night_mode = AsyncMock(
-            side_effect=TimeoutError("Request timeout")
-        )
-        coordinator.device.set_auto_mode = AsyncMock()
-        coordinator.config_entry = Mock()
-        coordinator.config_entry.data = {"connection_type": "cloud"}
-
-        select = DysonFanControlModeSelect(coordinator)
-
-        with patch.object(select, "async_write_ha_state"):
-            await select.async_select_option("Sleep")
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_value_error_manual_mode(self):
-        """Test ValueError handling when setting manual mode."""
-        coordinator = Mock()
-        coordinator.serial_number = "TEST-SERIAL-123"
-        coordinator.device = Mock()
-        coordinator.device.set_auto_mode = AsyncMock(
-            side_effect=ValueError("Invalid mode value")
-        )
-        coordinator.config_entry = Mock()
-        coordinator.config_entry.data = {"connection_type": "local_only"}
-
-        select = DysonFanControlModeSelect(coordinator)
-
-        with patch.object(select, "async_write_ha_state"):
-            await select.async_select_option("Manual")
-
-    @pytest.mark.asyncio
-    async def test_async_select_option_generic_exception(self):
-        """Test generic Exception handling in async_select_option."""
-        coordinator = Mock()
-        coordinator.serial_number = "TEST-SERIAL-123"
-        coordinator.device = Mock()
-        coordinator.device.set_auto_mode = AsyncMock(
-            side_effect=RuntimeError("Unexpected error")
-        )
-        coordinator.config_entry = Mock()
-        coordinator.config_entry.data = {"connection_type": "cloud"}
-
-        select = DysonFanControlModeSelect(coordinator)
-
-        with patch.object(select, "async_write_ha_state"):
-            await select.async_select_option("Auto")
-
-    def test_handle_coordinator_update_no_device(self):
-        """Test _handle_coordinator_update when device is None."""
-        coordinator = Mock()
-        coordinator.device = None
-        coordinator.data = {}
-        coordinator.config_entry = Mock()
-        coordinator.config_entry.data = {"connection_type": "cloud"}
-
-        select = DysonFanControlModeSelect(coordinator)
-
-        with patch.object(select, "async_write_ha_state"):
-            select._handle_coordinator_update()
-
-        assert select._attr_current_option is None
 
 
 class TestOscillationModeSelectErrorHandling:

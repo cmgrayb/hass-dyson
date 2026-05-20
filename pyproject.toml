@@ -32,7 +32,7 @@ dependencies = [
     "aiohttp>=3.13.5",
     "cryptography>=45.0.7",
     "homeassistant==2026.5.2",
-    "libdyson-rest==0.12.1",
+    "libdyson-rest==0.14.0b2",
     "paho-mqtt>=2.1.0",
     "requests>=2.33.1",
 ]
