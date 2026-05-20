@@ -188,7 +188,7 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
     async def async_press(self) -> None:
         from .services import _fetch_persistent_map_metadata, _persistent_map_cache
 
-        _persistent_map_cache.pop(self.coordinator.serial_number, None)
+        _persistent_map_cache.invalidate(self.coordinator.serial_number)
         try:
             maps = await _fetch_persistent_map_metadata(self.coordinator)
             _LOGGER.info(

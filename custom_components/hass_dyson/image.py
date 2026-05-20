@@ -141,10 +141,10 @@ def _apply_orientation(img, rotation_deg: int):
     from PIL import Image
 
     # Y-flip first (raw bitmaps use Y=0 at bottom-left; PIL uses top-left)
-    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     if rotation_deg:
         # PIL.rotate is counter-clockwise; negate to match app convention
-        img = img.rotate(-rotation_deg, expand=True, resample=Image.NEAREST)
+        img = img.rotate(-rotation_deg, expand=True, resample=Image.Resampling.NEAREST)
     return img
 
 
@@ -166,7 +166,8 @@ def _palette_from_floor_plan(presentation_png: bytes):
     # Repaint: zones → light cream, boundaries → dark blue-grey, outside → near-white
     for y in range(h):
         for x in range(w):
-            r, g, b, _ = pixels[x, y]
+            rgba_pixel: tuple[int, int, int, int] = pixels[x, y]  # type: ignore[assignment]
+            r, g, b, _ = rgba_pixel
             if r > 200 and g > 200 and b > 200:
                 # white = boundary
                 pixels[x, y] = (60, 60, 90, 255)
@@ -284,7 +285,7 @@ def _render_dust_map_png(
         factor = max(1, 800 // max_dim)
         composite = composite.resize(
             (composite.size[0] * factor, composite.size[1] * factor),
-            resample=Image.NEAREST,
+            resample=Image.Resampling.NEAREST,
         )
 
     buf = io.BytesIO()
@@ -311,7 +312,7 @@ def _render_presentation_png(
         factor = max(1, 600 // max_dim)
         img = img.resize(
             (img.size[0] * factor, img.size[1] * factor),
-            resample=Image.NEAREST,
+            resample=Image.Resampling.NEAREST,
         )
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
