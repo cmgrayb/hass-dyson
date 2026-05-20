@@ -49,6 +49,7 @@ Sensor States:
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -67,6 +68,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     CAPABILITY_EXTENDED_AQ,
@@ -3413,7 +3415,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
 # the daily series and per-device schedules barely change.
 _outdoor_aqi_cache = TTLCache(15 * 60)
 _daily_env_cache = TTLCache(60 * 60)
-_schedule_cache = TTLCache(60 * 60)
+_schedule_cache = TTLCache(5 * 60)  # 5-min TTL so schedule changes surface quickly
 
 
 def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
@@ -3453,15 +3455,32 @@ class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_icon = "mdi:weather-windy"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_class = SensorDeviceClass.AQI
+    _UPDATE_INTERVAL = timedelta(minutes=15)
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_outdoor_aqi"
         self._attr_name = "Outdoor AQI"
+
+    async def async_added_to_hass(self) -> None:
+        """Register periodic cloud refresh when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_update,
+                self._UPDATE_INTERVAL,
+            )
+        )
+
+    async def _async_scheduled_update(self, now: object = None) -> None:
+        """Fetch fresh outdoor AQI data and push state to Home Assistant."""
+        _outdoor_aqi_cache.invalidate(self.coordinator.serial_number)
+        await self.async_update()
+        self.async_write_ha_state()
 
     async def async_update(self) -> None:
         from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
@@ -3510,14 +3529,31 @@ class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_icon = "mdi:chart-line"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _UPDATE_INTERVAL = timedelta(minutes=60)
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_daily_aqi"
         self._attr_name = "Indoor AQI (15-min)"
+
+    async def async_added_to_hass(self) -> None:
+        """Register periodic cloud refresh when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_update,
+                self._UPDATE_INTERVAL,
+            )
+        )
+
+    async def _async_scheduled_update(self, now: object = None) -> None:
+        """Fetch fresh daily AQI data and push state to Home Assistant."""
+        _daily_env_cache.invalidate(self.coordinator.serial_number)
+        await self.async_update()
+        self.async_write_ha_state()
 
     async def async_update(self) -> None:
         from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
@@ -3568,13 +3604,30 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_icon = "mdi:calendar-clock"
+    _UPDATE_INTERVAL = timedelta(minutes=5)
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_scheduled_events"
         self._attr_name = "Scheduled Events"
+
+    async def async_added_to_hass(self) -> None:
+        """Register periodic cloud refresh when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_update,
+                self._UPDATE_INTERVAL,
+            )
+        )
+
+    async def _async_scheduled_update(self, now: object = None) -> None:
+        """Fetch fresh scheduled-events data and push state to Home Assistant."""
+        _schedule_cache.invalidate(self.coordinator.serial_number)
+        await self.async_update()
+        self.async_write_ha_state()
 
     async def async_update(self) -> None:
         from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
@@ -3590,6 +3643,14 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
                             serial, product_type=product_type
                         )
                         _schedule_cache.set(serial, data)
+                        _LOGGER.debug(
+                            "Scheduled events for %s: schedule_enabled=%s, "
+                            "total=%d, raw_events=%s",
+                            serial,
+                            data.schedule_enabled,
+                            len(data.events),
+                            [e.raw for e in data.events],
+                        )
                     except (DysonAPIError, DysonAuthError) as err:
                         _LOGGER.debug(
                             "Failed to fetch scheduled events for %s: %s", serial, err
@@ -3602,14 +3663,32 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
             return
 
         events = data.events
-        enabled_events = [e for e in events if e.enabled]
-        self._attr_native_value = (
-            f"{len(enabled_events)} active"
-            if enabled_events
-            else ("0 active" if data.schedule_enabled else "disabled")
-        )
+        active_events = [e for e in events if e.enabled]
+
+        # The Dyson API stores each schedule as multiple events (e.g. a start
+        # event and an end event) sharing a common ``groupId``.  Count unique
+        # group IDs so we report "1 active" when the user has 1 schedule in
+        # the MyDyson app, even though it appears as 2 raw events.
+        active_group_ids: set[int] = {
+            e.raw["groupId"]
+            for e in active_events
+            if isinstance(e.raw.get("groupId"), int)
+        }
+        # Fall back to raw event count if no groupId is present.
+        active_count = len(active_group_ids) if active_group_ids else len(active_events)
+
+        # Gate the active count on the top-level schedule switch.  Individual
+        # events may still have enabled=True even when the overall schedule is
+        # disabled in the MyDyson app, so check schedule_enabled first.
+        if not data.schedule_enabled:
+            self._attr_native_value = "disabled"
+        else:
+            self._attr_native_value = f"{active_count} active"
+
         self._attr_extra_state_attributes = {
             "schedule_enabled": data.schedule_enabled,
-            "event_count": len(events),
-            "events": [e.raw for e in events],
+            "active_schedule_count": active_count,
+            "active_event_count": len(active_events),
+            "total_event_count": len(events),
+            "events": [e.raw for e in active_events],
         }
