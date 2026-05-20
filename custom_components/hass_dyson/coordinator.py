@@ -149,6 +149,16 @@ class TTLCache:
         """Store *value* under *key*, resetting the TTL."""
         self._store[key] = (time.monotonic(), value)
 
+    def expire(self, key: str) -> None:
+        """Force *key* to miss on the next :meth:`get` without removing it.
+
+        The entry is still accessible via :meth:`get_stale` so it can be used
+        as a fallback when a subsequent live fetch fails.
+        """
+        cached = self._store.get(key)
+        if cached is not None:
+            self._store[key] = (0.0, cached[1])
+
     def get_stale(self, key: str) -> Any | None:
         """Return the cached value regardless of TTL (use only as a fallback)."""
         cached = self._store.get(key)

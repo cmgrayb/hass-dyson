@@ -115,7 +115,7 @@ class TestDysonOutdoorAQISensor:
     async def test_async_scheduled_update_invalidates_cache_and_writes_state(
         self, mock_coordinator, mock_cloud_client
     ):
-        """_async_scheduled_update should invalidate cache then write new state."""
+        """_async_scheduled_update expires cache so next read fetches fresh data."""
         from custom_components.hass_dyson.sensor import (
             DysonOutdoorAQISensor,
             _outdoor_aqi_cache,
@@ -318,7 +318,7 @@ class TestDysonDailyAirQualitySensor:
     async def test_async_scheduled_update_invalidates_cache_and_writes_state(
         self, mock_coordinator, mock_cloud_client
     ):
-        """_async_scheduled_update invalidates cache then fetches and writes state."""
+        """_async_scheduled_update expires cache so next read fetches fresh data."""
         from custom_components.hass_dyson.sensor import (
             DysonDailyAirQualitySensor,
             _daily_env_cache,
@@ -500,7 +500,7 @@ class TestDysonScheduledEventsSensor:
     async def test_async_scheduled_update_invalidates_cache_and_writes_state(
         self, mock_coordinator, mock_cloud_client
     ):
-        """_async_scheduled_update invalidates cache then fetches and writes state."""
+        """_async_scheduled_update expires cache so next read fetches fresh data."""
         from custom_components.hass_dyson.sensor import (
             DysonScheduledEventsSensor,
             _schedule_cache,

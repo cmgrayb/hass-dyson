@@ -116,6 +116,7 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 PLATFORMS_MAP = {
+    Platform.CALENDAR: "calendar",
     Platform.FAN: "fan",
     Platform.SENSOR: "sensor",
     Platform.BINARY_SENSOR: "binary_sensor",
@@ -892,6 +893,12 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
 
     if coordinator.config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
         platforms.append("update")
+
+    # Add calendar platform for EC devices with cloud auth (exposes schedule events)
+    if any(
+        cat == "ec" for cat in device_category
+    ) and coordinator.config_entry.data.get("auth_token"):
+        platforms.append("calendar")
 
     # Remove duplicates and return
     return list(set(platforms))

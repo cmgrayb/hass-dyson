@@ -3478,7 +3478,7 @@ class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
 
     async def _async_scheduled_update(self, now: object = None) -> None:
         """Fetch fresh outdoor AQI data and push state to Home Assistant."""
-        _outdoor_aqi_cache.invalidate(self.coordinator.serial_number)
+        _outdoor_aqi_cache.expire(self.coordinator.serial_number)
         await self.async_update()
         self.async_write_ha_state()
 
@@ -3551,7 +3551,7 @@ class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
 
     async def _async_scheduled_update(self, now: object = None) -> None:
         """Fetch fresh daily AQI data and push state to Home Assistant."""
-        _daily_env_cache.invalidate(self.coordinator.serial_number)
+        _daily_env_cache.expire(self.coordinator.serial_number)
         await self.async_update()
         self.async_write_ha_state()
 
@@ -3625,7 +3625,7 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
 
     async def _async_scheduled_update(self, now: object = None) -> None:
         """Fetch fresh scheduled-events data and push state to Home Assistant."""
-        _schedule_cache.invalidate(self.coordinator.serial_number)
+        _schedule_cache.expire(self.coordinator.serial_number)
         await self.async_update()
         self.async_write_ha_state()
 
