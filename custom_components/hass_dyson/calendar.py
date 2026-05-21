@@ -82,6 +82,7 @@ def _describe_settings(settings: dict[str, Any]) -> str:
     if not settings:
         return ""
     parts: list[str] = []
+    # EC fan settings
     if settings.get("nmod") == "ON":
         parts.append("Night Mode")
     if settings.get("auto") == "ON":
@@ -91,6 +92,18 @@ def _describe_settings(settings: dict[str, Any]) -> str:
         parts.append(f"Speed {speed}")
     if settings.get("oson") == "ON":
         parts.append("Oscillating")
+    # Robot vacuum settings
+    cleaning_mode = settings.get("cleaningMode")
+    if cleaning_mode:
+        _CLEANING_MODE_LABELS: dict[str, str] = {
+            "auto": "Auto",
+            "quick": "Quick",
+            "quiet": "Quiet",
+            "boost": "Boost",
+        }
+        parts.append(
+            _CLEANING_MODE_LABELS.get(str(cleaning_mode), str(cleaning_mode).title())
+        )
     return ", ".join(parts)
 
 
@@ -316,8 +329,13 @@ class DysonScheduleCalendar(DysonEntity, CalendarEntity):
         )
         if not events:
             return None
-        # Return the soonest-starting event
-        return min(events, key=lambda e: e.start)
+        # Prefer an event that is currently active (start ≤ now ≤ end), then
+        # fall back to the soonest upcoming event (start > now).
+        ongoing = [e for e in events if e.start <= now <= e.end]
+        if ongoing:
+            return min(ongoing, key=lambda e: e.start)
+        future = [e for e in events if e.start > now]
+        return min(future, key=lambda e: e.start) if future else None
 
     async def async_get_events(
         self,

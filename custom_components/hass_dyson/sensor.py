@@ -3181,10 +3181,16 @@ def _extract_duration_minutes(clean) -> int | None:
 
 
 def _extract_cleaned_area_m2(clean) -> float | None:
-    """Return cleaned area in m² from the CleanRecord's cleaned_footprint."""
-    if clean.cleaned_footprint and clean.cleaned_footprint.area is not None:
-        return round(clean.cleaned_footprint.area, 2)
-    return None
+    """Return cleaned area in m² from the CleanRecord's cleaned_footprint.
+
+    Delegates to ``CleanedFootprint.compute_area_m2()``, passing the
+    resolution from the dust map when available (fetched with
+    ``dustMap=total``), otherwise using the Vis Nav default of 20 mm/pixel.
+    """
+    if clean.cleaned_footprint is None:
+        return None
+    resolution_mm = clean.dust_map.resolution if clean.dust_map else 20
+    return clean.cleaned_footprint.compute_area_m2(resolution_mm=resolution_mm)
 
 
 def _extract_zone_ids(clean) -> list[str]:
@@ -3199,13 +3205,8 @@ def _extract_zone_ids(clean) -> list[str]:
 
 
 def _extract_clean_type(clean) -> str:
-    """'zoneConfigured', 'global', or 'unknown'."""
-    if not clean.cleaning_programme:
-        return "unknown"
-    prog = clean.cleaning_programme
-    if prog.unordered_zones or prog.ordered_zones:
-        return "zoneConfigured"
-    return "global"
+    """Return 'zoneConfigured' or 'global' via ``CleanRecord.clean_type``."""
+    return clean.clean_type
 
 
 def _extract_fault_count(clean) -> int:

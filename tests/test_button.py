@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from custom_components.hass_dyson.button import (
     DysonReconnectButton,
@@ -359,13 +360,15 @@ class TestButtonPlatformRobotSetup:
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
         add_entities = MagicMock()
         fake_maps = [
-            {
-                "id": "map-1",
-                "zones": [
-                    {"id": "z1", "name": "Kitchen", "icon": "kitchen"},
-                    {"id": "z2", "name": "Bedroom", "icon": "bedroom"},
+            PersistentMapMeta(
+                id="map-1",
+                name=None,
+                zones_definition_last_updated_date=None,
+                zones=[
+                    ZoneMeta(id="z1", name="Kitchen", icon="kitchen", area=None),
+                    ZoneMeta(id="z2", name="Bedroom", icon="bedroom", area=None),
                 ],
-            }
+            )
         ]
         with patch(
             "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
@@ -425,8 +428,18 @@ class TestButtonPlatformRobotSetup:
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
         add_entities = MagicMock()
         fake_maps = [
-            {"id": "map-1", "zones": [{"id": "z1", "name": "Kitchen", "icon": None}]},
-            {"id": "map-2", "zones": [{"id": "z1", "name": "Kitchen", "icon": None}]},
+            PersistentMapMeta(
+                id="map-1",
+                name=None,
+                zones_definition_last_updated_date=None,
+                zones=[ZoneMeta(id="z1", name="Kitchen", icon=None, area=None)],
+            ),
+            PersistentMapMeta(
+                id="map-2",
+                name=None,
+                zones_definition_last_updated_date=None,
+                zones=[ZoneMeta(id="z1", name="Kitchen", icon=None, area=None)],
+            ),
         ]
         with patch(
             "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
@@ -475,8 +488,10 @@ class TestButtonPlatformRobotSetup:
 class TestDysonZoneCleanButton:
     """Test DysonZoneCleanButton entity."""
 
-    _FAKE_PMAP = {"id": "pmap-1", "zones": []}
-    _FAKE_ZONE = {"id": "zone-99", "name": "Kitchen", "icon": "kitchen"}
+    _FAKE_PMAP = PersistentMapMeta(
+        id="pmap-1", name=None, zones_definition_last_updated_date=None, zones=[]
+    )
+    _FAKE_ZONE = ZoneMeta(id="zone-99", name="Kitchen", icon="kitchen", area=None)
 
     def _make(self, coordinator, pmap=None, zone=None) -> DysonZoneCleanButton:
         return DysonZoneCleanButton(
@@ -497,7 +512,7 @@ class TestDysonZoneCleanButton:
 
     def test_init_zone_name_fallback(self, mock_robot_coordinator):
         """Missing zone name falls back to 'Zone <id>'."""
-        zone = {"id": "z42", "icon": None}
+        zone = ZoneMeta(id="z42", name=None, icon=None, area=None)
         btn = self._make(mock_robot_coordinator, zone=zone)
         assert btn._attr_name == "Clean Zone z42"
 
@@ -582,7 +597,14 @@ class TestDysonRefreshZonesButton:
         from custom_components.hass_dyson.coordinator import TTLCache
 
         btn = DysonRefreshZonesButton(mock_robot_coordinator)
-        fake_maps = [{"id": "map-1", "zones": [{"id": "z1"}]}]
+        fake_maps = [
+            PersistentMapMeta(
+                id="map-1",
+                name=None,
+                zones_definition_last_updated_date=None,
+                zones=[ZoneMeta(id="z1", name=None, icon=None, area=None)],
+            )
+        ]
         fake_cache = TTLCache(3600)
         fake_cache.set("VS9-GB-HJA0000A", "stale_data")
         with (

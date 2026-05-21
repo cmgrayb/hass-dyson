@@ -10,6 +10,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
@@ -55,8 +56,8 @@ async def async_setup_entry(
         # Most robots have a single persistent map; iterate to handle multi-map setups.
         seen_zone_ids: set[str] = set()
         for pmap in maps:
-            for zone in pmap.get("zones", []):
-                zone_id = str(zone.get("id", ""))
+            for zone in pmap.zones:
+                zone_id = zone.id
                 if not zone_id or zone_id in seen_zone_ids:
                     continue
                 seen_zone_ids.add(zone_id)
@@ -127,17 +128,17 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
     def __init__(
         self,
         coordinator: DysonDataUpdateCoordinator,
-        pmap: dict,
-        zone: dict,
+        pmap: PersistentMapMeta,
+        zone: ZoneMeta,
     ) -> None:
         super().__init__(coordinator)
-        self._pmap_id: str = pmap["id"]
-        self._zone_id: str = str(zone["id"])
-        self._zone_name: str = str(zone.get("name") or f"Zone {self._zone_id}")
+        self._pmap_id: str = pmap.id
+        self._zone_id: str = zone.id
+        self._zone_name: str = str(zone.name or f"Zone {self._zone_id}")
         # unique_id uses zone_id (stable in MyDyson app even if user renames the zone)
         self._attr_unique_id = f"{coordinator.serial_number}_clean_zone_{self._zone_id}"
         self._attr_name = f"Clean {self._zone_name}"
-        self._attr_icon = _icon_for_zone(zone.get("icon"))
+        self._attr_icon = _icon_for_zone(zone.icon)
 
     async def async_press(self) -> None:
         if not self.coordinator.device:
@@ -196,7 +197,7 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
                 "Restart HA to surface any newly-added zones as buttons.",
                 self.coordinator.serial_number,
                 len(maps),
-                sum(len(m.get("zones", [])) for m in maps),
+                sum(len(m.zones) for m in maps),
             )
         except Exception as err:
             raise HomeAssistantError(
