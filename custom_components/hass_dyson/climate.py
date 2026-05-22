@@ -7,6 +7,8 @@ from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
+    FAN_DIFFUSE,
+    FAN_FOCUS,
     ClimateEntityFeature,
     HVACAction,
     HVACMode,
@@ -58,6 +60,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         device_capabilities = coordinator.device_capabilities
         has_heating = "Heating" in device_capabilities
         has_humidifier = "Humidifier" in device_capabilities
+        has_focus_mode = "FocusMode" in device_capabilities
 
         # Climate features
         supported_features = (
@@ -69,6 +72,13 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         if has_humidifier:
             supported_features |= ClimateEntityFeature.TARGET_HUMIDITY
+
+        if has_focus_mode:
+            supported_features |= ClimateEntityFeature.FAN_MODE
+            self._attr_fan_modes = [FAN_FOCUS, FAN_DIFFUSE]
+            self._attr_fan_mode = (
+                FAN_FOCUS  # default; updated in _handle_coordinator_update
+            )
 
         self._attr_supported_features = supported_features
 
@@ -110,6 +120,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         self._update_humidity(device_data)
         self._update_hvac_mode(device_data)
         self._update_hvac_action(device_data)
+        self._update_fan_mode(device_data)
 
         super()._handle_coordinator_update()
 
@@ -216,6 +227,17 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 self._attr_target_humidity = 40
         except (ValueError, TypeError):
             self._attr_target_humidity = 40
+
+    def _update_fan_mode(self, device_data: dict[str, Any]) -> None:
+        """Update focus/diffuse fan mode from device data (FocusMode-capable devices only)."""
+        if (
+            not self.coordinator.device
+            or "FocusMode" not in self.coordinator.device_capabilities
+        ):
+            return
+
+        ffoc = self.coordinator.device.get_state_value(device_data, "ffoc", "ON")
+        self._attr_fan_mode = FAN_FOCUS if ffoc == "ON" else FAN_DIFFUSE
 
     def _update_hvac_mode(self, device_data: dict[str, Any]) -> None:
         """Update HVAC mode from device data."""
@@ -539,8 +561,42 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 err,
             )
 
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
+        """Set focus or diffuse airflow mode (FocusMode-capable devices only)."""
+        if (
+            not self.coordinator.device
+            or "FocusMode" not in self.coordinator.device_capabilities
+        ):
+            return
+
+        try:
+            enabled = fan_mode == FAN_FOCUS
+            await self.coordinator.device.set_focus_mode(enabled)
+
+            self._attr_fan_mode = fan_mode
+            self.async_write_ha_state()
+
+            _LOGGER.debug(
+                "Set fan mode to %s for %s",
+                fan_mode,
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error setting fan mode '%s' for %s: %s",
+                fan_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error setting fan mode '%s' for %s: %s",
+                fan_mode,
+                self.coordinator.serial_number,
+                err,
+            )
+
     async def async_turn_on(self) -> None:
-        """Turn the entity on - defaults to heating mode if available, otherwise humidifier mode."""
         device_capabilities = self.coordinator.device_capabilities
 
         if "Heating" in device_capabilities:

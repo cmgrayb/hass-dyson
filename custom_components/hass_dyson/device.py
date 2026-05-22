@@ -52,6 +52,7 @@ from .const import (
     FAULT_TRANSLATIONS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
 )
+from .device_utils import mask_serial, mask_token
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -898,8 +899,8 @@ class DysonDevice:
 
                 _LOGGER.debug(
                     "Parsed AWS IoT credentials: client_id=%s, authorizer=%s",
-                    client_id,
-                    custom_authorizer_name,
+                    mask_token(client_id),
+                    mask_token(custom_authorizer_name),
                 )
                 _LOGGER.debug("AWS IoT client_id length: %s", len(client_id))
 
@@ -911,8 +912,12 @@ class DysonDevice:
             # Note: For AWS IoT, the client_id must be exact - no prefixes allowed
             mqtt_client = mqtt.Client(client_id=client_id, transport="websockets")
 
-            _LOGGER.debug("Created MQTT client with exact ID: %s", client_id)
-            _LOGGER.debug("MQTT client internal ID: %s", mqtt_client._client_id)
+            _LOGGER.debug(
+                "Created MQTT client with exact ID: %s", mask_token(client_id)
+            )
+            _LOGGER.debug(
+                "MQTT client internal ID: %s", mask_token(str(mqtt_client._client_id))
+            )
 
             self._mqtt_client = mqtt_client
 
@@ -1176,7 +1181,9 @@ class DysonDevice:
 
     async def force_reconnect(self) -> bool:
         """Force a reconnection attempt with preferred connection priority."""
-        _LOGGER.info("Force reconnect triggered for %s", self.serial_number)
+        _LOGGER.info(
+            "Force reconnect triggered for %s", mask_serial(self.serial_number)
+        )
 
         # Disconnect if currently connected
         if self._connected:
@@ -1193,7 +1200,7 @@ class DysonDevice:
     ) -> None:
         """Handle MQTT connection callback."""
         if rc == mqtt.CONNACK_ACCEPTED:
-            _LOGGER.info("MQTT connected to device %s", self.serial_number)
+            _LOGGER.info("MQTT connected to device %s", mask_serial(self.serial_number))
             self._connected = True
             self._had_stable_connection = (
                 True  # Mark that we've had a successful connection
@@ -3177,7 +3184,9 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.info("Sending pause command to robot %s", self.serial_number)
+        _LOGGER.info(
+            "Sending pause command to robot %s", mask_serial(self.serial_number)
+        )
 
         from .const import ROBOT_CMD_PAUSE
 
@@ -3201,7 +3210,9 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.info("Sending resume command to robot %s", self.serial_number)
+        _LOGGER.info(
+            "Sending resume command to robot %s", mask_serial(self.serial_number)
+        )
 
         from .const import ROBOT_CMD_RESUME
 
@@ -3225,7 +3236,9 @@ class DysonDevice:
         if not self.is_connected:
             raise RuntimeError(f"Device {self.serial_number} is not connected")
 
-        _LOGGER.info("Sending abort command to robot %s", self.serial_number)
+        _LOGGER.info(
+            "Sending abort command to robot %s", mask_serial(self.serial_number)
+        )
 
         from .const import ROBOT_CMD_ABORT
 
@@ -3339,6 +3352,21 @@ class DysonDevice:
         _LOGGER.debug(
             "Set heating mode to %s for %s",
             mode,
+            self.serial_number,
+        )
+
+    async def set_focus_mode(self, enabled: bool) -> None:
+        """Set focus/diffuse airflow mode (older HP02-type devices only).
+
+        Args:
+            enabled: True for focused beam airflow, False for diffuse airflow
+        """
+        value = "ON" if enabled else "OFF"
+        await self.send_command("STATE-SET", {"ffoc": value})
+
+        _LOGGER.debug(
+            "Set focus mode to %s for %s",
+            value,
             self.serial_number,
         )
 

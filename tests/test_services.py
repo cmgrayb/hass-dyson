@@ -654,10 +654,10 @@ class TestCloudServices:
 
             result = await _handle_get_cloud_devices(mock_hass, service_call)
 
-            # Should return device data
+            # Should return device data with masked email when sanitize=True
             assert result is not None
             assert "account_email" in result
-            assert result["account_email"] == "test@example.com"
+            assert result["account_email"] == "t***@e***.com"
 
     @pytest.mark.asyncio
     async def test_handle_refresh_account_data_success(self, mock_hass):
@@ -932,6 +932,42 @@ class TestServicesUtilityFunctions:
         result = _convert_to_string(test_number)
 
         assert result == "123"
+
+    @pytest.mark.skipif(
+        not services_module_available, reason="Services module not importable"
+    )
+    def test_mask_email_typical_address(self):
+        """Test masking a typical email address."""
+        from custom_components.hass_dyson.device_utils import mask_email
+
+        assert mask_email("user@example.com") == "u***@e***.com"
+
+    @pytest.mark.skipif(
+        not services_module_available, reason="Services module not importable"
+    )
+    def test_mask_email_short_parts(self):
+        """Test masking a short email address."""
+        from custom_components.hass_dyson.device_utils import mask_email
+
+        assert mask_email("a@b.org") == "a***@b***.org"
+
+    @pytest.mark.skipif(
+        not services_module_available, reason="Services module not importable"
+    )
+    def test_mask_email_invalid_no_at(self):
+        """Test masking returns *** for an address without @."""
+        from custom_components.hass_dyson.device_utils import mask_email
+
+        assert mask_email("notanemail") == "***"
+
+    @pytest.mark.skipif(
+        not services_module_available, reason="Services module not importable"
+    )
+    def test_mask_email_empty_string(self):
+        """Test masking returns *** for an empty string."""
+        from custom_components.hass_dyson.device_utils import mask_email
+
+        assert mask_email("") == "***"
 
     @pytest.mark.skipif(
         not services_module_available, reason="Services module not importable"

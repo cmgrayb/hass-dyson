@@ -853,8 +853,13 @@ class TestSensorSetupTemperatureHumidity:
         assert "DysonTemperatureSensor" in sensor_types
 
     @pytest.mark.asyncio
-    async def test_setup_no_temperature_with_capability_but_no_data(self):
-        """Test temperature sensor NOT created with capability but no tact data."""
+    async def test_setup_temperature_with_capability_and_empty_env_data(self):
+        """Test temperature sensor IS created with capability when env data is empty.
+
+        When environmental-data is present but empty (no tact key), the sensor is
+        still created because empty env_data is treated as data not yet arrived -
+        the device has the heating capability so a temperature sensor should exist.
+        """
         hass = MagicMock(spec=HomeAssistant)
         config_entry = MagicMock()
         config_entry.entry_id = "test_entry"
@@ -864,7 +869,7 @@ class TestSensorSetupTemperatureHumidity:
         coordinator.device_capabilities = ["heating"]
         coordinator.device_category = ["ec"]
         coordinator.serial_number = "TEST-NO-TEMP-001"
-        coordinator.data = {"environmental-data": {}}  # No tact key
+        coordinator.data = {"environmental-data": {}}  # No tact key yet
 
         hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
 
@@ -875,7 +880,8 @@ class TestSensorSetupTemperatureHumidity:
         assert result is True
         entities = async_add_entities.call_args[0][0]
         sensor_types = [type(entity).__name__ for entity in entities]
-        assert "DysonTemperatureSensor" not in sensor_types
+        # Sensor is created because empty env_data means data hasn't arrived yet
+        assert "DysonTemperatureSensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_setup_no_temperature_without_capability(self):
@@ -953,8 +959,13 @@ class TestSensorSetupTemperatureHumidity:
         assert "DysonHumiditySensor" in sensor_types
 
     @pytest.mark.asyncio
-    async def test_setup_no_humidity_with_capability_but_no_data(self):
-        """Test humidity sensor NOT created with capability but no hact data."""
+    async def test_setup_humidity_with_capability_and_empty_env_data(self):
+        """Test humidity sensor IS created with capability when env data is empty.
+
+        When environmental-data is present but empty (no hact key), the sensor is
+        still created because empty env_data is treated as data not yet arrived -
+        the device has the Humidifier capability so a humidity sensor should exist.
+        """
         hass = MagicMock(spec=HomeAssistant)
         config_entry = MagicMock()
         config_entry.entry_id = "test_entry"
@@ -964,7 +975,7 @@ class TestSensorSetupTemperatureHumidity:
         coordinator.device_capabilities = ["Humidifier"]
         coordinator.device_category = ["ec"]
         coordinator.serial_number = "TEST-NO-HUMID-001"
-        coordinator.data = {"environmental-data": {}}  # No hact key
+        coordinator.data = {"environmental-data": {}}  # No hact key yet
 
         hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
 
@@ -975,7 +986,8 @@ class TestSensorSetupTemperatureHumidity:
         assert result is True
         entities = async_add_entities.call_args[0][0]
         sensor_types = [type(entity).__name__ for entity in entities]
-        assert "DysonHumiditySensor" not in sensor_types
+        # Sensor is created because empty env_data means data hasn't arrived yet
+        assert "DysonHumiditySensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_setup_no_humidity_without_capability(self):

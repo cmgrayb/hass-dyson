@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CAPABILITY_ENVIRONMENTAL_DATA, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,7 +92,10 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_auto_mode(True)
             # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug("Turned on auto mode for %s", self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Turned on auto mode for %s",
+                mask_serial(self.coordinator.serial_number),
+            )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error enabling auto mode for %s: %s",
@@ -119,7 +123,10 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_auto_mode(False)
             # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug("Turned off auto mode for %s", self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Turned off auto mode for %s",
+                mask_serial(self.coordinator.serial_number),
+            )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error disabling auto mode for %s: %s",
@@ -173,7 +180,10 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
         try:
             await self.coordinator.device.set_night_mode(True)
             # No need to refresh - MQTT provides real-time updates
-            _LOGGER.debug("Turned on night mode for %s", self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Turned on night mode for %s",
+                mask_serial(self.coordinator.serial_number),
+            )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error enabling night mode for %s: %s",
@@ -258,7 +268,9 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
 
         try:
             await self.coordinator.device.set_heating_mode("HEAT")
-            _LOGGER.debug("Turned on heating for %s", self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Turned on heating for %s", mask_serial(self.coordinator.serial_number)
+            )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error enabling heating for %s: %s",
@@ -285,7 +297,9 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
 
         try:
             await self.coordinator.device.set_heating_mode("OFF")
-            _LOGGER.debug("Turned off heating for %s", self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Turned off heating for %s", mask_serial(self.coordinator.serial_number)
+            )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error disabling heating for %s: %s",

@@ -21,6 +21,87 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Log-safe masking helpers
+# These are used throughout the integration to avoid leaking PII and
+# credentials into log output that users may share publicly.
+# ---------------------------------------------------------------------------
+
+
+def mask_email(email: str) -> str:
+    """Partially mask an email address for safe display in logs.
+
+    Shows the first character of the local part and the TLD of the domain,
+    masking all other characters to protect user privacy.
+
+    Args:
+        email: The email address to mask.
+
+    Returns:
+        Partially masked email string, e.g. ``u***@e***.com``.
+        Returns ``***`` if the email is empty or not a valid format.
+
+    Example:
+        >>> mask_email("user@example.com")
+        'u***@e***.com'
+    """
+    if not email or "@" not in email:
+        return "***"
+    local, _, domain = email.partition("@")
+    masked_local = local[0] + "***" if local else "***"
+    if "." in domain:
+        domain_name, _, tld = domain.rpartition(".")
+        masked_domain = (domain_name[0] + "***" if domain_name else "***") + "." + tld
+    else:
+        masked_domain = domain[0] + "***" if domain else "***"
+    return f"{masked_local}@{masked_domain}"
+
+
+def mask_serial(serial: str) -> str:
+    """Partially mask a Dyson device serial number for safe display in logs.
+
+    Shows the product-type prefix (before the first dash) and the last three
+    characters, masking the unique middle section.
+
+    Args:
+        serial: The Dyson serial number to mask, e.g. ``VS6-EU-HJA1234A``.
+
+    Returns:
+        Partially masked serial string, e.g. ``VS6-***-***4A``.
+        Returns ``***`` if the serial is too short to mask safely.
+
+    Example:
+        >>> mask_serial("VS6-EU-HJA1234A")
+        'VS6-***-***34A'
+    """
+    if not serial or len(serial) < 4:
+        return "***"
+    prefix = serial.split("-", 1)[0]  # e.g. "VS6"
+    return f"{prefix}-***-***{serial[-3:]}"
+
+
+def mask_token(token: str) -> str:
+    """Mask an authentication token or password for safe display in logs.
+
+    Shows only the first four characters to allow identification of the token
+    type or source while hiding the secret value.
+
+    Args:
+        token: The token or password string to mask.
+
+    Returns:
+        Masked token showing at most the first four characters, e.g. ``eyJh***``.
+        Returns ``***`` if the token is empty or very short.
+
+    Example:
+        >>> mask_token("eyJhbGciOiJSUzI1NiJ9.eyJpc3Mi...")
+        'eyJh***'
+    """
+    if not token or len(token) <= 4:
+        return "***"
+    return token[:4] + "***"
+
+
 def normalize_device_category(category: Any) -> list[str]:
     """Normalize device category to a consistent list format.
 
