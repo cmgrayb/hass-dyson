@@ -3190,7 +3190,7 @@ def _extract_cleaned_area_m2(clean) -> float | None:
     if clean.cleaned_footprint is None:
         return None
     resolution_mm = clean.dust_map.resolution if clean.dust_map else 20
-    return clean.cleaned_footprint.compute_area_m2(resolution_mm=resolution_mm)
+    return clean.cleaned_footprint.compute_area_m2(tile_resolution_mm=resolution_mm)
 
 
 def _extract_zone_ids(clean) -> list[str]:

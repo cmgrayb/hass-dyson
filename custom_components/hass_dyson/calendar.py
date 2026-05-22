@@ -93,17 +93,31 @@ def _describe_settings(settings: dict[str, Any]) -> str:
     if settings.get("oson") == "ON":
         parts.append("Oscillating")
     # Robot vacuum settings
-    cleaning_mode = settings.get("cleaningMode")
-    if cleaning_mode:
-        _CLEANING_MODE_LABELS: dict[str, str] = {
+    # The cloud sends currentCleaningMode ('global' / 'zoneConfigured') and
+    # cleaningStrategy ('auto' / 'quick' / 'quiet' / 'boost') as separate keys.
+    current_mode = settings.get("currentCleaningMode")
+    strategy = settings.get("cleaningStrategy")
+    if current_mode or strategy:
+        _MODE_LABELS: dict[str, str] = {
+            "global": "Whole-house",
+            "zoneConfigured": "Zoned",
+        }
+        _STRATEGY_LABELS: dict[str, str] = {
             "auto": "Auto",
             "quick": "Quick",
             "quiet": "Quiet",
             "boost": "Boost",
         }
-        parts.append(
-            _CLEANING_MODE_LABELS.get(str(cleaning_mode), str(cleaning_mode).title())
-        )
+        robot_parts: list[str] = []
+        if current_mode:
+            robot_parts.append(
+                _MODE_LABELS.get(str(current_mode), str(current_mode).title())
+            )
+        if strategy:
+            robot_parts.append(
+                _STRATEGY_LABELS.get(str(strategy), str(strategy).title())
+            )
+        parts.append(", ".join(robot_parts))
     return ", ".join(parts)
 
 
