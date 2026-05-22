@@ -116,6 +116,7 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 PLATFORMS_MAP = {
+    Platform.CALENDAR: "calendar",
     Platform.FAN: "fan",
     Platform.SENSOR: "sensor",
     Platform.BINARY_SENSOR: "binary_sensor",
@@ -126,6 +127,7 @@ PLATFORMS_MAP = {
     Platform.VACUUM: "vacuum",
     Platform.CLIMATE: "climate",
     Platform.HUMIDIFIER: "humidifier",
+    Platform.IMAGE: "image",
 }
 
 
@@ -858,6 +860,12 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
         cat in ["robot", "vacuum", "flrc"] for cat in device_category
     ):  # Cleaning devices
         platforms.append("vacuum")
+        # Robot/vacuum models expose a power-level select (Auto/Quick/Quiet/Boost
+        # on Vis Nav; Quiet/High/Max on Heurist; etc.) — see select.py.
+        platforms.append("select")
+        # Vis Nav exposes a dust-map image (rendered from cloud-fetched data)
+        # and floor-plan presentation map. See image.py.
+        platforms.append("image")
 
     # Add capability-based platforms for enhanced functionality
     if (
@@ -885,6 +893,18 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
 
     if coordinator.config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
         platforms.append("update")
+
+    # Add calendar platform for EC devices with cloud auth (exposes schedule events)
+    if any(
+        cat == "ec" for cat in device_category
+    ) and coordinator.config_entry.data.get("auth_token"):
+        platforms.append("calendar")
+
+    # Add calendar platform for robot vacuum devices with cloud auth (exposes schedule events)
+    if any(
+        cat in {"robot", "vacuum", "flrc"} for cat in device_category
+    ) and coordinator.config_entry.data.get("auth_token"):
+        platforms.append("calendar")
 
     # Remove duplicates and return
     return list(set(platforms))

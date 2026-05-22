@@ -55,11 +55,54 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Clean-maps fetch helper (shared by sensor.py and image.py for vacuum data)
+# ---------------------------------------------------------------------------
+
+# Cache cleaning runs for 30 minutes to avoid hammering the cloud API.
+_clean_maps_cache: TTLCache = TTLCache(30 * 60)
+
+
+async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
+    """Fetch recent cleaning runs via libdyson-rest (cached 30 min, newest-first).
+
+    Uses ``AsyncDysonClient.get_clean_maps()`` which requests the dust-map
+    blob (``include_dust_map=True``) and returns typed ``CleanRecord`` objects.
+
+    Returns an empty list (or stale cache) on any failure.
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    serial = coordinator.serial_number
+    fresh = _clean_maps_cache.get(serial)
+    if fresh is not None:
+        return fresh
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return _clean_maps_cache.get_stale(serial) or []
+        try:
+            records = await client.get_clean_maps(serial, include_dust_map=True)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
+            return _clean_maps_cache.get_stale(serial) or []
+
+    # Newest-first: sort by earliest timeline event timestamp.
+    records.sort(
+        key=lambda c: min(
+            (e.time for e in c.timeline if e.time),
+            default="",
+        ),
+        reverse=True,
+    )
+    _clean_maps_cache.set(serial, records)
+    return records
 
 
 async def async_setup_entry(
@@ -139,8 +182,10 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         # Note: Battery monitoring is now handled by a separate battery sensor
         # to comply with Home Assistant deprecation (HA 2026.8)
         self._attr_supported_features = (
-            VacuumEntityFeature.PAUSE
+            VacuumEntityFeature.START
+            | VacuumEntityFeature.PAUSE
             | VacuumEntityFeature.STOP
+            | VacuumEntityFeature.RETURN_HOME
             | VacuumEntityFeature.STATE
         )
 
@@ -250,31 +295,37 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             raise HomeAssistantError(f"Failed to pause vacuum: {ex}") from ex
 
     async def async_start(self) -> None:
-        """Start or resume vacuum cleaning operation.
-
-        If robot is paused, sends RESUME command to continue cleaning.
-        If robot is idle/docked, this would typically start a new cleaning
-        cycle, but the specific behavior depends on robot state and model.
-
-        Note:
-            Starting new cleaning cycles may require additional commands
-            not yet implemented. This primarily serves as resume functionality.
-
-        Raises:
-            HomeAssistantError: If device is not available or command fails
-        """
+        """Start a new clean (if docked) or resume a paused clean."""
         if not self.available or not self.coordinator.device:
             raise HomeAssistantError("Device not available for start command")
 
+        device = self.coordinator.device
+        robot_state = device.robot_state or ""
+
+        # Anything in an INACTIVE_* / FULL_CLEAN_FINISHED / FAULT_ON_DOCK
+        # state means the robot isn't mid-clean, so vacuum.start must begin a
+        # new cycle rather than send RESUME (which the device would ignore).
+        dock_states = {
+            "INACTIVE_CHARGED",
+            "INACTIVE_CHARGING",
+            "INACTIVE_DISCHARGING",
+            "FULL_CLEAN_FINISHED",
+            "FAULT_ON_DOCK",
+        }
+        start_new = robot_state in dock_states
+
         _LOGGER.info(
-            "Starting/resuming robot vacuum %s", self.coordinator.serial_number
+            "vacuum.start on %s: state=%s → %s",
+            self.coordinator.serial_number,
+            robot_state,
+            "START new clean" if start_new else "RESUME paused clean",
         )
 
         try:
-            await self.coordinator.device.robot_resume()
-            _LOGGER.debug(
-                "Resume command sent successfully to %s", self.coordinator.serial_number
-            )
+            if start_new:
+                await device.robot_start_clean(cleaning_mode="global")
+            else:
+                await device.robot_resume()
         except Exception as ex:
             _LOGGER.error(
                 "Failed to start/resume robot vacuum %s: %s",
