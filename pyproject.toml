@@ -34,7 +34,7 @@ dependencies = [
     "homeassistant==2026.5.2",
     "libdyson-rest==0.12.1",
     "paho-mqtt>=2.1.0",
-    "requests>=2.33.1",
+    "requests>=2.34.2",
 ]
 
 [project.optional-dependencies]
