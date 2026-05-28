@@ -188,7 +188,11 @@ class TTLCache:
         """
         cached = self._store.get(key)
         if cached is not None:
-            self._store[key] = (0.0, cached[1])
+            # Use float('-inf') so that time.monotonic() - float('-inf') == inf,
+            # which is always >= any TTL regardless of how long the process has
+            # been running (avoids failures in fresh CI environments where
+            # time.monotonic() may be less than the cache TTL in seconds).
+            self._store[key] = (float("-inf"), cached[1])
 
     def get_stale(self, key: str) -> Any | None:
         """Return the cached value regardless of TTL (use only as a fallback)."""
