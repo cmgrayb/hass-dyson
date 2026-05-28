@@ -20,5 +20,5 @@
   "requirements": [
     "libdyson-rest==0.14.0b6"
   ],
-  "version": "0.34.0-beta.8"
+  "version": "0.34.0-beta.9"
 }
