@@ -1,9 +1,9 @@
 """Test vacuum platform for Dyson integration."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
-from homeassistant.components.vacuum import VacuumActivity, VacuumEntityFeature
+from homeassistant.components.vacuum import Segment, VacuumActivity, VacuumEntityFeature
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.hass_dyson.const import (
@@ -52,6 +52,12 @@ def mock_coordinator_robot():
     coordinator.device.robot_request_state = AsyncMock()
 
     coordinator.async_request_refresh = AsyncMock()
+
+    # Config entry without auth_token by default (non-Vis Nav robot).
+    # Tests that require zone support should set coordinator.config_entry.data
+    # to include auth_token="some_token".
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.data = {}
 
     return coordinator
 
@@ -547,3 +553,402 @@ class TestVacuumEntityErrorHandling:
         # But missing methods should raise HomeAssistantError (wrapped AttributeError)
         with pytest.raises(HomeAssistantError, match="Failed to pause vacuum"):
             await entity.async_pause()
+
+
+# ---------------------------------------------------------------------------
+# Helpers used by TestCleanArea
+# ---------------------------------------------------------------------------
+
+
+def _make_zone(zone_id: str, zone_name: str, icon: str = "living_room"):
+    """Create a minimal ZoneMeta-like mock."""
+    z = MagicMock()
+    z.id = zone_id
+    z.name = zone_name
+    z.icon = icon
+    return z
+
+
+def _make_pmap(pmap_id: str, zones: list, zdlud: str | None = "2026-01-01T00:00:00Z"):
+    """Create a minimal PersistentMapMeta-like mock."""
+    p = MagicMock()
+    p.id = pmap_id
+    p.name = "Ground floor"
+    p.zones = zones
+    p.zones_definition_last_updated_date = zdlud
+    return p
+
+
+class TestCleanArea:
+    """Tests for HA 2026.3 CLEAN_AREA support on DysonVacuumEntity."""
+
+    # ------------------------------------------------------------------
+    # Feature flag tests
+    # ------------------------------------------------------------------
+
+    def test_clean_area_feature_set_with_auth_token(self, mock_coordinator_robot):
+        """CLEAN_AREA added to supported_features when auth_token is present."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok123"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        assert VacuumEntityFeature.CLEAN_AREA in entity._attr_supported_features
+        assert entity._has_zone_support is True
+
+    def test_clean_area_feature_not_set_without_auth_token(
+        self, mock_coordinator_robot
+    ):
+        """CLEAN_AREA absent from supported_features when no auth_token."""
+        # Fixture default: config_entry.data = {}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        assert VacuumEntityFeature.CLEAN_AREA not in entity._attr_supported_features
+        assert entity._has_zone_support is False
+
+    def test_clean_area_feature_not_set_with_empty_token(self, mock_coordinator_robot):
+        """CLEAN_AREA absent when auth_token is empty string."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": ""}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        assert VacuumEntityFeature.CLEAN_AREA not in entity._attr_supported_features
+        assert entity._has_zone_support is False
+
+    # ------------------------------------------------------------------
+    # async_get_segments tests
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_async_get_segments_returns_segments(self, mock_coordinator_robot):
+        """async_get_segments returns a Segment per zone."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        zones = [_make_zone("z1", "Kitchen"), _make_zone("z2", "Living Room")]
+        pmap = _make_pmap("map1", zones)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[pmap]),
+        ):
+            segments = await entity.async_get_segments()
+
+        assert len(segments) == 2
+        assert segments[0] == Segment(id="z1", name="Kitchen")
+        assert segments[1] == Segment(id="z2", name="Living Room")
+
+    @pytest.mark.asyncio
+    async def test_async_get_segments_zone_without_name_uses_id(
+        self, mock_coordinator_robot
+    ):
+        """Zones with no name fall back to zone.id as the segment name."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        zone = _make_zone("z99", "")
+        zone.name = None  # Simulate missing name
+        pmap = _make_pmap("map1", [zone])
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[pmap]),
+        ):
+            segments = await entity.async_get_segments()
+
+        assert len(segments) == 1
+        assert segments[0] == Segment(id="z99", name="z99")
+
+    @pytest.mark.asyncio
+    async def test_async_get_segments_skips_zones_without_id(
+        self, mock_coordinator_robot
+    ):
+        """Zones with no id are silently skipped."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        valid_zone = _make_zone("z1", "Bedroom")
+        no_id_zone = _make_zone("", "Unknown")
+        no_id_zone.id = None
+        pmap = _make_pmap("map1", [valid_zone, no_id_zone])
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[pmap]),
+        ):
+            segments = await entity.async_get_segments()
+
+        assert len(segments) == 1
+        assert segments[0].id == "z1"
+
+    @pytest.mark.asyncio
+    async def test_async_get_segments_empty_maps(self, mock_coordinator_robot):
+        """async_get_segments returns [] when no maps are available."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[]),
+        ):
+            segments = await entity.async_get_segments()
+
+        assert segments == []
+
+    @pytest.mark.asyncio
+    async def test_async_get_segments_exception_returns_empty(
+        self, mock_coordinator_robot
+    ):
+        """async_get_segments returns [] (logged warning) when fetch raises."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(side_effect=HomeAssistantError("cloud down")),
+        ):
+            segments = await entity.async_get_segments()
+
+        assert segments == []
+
+    # ------------------------------------------------------------------
+    # async_clean_segments tests
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_async_clean_segments_success(self, mock_coordinator_robot):
+        """async_clean_segments calls robot_start_clean with correct arguments."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        zones = [_make_zone("z1", "Kitchen"), _make_zone("z2", "Lounge")]
+        pmap = _make_pmap("map1", zones, zdlud="2026-03-01T12:00:00Z")
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[pmap]),
+        ):
+            await entity.async_clean_segments(["z1"])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_called_once_with(
+            cleaning_mode="zoneConfigured",
+            full_clean_type="immediate",
+            cleaning_programme={
+                "persistentMapId": "map1",
+                "orderedZones": [],
+                "unorderedZones": ["z1"],
+                "zonesDefinitionLastUpdatedDate": "2026-03-01T12:00:00Z",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_async_clean_segments_no_zdlud(self, mock_coordinator_robot):
+        """zonesDefinitionLastUpdatedDate omitted from programme when None."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        pmap = _make_pmap("map1", [_make_zone("z1", "Hall")], zdlud=None)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[pmap]),
+        ):
+            await entity.async_clean_segments(["z1"])
+
+        call_kwargs = mock_coordinator_robot.device.robot_start_clean.call_args.kwargs
+        assert "zonesDefinitionLastUpdatedDate" not in call_kwargs["cleaning_programme"]
+
+    @pytest.mark.asyncio
+    async def test_async_clean_segments_unavailable(self, mock_coordinator_robot):
+        """async_clean_segments raises HomeAssistantError when device unavailable."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch.object(entity.coordinator, "last_update_success", False):
+            with pytest.raises(HomeAssistantError, match="Device not available"):
+                await entity.async_clean_segments(["z1"])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_clean_segments_no_maps(self, mock_coordinator_robot):
+        """async_clean_segments raises HomeAssistantError when no maps returned."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[]),
+        ):
+            with pytest.raises(HomeAssistantError, match="No persistent maps"):
+                await entity.async_clean_segments(["z1"])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_clean_segments_device_error(self, mock_coordinator_robot):
+        """async_clean_segments wraps device errors in HomeAssistantError."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+        mock_coordinator_robot.device.robot_start_clean.side_effect = RuntimeError(
+            "MQTT disconnected"
+        )
+
+        pmap = _make_pmap("map1", [_make_zone("z1", "Hall")])
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=[pmap]),
+        ):
+            with pytest.raises(HomeAssistantError, match="Failed to start zone clean"):
+                await entity.async_clean_segments(["z1"])
+
+    # ------------------------------------------------------------------
+    # _handle_coordinator_update (segment change detection) tests
+    # ------------------------------------------------------------------
+
+    def test_handle_coordinator_update_no_change(self, mock_coordinator_robot):
+        """No repair issue when current segments match last_seen_segments."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        zones = [_make_zone("z1", "Kitchen")]
+        pmap = _make_pmap("map1", zones)
+        cached_maps = [pmap]
+
+        entity.registry_entry = MagicMock()
+        last_seen = [Segment(id="z1", name="Kitchen")]
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(
+                type(entity),
+                "last_seen_segments",
+                new_callable=PropertyMock,
+                return_value=last_seen,
+            ),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = cached_maps
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_not_called()
+
+    def test_handle_coordinator_update_segments_changed(self, mock_coordinator_robot):
+        """Repair issue created when current segments differ from last_seen."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        # Current map has two zones; user's mapping was configured with one
+        zones = [_make_zone("z1", "Kitchen"), _make_zone("z2", "Bedroom")]
+        pmap = _make_pmap("map1", zones)
+
+        entity.registry_entry = MagicMock()
+        last_seen = [Segment(id="z1", name="Kitchen")]  # Only one zone was mapped
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(
+                type(entity),
+                "last_seen_segments",
+                new_callable=PropertyMock,
+                return_value=last_seen,
+            ),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = [pmap]
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_called_once()
+
+    def test_handle_coordinator_update_cache_miss_skips(self, mock_coordinator_robot):
+        """No repair issue when persistent map cache is empty (first run)."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        entity.registry_entry = MagicMock()
+        last_seen = [Segment(id="z1", name="Kitchen")]
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(
+                type(entity),
+                "last_seen_segments",
+                new_callable=PropertyMock,
+                return_value=last_seen,
+            ),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = None  # cache miss
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_not_called()
+
+    def test_handle_coordinator_update_no_last_seen_skips(self, mock_coordinator_robot):
+        """No repair issue when no area mapping has been configured yet."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        entity.registry_entry = MagicMock()
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(
+                type(entity),
+                "last_seen_segments",
+                new_callable=PropertyMock,
+                return_value=None,
+            ),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = [_make_pmap("map1", [_make_zone("z1", "K")])]
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_not_called()
+
+    def test_handle_coordinator_update_no_zone_support_skips(
+        self, mock_coordinator_robot
+    ):
+        """_handle_coordinator_update skips segment check when no auth_token."""
+        # Fixture default: no auth_token → _has_zone_support = False
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        entity.registry_entry = MagicMock()
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = [_make_pmap("map1", [_make_zone("z1", "K")])]
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_not_called()
+
+    def test_handle_coordinator_update_no_registry_entry_skips(
+        self, mock_coordinator_robot
+    ):
+        """No issue created when entity has no registry_entry (pre-registration)."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        entity.registry_entry = None
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+        ):
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_not_called()

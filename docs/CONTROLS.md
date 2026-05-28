@@ -252,6 +252,201 @@ Provide heating functionality and temperature control for year-round climate man
 2. Options: Off, Heating, Auto Heat
 3. Purpose: Quick heating mode selection without full climate interface
 
+## Robotic Vacuum Controls
+
+### Description
+
+Robotic vacuum controls provide full cleaning operation management for Dyson robot vacuum cleaners (360 Eye, 360 Heurist, 360 Vis Nav). Controls are spread across three areas of Home Assistant: the vacuum entity, per-zone buttons (Vis Nav only), and developer-targeted services.
+
+### Purpose
+
+Start, pause, resume, and stop cleaning operations; direct the robot to specific mapped zones; and configure per-zone cleaning strategies.
+
+---
+
+### Vacuum Entity (All Robot Models)
+
+The primary robot vacuum interface is a standard Home Assistant vacuum entity. It is found in **Settings → Devices & Services → [Your Dyson Device] → Controls**, or by searching for `vacuum.{device_name}` in **Developer Tools → States**.
+
+#### Technical Specifications
+
+1. Entity ID: `vacuum.{device_name}`
+2. Platform: Vacuum
+3. Availability: All robot vacuum models (Dyson 360 Eye, 360 Heurist, 360 Vis Nav)
+4. Update Frequency: Real-time via MQTT state changes
+
+#### Supported Commands
+
+| Command | HA Service | Behavior |
+|---------|-----------|----------|
+| **Start** | `vacuum.start` | Starts a new whole-home clean when docked or finished; resumes a paused clean when mid-session |
+| **Pause** | `vacuum.pause` | Suspends the current cleaning operation in place |
+| **Stop** | `vacuum.stop` | Aborts the current clean and sends the robot back to its dock |
+| **Return to Base** | `vacuum.return_to_base` | Equivalent to Stop — sends the ABORT command and docks the robot |
+
+> **Start vs. Resume**: The `vacuum.start` command is context-aware. When the robot is docked or has finished a previous run (`INACTIVE_CHARGED`, `INACTIVE_CHARGING`, `INACTIVE_DISCHARGING`, `FULL_CLEAN_FINISHED`, `FAULT_ON_DOCK`), it sends a fresh `START` command for a global (whole-home) clean. If the robot is currently paused mid-clean, it sends `RESUME` instead.
+
+#### State Attributes
+
+The vacuum entity exposes the following additional attributes:
+
+| Attribute | Description |
+|-----------|-------------|
+| `raw_state` | The underlying Dyson robot state string (e.g., `FULL_CLEAN_RUNNING`) |
+| `global_position` | Current `[x, y]` coordinates when available during cleaning |
+| `full_clean_type` | Clean trigger type (`immediate`, `scheduled`, `manual`) |
+| `clean_id` | Unique identifier for the current cleaning session |
+
+---
+
+### Standard HA Area-Based Zone Cleaning — `vacuum.clean_area` (HA 2026.3+, Vis Nav Only)
+
+Home Assistant 2026.3 introduced a **standard `vacuum.clean_area` action** that maps vacuum-specific segments to native Home Assistant areas. The Dyson 360 Vis Nav supports this standard interface, enabling voice assistant commands such as "Hey Google, clean the kitchen" and consistent cross-brand automation syntax.
+
+> **Prerequisites**: A Dyson cloud account (`auth_token`) must be configured, and the robot must have a completed persistent map. This is the **recommended** approach for new automations.
+
+#### One-Time Setup: Map Dyson Zones to HA Areas
+
+Before using `vacuum.clean_area`, link your Dyson zone names to Home Assistant areas once:
+
+1. Go to **Settings → Devices & Services → Entities**.
+2. Search for your Vis Nav vacuum entity (e.g., `vacuum.dyson_360_vis_nav`).
+3. Click the entity, then select the **cogwheel** (⚙) icon.
+4. Select **Map vacuum segments to areas**.
+   - The dialog shows Dyson zones on the left and HA areas on the right.
+   - If the option does not appear, verify the cloud account is configured and a map exists.
+5. For each Dyson zone, select the corresponding HA area.
+6. Click **Save**.
+
+> If zones in the MyDyson app change (rooms added or removed), Home Assistant will surface a **repair issue** prompting you to re-configure the mapping.
+
+#### Using `vacuum.clean_area` in Automations
+
+```yaml
+service: vacuum.clean_area
+target:
+  entity_id: vacuum.dyson_360_vis_nav
+data:
+  cleaning_area_id:
+    - kitchen
+    - living_room
+```
+
+The `cleaning_area_id` values are **HA area slugs** (as shown in **Settings → Areas**), not Dyson zone names. Multiple areas can be cleaned in a single action call.
+
+---
+
+### Zone Clean Buttons (Dyson 360 Vis Nav Only)
+
+For Vis Nav owners who have completed an initial mapping run, the integration automatically creates one **button entity per mapped room**. These are found in **Settings → Devices & Services → [Your Dyson Device] → Controls**.
+
+> **Prerequisites**: A Dyson cloud account (`auth_token`) must be configured, and the robot must have a saved persistent map from at least one completed mapping or cleaning run.
+
+#### Per-Zone Clean Buttons
+
+| Entity ID | Name | Behavior |
+|-----------|------|----------|
+| `button.{device_name}_clean_{zone_name}` | Clean {Zone Name} | Immediately starts a zone-specific clean targeting that room only |
+
+- Each button corresponds to a mapped room in the Dyson app (e.g., **Clean Living Room**, **Clean Bedroom**).
+- Pressing the button sends a `zoneConfigured` START command — the robot will clean only the selected zone.
+- Zone icons in the HA UI reflect the room type set in the MyDyson app.
+
+#### Refresh Zone List Button (Diagnostic)
+
+| Entity ID | Name | Purpose |
+|-----------|------|---------|
+| `button.{device_name}_refresh_zones` | Refresh Zone List | Re-fetches the persistent map and zone list from the Dyson cloud |
+
+- This button is in the **Diagnostic** entity category; enable it via **Settings → Devices & Services → [Device] → Entities → Show disabled entities**.
+- Use it after adding or renaming rooms in the MyDyson app, then **restart Home Assistant** to surface any newly created zone buttons.
+- Zone metadata is otherwise cached for 1 hour.
+
+---
+
+### Services (Automations and Scripts)
+
+The following services are available under the `hass_dyson` domain for use in automations, scripts, and **Developer Tools → Services**. They are registered for all robot vacuum models unless noted.
+
+#### `hass_dyson.start_zone_clean` (Vis Nav Only)
+
+Start a zone-specific clean targeting one or more named rooms. Zones can be identified by display name (as shown in the MyDyson app) or by their internal zone ID.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `device_id` | Yes | The Home Assistant device ID of the Dyson robot vacuum |
+| `zones` | Yes | List of zone names or IDs to clean (e.g., `["Living room", "Hallway"]`) |
+
+**Example automation:**
+
+```yaml
+service: hass_dyson.start_zone_clean
+data:
+  device_id: "abc123def456"
+  zones:
+    - "Living room"
+    - "Hallway"
+```
+
+- Zone names are matched case-insensitively.
+- If any zone name cannot be resolved, the service raises an error and lists the known zone names.
+- Persistent map metadata is fetched from the Dyson cloud and cached for 1 hour.
+
+#### `hass_dyson.set_zone_behaviour` (Vis Nav Only)
+
+Override the cleaning strategy for a specific zone. This setting is persisted to the Dyson cloud and applies to all subsequent cleans — equivalent to changing a zone's behaviour in the MyDyson app.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `device_id` | Yes | The Home Assistant device ID of the Dyson robot vacuum |
+| `zone` | Yes | Zone name or ID (e.g., `"Living room"` or `"4"`) |
+| `cleaning_strategy` | Yes | One of: `auto`, `quick`, `quiet`, `boost` |
+
+**Cleaning strategy options:**
+
+| Strategy | Description |
+|----------|-------------|
+| `auto` | Device selects speed automatically based on surface type |
+| `quick` | Lower suction, faster pass |
+| `quiet` | Reduced noise, lower power |
+| `boost` | Maximum suction power |
+
+**Example automation:**
+
+```yaml
+service: hass_dyson.set_zone_behaviour
+data:
+  device_id: "abc123def456"
+  zone: "Bedroom"
+  cleaning_strategy: "quiet"
+```
+
+---
+
+### Where to Find Each Control
+
+| Control Type | Location in Home Assistant | Models | Notes |
+|---|---|---|---|
+| Vacuum entity (start/pause/stop) | Settings → Devices → [Device] → Controls | All robot models | Standard HA vacuum controls |
+| **`vacuum.clean_area` action** | Automations → Add action → Vacuum: Clean area | 360 Vis Nav only | **Recommended** — uses HA areas; voice assistant compatible |
+| Per-zone clean buttons | Settings → Devices → [Device] → Controls | 360 Vis Nav only | Alternative; no area mapping required |
+| Refresh Zone List button | Settings → Devices → [Device] → Entities (diagnostic) | 360 Vis Nav only | Forces cloud re-fetch of zone metadata |
+| `hass_dyson.start_zone_clean` service | Developer Tools → Services | 360 Vis Nav only | Alternative; uses Dyson zone names directly |
+| `hass_dyson.set_zone_behaviour` service | Developer Tools → Services | 360 Vis Nav only | Sets per-zone cleaning strategy |
+
+---
+
+### Usage Notes
+
+- Zone-based cleaning (all methods) requires a completed persistent map and a configured Dyson cloud account.
+- **`vacuum.clean_area` is the recommended approach** for new automations — it integrates with HA areas and unlocks voice assistant support.
+- Per-zone buttons and `hass_dyson.start_zone_clean` remain available as alternatives and do not require configuring HA area mappings.
+- If the **"Map vacuum segments to areas"** option is missing from entity settings, verify the cloud account is active and a mapping run has completed.
+- If zones change in the MyDyson app (rooms added, removed, or renamed), a **repair issue** will appear in Home Assistant prompting you to re-configure the area mapping.
+- If no zone buttons appear after setup, press **Refresh Zone List** and then restart Home Assistant.
+- The `vacuum.start` command always initiates a **whole-home** (`global`) clean. Use `vacuum.clean_area`, zone buttons, or `start_zone_clean` to target specific rooms.
+- Power level (Quiet / High / Max on Heurist; Auto / Quick / Quiet / Boost on Vis Nav) is controlled via the dedicated power-level select entity, not through vacuum commands.
+
 ## Usage Best Practices
 
 ### Energy Efficiency
