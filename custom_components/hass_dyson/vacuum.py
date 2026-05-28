@@ -59,6 +59,7 @@ from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
+from .services import _fetch_persistent_map_metadata, _persistent_map_cache
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -411,9 +412,6 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         Raises:
             HomeAssistantError: If the cloud fetch fails with no stale cache.
         """
-        # Lazy import to avoid a circular dependency between vacuum.py and services.py.
-        from .services import _fetch_persistent_map_metadata
-
         try:
             maps = await _fetch_persistent_map_metadata(self.coordinator)
         except HomeAssistantError:
@@ -453,9 +451,6 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         """
         if not self.available or not self.coordinator.device:
             raise HomeAssistantError("Device not available for zone clean command")
-
-        # Lazy import to avoid circular dependency.
-        from .services import _fetch_persistent_map_metadata
 
         maps = await _fetch_persistent_map_metadata(self.coordinator)
         if not maps:
@@ -524,8 +519,6 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             return
 
         # Read from cache only — no network call during a coordinator tick.
-        from .services import _persistent_map_cache
-
         cached_maps = _persistent_map_cache.get(self.coordinator.serial_number)
         if cached_maps is None:
             # Cache miss; skip this cycle.

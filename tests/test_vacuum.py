@@ -826,7 +826,7 @@ class TestCleanArea:
             ),
             patch.object(entity, "async_create_segments_issue") as mock_issue,
             patch(
-                "custom_components.hass_dyson.services._persistent_map_cache"
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
             ) as mock_cache,
         ):
             mock_cache.get.return_value = cached_maps
@@ -856,7 +856,7 @@ class TestCleanArea:
             ),
             patch.object(entity, "async_create_segments_issue") as mock_issue,
             patch(
-                "custom_components.hass_dyson.services._persistent_map_cache"
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
             ) as mock_cache,
         ):
             mock_cache.get.return_value = [pmap]
@@ -882,7 +882,7 @@ class TestCleanArea:
             ),
             patch.object(entity, "async_create_segments_issue") as mock_issue,
             patch(
-                "custom_components.hass_dyson.services._persistent_map_cache"
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
             ) as mock_cache,
         ):
             mock_cache.get.return_value = None  # cache miss
@@ -907,7 +907,7 @@ class TestCleanArea:
             ),
             patch.object(entity, "async_create_segments_issue") as mock_issue,
             patch(
-                "custom_components.hass_dyson.services._persistent_map_cache"
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
             ) as mock_cache,
         ):
             mock_cache.get.return_value = [_make_pmap("map1", [_make_zone("z1", "K")])]
@@ -928,7 +928,7 @@ class TestCleanArea:
             patch.object(entity, "async_write_ha_state"),
             patch.object(entity, "async_create_segments_issue") as mock_issue,
             patch(
-                "custom_components.hass_dyson.services._persistent_map_cache"
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
             ) as mock_cache,
         ):
             mock_cache.get.return_value = [_make_pmap("map1", [_make_zone("z1", "K")])]
