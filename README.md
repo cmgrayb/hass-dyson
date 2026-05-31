@@ -47,6 +47,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 
 ### Robotic Vacuums
 
+- **Start Controls** - Individual buttons for room cleaning in addition to support for zone cleaning introduced in Home Assistant 2026.3.0.  Start button on the device object cleans all configured spaces.
 - **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
 - **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session (for future use)
 
@@ -57,7 +58,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Active BLE Proxy connections** - Lights may be added as their own hub and connect through Bluetooth Proxies
   - For more information, please see [esphome Bluetooth Proxy](https://esphome.io/components/bluetooth_proxy/)
 
-## Planned Features
+<!-- ## Planned Features
 
 Planned features are features we cannot currently complete due to lack of access to device of that type.
 
@@ -65,12 +66,7 @@ If you feel you are technical enough to assist us with these features, we welcom
 
 If you feel you are not technical enough to assist, but can help financially, please consider a sponsorship.
 
-Anything helps, and all sponsorship money goes directly to development devices for this integration.
-
-### Vacuum Start
-
-- **Vacuum Start Controls** - Support the start in room functionality introduced in
-Home Assistant 2026.2.0 as well as "global" (all defined rooms)
+Anything helps, and all sponsorship money goes directly to development devices for this integration. -->
 
 ## Quick Start
 
@@ -208,6 +204,7 @@ Based on your device capabilities and category, you'll automatically get:
 **Robotic Vacuum models (Robot Category) (360/Heurist/Vis Nav, etc.)**:
 
 - **Vacuum platform**
+  - **Start Controls** - Clean Zone, Clean Room, Clean Global
   - **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
   - **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session
 
