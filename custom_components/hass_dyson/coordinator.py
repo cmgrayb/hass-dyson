@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -34,6 +35,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
 from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from libdyson_rest import AsyncDysonClient
+from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
 
 from .const import (
     CONF_AUTO_ADD_DEVICES,
@@ -63,6 +66,10 @@ from .device import DysonDevice
 from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
+
+# Compiled regex patterns for culture/language normalisation (module-level for efficiency).
+_CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+_EXTENDED_CULTURE_PATTERN = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
 
 
 # Sensitive config-entry field names that must be redacted from logs.
@@ -104,8 +111,6 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
             - country: 2-letter uppercase ISO 3166-1 alpha-2 code
             - culture: IETF language tag format (e.g., 'en-US')
     """
-    import re
-
     # Handle test mocks that might not have config attribute
     try:
         hass_config = getattr(hass, "config", None)
@@ -124,16 +129,10 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
         # Replace underscores with hyphens (e.g., 'zh_CN' -> 'zh-CN')
         ha_language = ha_language.replace("_", "-")
 
-        # Validate culture format: must be exactly 5 characters in xx-YY format
-        culture_pattern = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
-
-        # Extended BCP 47 format pattern (e.g., 'zh-Hans-CN', 'zh-Hant-TW')
-        extended_pattern = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
-
-        if culture_pattern.match(ha_language):
+        if _CULTURE_PATTERN.match(ha_language):
             # Already in correct format (e.g., 'en-US')
             culture = ha_language
-        elif extended_match := extended_pattern.match(ha_language):
+        elif extended_match := _EXTENDED_CULTURE_PATTERN.match(ha_language):
             # Extended format like 'zh-Hans-CN' - extract language and country
             language_code = extended_match.group(1)
             country_code = extended_match.group(2)
@@ -254,6 +253,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
         """Initialize the coordinator."""
         self.config_entry = config_entry
+        # Cache serial number to avoid repeated config-entry dict lookups and
+        # debug log spam on every property access.
+        self._serial_number: str = config_entry.data.get(
+            CONF_SERIAL_NUMBER
+        ) or config_entry.data.get("device_serial_number", "unknown")
         self.device: DysonDevice | None = None
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
@@ -267,7 +271,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_{config_entry.data[CONF_SERIAL_NUMBER]}",
+            name=f"{DOMAIN}_{self._serial_number}",
             update_interval=timedelta(seconds=DEFAULT_DEVICE_POLLING_INTERVAL),
         )
 
@@ -708,27 +712,13 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def serial_number(self) -> str:
-        """Return device serial number."""
-        # Debug logging to see what's in the config data. Sensitive fields like
-        # auth_token are redacted before logging so user-shared logs don't leak
-        # account credentials.
-        _LOGGER.debug("Config entry data keys: %s", list(self.config_entry.data.keys()))
-        _LOGGER.debug(
-            "Config entry data: %s", _redact_sensitive(self.config_entry.data)
-        )
-
-        # Handle both legacy single-device entries and new account-level entries
-        if CONF_SERIAL_NUMBER in self.config_entry.data:
-            serial = self.config_entry.data[CONF_SERIAL_NUMBER]
-            _LOGGER.debug("Found serial_number in config: %s", mask_serial(serial))
-            return serial
-        else:
-            # For account-level entries, serial number should be passed differently
-            serial = self.config_entry.data.get("device_serial_number", "unknown")
-            _LOGGER.debug(
-                "Using device_serial_number fallback: %s", mask_serial(serial)
-            )
-            return serial
+        """Return device serial number (cached at init, with fallback for test stubs)."""
+        sn = getattr(self, "_serial_number", None)
+        if sn:
+            return sn
+        return self.config_entry.data.get(
+            CONF_SERIAL_NUMBER
+        ) or self.config_entry.data.get("device_serial_number", "unknown")
 
     @property
     def device_name(self) -> str:
@@ -876,8 +866,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _authenticate_cloud_client(self):
         """Authenticate and return a cloud client."""
-        from libdyson_rest import AsyncDysonClient
-
         auth_token = self.config_entry.data.get("auth_token")
         # Get credential (email or phone number) from config entry
         credential = self.config_entry.data.get("email")
@@ -905,15 +893,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 credential,
             )
 
-            def create_client_with_token():
-                return AsyncDysonClient(
-                    email=credential,
-                    auth_token=auth_token,
-                    country=country,
-                    culture=culture,
-                )
-
-            return await self.hass.async_add_executor_job(create_client_with_token)
+            return AsyncDysonClient(
+                email=credential,
+                auth_token=auth_token,
+                country=country,
+                culture=culture,
+            )
         elif credential and password:
             # Legacy authentication method - follow same pattern as config_flow
             # Get country and culture from HA config
@@ -926,15 +911,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 culture,
             )
 
-            def create_client():
-                return AsyncDysonClient(
-                    email=credential,
-                    password=password,
-                    country=country,
-                    culture=culture,
-                )
-
-            cloud_client = await self.hass.async_add_executor_job(create_client)
+            cloud_client = AsyncDysonClient(
+                email=credential,
+                password=password,
+                country=country,
+                culture=culture,
+            )
 
             # Follow the same authentication sequence as the working script
             try:
@@ -1894,12 +1876,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_check_firmware_update(self) -> bool:
         """Check for available firmware updates using libdyson-rest >=0.7.0"""
-        from libdyson_rest.exceptions import (
-            DysonAPIError,
-            DysonAuthError,
-            DysonConnectionError,
-        )
-
         if self.config_entry.data.get(CONF_DISCOVERY_METHOD) != DISCOVERY_CLOUD:
             _LOGGER.debug(
                 "Firmware update check only available for cloud-discovered devices"
@@ -2456,8 +2432,6 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         # Initialize libdyson-rest client
-        from libdyson_rest import AsyncDysonClient
-
         if not self._auth_token:
             _LOGGER.warning(
                 "No auth token available for cloud account %s", mask_email(self._email)

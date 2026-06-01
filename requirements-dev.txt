@@ -7,7 +7,6 @@ pytest-cov>=7.1.0
 pytest-asyncio==1.4.0
 pytest-xdist==3.8.0
 mypy==2.1.0
-types-requests==2.32.4.20260107
 types-cryptography==3.3.23.2
 
 # Additional testing utilities
