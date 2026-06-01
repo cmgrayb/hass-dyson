@@ -49,6 +49,7 @@ Sensor States:
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -67,6 +68,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     CAPABILITY_EXTENDED_AQ,
@@ -74,8 +76,10 @@ from .const import (
     CAPABILITY_VOC,
     DOMAIN,
 )
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
+from .device_utils import mask_serial
 from .entity import DysonEntity
+from .vacuum import fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -210,7 +214,9 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No P25R data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No P25R data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -311,7 +317,9 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No P10R data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No P10R data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -404,7 +412,9 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No CO2 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No CO2 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -507,7 +517,9 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No VOC data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No VOC data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -775,7 +787,9 @@ class DysonAQISensor(DysonEntity, SensorEntity):
                     aqi_category,
                 )
             else:
-                _LOGGER.debug("No AQI data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No AQI data available for device %s", mask_serial(device_serial)
+                )
 
         except Exception as err:
             _LOGGER.error(
@@ -1183,7 +1197,9 @@ async def async_setup_entry(  # noqa: C901
 
         # Add WiFi-related sensors only for "ec" and "robot" device categories (devices with WiFi connectivity)
         if any(cat in ["ec", "robot"] for cat in device_category):
-            _LOGGER.debug("Adding WiFi sensors for device %s", device_serial)
+            _LOGGER.debug(
+                "Adding WiFi sensors for device %s", mask_serial(device_serial)
+            )
             entities.extend(
                 [
                     DysonWiFiSensor(coordinator),
@@ -1210,7 +1226,9 @@ async def async_setup_entry(  # noqa: C901
                 "extendedAQ",
             ],
         ):
-            _LOGGER.debug("Adding HEPA filter sensors for device %s", device_serial)
+            _LOGGER.debug(
+                "Adding HEPA filter sensors for device %s", mask_serial(device_serial)
+            )
             entities.extend(
                 [
                     DysonHEPAFilterLifeSensor(coordinator),
@@ -1271,15 +1289,22 @@ async def async_setup_entry(  # noqa: C901
             ["EnvironmentalData", "environmental_data", "environmentalData"],
         )
 
-        if has_temp_capability and "tact" in env_data:
+        # Create temperature sensor if capability is present AND either:
+        # (a) env_data has the 'tact' key (regardless of value - 'OFF' is valid when device is off), or
+        # (b) env_data is empty because coordinator data hasn't arrived yet at setup time
+        env_data_available = coordinator.data is not None and bool(env_data)
+        if has_temp_capability and ("tact" in env_data or not env_data_available):
             _LOGGER.debug(
-                "Adding temperature sensor for device %s - capability and temperature data detected",
+                "Adding temperature sensor for device %s - %s",
                 device_serial,
+                "tact key present"
+                if "tact" in env_data
+                else "capability present, no env data yet at setup time",
             )
             entities.append(DysonTemperatureSensor(coordinator))
         elif has_temp_capability:
             _LOGGER.debug(
-                "Skipping temperature sensor for device %s - capability present but no temperature data in environmental response",
+                "Skipping temperature sensor for device %s - capability present but tact key absent from environmental data",
                 device_serial,
             )
         else:
@@ -1297,15 +1322,21 @@ async def async_setup_entry(  # noqa: C901
             ["EnvironmentalData", "environmental_data", "environmentalData"],
         )
 
-        if has_humidity_capability and "hact" in env_data:
+        # Create humidity sensor if capability is present AND either:
+        # (a) env_data has the 'hact' key (regardless of value - 'OFF' is valid when device is off), or
+        # (b) env_data is empty because coordinator data hasn't arrived yet at setup time
+        if has_humidity_capability and ("hact" in env_data or not env_data_available):
             _LOGGER.debug(
-                "Adding humidity sensor for device %s - capability and humidity data detected",
+                "Adding humidity sensor for device %s - %s",
                 device_serial,
+                "hact key present"
+                if "hact" in env_data
+                else "capability present, no env data yet at setup time",
             )
             entities.append(DysonHumiditySensor(coordinator))
         elif has_humidity_capability:
             _LOGGER.debug(
-                "Skipping humidity sensor for device %s - capability present but no humidity data in environmental response",
+                "Skipping humidity sensor for device %s - capability present but hact key absent from environmental data",
                 device_serial,
             )
         else:
@@ -1423,6 +1454,23 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
             entities.append(DysonRobotBatterySensor(coordinator))
+            # Cloud-fetched cleaning history + Dyson's recommended-next-room
+            # sensor. Both gated on cloud auth.
+            if coordinator.config_entry.data.get("auth_token"):
+                for i in range(5):
+                    entities.append(DysonLastCleanSensor(coordinator, slot=i))
+                entities.append(DysonRecommendedCleanSensor(coordinator))
+
+        # Cloud-fetched purifier sensors (outdoor AQI, daily history,
+        # MyDyson scheduled events). Only for ec-category devices (air
+        # purifiers / heaters / fans with environmental sensing) that have
+        # a usable cloud auth token.
+        if any(
+            cat == "ec" for cat in device_category
+        ) and coordinator.config_entry.data.get("auth_token"):
+            entities.append(DysonOutdoorAQISensor(coordinator))
+            entities.append(DysonDailyAirQualitySensor(coordinator))
+            entities.append(DysonScheduledEventsSensor(coordinator))
 
         _LOGGER.info(
             "Successfully set up %d sensor entities for device %s",
@@ -1812,7 +1860,9 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No PM2.5 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No PM2.5 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -1934,7 +1984,9 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No PM10 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No PM10 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2185,7 +2237,10 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No VOC Link data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No VOC Link data available for device %s",
+                    mask_serial(device_serial),
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2278,7 +2333,9 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No NO2 data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No NO2 data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -2385,7 +2442,9 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                     new_value,
                 )
             else:
-                _LOGGER.debug("No HCHO data available for device %s", device_serial)
+                _LOGGER.debug(
+                    "No HCHO data available for device %s", mask_serial(device_serial)
+                )
 
         except (KeyError, AttributeError) as err:
             _LOGGER.debug(
@@ -3080,3 +3139,557 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
             self._attr_native_value = None
 
         super()._handle_coordinator_update()
+
+
+# ============================================================================
+# Cleaning history sensor (Vis Nav)
+# ============================================================================
+# Pulls the last N cleaning runs from /v1/{serial}/clean-maps?dustMap=total and
+# exposes one sensor per slot (state = clean timestamp, attrs = area/duration/zones).
+# Uses HA's built-in polling (should_poll=True, scan_interval=30min) — independent
+# of the MQTT coordinator since this is REST cloud data.
+
+# Note: the clean-maps endpoint is fetched via the shared `fetch_clean_maps`
+# in _cloud.py so this module and image.py share one cache (the dust-map
+# image consumes the same blob seconds after we do).
+
+
+def _extract_start_time(clean) -> str | None:
+    """Pull the earliest timestamp from the CleanRecord timeline."""
+    times = [e.time for e in clean.timeline if e.time]
+    return min(times) if times else None
+
+
+def _extract_end_time(clean) -> str | None:
+    times = [e.time for e in clean.timeline if e.time]
+    return max(times) if times else None
+
+
+def _extract_duration_minutes(clean) -> int | None:
+    """Compute end - start in minutes from the CleanRecord timeline."""
+    from datetime import datetime
+
+    start, end = _extract_start_time(clean), _extract_end_time(clean)
+    if not start or not end:
+        return None
+    try:
+        s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        return max(0, int((e - s).total_seconds() // 60))
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_cleaned_area_m2(clean) -> float | None:
+    """Return cleaned area in m² from the CleanRecord's cleaned_footprint.
+
+    Delegates to ``CleanedFootprint.compute_area_m2()``, passing the
+    resolution from the dust map when available (fetched with
+    ``dustMap=total``), otherwise using the Vis Nav default of 20 mm/pixel.
+    """
+    if clean.cleaned_footprint is None:
+        return None
+    resolution_mm = clean.dust_map.resolution if clean.dust_map else 20
+    return clean.cleaned_footprint.compute_area_m2(tile_resolution_mm=resolution_mm)
+
+
+def _extract_zone_ids(clean) -> list[str]:
+    """Return the zone IDs targeted by this CleanRecord.
+
+    Whole-house ("global") cleans → empty list.
+    """
+    if not clean.cleaning_programme:
+        return []
+    prog = clean.cleaning_programme
+    return list(prog.unordered_zones) + list(prog.ordered_zones)
+
+
+def _extract_clean_type(clean) -> str:
+    """Return 'zoneConfigured' or 'global' via ``CleanRecord.clean_type``."""
+    return clean.clean_type
+
+
+def _extract_fault_count(clean) -> int:
+    return sum(
+        1
+        for e in clean.timeline
+        if e.fault_location is not None or "fault" in (e.event_name or "").lower()
+    )
+
+
+class DysonLastCleanSensor(DysonEntity, SensorEntity):
+    """Sensor for one of the last N cleans (slot 0 = most recent).
+
+    State: ISO timestamp of the clean's start. Attributes carry the full summary.
+    Polled every 30 minutes; cache shared across all 5 slot sensors.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator, slot: int) -> None:
+        super().__init__(coordinator)
+        self._slot = slot
+        suffix = "" if slot == 0 else f"_{slot + 1}"
+        self._attr_unique_id = f"{coordinator.serial_number}_last_clean{suffix}"
+        label = "Last Clean" if slot == 0 else f"Last Clean #{slot + 1}"
+        self._attr_name = label
+        self._attr_icon = "mdi:vacuum"
+
+    @property
+    def should_poll(self) -> bool:
+        return True
+
+    async def async_update(self) -> None:
+        from datetime import datetime
+
+        cleans = await fetch_clean_maps(self.coordinator)
+        if len(cleans) <= self._slot:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+        clean = cleans[self._slot]
+
+        start_str = _extract_start_time(clean)
+        try:
+            self._attr_native_value = (
+                datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                if start_str
+                else None
+            )
+        except (ValueError, AttributeError):
+            self._attr_native_value = None
+
+        # Cross-reference zone IDs with the persistent-map metadata cache
+        # (populated by services.py) to resolve human-readable room names.
+        zone_ids = _extract_zone_ids(clean)
+        zone_names: list[str] = []
+        if zone_ids:
+            try:
+                from .services import _persistent_map_cache
+
+                maps = _persistent_map_cache.get(self.coordinator.serial_number)
+                if maps is None:
+                    maps = _persistent_map_cache.get_stale(
+                        self.coordinator.serial_number
+                    )
+                if maps:
+                    id_to_name: dict[str, str] = {}
+                    for pmap in maps:
+                        for z in pmap.zones:
+                            id_to_name[z.id] = z.name or z.id
+                    zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
+            except Exception:  # noqa: BLE001 — names are a nice-to-have
+                zone_names = []
+
+        self._attr_extra_state_attributes = {
+            "clean_id": clean.clean_id,
+            "clean_type": _extract_clean_type(clean),
+            "duration_minutes": _extract_duration_minutes(clean),
+            "area_m2": _extract_cleaned_area_m2(clean),
+            "zone_ids": zone_ids,
+            "zone_names": zone_names,
+            "fault_count": _extract_fault_count(clean),
+            "sequence_number": clean.sequence_number,
+        }
+
+
+# ============================================================================
+# Cleaning recommendations sensor (Vis Nav)
+# ============================================================================
+# /v1/app/{serial}/recommended-cleans returns Dyson's suggestion of which
+# zones to clean next based on how long since each was last visited.
+
+_recommended_cleans_cache = TTLCache(30 * 60)
+
+
+async def _fetch_recommended_cleans(coordinator: DysonDataUpdateCoordinator) -> list:
+    """Fetch recommended zone cleans via libdyson-rest (cached 30 min).
+
+    Returns a list of ``RecommendedCleanMap`` objects (or stale cache / [] on
+    failure).
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    serial = coordinator.serial_number
+    fresh = _recommended_cleans_cache.get(serial)
+    if fresh is not None:
+        return fresh
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return _recommended_cleans_cache.get_stale(serial) or []
+        try:
+            records = await client.get_recommended_cleans(serial)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug("Failed to fetch recommended cleans for %s: %s", serial, err)
+            return _recommended_cleans_cache.get_stale(serial) or []
+
+    _recommended_cleans_cache.set(serial, records)
+    return records
+
+
+class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
+    """Dyson's recommendation for the next zone to clean (Vis Nav).
+
+    State: human-readable name of the top recommended zone (or 'None').
+    Attributes: full list of {zone_id, zone_name, days_since_last_visit, priority}.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+    _attr_icon = "mdi:lightbulb-on-outline"
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_recommended_clean"
+        self._attr_name = "Recommended Clean"
+
+    async def async_update(self) -> None:
+        data = await _fetch_recommended_cleans(self.coordinator)
+        # Cross-reference zone IDs with cached persistent-map names. Use the
+        # stale-cache fallback so we still get friendly names even if the
+        # main metadata TTL has expired since the last fetch.
+        id_to_name: dict[str, str] = {}
+        try:
+            from .services import _persistent_map_cache
+
+            maps = _persistent_map_cache.get(self.coordinator.serial_number)
+            if maps is None:
+                maps = _persistent_map_cache.get_stale(self.coordinator.serial_number)
+            if maps:
+                for pmap in maps:
+                    for z in pmap.zones:
+                        id_to_name[z.id] = z.name or z.id
+        except Exception:  # noqa: BLE001
+            pass
+
+        # data is a list of RecommendedCleanMap objects from libdyson-rest.
+        # Each has .zone_predictions (list[ZonePrediction]) with .dust.total etc.
+        predictions: list[dict] = []
+        for rcm in data:
+            for pred in rcm.zone_predictions:
+                zid = pred.zone_id
+                dust_breakdown = {
+                    "extra_fine": round(pred.dust.extra_fine, 1),
+                    "fine": round(pred.dust.fine, 1),
+                    "medium": round(pred.dust.medium, 1),
+                    "large": round(pred.dust.large, 1),
+                    "other": round(pred.dust.other, 1),
+                    "total": round(pred.dust.total, 1),
+                }
+                predictions.append(
+                    {
+                        "zone_id": zid,
+                        "zone_name": id_to_name.get(zid, zid),
+                        "total_dust_mg": round(pred.dust.total, 1),
+                        "dust_breakdown_mg": dust_breakdown,
+                    }
+                )
+        # Sort by total dust descending (dirtiest first)
+        predictions.sort(key=lambda p: p["total_dust_mg"], reverse=True)
+
+        if predictions and predictions[0]["total_dust_mg"] > 0:
+            self._attr_native_value = predictions[0]["zone_name"]
+        else:
+            self._attr_native_value = "None"
+        self._attr_extra_state_attributes = {
+            "top_zone_dust_mg": (predictions[0]["total_dust_mg"] if predictions else 0),
+            "predictions": predictions,
+        }
+
+
+# ============================================================================
+# Cloud-fetched purifier sensors (Master Bedroom Purifier, Guest Room, etc.)
+# ============================================================================
+# Three new sensors driven by REST endpoints discovered via mitmproxy capture
+# of the MyDyson iOS app:
+#   - DysonOutdoorAQISensor:        /v1/environment/devices/{serial}/data
+#   - DysonDailyAirQualitySensor:   /v1/messageprocessor/devices/{serial}/environmentdata/daily
+#   - DysonScheduledEventsSensor:   /v1/unifiedscheduler/{serial}/events
+#
+# Each sensor manages its own in-process cache (TTLs tuned for the underlying
+# data volatility) so multiple polls don't hammer the Dyson cloud.
+
+# TTLs tuned per data volatility — outdoor AQI refreshes every ~15min,
+# the daily series and per-device schedules barely change.
+_outdoor_aqi_cache = TTLCache(15 * 60)
+_daily_env_cache = TTLCache(60 * 60)
+_schedule_cache = TTLCache(5 * 60)  # 5-min TTL so schedule changes surface quickly
+
+
+def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
+    """Return the device's productType code (e.g. '438K') for query params.
+
+    Priority: config-entry product_type → device-registry model → None.
+    cmgrayb's manifest extractor often stores 'unknown'; the device registry
+    'model' field carries the real code in that case.
+    """
+    pt = coordinator.config_entry.data.get("product_type")
+    if pt and str(pt).lower() != "unknown":
+        return str(pt)
+    # Fall back to the device-registry model. coordinator doesn't expose this
+    # directly; query the registry through hass if available.
+    try:
+        from homeassistant.helpers import device_registry as dr
+
+        dev_reg = dr.async_get(coordinator.hass)
+        for d in dev_reg.devices.values():
+            if any(
+                idn[0] == DOMAIN and idn[1] == coordinator.serial_number
+                for idn in d.identifiers
+            ):
+                if d.model and str(d.model).lower() not in ("unknown", ""):
+                    return d.model
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
+    """Outdoor air-quality at the device's registered location.
+
+    Source: ``AsyncDysonClient.get_outdoor_environment_data()`` (libdyson-rest).
+    Returns Dyson's third-party outdoor AQI feed for the device's location.
+    State = AQI value (1-500 scale); attributes carry PM2.5/PM10/NO2/weather.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_icon = "mdi:weather-windy"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.AQI
+    _UPDATE_INTERVAL = timedelta(minutes=15)
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_outdoor_aqi"
+        self._attr_name = "Outdoor AQI"
+
+    async def async_added_to_hass(self) -> None:
+        """Register periodic cloud refresh when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_update,
+                self._UPDATE_INTERVAL,
+            )
+        )
+
+    async def _async_scheduled_update(self, now: object = None) -> None:
+        """Fetch fresh outdoor AQI data and push state to Home Assistant."""
+        _outdoor_aqi_cache.expire(self.coordinator.serial_number)
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+        serial = self.coordinator.serial_number
+        data = _outdoor_aqi_cache.get(serial)
+        if data is None:
+            async with self.coordinator.async_cloud_client() as client:
+                if client is not None:
+                    try:
+                        data = await client.get_outdoor_environment_data(serial)
+                        _outdoor_aqi_cache.set(serial, data)
+                    except (DysonAPIError, DysonAuthError) as err:
+                        _LOGGER.debug(
+                            "Failed to fetch outdoor AQI for %s: %s", serial, err
+                        )
+                        data = _outdoor_aqi_cache.get_stale(serial)
+
+        if not data:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+
+        self._attr_native_value = data.aqi_value
+        self._attr_extra_state_attributes = {
+            "aqi_name": data.aqi_name,
+            "aqi_description": data.aqi_description,
+            "pm2_5": data.pm25_value,
+            "pm10": data.pm10_value,
+            "no2": data.no2_value,
+            "humidity": data.humidity,
+            "temperature": data.temperature,
+            "weather_state": data.weather_state,
+            "location": data.location_name,
+            "dominant_pollen": data.dominant_pollen,
+            "as_of": data.date_time,
+        }
+
+
+class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
+    """Indoor air-quality series from the device, 15-min resolution.
+
+    Source: GET /v1/messageprocessor/devices/{serial}/environmentdata/daily
+    State = the most recent 15-min AQI sample (effectively "now"). Attributes
+    carry the full series + resolution so dashboards can chart history.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_icon = "mdi:chart-line"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _UPDATE_INTERVAL = timedelta(minutes=60)
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_daily_aqi"
+        self._attr_name = "Indoor AQI (15-min)"
+
+    async def async_added_to_hass(self) -> None:
+        """Register periodic cloud refresh when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_update,
+                self._UPDATE_INTERVAL,
+            )
+        )
+
+    async def _async_scheduled_update(self, now: object = None) -> None:
+        """Fetch fresh daily AQI data and push state to Home Assistant."""
+        _daily_env_cache.expire(self.coordinator.serial_number)
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+        serial = self.coordinator.serial_number
+        data = _daily_env_cache.get(serial)
+        if data is None:
+            async with self.coordinator.async_cloud_client() as client:
+                if client is not None:
+                    try:
+                        data = await client.get_daily_environment_data(serial)
+                        _daily_env_cache.set(serial, data)
+                    except (DysonAPIError, DysonAuthError) as err:
+                        _LOGGER.debug(
+                            "Failed to fetch daily AQI for %s: %s", serial, err
+                        )
+                        data = _daily_env_cache.get_stale(serial)
+
+        if not data:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+
+        latest = data.latest_sample
+        series = data.samples
+        self._attr_native_value = round(latest, 1) if latest is not None else None
+        numeric = [v for v in series if v is not None]
+        self._attr_extra_state_attributes = {
+            "start_time": data.start_time,
+            "resolution": data.resolution_minutes,
+            "sample_count": len(series),
+            "min": round(min(numeric, default=0), 1) if numeric else None,
+            "max": round(max(numeric, default=0), 1) if numeric else None,
+            # Keep the last 96 samples (24h at 15min) on the attribute.
+            "last_24h": [
+                round(float(v), 1) if v is not None else None for v in series[-96:]
+            ],
+        }
+
+
+class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
+    """Read-only view of MyDyson-app scheduled events for this device.
+
+    Source: GET /v1/unifiedscheduler/{serial}/events?productType={code}
+    State = "<N> active" (count of enabled events). Attributes carry the
+    full schedule list including each event's days, startTime, and MQTT
+    state-set payload that Dyson would push at trigger time.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_icon = "mdi:calendar-clock"
+    _UPDATE_INTERVAL = timedelta(minutes=5)
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_scheduled_events"
+        self._attr_name = "Scheduled Events"
+
+    async def async_added_to_hass(self) -> None:
+        """Register periodic cloud refresh when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_time_interval(
+                self.hass,
+                self._async_scheduled_update,
+                self._UPDATE_INTERVAL,
+            )
+        )
+
+    async def _async_scheduled_update(self, now: object = None) -> None:
+        """Fetch fresh scheduled-events data and push state to Home Assistant."""
+        _schedule_cache.expire(self.coordinator.serial_number)
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+        serial = self.coordinator.serial_number
+        data = _schedule_cache.get(serial)
+        if data is None:
+            product_type = _device_product_type(self.coordinator) or None
+            async with self.coordinator.async_cloud_client() as client:
+                if client is not None:
+                    try:
+                        data = await client.get_scheduled_events(
+                            serial, product_type=product_type
+                        )
+                        _schedule_cache.set(serial, data)
+                        _LOGGER.debug(
+                            "Scheduled events for %s: schedule_enabled=%s, "
+                            "total=%d, raw_events=%s",
+                            serial,
+                            data.schedule_enabled,
+                            len(data.events),
+                            [e.raw for e in data.events],
+                        )
+                    except (DysonAPIError, DysonAuthError) as err:
+                        _LOGGER.debug(
+                            "Failed to fetch scheduled events for %s: %s", serial, err
+                        )
+                        data = _schedule_cache.get_stale(serial)
+
+        if not data:
+            self._attr_native_value = "unknown"
+            self._attr_extra_state_attributes = {}
+            return
+
+        events = data.events
+        active_events = [e for e in events if e.enabled]
+
+        # The Dyson API stores each schedule as multiple events (e.g. a start
+        # event and an end event) sharing a common ``groupId``.  Count unique
+        # group IDs so we report "1 active" when the user has 1 schedule in
+        # the MyDyson app, even though it appears as 2 raw events.
+        active_group_ids: set[int] = {
+            e.raw["groupId"]
+            for e in active_events
+            if isinstance(e.raw.get("groupId"), int)
+        }
+        # Fall back to raw event count if no groupId is present.
+        active_count = len(active_group_ids) if active_group_ids else len(active_events)
+
+        # Gate the active count on the top-level schedule switch.  Individual
+        # events may still have enabled=True even when the overall schedule is
+        # disabled in the MyDyson app, so check schedule_enabled first.
+        if not data.schedule_enabled:
+            self._attr_native_value = "disabled"
+        else:
+            self._attr_native_value = f"{active_count} active"
+
+        self._attr_extra_state_attributes = {
+            "schedule_enabled": data.schedule_enabled,
+            "active_schedule_count": active_count,
+            "active_event_count": len(active_events),
+            "total_event_count": len(events),
+            "events": [e.raw for e in active_events],
+        }

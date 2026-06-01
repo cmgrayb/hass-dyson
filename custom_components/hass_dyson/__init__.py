@@ -76,6 +76,7 @@ from .coordinator import (
     DysonCloudAccountCoordinator,
     DysonDataUpdateCoordinator,
 )
+from .device_utils import mask_serial
 from .services import (
     async_remove_cloud_services,
     async_remove_device_services_for_coordinator,
@@ -115,6 +116,7 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 PLATFORMS_MAP = {
+    Platform.CALENDAR: "calendar",
     Platform.FAN: "fan",
     Platform.SENSOR: "sensor",
     Platform.BINARY_SENSOR: "binary_sensor",
@@ -125,6 +127,7 @@ PLATFORMS_MAP = {
     Platform.VACUUM: "vacuum",
     Platform.CLIMATE: "climate",
     Platform.HUMIDIFIER: "humidifier",
+    Platform.IMAGE: "image",
 }
 
 
@@ -208,7 +211,9 @@ async def _create_device_entry(
     device_serial = device_data.get(CONF_SERIAL_NUMBER, "unknown")
 
     try:
-        _LOGGER.info("Background task: Creating device entry for %s", device_serial)
+        _LOGGER.info(
+            "Background task: Creating device entry for %s", mask_serial(device_serial)
+        )
 
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
@@ -257,7 +262,10 @@ async def _create_discovery_flow(
         ]
 
         if existing_flows:
-            _LOGGER.debug("Discovery flow already exists for device %s", device_serial)
+            _LOGGER.debug(
+                "Discovery flow already exists for device %s",
+                mask_serial(device_serial),
+            )
             return
 
         result = await hass.config_entries.flow.async_init(
@@ -474,7 +482,10 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     await hass.config_entries.async_forward_entry_setups(
         entry, ["light", "binary_sensor"]
     )
-    _LOGGER.info("BLE light device '%s' set up successfully", coordinator.serial_number)
+    _LOGGER.info(
+        "BLE light device '%s' set up successfully",
+        mask_serial(coordinator.serial_number),
+    )
     return True
 
 
@@ -521,7 +532,9 @@ async def _setup_individual_device_entry(
     # Set up platforms and services
     await _setup_platforms_and_services(hass, entry, coordinator)
 
-    _LOGGER.info("Successfully set up Dyson device '%s'", coordinator.serial_number)
+    _LOGGER.info(
+        "Successfully set up Dyson device '%s'", mask_serial(coordinator.serial_number)
+    )
     return True
 
 
@@ -847,6 +860,12 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
         cat in ["robot", "vacuum", "flrc"] for cat in device_category
     ):  # Cleaning devices
         platforms.append("vacuum")
+        # Robot/vacuum models expose a power-level select (Auto/Quick/Quiet/Boost
+        # on Vis Nav; Quiet/High/Max on Heurist; etc.) — see select.py.
+        platforms.append("select")
+        # Vis Nav exposes a dust-map image (rendered from cloud-fetched data)
+        # and floor-plan presentation map. See image.py.
+        platforms.append("image")
 
     # Add capability-based platforms for enhanced functionality
     if (
@@ -874,6 +893,18 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
 
     if coordinator.config_entry.data.get(CONF_DISCOVERY_METHOD) == DISCOVERY_CLOUD:
         platforms.append("update")
+
+    # Add calendar platform for EC devices with cloud auth (exposes schedule events)
+    if any(
+        cat == "ec" for cat in device_category
+    ) and coordinator.config_entry.data.get("auth_token"):
+        platforms.append("calendar")
+
+    # Add calendar platform for robot vacuum devices with cloud auth (exposes schedule events)
+    if any(
+        cat in {"robot", "vacuum", "flrc"} for cat in device_category
+    ) and coordinator.config_entry.data.get("auth_token"):
+        platforms.append("calendar")
 
     # Remove duplicates and return
     return list(set(platforms))

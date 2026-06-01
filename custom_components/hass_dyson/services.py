@@ -68,7 +68,7 @@ import voluptuous as vol
 from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from libdyson_rest import DysonAPIError, DysonAuthError, DysonConnectionError
 
 from .const import (
@@ -83,10 +83,13 @@ from .const import (
     SERVICE_RESET_FILTER,
     SERVICE_SET_OSCILLATION_ANGLES,
     SERVICE_SET_SLEEP_TIMER,
+    SERVICE_SET_ZONE_BEHAVIOUR,
+    SERVICE_START_ZONE_CLEAN,
     SLEEP_TIMER_MAX,
     SLEEP_TIMER_MIN,
 )
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonDataUpdateCoordinator, TTLCache
+from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,6 +120,8 @@ DEVICE_CATEGORY_SERVICES = {
     ],
     "robot": [  # Robot vacuum/cleaning devices
         SERVICE_RESET_FILTER,  # Different filter types for cleaning devices
+        SERVICE_START_ZONE_CLEAN,  # Vis Nav zone cleaning via cleaningProgramme
+        SERVICE_SET_ZONE_BEHAVIOUR,  # Vis Nav per-zone power/strategy overrides
     ],
     "vacuum": [  # Vacuum devices
         SERVICE_RESET_FILTER,
@@ -170,6 +175,37 @@ SERVICE_GET_CLOUD_DEVICES_SCHEMA = vol.Schema(
     {
         vol.Optional("account_email"): str,
         vol.Optional("sanitize", default=False): bool,
+    }
+)
+
+# Zone-cleaning schema: device + list of zone IDs or names. Names are resolved
+# against the persistent-map metadata fetched from the Dyson cloud.
+SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Required("zones"): vol.All(
+            cv.ensure_list, [vol.All(str, vol.Length(min=1))], vol.Length(min=1)
+        ),
+    }
+)
+
+# Per-zone behaviour override schema.
+# Real endpoint (captured from MyDyson iOS app via mitmproxy):
+#   PUT /v1/app/{serial}/{mapId}/zones/{zoneId}/zone-behaviours
+#   Body: {"cleaningStrategy": "auto" | "quick" | "quiet" | "boost"}
+# (Note: NOT /persistent-maps/{mapId}/.../behaviour as documented by
+# thoukydides/matterbridge-dyson-robot — the path is shorter and the
+# resource is `zone-behaviours` plural.)
+#
+# vacuumPowerMode is present in the persistent-map metadata response but the
+# MyDyson app never writes it — only cleaningStrategy. The named strategies
+# correspond to the same 4 power modes as the global Vis Nav power select.
+_ZONE_CLEANING_STRATEGIES = ("auto", "quick", "quiet", "boost")
+SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Required("zone"): vol.All(str, vol.Length(min=1)),
+        vol.Required("cleaning_strategy"): vol.In(_ZONE_CLEANING_STRATEGIES),
     }
 )
 
@@ -333,19 +369,19 @@ async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> Non
         _LOGGER.info(
             "Set sleep timer to %d minutes for device %s",
             minutes,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
         )
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error setting sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
     except (ValueError, TypeError) as err:
         _LOGGER.warning(
             "Invalid timer value for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Invalid timer value: {err}") from err
@@ -359,7 +395,7 @@ async def _handle_set_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> Non
     except Exception as err:
         _LOGGER.error(
             "Unexpected error setting sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Failed to set sleep timer: {err}") from err
@@ -378,11 +414,14 @@ async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> 
         await coordinator.device.set_sleep_timer(0)
         # Request refresh to update the coordinator with new sleep timer state
         await coordinator.async_request_refresh()
-        _LOGGER.info("Cancelled sleep timer for device %s", coordinator.serial_number)
+        _LOGGER.info(
+            "Cancelled sleep timer for device %s",
+            mask_serial(coordinator.serial_number),
+        )
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error cancelling sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
@@ -396,7 +435,7 @@ async def _handle_cancel_sleep_timer(hass: HomeAssistant, call: ServiceCall) -> 
     except Exception as err:
         _LOGGER.error(
             "Unexpected error cancelling sleep timer for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Failed to cancel sleep timer: {err}") from err
@@ -423,19 +462,19 @@ async def _handle_set_oscillation_angles(
             "Set oscillation angles %d°-%d° for device %s",
             lower_angle,
             upper_angle,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
         )
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error setting oscillation angles for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
     except (ValueError, TypeError) as err:
         _LOGGER.warning(
             "Invalid angle values for device %s (lower=%s, upper=%s): %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             lower_angle,
             upper_angle,
             err,
@@ -451,7 +490,7 @@ async def _handle_set_oscillation_angles(
     except Exception as err:
         _LOGGER.error(
             "Unexpected error setting oscillation angles for device %s: %s",
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Failed to set oscillation angles: {err}") from err
@@ -472,19 +511,20 @@ async def async_handle_refresh_account_data(
         try:
             await coordinator.async_refresh()
             _LOGGER.info(
-                "Refreshed account data for device %s", coordinator.serial_number
+                "Refreshed account data for device %s",
+                mask_serial(coordinator.serial_number),
             )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error refreshing account data for device %s: %s",
-                coordinator.serial_number,
+                mask_serial(coordinator.serial_number),
                 err,
             )
             raise HomeAssistantError(f"Device communication failed: {err}") from err
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error refreshing account data for device %s: %s",
-                coordinator.serial_number,
+                mask_serial(coordinator.serial_number),
                 err,
             )
             raise HomeAssistantError(f"Failed to refresh account data: {err}") from err
@@ -505,13 +545,13 @@ async def async_handle_refresh_account_data(
             except (ConnectionError, TimeoutError) as err:
                 _LOGGER.warning(
                     "Communication error refreshing account data for device %s: %s",
-                    coordinator.serial_number,
+                    mask_serial(coordinator.serial_number),
                     err,
                 )
             except Exception as err:
                 _LOGGER.error(
                     "Unexpected error refreshing account data for device %s: %s",
-                    coordinator.serial_number,
+                    mask_serial(coordinator.serial_number),
                     err,
                 )
 
@@ -531,25 +571,28 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
         if filter_type == "hepa":
             await coordinator.device.reset_hepa_filter_life()
             _LOGGER.info(
-                "Reset HEPA filter life for device %s", coordinator.serial_number
+                "Reset HEPA filter life for device %s",
+                mask_serial(coordinator.serial_number),
             )
         elif filter_type == "carbon":
             await coordinator.device.reset_carbon_filter_life()
             _LOGGER.info(
-                "Reset carbon filter life for device %s", coordinator.serial_number
+                "Reset carbon filter life for device %s",
+                mask_serial(coordinator.serial_number),
             )
         elif filter_type == "both":
             await coordinator.device.reset_hepa_filter_life()
             await coordinator.device.reset_carbon_filter_life()
             _LOGGER.info(
-                "Reset both filter lives for device %s", coordinator.serial_number
+                "Reset both filter lives for device %s",
+                mask_serial(coordinator.serial_number),
             )
 
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.error(
             "Communication error resetting %s filter for device %s: %s",
             filter_type,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(f"Device communication failed: {err}") from err
@@ -567,12 +610,199 @@ async def _handle_reset_filter(hass: HomeAssistant, call: ServiceCall) -> None:
         _LOGGER.error(
             "Unexpected error resetting %s filter for device %s: %s",
             filter_type,
-            coordinator.serial_number,
+            mask_serial(coordinator.serial_number),
             err,
         )
         raise HomeAssistantError(
             f"Failed to reset {filter_type} filter: {err}"
         ) from err
+
+
+# Persistent-map metadata cache per serial (1h TTL — the device reports a
+# newer zonesDefinitionLastUpdatedDate when the map is edited, but for
+# normal use the cache is fine).
+_persistent_map_cache = TTLCache(3600)
+
+
+async def _fetch_persistent_map_metadata(
+    coordinator: DysonDataUpdateCoordinator,
+) -> list:
+    """Fetch and cache the Vis Nav persistent-map metadata via libdyson-rest.
+
+    Returns a list of ``PersistentMapMeta`` objects (one per stored map).
+    Raises ``HomeAssistantError`` on hard failures so service callers can
+    surface the error rather than getting a silent empty list.
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    serial = coordinator.serial_number
+    fresh = _persistent_map_cache.get(serial)
+    if fresh is not None:
+        return fresh
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            stale = _persistent_map_cache.get_stale(serial)
+            if stale is not None:
+                return stale
+            raise HomeAssistantError(
+                f"No auth_token available for {serial} — "
+                "re-authenticate the integration to enable cloud features"
+            )
+        try:
+            maps = await client.get_persistent_map_metadata(serial)
+        except (DysonAPIError, DysonAuthError) as err:
+            stale = _persistent_map_cache.get_stale(serial)
+            if stale is not None:
+                return stale
+            raise HomeAssistantError(
+                f"Unable to fetch persistent map for {serial}: {err} — "
+                "check Dyson cloud connectivity"
+            ) from err
+
+    _persistent_map_cache.set(serial, maps)
+    _LOGGER.info(
+        "Fetched %d persistent map(s) for %s (%d zones total)",
+        len(maps),
+        serial,
+        sum(len(m.zones) for m in maps),
+    )
+    return maps
+
+
+async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle hass_dyson.start_zone_clean — Vis Nav zone-specific cleaning."""
+    device_id = call.data["device_id"]
+    requested_zones: list[str] = call.data["zones"]
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator or not coordinator.device:
+        raise ServiceValidationError(f"Device {device_id} not found or not available")
+
+    # Fetch zones from the cloud (cached).
+    maps = await _fetch_persistent_map_metadata(coordinator)
+    if not maps:
+        raise HomeAssistantError(
+            f"No persistent maps returned for {coordinator.serial_number} — "
+            "has the robot finished its initial map run?"
+        )
+    # Use the first (most-recently-visited) map. Multi-map handling is a v2 concern.
+    pmap = maps[0]
+    pmap_id = pmap.id
+    zones_by_id = {z.id: z for z in pmap.zones}
+    zones_by_name_lc = {(z.name or "").lower(): z for z in pmap.zones if z.name}
+
+    resolved_ids: list[str] = []
+    unknown: list[str] = []
+    for entry in requested_zones:
+        entry_str = str(entry).strip()
+        if entry_str in zones_by_id:
+            resolved_ids.append(entry_str)
+        elif entry_str.lower() in zones_by_name_lc:
+            resolved_ids.append(zones_by_name_lc[entry_str.lower()].id)
+        else:
+            unknown.append(entry_str)
+    if unknown:
+        known_names = sorted(z.name for z in pmap.zones if z.name)
+        raise ServiceValidationError(
+            f"Unknown zone(s) {unknown!r} for map {pmap.name!r}. Known: {known_names}"
+        )
+
+    # IMPORTANT: zonesDefinitionLastUpdatedDate must be included for the
+    # device to honour the zoneConfigured request. Without it, the device
+    # silently downgrades the START to a global (whole-house) clean.
+    cleaning_programme = {
+        "persistentMapId": pmap_id,
+        "orderedZones": [],
+        "unorderedZones": resolved_ids,
+    }
+    zdlud = pmap.zones_definition_last_updated_date
+    if zdlud:
+        cleaning_programme["zonesDefinitionLastUpdatedDate"] = zdlud
+
+    try:
+        await coordinator.device.robot_start_clean(
+            cleaning_mode="zoneConfigured",
+            full_clean_type="immediate",
+            cleaning_programme=cleaning_programme,
+        )
+        _LOGGER.info(
+            "Started zone clean on %s: zones=%s (map %s)",
+            coordinator.serial_number,
+            resolved_ids,
+            pmap.name,
+        )
+    except Exception as err:
+        _LOGGER.error(
+            "Failed to start zone clean on %s: %s", coordinator.serial_number, err
+        )
+        raise HomeAssistantError(f"Failed to start zone clean: {err}") from err
+
+
+async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> None:
+    """PUT a zone's cleaningStrategy override on the cloud.
+
+    Endpoint (captured from MyDyson iOS app via mitmproxy):
+      PUT /v1/app/{serial}/{mapId}/zones/{zoneId}/zone-behaviours
+      Body: {"cleaningStrategy": "auto" | "quick" | "quiet" | "boost"}
+
+    The path documented in thoukydides/matterbridge-dyson-robot
+    (`persistent-maps/{mapId}/zones/{zoneId}/behaviour`) returns 404 — the
+    real path drops the `persistent-maps/` segment and uses the plural
+    resource `zone-behaviours`.
+    """
+    device_id = call.data["device_id"]
+    zone_in = str(call.data["zone"]).strip()
+    cleaning_strategy = call.data["cleaning_strategy"]
+
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator:
+        raise ServiceValidationError(f"Device {device_id} not found")
+
+    # Resolve zone name → ID via cached map metadata
+    maps = await _fetch_persistent_map_metadata(coordinator)
+    if not maps:
+        raise HomeAssistantError(f"No persistent maps for {coordinator.serial_number}")
+    pmap = maps[0]
+    pmap_id = pmap.id
+    zones_by_id = {z.id: z for z in pmap.zones}
+    zones_by_name_lc = {(z.name or "").lower(): z for z in pmap.zones if z.name}
+    if zone_in in zones_by_id:
+        zone_id = zone_in
+    elif zone_in.lower() in zones_by_name_lc:
+        zone_id = zones_by_name_lc[zone_in.lower()].id
+    else:
+        raise ServiceValidationError(
+            f"Unknown zone {zone_in!r}. Known: "
+            f"{sorted(z.name for z in pmap.zones if z.name)}"
+        )
+
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            raise HomeAssistantError(
+                f"No auth_token for {coordinator.serial_number} — "
+                "re-authenticate to enable cloud features"
+            )
+        try:
+            await client.set_zone_behaviour(
+                coordinator.serial_number, pmap_id, zone_id, cleaning_strategy
+            )
+        except (DysonAPIError, DysonAuthError) as err:
+            raise HomeAssistantError(
+                f"Failed to set zone behaviour on {coordinator.serial_number}: {err}"
+            ) from err
+
+    # Invalidate map cache so the next read picks up the new behaviour.
+    _persistent_map_cache.invalidate(coordinator.serial_number)
+    _LOGGER.info(
+        "Set zone behaviour on %s zone %s (%s): cleaningStrategy=%s",
+        coordinator.serial_number,
+        zone_id,
+        zone_in,
+        cleaning_strategy,
+    )
 
 
 async def _handle_get_cloud_devices(
@@ -677,8 +907,9 @@ async def _handle_get_cloud_devices(
         # Use first coordinator if not specified
         selected_coordinator = cloud_coordinators[0]
 
-    _LOGGER.info(
-        "Retrieving cloud devices for account: %s", selected_coordinator["email"]
+    _LOGGER.debug(
+        "Retrieving cloud devices for account: %s",
+        mask_email(selected_coordinator["email"]),
     )
 
     try:
@@ -687,7 +918,11 @@ async def _handle_get_cloud_devices(
         )
 
         response_data = {
-            "account_email": selected_coordinator["email"],
+            "account_email": (
+                mask_email(selected_coordinator["email"])
+                if sanitize
+                else selected_coordinator["email"]
+            ),
             "total_devices": len(device_data["devices"]),
             "devices": device_data["devices"],
             "sanitized": sanitize,
@@ -696,10 +931,10 @@ async def _handle_get_cloud_devices(
         if not sanitize:
             response_data["summary"] = device_data["summary"]
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Successfully retrieved %d devices from cloud account %s (sanitized: %s)",
             len(device_data["devices"]),
-            selected_coordinator["email"],
+            mask_email(selected_coordinator["email"]),
             sanitize,
         )
 
@@ -707,12 +942,16 @@ async def _handle_get_cloud_devices(
 
     except (DysonAuthError, DysonConnectionError, DysonAPIError) as err:
         _LOGGER.error(
-            "Dyson service error for account %s: %s", selected_coordinator["email"], err
+            "Dyson service error for account %s: %s",
+            mask_email(selected_coordinator["email"]),
+            err,
         )
         raise HomeAssistantError(f"Dyson service error: {err}") from err
     except Exception as err:
         _LOGGER.error(
-            "Unexpected error for account %s: %s", selected_coordinator["email"], err
+            "Unexpected error for account %s: %s",
+            mask_email(selected_coordinator["email"]),
+            err,
         )
         raise HomeAssistantError(f"Unexpected error: {err}") from err
 
@@ -923,7 +1162,8 @@ async def _fetch_live_cloud_devices(config_entry):
         raise HomeAssistantError(f"No auth token available for cloud account {email}")
 
     _LOGGER.debug(
-        "Fetching live device data from Dyson cloud API for account: %s", email
+        "Fetching live device data from Dyson cloud API for account: %s",
+        mask_email(email),
     )
 
     # Create client with auth token and fetch devices
@@ -933,7 +1173,7 @@ async def _fetch_live_cloud_devices(config_entry):
         devices = await client.get_devices()
 
         if not devices:
-            _LOGGER.debug("No devices found in cloud account %s", email)
+            _LOGGER.debug("No devices found in cloud account %s", mask_email(email))
             return []
 
         # Enhance devices with decrypted MQTT credentials
@@ -942,7 +1182,7 @@ async def _fetch_live_cloud_devices(config_entry):
         _LOGGER.info(
             "Successfully fetched %d devices from cloud API for account %s",
             len(enhanced_devices),
-            email,
+            mask_email(email),
         )
         return enhanced_devices
 
@@ -965,30 +1205,30 @@ async def _get_device_data_from_config_entry(
             _LOGGER.info(
                 "Using live cloud API data for %d devices from account %s",
                 len(live_devices),
-                email,
+                mask_email(email),
             )
             return await _build_device_data_from_live_api(live_devices, email, sanitize)
     except (ConnectionError, TimeoutError) as err:
         _LOGGER.warning(
             "Communication timeout getting live cloud data for account %s, falling back to stored config: %s",
-            email,
+            mask_email(email),
             err,
         )
     except (KeyError, AttributeError) as err:
         _LOGGER.debug(
             "Missing data getting live cloud data for account %s, falling back to stored config: %s",
-            email,
+            mask_email(email),
             err,
         )
     except Exception as err:
         _LOGGER.warning(
             "Unexpected error getting live cloud data for account %s, falling back to stored config: %s",
-            email,
+            mask_email(email),
             err,
         )
 
     # Fallback to stored config data
-    _LOGGER.debug("Using stored config data for account %s", email)
+    _LOGGER.debug("Using stored config data for account %s", mask_email(email))
     device_list = []
 
     for device_data in devices_data:
@@ -1538,6 +1778,22 @@ async def _register_services(
 
         service_handlers[SERVICE_RESET_FILTER] = async_handle_reset_filter
         service_schemas[SERVICE_RESET_FILTER] = SERVICE_RESET_FILTER_SCHEMA
+
+    if SERVICE_START_ZONE_CLEAN in services_to_register:
+
+        async def async_handle_start_zone_clean(call: ServiceCall) -> None:
+            await _handle_start_zone_clean(hass, call)
+
+        service_handlers[SERVICE_START_ZONE_CLEAN] = async_handle_start_zone_clean
+        service_schemas[SERVICE_START_ZONE_CLEAN] = SERVICE_START_ZONE_CLEAN_SCHEMA
+
+    if SERVICE_SET_ZONE_BEHAVIOUR in services_to_register:
+
+        async def async_handle_set_zone_behaviour(call: ServiceCall) -> None:
+            await _handle_set_zone_behaviour(hass, call)
+
+        service_handlers[SERVICE_SET_ZONE_BEHAVIOUR] = async_handle_set_zone_behaviour
+        service_schemas[SERVICE_SET_ZONE_BEHAVIOUR] = SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA
 
     # Register services that aren't already registered
     registered_services = []

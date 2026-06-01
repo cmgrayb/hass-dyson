@@ -368,7 +368,9 @@ class TestGetCloudDevicesAccountEmail:
 
         result = await _handle_get_cloud_devices(mock_hass, call)
 
-        assert result["account_email"] == "second@example.com"
+        assert (
+            result["account_email"] == "s***@e***.com"
+        )  # masked because sanitize=True
         # Verify the second coordinator was selected
         selected = mock_get_data.call_args[0][0]
         assert selected["email"] == "second@example.com"

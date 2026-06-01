@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -165,7 +166,10 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
             self._attr_mode = MODE_NORMAL
             self.async_write_ha_state()
 
-            _LOGGER.debug("Turned on humidifier for %s", self.coordinator.serial_number)
+            _LOGGER.debug(
+                "Turned on humidifier for %s",
+                mask_serial(self.coordinator.serial_number),
+            )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
                 "Communication error turning on humidifier for %s: %s",
