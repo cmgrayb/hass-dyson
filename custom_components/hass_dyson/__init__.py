@@ -76,7 +76,6 @@ from .coordinator import (
     DysonCloudAccountCoordinator,
     DysonDataUpdateCoordinator,
 )
-from .device_utils import mask_serial
 from .services import (
     async_remove_cloud_services,
     async_remove_device_services_for_coordinator,
