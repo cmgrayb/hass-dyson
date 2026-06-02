@@ -12,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from custom_components.hass_dyson import (
     CONFIG_SCHEMA,
     DEVICE_SCHEMA,
-    PLATFORMS_MAP,
+    PLATFORMS,
     _create_device_entry,
     _create_discovery_flow,
     _get_platforms_for_device,
@@ -80,8 +80,8 @@ class TestInitModule:
         assert "credential" in DEVICE_SCHEMA.schema
         assert "capabilities" in DEVICE_SCHEMA.schema
 
-    def test_platforms_map(self):
-        """Test PLATFORMS_MAP contains expected platforms."""
+    def test_platforms(self):
+        """Test PLATFORMS contains expected platforms."""
         expected_platforms = [
             Platform.FAN,
             Platform.SENSOR,
@@ -94,7 +94,7 @@ class TestInitModule:
             Platform.CLIMATE,
         ]
         for platform in expected_platforms:
-            assert platform in PLATFORMS_MAP
+            assert platform in PLATFORMS
 
     @pytest.mark.asyncio
     async def test_async_setup_no_devices(self, mock_hass):
@@ -345,14 +345,13 @@ class TestInitConstants:
         validated = CONFIG_SCHEMA(test_config)
         assert validated[DOMAIN]["devices"] == []
 
-    def test_platforms_map_completeness(self):
-        """Test that all expected platforms are mapped."""
-        assert len(PLATFORMS_MAP) >= 9  # At least 9 platforms should be supported
+    def test_platforms_completeness(self):
+        """Test that all expected platforms are listed."""
+        assert len(PLATFORMS) >= 9  # At least 9 platforms should be supported
 
-        # Check that all values are strings
-        for platform, name in PLATFORMS_MAP.items():
-            assert isinstance(name, str)
-            assert len(name) > 0
+        # Check that all values are Platform instances
+        for platform in PLATFORMS:
+            assert isinstance(platform, Platform)
 
 
 class TestInitBackgroundTasks:

@@ -115,20 +115,20 @@ CONFIG_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
-PLATFORMS_MAP = {
-    Platform.CALENDAR: "calendar",
-    Platform.FAN: "fan",
-    Platform.SENSOR: "sensor",
-    Platform.BINARY_SENSOR: "binary_sensor",
-    Platform.BUTTON: "button",
-    Platform.NUMBER: "number",
-    Platform.SELECT: "select",
-    Platform.SWITCH: "switch",
-    Platform.VACUUM: "vacuum",
-    Platform.CLIMATE: "climate",
-    Platform.HUMIDIFIER: "humidifier",
-    Platform.IMAGE: "image",
-}
+PLATFORMS: list[Platform] = [
+    Platform.CALENDAR,
+    Platform.FAN,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+    Platform.VACUUM,
+    Platform.CLIMATE,
+    Platform.HUMIDIFIER,
+    Platform.IMAGE,
+]
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:

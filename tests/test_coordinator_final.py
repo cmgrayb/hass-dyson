@@ -790,7 +790,9 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             }
             coordinator.config_entry = mock_config_entry
 
-            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+            with patch(
+                "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+            ) as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -836,7 +838,9 @@ class TestDysonDataUpdateCoordinatorCloudSetup:
             }
             coordinator.config_entry = mock_config_entry
 
-            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+            with patch(
+                "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+            ) as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
                 mock_challenge = MagicMock()
@@ -1382,16 +1386,14 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
 
         mock_client = MagicMock()
 
-        # Ensure the coordinator's hass has async_add_executor_job as AsyncMock
-        coordinator.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
-
-        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+        with patch(
+            "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+        ) as mock_client_class:
             mock_client_class.return_value = mock_client
 
             result = await coordinator._authenticate_cloud_client()
 
             assert result == mock_client
-            coordinator.hass.async_add_executor_job.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_authenticate_cloud_client_with_username_password(self, mock_hass):
@@ -1423,7 +1425,9 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
         mock_client.complete_login = AsyncMock()
         mock_client.close = AsyncMock()
 
-        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+        with patch(
+            "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+        ) as mock_client_class:
             mock_client_class.return_value = mock_client
             # Ensure the coordinator's hass has async_add_executor_job as AsyncMock
             coordinator.hass.async_add_executor_job = AsyncMock(
@@ -1479,7 +1483,9 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
         mock_client.provision = AsyncMock(side_effect=Exception("Auth failed"))
         mock_client.close = AsyncMock()
 
-        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+        with patch(
+            "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+        ) as mock_client_class:
             mock_client_class.return_value = mock_client
             # Ensure the coordinator's hass has async_add_executor_job as AsyncMock
             coordinator.hass.async_add_executor_job = AsyncMock(
@@ -1509,7 +1515,9 @@ class TestDysonDataUpdateCoordinatorCloudAuth:
             coordinator.hass = mock_hass
             coordinator.config_entry = mock_config_entry_cloud_cn
 
-        with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+        with patch(
+            "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
@@ -1735,7 +1743,9 @@ class TestDysonCloudAccountCoordinatorCNRegion:
                 }
             ]
 
-            with patch("libdyson_rest.AsyncDysonClient") as mock_client_class:
+            with patch(
+                "custom_components.hass_dyson.coordinator.AsyncDysonClient"
+            ) as mock_client_class:
                 # Mock the context manager behavior
                 mock_client = AsyncMock()
                 mock_client.get_devices = AsyncMock(return_value=mock_device_data)
