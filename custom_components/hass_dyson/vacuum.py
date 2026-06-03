@@ -77,7 +77,9 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
     Uses ``AsyncDysonClient.get_clean_maps()`` which requests the dust-map
     blob (``include_dust_map=True``) and returns typed ``CleanRecord`` objects.
 
-    Returns an empty list (or stale cache) on any failure.
+    Returns an empty list (or stale cache) on any failure.  API errors (e.g.
+    400 Bad Request from unsupported device models) are cached for the full TTL
+    so the endpoint is not hammered on every entity update.
     """
     from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
 
@@ -91,9 +93,26 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
             return _clean_maps_cache.get_stale(serial) or []
         try:
             records = await client.get_clean_maps(serial, include_dust_map=True)
-        except (DysonAPIError, DysonAuthError) as err:
+        except DysonAuthError as err:
+            # Auth errors may resolve after re-authentication; do not cache.
             _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
             return _clean_maps_cache.get_stale(serial) or []
+        except DysonAPIError as err:
+            # Cache the failure so we do not re-request on every entity update.
+            # A 400 typically means this device model does not support the
+            # endpoint; a warning is logged once per TTL window.
+            if "400" in str(err):
+                _LOGGER.warning(
+                    "Clean maps endpoint returned 400 for %s — this device model"
+                    " may not support the clean-maps API; will not retry for"
+                    " 30 minutes",
+                    serial,
+                )
+            else:
+                _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
+            fallback = _clean_maps_cache.get_stale(serial) or []
+            _clean_maps_cache.set(serial, fallback)
+            return fallback
 
     # Newest-first: sort by earliest timeline event timestamp.
     records.sort(
