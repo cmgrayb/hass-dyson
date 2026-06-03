@@ -232,3 +232,4 @@ __marimo__/
 
 # VS Code Dev Containers Lock Files
 .devcontainer/devcontainer-lock.json
+.devcontainer/config/secrets.yaml
