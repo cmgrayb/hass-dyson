@@ -3144,7 +3144,7 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
 # ============================================================================
 # Cleaning history sensor (Vis Nav)
 # ============================================================================
-# Pulls the last N cleaning runs from /v1/{serial}/clean-maps?dustMap=total and
+# Pulls the last N cleaning runs from /{apiVer}/{serial}/clean-maps?dustMap=total and
 # exposes one sensor per slot (state = clean timestamp, attrs = area/duration/zones).
 # Uses HA's built-in polling (should_poll=True, scan_interval=30min) — independent
 # of the MQTT coordinator since this is REST cloud data.

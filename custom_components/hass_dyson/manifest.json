@@ -18,7 +18,7 @@
   ],
   "quality_scale": "gold",
   "requirements": [
-    "libdyson-rest==0.14.1"
+    "libdyson-rest==0.15.0b2"
   ],
-  "version": "0.34.0"
+  "version": "0.34.1-beta.2"
 }

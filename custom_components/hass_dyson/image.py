@@ -7,7 +7,7 @@ Currently provides:
  - DysonFloorPlanImage: the persistent-map presentation image (the static
                         floor plan with zone boundaries and dock location).
 
-Source: /v1/{serial}/clean-maps?dustMap=total  +  /v1/app/{serial}/persistent-maps/{mapId}
+Source: /{apiVer}/{serial}/clean-maps?dustMap=total  +  /{apiVer}/app/{serial}/persistent-maps/{mapId}
 Bitmap format ported from thoukydides/matterbridge-dyson-robot
 (src/dyson-bitmap-octet.ts + src/dyson-device-360-map.ts).
 """
