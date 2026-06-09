@@ -41,6 +41,7 @@ Position Tracking:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -70,6 +71,11 @@ _LOGGER = logging.getLogger(__name__)
 # Cache cleaning runs for 30 minutes to avoid hammering the cloud API.
 _clean_maps_cache: TTLCache = TTLCache(30 * 60)
 
+# Per-serial locks prevent a cache-stampede when multiple entities all call
+# fetch_clean_maps simultaneously on startup (they would all miss the empty
+# cache and each fire a redundant API request).
+_clean_maps_locks: dict[str, asyncio.Lock] = {}
+
 
 async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
     """Fetch recent cleaning runs via libdyson-rest (cached 30 min, newest-first).
@@ -78,41 +84,72 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
     blob (``include_dust_map=True``) and returns typed ``CleanRecord`` objects.
 
     Returns an empty list (or stale cache) on any failure.  API errors (e.g.
-    400 Bad Request from unsupported device models) are cached for the full TTL
+    400 Bad Request or unexpected response shapes from device models whose
+    clean-maps API differs from the 360 Vis Nav) are cached for the full TTL
     so the endpoint is not hammered on every entity update.
     """
     from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
 
     serial = coordinator.serial_number
+
+    # Fast path: already cached.
     fresh = _clean_maps_cache.get(serial)
     if fresh is not None:
         return fresh
 
-    async with coordinator.async_cloud_client() as client:
-        if client is None:
-            return _clean_maps_cache.get_stale(serial) or []
-        try:
-            records = await client.get_clean_maps(serial, include_dust_map=True)
-        except DysonAuthError as err:
-            # Auth errors may resolve after re-authentication; do not cache.
-            _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
-            return _clean_maps_cache.get_stale(serial) or []
-        except DysonAPIError as err:
-            # Cache the failure so we do not re-request on every entity update.
-            # A 400 typically means this device model does not support the
-            # endpoint; a warning is logged once per TTL window.
-            if "400" in str(err):
-                _LOGGER.warning(
-                    "Clean maps endpoint returned 400 for %s — this device model"
-                    " may not support the clean-maps API; will not retry for"
-                    " 30 minutes",
-                    serial,
-                )
-            else:
+    # Acquire a per-serial lock so that only one coroutine performs the
+    # network fetch while any other concurrent callers wait and then re-use
+    # the cached result.
+    if serial not in _clean_maps_locks:
+        _clean_maps_locks[serial] = asyncio.Lock()
+
+    async with _clean_maps_locks[serial]:
+        # Re-check after acquiring the lock — a concurrent caller may have
+        # already populated the cache while we were waiting.
+        fresh = _clean_maps_cache.get(serial)
+        if fresh is not None:
+            return fresh
+
+        async with coordinator.async_cloud_client() as client:
+            if client is None:
+                return _clean_maps_cache.get_stale(serial) or []
+            try:
+                records = await client.get_clean_maps(serial, include_dust_map=True)
+            except DysonAuthError as err:
+                # Auth errors may resolve after re-authentication; do not cache.
                 _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
-            fallback = _clean_maps_cache.get_stale(serial) or []
-            _clean_maps_cache.set(serial, fallback)
-            return fallback
+                return _clean_maps_cache.get_stale(serial) or []
+            except DysonAPIError as err:
+                err_str = str(err)
+                # Cache the failure so we do not re-request on every entity
+                # update.  Log a warning for known incompatibility signals so
+                # users can see a clear message rather than a silent failure.
+                if "400" in err_str:
+                    _LOGGER.warning(
+                        "Clean maps endpoint returned 400 for %s — this device"
+                        " model may not support the clean-maps API; will not"
+                        " retry for 30 minutes",
+                        serial,
+                    )
+                elif "Expected list" in err_str:
+                    _LOGGER.warning(
+                        "Clean maps endpoint returned an unexpected response"
+                        " format for %s (device type: %s) — the API response"
+                        " was not a list; this device model may use a different"
+                        " clean-maps schema. Will not retry for 30 minutes",
+                        serial,
+                        coordinator.device_type,
+                    )
+                    _LOGGER.debug(
+                        "Clean maps raw response for %s: %s",
+                        serial,
+                        getattr(err, "raw", "<unavailable>"),
+                    )
+                else:
+                    _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
+                fallback = _clean_maps_cache.get_stale(serial) or []
+                _clean_maps_cache.set(serial, fallback)
+                return fallback
 
     # Newest-first: sort by earliest timeline event timestamp.
     records.sort(
