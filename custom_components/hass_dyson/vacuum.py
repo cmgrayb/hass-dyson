@@ -68,8 +68,11 @@ _LOGGER = logging.getLogger(__name__)
 # Clean-maps fetch helper (shared by sensor.py and image.py for vacuum data)
 # ---------------------------------------------------------------------------
 
-# Cache cleaning runs for 30 minutes to avoid hammering the cloud API.
-_clean_maps_cache: TTLCache = TTLCache(30 * 60)
+# Cache cleaning runs for 10 minutes.  The v2 clean-maps API returns a
+# pre-signed S3 ``downloadUrl`` that expires after 15 minutes (900 s); a
+# 10-minute cache leaves a comfortable 5-minute safety margin so any URL
+# fetched from a cached CleanRecord is still valid.
+_clean_maps_cache: TTLCache = TTLCache(10 * 60)
 
 # Per-serial locks prevent a cache-stampede when multiple entities all call
 # fetch_clean_maps simultaneously on startup (they would all miss the empty
@@ -128,22 +131,8 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
                     _LOGGER.warning(
                         "Clean maps endpoint returned 400 for %s — this device"
                         " model may not support the clean-maps API; will not"
-                        " retry for 30 minutes",
+                        " retry for 10 minutes",
                         serial,
-                    )
-                elif "Expected list" in err_str:
-                    _LOGGER.warning(
-                        "Clean maps endpoint returned an unexpected response"
-                        " format for %s (device type: %s) — the API response"
-                        " was not a list; this device model may use a different"
-                        " clean-maps schema. Will not retry for 30 minutes",
-                        serial,
-                        coordinator.device_type,
-                    )
-                    _LOGGER.debug(
-                        "Clean maps raw response for %s: %s",
-                        serial,
-                        getattr(err, "raw", "<unavailable>"),
                     )
                 else:
                     _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
@@ -151,14 +140,24 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
                 _clean_maps_cache.set(serial, fallback)
                 return fallback
 
-    # Newest-first: sort by earliest timeline event timestamp.
-    records.sort(
-        key=lambda c: min(
-            (e.time for e in c.timeline if e.time),
-            default="",
-        ),
-        reverse=True,
-    )
+    # Newest-first.  v2 records carry Unix epoch integers (start_time_epoch);
+    # v1 records carry ISO-8601 strings in the timeline.  Normalise both to a
+    # float (epoch seconds) for a consistent sort.
+    def _sort_epoch(c) -> float:
+        epoch = getattr(c, "start_time_epoch", None)
+        if epoch is not None:
+            return float(epoch)
+        from datetime import datetime
+
+        times = [e.time for e in (getattr(c, "timeline", None) or []) if e.time]
+        if not times:
+            return 0.0
+        try:
+            return datetime.fromisoformat(min(times).replace("Z", "+00:00")).timestamp()
+        except (ValueError, TypeError):
+            return 0.0
+
+    records.sort(key=_sort_epoch, reverse=True)
     _clean_maps_cache.set(serial, records)
     return records
 

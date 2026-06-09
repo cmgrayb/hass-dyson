@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
@@ -94,6 +95,31 @@ async def async_setup_entry(
 # ----------------------------------------------------------------------------
 
 _persist_map_cache = TTLCache(6 * 3600)
+
+
+async def _fetch_v2_dust_map_bytes(
+    hass: HomeAssistant, download_url: str
+) -> bytes | None:
+    """Fetch raw bytes from a v2 clean-maps pre-signed S3 URL.
+
+    The URL expires after 15 minutes (900 s).  We do not cache the raw bytes
+    here — callers cache the final rendered PNG keyed by ``clean_id`` instead.
+    Returns ``None`` on any network or HTTP error.
+    """
+    try:
+        session = async_get_clientsession(hass)
+        async with session.get(download_url) as resp:
+            if resp.status != 200:
+                _LOGGER.debug(
+                    "Dust map S3 fetch returned HTTP %s for %s",
+                    resp.status,
+                    download_url[:80],
+                )
+                return None
+            return await resp.read()
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Failed to fetch v2 dust map bytes: %s", err)
+        return None
 
 
 async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: str):
@@ -351,7 +377,52 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if clean_id and clean_id == self._cached_clean_id and self._cached_png:
             return self._cached_png
 
-        dust_map_model = latest.dust_map
+        dust_map_model = getattr(latest, "dust_map", None)
+        download_url = getattr(latest, "download_url", None)
+
+        # -------------------------------------------------------------------
+        # v2 path: no embedded dust map blob; fetch from pre-signed S3 URL.
+        # The URL carries a 15-min TTL, so the 10-min clean-maps cache in
+        # vacuum.py ensures it is always fresh when we reach this point.
+        # -------------------------------------------------------------------
+        if download_url and not dust_map_model:
+            raw = await _fetch_v2_dust_map_bytes(self.hass, download_url)
+            if raw is None:
+                return None
+
+            # The S3 object is a pre-rendered PNG or JPEG — serve it directly.
+            if raw[:4] == b"\x89PNG":
+                png = raw
+            elif raw[:2] == b"\xff\xd8":
+                # Convert JPEG → PNG so we can always return a consistent type.
+                try:
+                    from PIL import Image as PilImage
+
+                    buf = io.BytesIO()
+                    PilImage.open(io.BytesIO(raw)).save(
+                        buf, format="PNG", optimize=True
+                    )
+                    png = buf.getvalue()
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("v2 JPEG → PNG conversion failed: %s", err)
+                    png = raw  # serve JPEG as fallback
+            else:
+                _LOGGER.debug(
+                    "Unknown content format at v2 download_url for %s"
+                    " (first 4 bytes: %r) — cannot render dust map",
+                    self.coordinator.serial_number,
+                    raw[:4],
+                )
+                return None
+
+            self._cached_clean_id = clean_id
+            self._cached_png = png
+            self._attr_image_last_updated = datetime.now(timezone.utc)
+            return png
+
+        # -------------------------------------------------------------------
+        # v1 path: dust map blob embedded in the CleanRecord.
+        # -------------------------------------------------------------------
         if not dust_map_model:
             return None
 
