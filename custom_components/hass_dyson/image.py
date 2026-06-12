@@ -380,6 +380,14 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         dust_map_model = getattr(latest, "dust_map", None)
         download_url = getattr(latest, "download_url", None)
 
+        _LOGGER.debug(
+            "Dust map build for %s: clean_id=%s, has_dust_map=%s, has_download_url=%s",
+            self.coordinator.serial_number,
+            clean_id,
+            dust_map_model is not None,
+            download_url is not None,
+        )
+
         # -------------------------------------------------------------------
         # v2 path: no embedded dust map blob; fetch from pre-signed S3 URL.
         # The URL carries a 15-min TTL, so the 10-min clean-maps cache in
@@ -388,6 +396,11 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if download_url and not dust_map_model:
             raw = await _fetch_v2_dust_map_bytes(self.hass, download_url)
             if raw is None:
+                _LOGGER.warning(
+                    "Dust map for %s: failed to download content from v2 URL"
+                    " (network error or expired pre-signed URL)",
+                    self.coordinator.serial_number,
+                )
                 return None
 
             # The S3 object is a pre-rendered PNG or JPEG — serve it directly.
@@ -407,11 +420,19 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                     _LOGGER.debug("v2 JPEG → PNG conversion failed: %s", err)
                     png = raw  # serve JPEG as fallback
             else:
-                _LOGGER.debug(
-                    "Unknown content format at v2 download_url for %s"
-                    " (first 4 bytes: %r) — cannot render dust map",
+                # The content is not an image.  For v2 devices like the Spot+Scrub
+                # (RB05), the download_url points to the full clean-session JSON
+                # record rather than a rendered map image.  Rendering from raw
+                # path/zone data is not yet supported.
+                is_json = raw[:1] == b"{"
+                _LOGGER.warning(
+                    "Dust map for %s: v2 download_url returned %d bytes of %s,"
+                    " not a PNG or JPEG image — dust map cannot be rendered for"
+                    " this device model. First 16 bytes: %r",
                     self.coordinator.serial_number,
-                    raw[:4],
+                    len(raw),
+                    "JSON session data" if is_json else "unknown content",
+                    raw[:16],
                 )
                 return None
 
@@ -513,16 +534,41 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             return None
         pmap_id = cleans[0].persistent_map_id
         if not pmap_id:
+            _LOGGER.warning(
+                "Floor plan for %s: most recent clean record has no"
+                " persistent_map_id — cannot render floor plan",
+                self.coordinator.serial_number,
+            )
             return None
         if pmap_id == self._cached_pmap_id and self._cached_png:
             return self._cached_png
 
         pmap = await _fetch_persist_map(self.coordinator, pmap_id)
-        if not pmap or not pmap.presentation_map_data:
+        if not pmap:
+            _LOGGER.warning(
+                "Floor plan for %s: persistent map %s could not be fetched"
+                " (API error or unsupported endpoint for this device model)",
+                self.coordinator.serial_number,
+                pmap_id,
+            )
+            return None
+        if not pmap.presentation_map_data:
+            _LOGGER.warning(
+                "Floor plan for %s: persistent map %s was fetched but contains"
+                " no presentation image data (presentation_map_data is empty)"
+                " — this device model may not embed a floor plan PNG",
+                self.coordinator.serial_number,
+                pmap_id,
+            )
             return None
         try:
             png_in = base64.b64decode(pmap.presentation_map_data)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Floor plan for %s: could not base64-decode presentation_map_data: %s",
+                self.coordinator.serial_number,
+                err,
+            )
             return None
 
         png = _render_presentation_png(png_in, pmap.display_orientation)
