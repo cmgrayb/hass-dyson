@@ -403,7 +403,8 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                 )
                 return None
 
-            # The S3 object is a pre-rendered PNG or JPEG — serve it directly.
+            # The S3 object may be a pre-rendered image or compressed binary data.
+            # Try to identify and handle each known format.
             if raw[:4] == b"\x89PNG":
                 png = raw
             elif raw[:2] == b"\xff\xd8":
@@ -419,19 +420,49 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                 except Exception as err:  # noqa: BLE001
                     _LOGGER.debug("v2 JPEG → PNG conversion failed: %s", err)
                     png = raw  # serve JPEG as fallback
+            elif raw[0] == 0x78 and raw[1] in (0x01, 0x5E, 0x9C, 0xDA):
+                # zlib-deflate stream (magic bytes 0x78 0x{01,5E,9C,DA}).
+                # For v2 devices like the Spot+Scrub (RB05) the S3 object is a
+                # compressed binary map record rather than a rendered image.
+                # Decompress and log the first bytes to identify the inner format
+                # so we can implement a renderer in a future release.
+                try:
+                    import zlib
+
+                    decompressed = zlib.decompress(raw)
+                    inner_bytes = decompressed[:32]
+                    is_json = decompressed[:1] == b"{"
+                    _LOGGER.warning(
+                        "Dust map for %s: v2 download_url returned %d bytes of"
+                        " zlib-compressed data (decompresses to %d bytes, format=%s)."
+                        " Rendering from this format is not yet supported."
+                        " Decompressed first 32 bytes: %r",
+                        self.coordinator.serial_number,
+                        len(raw),
+                        len(decompressed),
+                        "JSON" if is_json else "binary",
+                        inner_bytes,
+                    )
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "Dust map for %s: v2 download_url returned %d bytes that"
+                        " appear to be zlib-compressed but decompression failed: %s."
+                        " First 16 bytes: %r",
+                        self.coordinator.serial_number,
+                        len(raw),
+                        err,
+                        raw[:16],
+                    )
+                return None
             else:
-                # The content is not an image.  For v2 devices like the Spot+Scrub
-                # (RB05), the download_url points to the full clean-session JSON
-                # record rather than a rendered map image.  Rendering from raw
-                # path/zone data is not yet supported.
                 is_json = raw[:1] == b"{"
                 _LOGGER.warning(
                     "Dust map for %s: v2 download_url returned %d bytes of %s,"
-                    " not a PNG or JPEG image — dust map cannot be rendered for"
-                    " this device model. First 16 bytes: %r",
+                    " not a PNG, JPEG, or zlib stream — dust map cannot be"
+                    " rendered for this device model. First 16 bytes: %r",
                     self.coordinator.serial_number,
                     len(raw),
-                    "JSON session data" if is_json else "unknown content",
+                    "JSON" if is_json else "unknown binary",
                     raw[:16],
                 )
                 return None
@@ -553,12 +584,22 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             )
             return None
         if not pmap.presentation_map_data:
+            # Log all fields of the pmap object so we can see what the REST API
+            # DID return for this device — helps determine whether a v2 endpoint
+            # exists or whether alternative fields carry the map image.
+            pmap_fields = {
+                k: v
+                for k, v in vars(pmap).items()
+                if k not in ("presentation_map_data", "zones")
+            }
             _LOGGER.warning(
                 "Floor plan for %s: persistent map %s was fetched but contains"
                 " no presentation image data (presentation_map_data is empty)"
-                " — this device model may not embed a floor plan PNG",
+                " — this device model may not embed a floor plan PNG."
+                " Other pmap fields: %s",
                 self.coordinator.serial_number,
                 pmap_id,
+                pmap_fields,
             )
             return None
         try:
