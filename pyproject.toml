@@ -29,12 +29,12 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "aiohttp>=3.13.5",
+    "aiohttp>=3.14.1",
     "cryptography>=45.0.7",
     "homeassistant==2026.6.1",
     "libdyson-rest==0.14.1",
     "paho-mqtt>=2.1.0",
-    "requests>=2.33.1",
+    "requests>=2.34.2",
 ]
 
 [project.optional-dependencies]
