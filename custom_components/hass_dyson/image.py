@@ -7,8 +7,13 @@ Currently provides:
  - DysonFloorPlanImage: the persistent-map presentation image (the static
                         floor plan with zone boundaries and dock location).
 
-Source: /{apiVer}/{serial}/clean-maps?dustMap=total  +  /{apiVer}/app/{serial}/persistent-maps/{mapId}
-Bitmap format ported from thoukydides/matterbridge-dyson-robot
+v1 devices: dust map blob embedded in CleanRecord; floor plan from
+  GET /v1/app/{serial}/persistent-maps/{id} (presentation_map_data field).
+v2 devices (e.g. RB05 Spot+Scrub): both images fetched via the Map Visualizer
+  API (GET /v1/mapvisualizer/devices/{serial}/map/{mapId}) added in
+  libdyson-rest v0.15.0b5.
+
+Bitmap rendering ported from thoukydides/matterbridge-dyson-robot
 (src/dyson-bitmap-octet.ts + src/dyson-device-360-map.ts).
 """
 
@@ -23,7 +28,6 @@ from datetime import datetime, timezone
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
@@ -95,31 +99,45 @@ async def async_setup_entry(
 # ----------------------------------------------------------------------------
 
 _persist_map_cache = TTLCache(6 * 3600)
+_map_image_cache = TTLCache(10 * 60)
 
 
-async def _fetch_v2_dust_map_bytes(
-    hass: HomeAssistant, download_url: str
+async def _fetch_map_image(
+    coordinator: DysonDataUpdateCoordinator, map_id: str
 ) -> bytes | None:
-    """Fetch raw bytes from a v2 clean-maps pre-signed S3 URL.
+    """Fetch a server-rendered map image from the Dyson Map Visualizer API.
 
-    The URL expires after 15 minutes (900 s).  We do not cache the raw bytes
-    here — callers cache the final rendered PNG keyed by ``clean_id`` instead.
-    Returns ``None`` on any network or HTTP error.
+    Uses the ``get_map_image(serial, map_id)`` method added in libdyson-rest
+    v0.15.0b5.  ``map_id`` can be either a clean session UUID (for a dust map)
+    or a persistent-map integer ID string (for a floor plan).
+
+    Results are cached for 10 minutes.  Returns ``None`` on any API or network
+    error.
     """
-    try:
-        session = async_get_clientsession(hass)
-        async with session.get(download_url) as resp:
-            if resp.status != 200:
-                _LOGGER.debug(
-                    "Dust map S3 fetch returned HTTP %s for %s",
-                    resp.status,
-                    download_url[:80],
-                )
-                return None
-            return await resp.read()
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.debug("Failed to fetch v2 dust map bytes: %s", err)
-        return None
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    key = f"{coordinator.serial_number}:{map_id}"
+    cached = _map_image_cache.get(key)
+    if cached is not None:
+        return cached
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return None
+        try:
+            image_bytes = await client.get_map_image(coordinator.serial_number, map_id)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug(
+                "Map Visualizer fetch failed for %s map_id=%s: %s",
+                coordinator.serial_number,
+                map_id,
+                err,
+            )
+            return None
+
+    if image_bytes:
+        _map_image_cache.set(key, image_bytes)
+    return image_bytes or None
 
 
 async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: str):
@@ -389,84 +407,25 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         )
 
         # -------------------------------------------------------------------
-        # v2 path: no embedded dust map blob; fetch from pre-signed S3 URL.
-        # The URL carries a 15-min TTL, so the 10-min clean-maps cache in
-        # vacuum.py ensures it is always fresh when we reach this point.
+        # v2 path: no embedded dust map blob — use the Map Visualizer API to
+        # get a server-rendered image for the clean session.
         # -------------------------------------------------------------------
         if download_url and not dust_map_model:
-            raw = await _fetch_v2_dust_map_bytes(self.hass, download_url)
-            if raw is None:
+            if not clean_id:
                 _LOGGER.warning(
-                    "Dust map for %s: failed to download content from v2 URL"
-                    " (network error or expired pre-signed URL)",
+                    "Dust map for %s: v2 record has download_url but no clean_id"
+                    " — cannot request map image",
                     self.coordinator.serial_number,
                 )
                 return None
-
-            # The S3 object may be a pre-rendered image or compressed binary data.
-            # Try to identify and handle each known format.
-            if raw[:4] == b"\x89PNG":
-                png = raw
-            elif raw[:2] == b"\xff\xd8":
-                # Convert JPEG → PNG so we can always return a consistent type.
-                try:
-                    from PIL import Image as PilImage
-
-                    buf = io.BytesIO()
-                    PilImage.open(io.BytesIO(raw)).save(
-                        buf, format="PNG", optimize=True
-                    )
-                    png = buf.getvalue()
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.debug("v2 JPEG → PNG conversion failed: %s", err)
-                    png = raw  # serve JPEG as fallback
-            elif raw[0] == 0x78 and raw[1] in (0x01, 0x5E, 0x9C, 0xDA):
-                # zlib-deflate stream (magic bytes 0x78 0x{01,5E,9C,DA}).
-                # For v2 devices like the Spot+Scrub (RB05) the S3 object is a
-                # compressed binary map record rather than a rendered image.
-                # Decompress and log the first bytes to identify the inner format
-                # so we can implement a renderer in a future release.
-                try:
-                    import zlib
-
-                    decompressed = zlib.decompress(raw)
-                    inner_bytes = decompressed[:32]
-                    is_json = decompressed[:1] == b"{"
-                    _LOGGER.warning(
-                        "Dust map for %s: v2 download_url returned %d bytes of"
-                        " zlib-compressed data (decompresses to %d bytes, format=%s)."
-                        " Rendering from this format is not yet supported."
-                        " Decompressed first 32 bytes: %r",
-                        self.coordinator.serial_number,
-                        len(raw),
-                        len(decompressed),
-                        "JSON" if is_json else "binary",
-                        inner_bytes,
-                    )
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "Dust map for %s: v2 download_url returned %d bytes that"
-                        " appear to be zlib-compressed but decompression failed: %s."
-                        " First 16 bytes: %r",
-                        self.coordinator.serial_number,
-                        len(raw),
-                        err,
-                        raw[:16],
-                    )
-                return None
-            else:
-                is_json = raw[:1] == b"{"
+            png = await _fetch_map_image(self.coordinator, clean_id)
+            if png is None:
                 _LOGGER.warning(
-                    "Dust map for %s: v2 download_url returned %d bytes of %s,"
-                    " not a PNG, JPEG, or zlib stream — dust map cannot be"
-                    " rendered for this device model. First 16 bytes: %r",
+                    "Dust map for %s: map visualizer returned no image for clean_id=%s",
                     self.coordinator.serial_number,
-                    len(raw),
-                    "JSON" if is_json else "unknown binary",
-                    raw[:16],
+                    clean_id,
                 )
                 return None
-
             self._cached_clean_id = clean_id
             self._cached_png = png
             self._attr_image_last_updated = datetime.now(timezone.utc)
@@ -584,24 +543,29 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             )
             return None
         if not pmap.presentation_map_data:
-            # Log all fields of the pmap object so we can see what the REST API
-            # DID return for this device — helps determine whether a v2 endpoint
-            # exists or whether alternative fields carry the map image.
-            pmap_fields = {
-                k: v
-                for k, v in vars(pmap).items()
-                if k not in ("presentation_map_data", "zones")
-            }
-            _LOGGER.warning(
-                "Floor plan for %s: persistent map %s was fetched but contains"
-                " no presentation image data (presentation_map_data is empty)"
-                " — this device model may not embed a floor plan PNG."
-                " Other pmap fields: %s",
+            # For some device models (e.g. RB05/Spot+Scrub) the v1
+            # persistent-maps endpoint returns a stub with no embedded image.
+            # Fall back to the Map Visualizer API which renders the floor plan
+            # server-side.
+            _LOGGER.debug(
+                "Floor plan for %s: persistent map %s has no presentation_map_data;"
+                " trying Map Visualizer API",
                 self.coordinator.serial_number,
                 pmap_id,
-                pmap_fields,
             )
-            return None
+            png = await _fetch_map_image(self.coordinator, pmap_id)
+            if png is None:
+                _LOGGER.warning(
+                    "Floor plan for %s: map visualizer returned no image for"
+                    " persistent_map_id=%s",
+                    self.coordinator.serial_number,
+                    pmap_id,
+                )
+                return None
+            self._cached_pmap_id = pmap_id
+            self._cached_png = png
+            self._attr_image_last_updated = datetime.now(timezone.utc)
+            return png
         try:
             png_in = base64.b64decode(pmap.presentation_map_data)
         except (ValueError, TypeError) as err:
