@@ -9,6 +9,8 @@ sensors reported "OFF" or "INIT" values instead of numeric data.
 
 import logging
 
+import pytest
+
 from custom_components.hass_dyson.sensor import (
     DysonCO2Sensor,
     DysonFormaldehydeSensor,
@@ -393,3 +395,47 @@ class TestSensorNoLogging:
             record.message for record in caplog.records if record.levelname == "DEBUG"
         ]
         assert any("initializing" in msg for msg in debug_messages)
+
+
+class TestPMSensorUnavailableStates:
+    """Test Dyson PM sensor sentinel values that mean data is unavailable."""
+
+    @pytest.mark.parametrize(
+        ("sensor_class", "data_key", "raw_value", "debug_fragment"),
+        [
+            (DysonPM25Sensor, "p25r", "FAIL", "sensor fault"),
+            (DysonPM25Sensor, "pm25", "NONE", "not reporting data"),
+            (DysonPM10Sensor, "p10r", "FAIL", "sensor fault"),
+            (DysonPM10Sensor, "pm10", "NONE", "not reporting data"),
+        ],
+    )
+    def test_fail_and_none_do_not_warn(
+        self,
+        sensor_class,
+        data_key,
+        raw_value,
+        debug_fragment,
+        pure_mock_coordinator,
+        pure_mock_sensor_entity,
+        caplog,
+    ):
+        """Test FAIL/NONE are treated as unavailable PM readings."""
+        # Arrange
+        pure_mock_coordinator.data = {"environmental-data": {data_key: raw_value}}
+        sensor = pure_mock_sensor_entity(sensor_class, pure_mock_coordinator)
+
+        # Act
+        with caplog.at_level(logging.DEBUG):
+            sensor._handle_coordinator_update()
+
+        # Assert
+        assert sensor._attr_native_value is None
+        warning_messages = [
+            record.message for record in caplog.records if record.levelno >= logging.WARNING
+        ]
+        assert warning_messages == []
+
+        debug_messages = [
+            record.message for record in caplog.records if record.levelname == "DEBUG"
+        ]
+        assert any(debug_fragment in msg for msg in debug_messages)
