@@ -431,7 +431,9 @@ class TestPMSensorUnavailableStates:
         # Assert
         assert sensor._attr_native_value is None
         warning_messages = [
-            record.message for record in caplog.records if record.levelno >= logging.WARNING
+            record.message
+            for record in caplog.records
+            if record.levelno >= logging.WARNING
         ]
         assert warning_messages == []
 
