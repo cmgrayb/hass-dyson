@@ -71,6 +71,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
+    _PM_SENSOR_UNAVAILABLE_STATES,
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
@@ -1823,11 +1824,11 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
             pm25_raw = env_data.get("p25r") or env_data.get("pm25")
 
             if pm25_raw is not None:
-                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
-                if pm25_raw in ("OFF", "INIT"):
+                # Handle Dyson's non-numeric PM sensor states without warning.
+                if pm25_raw in _PM_SENSOR_UNAVAILABLE_STATES:
                     _LOGGER.debug(
                         "PM2.5 sensor %s for device %s",
-                        "inactive" if pm25_raw == "OFF" else "initializing",
+                        _PM_SENSOR_UNAVAILABLE_STATES[pm25_raw],
                         device_serial,
                     )
                     new_value = None
@@ -1947,11 +1948,11 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
             pm10_raw = env_data.get("p10r") or env_data.get("pm10")
 
             if pm10_raw is not None:
-                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
-                if pm10_raw in ("OFF", "INIT"):
+                # Handle Dyson's non-numeric PM sensor states without warning.
+                if pm10_raw in _PM_SENSOR_UNAVAILABLE_STATES:
                     _LOGGER.debug(
                         "PM10 sensor %s for device %s",
-                        "inactive" if pm10_raw == "OFF" else "initializing",
+                        _PM_SENSOR_UNAVAILABLE_STATES[pm10_raw],
                         device_serial,
                     )
                     new_value = None
