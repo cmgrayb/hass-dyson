@@ -71,6 +71,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
+    _PM_SENSOR_UNAVAILABLE_STATES,
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
@@ -82,13 +83,6 @@ from .entity import DysonEntity
 from .vacuum import fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
-
-_PM_SENSOR_UNAVAILABLE_STATES = {
-    "OFF": "inactive",
-    "INIT": "initializing",
-    "FAIL": "reporting a sensor fault",
-    "NONE": "not reporting data",
-}
 
 
 class DysonP25RSensor(DysonEntity, SensorEntity):
