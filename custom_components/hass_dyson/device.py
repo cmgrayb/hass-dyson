@@ -1255,8 +1255,8 @@ class DysonDevice:
         # Reset preferred retry timer to force immediate preferred connection attempt
         self._last_preferred_retry = 0.0
 
-        # Attempt reconnection with full intelligent logic
-        return await self.connect()
+        # Attempt reconnection with full intelligent logic, bypassing retry backoff.
+        return await self.connect(force=True)
 
     def _on_connect(
         self, client: mqtt.Client, userdata: Any, flags, rc, properties=None, *args
