@@ -231,6 +231,60 @@ class TestDysonDevice:
             device2._last_preferred_retry == 0.0
         )  # Should not set timer for unstable connection
 
+
+    def test_unexpected_disconnect_schedules_reconnect(self, mock_hass):
+        """Test unexpected established disconnect queues automatic reconnect."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="AUTO_RECONNECT",
+            host="192.168.1.100",
+            credential="local_cred",
+        )
+        device._connected = True
+        device._had_stable_connection = True
+
+        mock_client = MagicMock()
+        mock_flags = MagicMock()
+        device._on_disconnect(mock_client, None, mock_flags, 1)
+
+        assert device._connected is False
+        assert mock_hass.loop.call_soon_threadsafe.call_count >= 2
+
+    def test_handshake_disconnect_does_not_schedule_reconnect(self, mock_hass):
+        """Test handshake failures stay inside connection-attempt retry logic."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="HANDSHAKE_FAIL",
+            host="192.168.1.100",
+            credential="local_cred",
+        )
+        device._connected = False
+        device._had_stable_connection = False
+
+        mock_client = MagicMock()
+        mock_flags = MagicMock()
+        device._on_disconnect(mock_client, None, mock_flags, 1)
+
+        # Only _stop_heartbeat is scheduled; no reconnect task is queued.
+        assert mock_hass.loop.call_soon_threadsafe.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_reconnect_after_disconnect_calls_connect_force(self, mock_hass):
+        """Test automatic reconnect task bypasses normal backoff."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TASK_RECONNECT",
+            host="192.168.1.100",
+            credential="local_cred",
+        )
+        device.connect = AsyncMock(return_value=True)
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await device._reconnect_after_disconnect()
+
+        device.connect.assert_awaited_once_with(force=True)
+        assert device._reconnect_task is None
+
     def test_mqtt_message_processing_current_state(self, mock_hass):
         """Test MQTT message processing for current state messages."""
         device = DysonDevice(
