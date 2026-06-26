@@ -529,6 +529,192 @@ class TestFetchMapImage:
         assert result is png
         assert cache.get("VS9-GB-HJA0000A:map-99") is png
 
+    @pytest.mark.asyncio
+    async def test_miss_is_cached_as_sentinel(self, mock_coordinator):
+        """A 404/API error stores b'' sentinel so the endpoint is not retried."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_map_image = AsyncMock(side_effect=DysonAPIError("404"))
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_map_image(mock_coordinator, "map-99")
+            assert result is None
+            # Sentinel stored — second call must not hit the API.
+            fake_client.get_map_image.reset_mock()
+            result2 = await image_module._fetch_map_image(mock_coordinator, "map-99")
+            assert result2 is None
+        fake_client.get_map_image.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Tests: _fetch_clean_map_data_image
+# ---------------------------------------------------------------------------
+
+
+class TestFetchCleanMapDataImage:
+    """Test the _fetch_clean_map_data_image v2 fallback helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_cached_value(self, mock_coordinator):
+        """Returns immediately on a cache hit (non-empty bytes)."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        png = b"\x89PNG cached"
+        cache.set("VS9-GB-HJA0000A:clean-42", png)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+        assert result is png
+
+    @pytest.mark.asyncio
+    async def test_sentinel_returns_none(self, mock_coordinator):
+        """b'' sentinel in cache returns None without an API call."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        cache.set("VS9-GB-HJA0000A:clean-42", b"")
+
+        @asynccontextmanager
+        async def null_client():
+            yield None  # Should never be reached
+
+        mock_coordinator.async_cloud_client = null_client
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_client(self, mock_coordinator):
+        """Returns None when the cloud client context yields None."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        @asynccontextmanager
+        async def null_client():
+            yield None
+
+        mock_coordinator.async_cloud_client = null_client
+
+        with patch.object(image_module, "_map_image_cache", TTLCache(3600)):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_api_error_returns_none_and_caches_sentinel(self, mock_coordinator):
+        """DysonAPIError returns None and caches b'' sentinel."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(side_effect=DysonAPIError("oops"))
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
+
+    @pytest.mark.asyncio
+    async def test_empty_response_returns_none_and_caches_sentinel(
+        self, mock_coordinator
+    ):
+        """Empty dict response returns None and caches b'' sentinel."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value={})
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
+
+    @pytest.mark.asyncio
+    async def test_renderable_response_returns_png(self, mock_coordinator):
+        """Response with width/height/dustData is rendered and cached."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_data = _make_dust_map_dict()  # has width, height, dustData
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == result
+
+    @pytest.mark.asyncio
+    async def test_non_renderable_response_returns_none(self, mock_coordinator):
+        """Response without dust-map keys returns None (diagnostic path)."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_data = {"someOtherKey": "value", "nested": {"x": 1}}
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
+
 
 # ---------------------------------------------------------------------------
 # Tests: _render_dust_map_png
@@ -821,7 +1007,7 @@ class TestDysonDustMapImage:
     async def test_build_v2_returns_none_when_map_visualizer_fails(
         self, mock_coordinator
     ):
-        """_build returns None when _fetch_map_image returns None for a v2 record."""
+        """_build returns None when both _fetch_map_image and _fetch_clean_map_data_image fail."""
         entity = self._make_entity(mock_coordinator)
         record = _make_clean_record(
             clean_id="clean-v2",
@@ -837,9 +1023,43 @@ class TestDysonDustMapImage:
                 "custom_components.hass_dyson.image._fetch_map_image",
                 AsyncMock(return_value=None),
             ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_clean_map_data_image",
+                AsyncMock(return_value=None),
+            ),
         ):
             result = await entity._build()
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_v2_falls_back_to_clean_map_data(self, mock_coordinator):
+        """_build uses _fetch_clean_map_data_image when _fetch_map_image returns None."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(
+            clean_id="clean-v2",
+            has_dust_map=False,
+            download_url="https://s3.example.com/map.bin",
+        )
+        fallback_png = b"\x89PNG fallback"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_clean_map_data_image",
+                AsyncMock(return_value=fallback_png),
+            ) as mock_fallback,
+        ):
+            result = await entity._build()
+        assert result == fallback_png
+        mock_fallback.assert_awaited_once_with(mock_coordinator, "clean-v2")
+        assert entity._cached_clean_id == "clean-v2"
+        assert entity._cached_png == fallback_png
 
     @pytest.mark.asyncio
     async def test_build_uses_cached_png_for_same_clean_id(self, mock_coordinator):

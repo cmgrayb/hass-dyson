@@ -8,10 +8,13 @@ Currently provides:
                         floor plan with zone boundaries and dock location).
 
 v1 devices: dust map blob embedded in CleanRecord; floor plan from
-  GET /v1/app/{serial}/persistent-maps/{id} (presentation_map_data field).
-v2 devices (e.g. RB05 Spot+Scrub): both images fetched via the Map Visualizer
-  API (GET /v1/mapvisualizer/devices/{serial}/map/{mapId}) added in
-  libdyson-rest v0.15.0b5.
+  GET /v2/app/{serial}/persistent-maps/{id} (presentation_map_data field).
+v2 devices (e.g. RB05 Spot+Scrub): dust map fetch strategy (in priority order):
+  1. Map Visualizer API: GET /v1/mapvisualizer/devices/{serial}/map/{cleanId}
+     (works for Vis Nav; returns 404 for RB05/804A — result cached for TTL).
+  2. Clean Map Data API: GET /v2/{serial}/clean-maps-data/{cleanId}
+     (v2-native endpoint; response structure logged at DEBUG for diagnostics).
+  Floor plan: no working endpoint currently confirmed for RB05 — returns None.
 
 Bitmap rendering ported from thoukydides/matterbridge-dyson-robot
 (src/dyson-bitmap-octet.ts + src/dyson-device-360-map.ts).
@@ -111,15 +114,18 @@ async def _fetch_map_image(
     v0.15.0b5.  ``map_id`` can be either a clean session UUID (for a dust map)
     or a persistent-map integer ID string (for a floor plan).
 
-    Results are cached for 10 minutes.  Returns ``None`` on any API or network
-    error.
+    Successful responses are cached for 10 minutes.  A ``b""`` sentinel is
+    stored for known-missing results (e.g. 404 from the Map Visualizer for v2
+    devices) so the endpoint is not retried on every poll cycle.
+    Returns ``None`` on any API or network error.
     """
     from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
 
     key = f"{coordinator.serial_number}:{map_id}"
     cached = _map_image_cache.get(key)
     if cached is not None:
-        return cached
+        # b"" sentinel means a previous call confirmed no image is available.
+        return cached if cached else None
 
     async with coordinator.async_cloud_client() as client:
         if client is None:
@@ -133,11 +139,82 @@ async def _fetch_map_image(
                 map_id,
                 err,
             )
+            # Cache the miss so we don't retry on every poll cycle.
+            _map_image_cache.set(key, b"")
             return None
 
     if image_bytes:
         _map_image_cache.set(key, image_bytes)
+    else:
+        _map_image_cache.set(key, b"")
     return image_bytes or None
+
+
+async def _fetch_clean_map_data_image(
+    coordinator: DysonDataUpdateCoordinator, clean_id: str
+) -> bytes | None:
+    """Try to fetch/render a dust map image via the v2 clean-maps-data endpoint.
+
+    Calls ``GET /v2/{serial}/clean-maps-data/{clean_id}`` (libdyson-rest
+    ``get_clean_map_data``).  The response structure is logged at DEBUG level
+    for diagnostics.  If the payload contains a renderable dust-map grid
+    (``width``, ``height``, ``dustData`` keys) it is rendered to a PNG with
+    the existing ``_render_dust_map_png`` helper.
+
+    Results are cached in ``_map_image_cache`` under the ``clean_id`` key
+    (shared with ``_fetch_map_image``).  A ``b""`` sentinel is stored on
+    failure to suppress repeated API calls within the TTL.
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    key = f"{coordinator.serial_number}:{clean_id}"
+    # If a previous attempt already succeeded (or confirmed no image), reuse it.
+    cached = _map_image_cache.get(key)
+    if cached is not None:
+        return cached if cached else None
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return None
+        try:
+            data = await client.get_clean_map_data(coordinator.serial_number, clean_id)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug(
+                "clean_map_data fetch failed for %s clean_id=%s: %s",
+                coordinator.serial_number,
+                clean_id,
+                err,
+            )
+            _map_image_cache.set(key, b"")
+            return None
+
+    if not data:
+        _LOGGER.debug(
+            "clean_map_data empty for %s clean_id=%s",
+            coordinator.serial_number,
+            clean_id,
+        )
+        _map_image_cache.set(key, b"")
+        return None
+
+    _LOGGER.debug(
+        "clean_map_data keys for %s clean_id=%s: %s  (first 300 chars: %s)",
+        coordinator.serial_number,
+        clean_id,
+        sorted(data.keys()),
+        str(data)[:300],
+    )
+
+    # If the endpoint returns a renderable dust-map grid, render it.
+    if "width" in data and "height" in data and "dustData" in data:
+        png = _render_dust_map_png(data, None, None)
+        if png:
+            _map_image_cache.set(key, png)
+            return png
+
+    # Nothing renderable — cache the miss.
+    _map_image_cache.set(key, b"")
+    return None
 
 
 async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: str):
@@ -412,16 +489,22 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         # -------------------------------------------------------------------
         if download_url and not dust_map_model:
             if not clean_id:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "Dust map for %s: v2 record has download_url but no clean_id"
                     " — cannot request map image",
                     self.coordinator.serial_number,
                 )
                 return None
+            # Strategy 1: Map Visualizer API (works for Vis Nav, 404 for RB05).
             png = await _fetch_map_image(self.coordinator, clean_id)
+            # Strategy 2: v2 clean-maps-data endpoint (logs response for diagnostics).
             if png is None:
-                _LOGGER.warning(
-                    "Dust map for %s: map visualizer returned no image for clean_id=%s",
+                png = await _fetch_clean_map_data_image(self.coordinator, clean_id)
+            if png is None:
+                _LOGGER.debug(
+                    "Dust map for %s: no image available for clean_id=%s"
+                    " (map visualizer and clean-maps-data both returned nothing);"
+                    " check DEBUG logs for clean_map_data response structure",
                     self.coordinator.serial_number,
                     clean_id,
                 )
@@ -555,9 +638,10 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             )
             png = await _fetch_map_image(self.coordinator, pmap_id)
             if png is None:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "Floor plan for %s: map visualizer returned no image for"
-                    " persistent_map_id=%s",
+                    " persistent_map_id=%s — this is expected for v2 devices"
+                    " (e.g. RB05) where the v1 Map Visualizer is not supported",
                     self.coordinator.serial_number,
                     pmap_id,
                 )
