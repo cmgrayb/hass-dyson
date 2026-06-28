@@ -33,6 +33,7 @@ from custom_components.hass_dyson.image import (
     _palette_from_floor_plan,
     _render_dust_map_png,
     _render_presentation_png,
+    _render_v2_map_png,
 )
 
 # ---------------------------------------------------------------------------
@@ -715,10 +716,184 @@ class TestFetchCleanMapDataImage:
         assert result is None
         assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
 
+    @pytest.mark.asyncio
+    async def test_v2_format_response_renders_png(self, mock_coordinator):
+        """v2 format response (dimensions + dustMap) is rendered and cached."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        # _make_v2_clean_map_dict is defined later in this file but accessible
+        fake_data = {
+            "cleanId": "test-uuid",
+            "dimensions": {
+                "width": 4,
+                "height": 4,
+                "resolution": 0.02,
+                "offsetX": -0.04,
+                "offsetY": -0.04,
+            },
+            "dustMap": [{"type": "total", "data": [i + 1 for i in range(16)]}],
+            "cleanPath": [{"x": 0.0, "y": 0.0, "update": 0}],
+            "dockLocation": {"x": 0.0, "y": 0.0, "angle": 0.0},
+            "orientation": 0,
+        }
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == result
+
 
 # ---------------------------------------------------------------------------
 # Tests: _render_dust_map_png
 # ---------------------------------------------------------------------------
+
+
+def _make_v2_clean_map_dict(
+    width: int = 4,
+    height: int = 4,
+    resolution: float = 0.02,
+    dust_type: str = "total",
+    all_zero: bool = False,
+) -> dict:
+    """Return a well-formed v2 clean-maps-data dict for _render_v2_map_png."""
+    data = (
+        [0] * (width * height)
+        if all_zero
+        else [(i % 10) + 1 for i in range(width * height)]
+    )
+    return {
+        "cleanId": "test-clean-uuid",
+        "dimensions": {
+            "width": width,
+            "height": height,
+            "resolution": resolution,
+            "offsetX": -0.04,
+            "offsetY": -0.04,
+        },
+        "dustMap": [{"type": dust_type, "data": data}],
+        "cleanPath": [
+            {"x": -0.02, "y": -0.02, "update": 0},
+            {"x": 0.02, "y": 0.02, "update": 1},
+        ],
+        "dockLocation": {"x": 0.0, "y": 0.0, "angle": 0.0},
+        "orientation": 0,
+        "boundary": {"minX": -40, "maxX": 40, "minY": -40, "maxY": 40},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests: _render_v2_map_png
+# ---------------------------------------------------------------------------
+
+
+class TestRenderV2MapPng:
+    """Test the v2 clean-maps-data PNG renderer."""
+
+    def test_valid_v2_dict_returns_png(self):
+        """Valid v2 response renders to a PNG."""
+        result = _render_v2_map_png(_make_v2_clean_map_dict())
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_all_zero_dust_returns_png(self):
+        """All-zero dust data renders a transparent PNG (no crash)."""
+        result = _render_v2_map_png(_make_v2_clean_map_dict(all_zero=True))
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_no_dustmap_key_returns_none(self):
+        """Missing dustMap key returns None."""
+        data = _make_v2_clean_map_dict()
+        del data["dustMap"]
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_empty_dustmap_returns_none(self):
+        """Empty dustMap list returns None."""
+        data = _make_v2_clean_map_dict()
+        data["dustMap"] = []
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_dustmap_with_empty_data_returns_none(self):
+        """dustMap entry with empty data list returns None."""
+        data = _make_v2_clean_map_dict()
+        data["dustMap"] = [{"type": "total", "data": []}]
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_invalid_dimensions_returns_none(self):
+        """Zero width/height returns None."""
+        data = _make_v2_clean_map_dict()
+        data["dimensions"]["width"] = 0
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_missing_dimensions_key_returns_none(self):
+        """Missing dimensions key returns None."""
+        data = _make_v2_clean_map_dict()
+        del data["dimensions"]
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_rotation_is_applied(self):
+        """Rotation argument is applied (non-square result for 90°)."""
+        result = _render_v2_map_png(
+            _make_v2_clean_map_dict(width=4, height=8), rotation_deg=90
+        )
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_no_pillow_returns_none(self):
+        """Returns None when Pillow cannot be imported."""
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if "PIL" in name:
+                raise ImportError(f"mocked: {name}")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=mock_import):
+            result = _render_v2_map_png(_make_v2_clean_map_dict())
+        assert result is None
+
+    def test_prefers_total_type_over_other(self):
+        """When both 'areavisited' and 'total' are present, 'total' is used."""
+        data = _make_v2_clean_map_dict()
+        data["dustMap"] = [
+            {"type": "areavisited", "data": [1] * 16},
+            {"type": "total", "data": [200] * 16},
+        ]
+        result = _render_v2_map_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_falls_back_to_first_type_when_no_total(self):
+        """When there is no 'total' type, the first entry is used."""
+        data = _make_v2_clean_map_dict(dust_type="areavisited")
+        result = _render_v2_map_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_small_image_is_upscaled(self):
+        """Images smaller than 800px are scaled up."""
+        result = _render_v2_map_png(_make_v2_clean_map_dict(width=4, height=4))
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        assert min(img.size) >= 800
 
 
 class TestRenderDustMapPng:

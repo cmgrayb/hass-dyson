@@ -13,7 +13,9 @@ v2 devices (e.g. RB05 Spot+Scrub): dust map fetch strategy (in priority order):
   1. Map Visualizer API: GET /v1/mapvisualizer/devices/{serial}/map/{cleanId}
      (works for Vis Nav; returns 404 for RB05/804A — result cached for TTL).
   2. Clean Map Data API: GET /v2/{serial}/clean-maps-data/{cleanId}
-     (v2-native endpoint; response structure logged at DEBUG for diagnostics).
+     Returns JSON with {dimensions, dustMap, cleanPath, dockLocation, …}.
+     Rendered client-side by _render_v2_map_png (purple→white heatmap +
+     blue robot path + green dock icon).
   Floor plan: no working endpoint currently confirmed for RB05 — returns None.
 
 Bitmap rendering ported from thoukydides/matterbridge-dyson-robot
@@ -205,7 +207,16 @@ async def _fetch_clean_map_data_image(
         str(data)[:300],
     )
 
-    # If the endpoint returns a renderable dust-map grid, render it.
+    # Strategy 1: v2 format — {dimensions, dustMap, cleanPath, …}
+    # (returned by GET /v2/{serial}/clean-maps-data/{cleanId} for RB05/804A)
+    if "dimensions" in data and "dustMap" in data:
+        rotation = int(data.get("orientation") or 0)
+        png = _render_v2_map_png(data, rotation)
+        if png:
+            _map_image_cache.set(key, png)
+            return png
+
+    # Strategy 2: v1 format — {width, height, dustData}
     if "width" in data and "height" in data and "dustData" in data:
         png = _render_dust_map_png(data, None, None)
         if png:
@@ -411,6 +422,141 @@ def _render_dust_map_png(
 
     buf = io.BytesIO()
     composite.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _render_v2_map_png(data: dict, rotation_deg: int = 0) -> bytes | None:
+    """Render a v2 clean-maps-data response as a PNG image.
+
+    The JSON returned by ``GET /v2/{serial}/clean-maps-data/{cleanId}``
+    (reverse-engineered from the MyDyson APK ``sp0.CleanMapResponse``) has
+    the following fields used here:
+
+    .. code-block:: json
+
+        {
+          "dimensions": {"width": int, "height": int,
+                         "resolution": float,     /* metres per cell */
+                         "offsetX": float,         /* world-space origin X */
+                         "offsetY": float},        /* world-space origin Y */
+          "dustMap":   [{"type": "total", "data": [int, …]}],
+          "cleanPath": [{"x": float, "y": float, "update": int}],
+          "dockLocation": {"x": float, "y": float, "angle": float},
+          "orientation": int
+        }
+
+    The ``dustMap.data`` list is a flat grid of *width × height* integer dust
+    values (index ``i = row * width + col``, row 0 = world bottom row).
+    The ``cleanPath`` and ``dockLocation`` coordinates are in the same world
+    units as ``dimensions.resolution`` / ``offsetX`` / ``offsetY``.
+
+    Renders the dust heatmap in the purple→white gradient, overlays the robot
+    path as a blue line and the dock as a green circle, then applies the
+    ``orientation`` rotation.
+    """
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        _LOGGER.warning("Pillow not available — cannot render v2 map PNG")
+        return None
+
+    try:
+        dims = data.get("dimensions") or {}
+        width = int(dims.get("width") or 0)
+        height = int(dims.get("height") or 0)
+        resolution = float(dims.get("resolution") or 0.0)
+        offset_x = float(dims.get("offsetX") or 0.0)
+        offset_y = float(dims.get("offsetY") or 0.0)
+
+        if width <= 0 or height <= 0:
+            _LOGGER.debug("v2 map: invalid dimensions %dx%d", width, height)
+            return None
+
+        # --- Find the dust data layer (prefer "total", fall back to first) ---
+        dust_data: list[int] = []
+        for dm in data.get("dustMap") or []:
+            if not isinstance(dm, dict):
+                continue
+            dm_type = (dm.get("type") or "").lower()
+            dm_vals = dm.get("data") or []
+            if dm_type in ("total", "areavisited") and dm_vals:
+                dust_data = [int(v) for v in dm_vals]
+                break
+        if not dust_data:
+            for dm in data.get("dustMap") or []:
+                if isinstance(dm, dict) and dm.get("data"):
+                    dust_data = [int(v) for v in dm["data"]]
+                    break
+
+        if not dust_data:
+            _LOGGER.debug(
+                "v2 map: dustMap present but no renderable data layer — types: %s",
+                [dm.get("type") for dm in (data.get("dustMap") or [])],
+            )
+            return None
+
+        # --- Render the dust heatmap onto a width×height RGBA canvas ---
+        max_val = max(dust_data) or 1
+        n_levels = len(_DUST_GRADIENT_RGB)
+        rgba = bytearray(width * height * 4)
+        for i in range(min(len(dust_data), width * height)):
+            level = dust_data[i]
+            if level == 0:
+                continue
+            normalized = min(1.0, level / max_val)
+            idx = min(n_levels - 1, int(normalized * n_levels))
+            r, g, b = _DUST_GRADIENT_RGB[idx]
+            rgba[i * 4] = r
+            rgba[i * 4 + 1] = g
+            rgba[i * 4 + 2] = b
+            rgba[i * 4 + 3] = 220
+
+        img = Image.frombytes("RGBA", (width, height), bytes(rgba))
+        draw = ImageDraw.Draw(img)
+
+        def _world_to_px(wx: float, wy: float) -> tuple[int, int]:
+            """Map world coordinates to dust-grid pixel coordinates."""
+            if resolution <= 0:
+                return (width // 2, height // 2)
+            px = int((wx - offset_x) / resolution)
+            py = int((wy - offset_y) / resolution)
+            return (max(0, min(width - 1, px)), max(0, min(height - 1, py)))
+
+        # --- Robot path (blue semi-transparent line) ---
+        clean_path = data.get("cleanPath") or []
+        if clean_path and resolution > 0:
+            pts = [
+                _world_to_px(float(p.get("x") or 0), float(p.get("y") or 0))
+                for p in clean_path
+                if isinstance(p, dict)
+            ]
+            if len(pts) > 1:
+                draw.line(pts, fill=(30, 144, 255, 200), width=2)
+
+        # --- Dock location (solid green circle) ---
+        dock = data.get("dockLocation")
+        if isinstance(dock, dict) and dock.get("x") is not None:
+            dx, dy = _world_to_px(float(dock.get("x") or 0), float(dock.get("y") or 0))
+            draw.ellipse([dx - 4, dy - 4, dx + 4, dy + 4], fill=(0, 200, 80, 255))
+
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("v2 map rendering failed: %s", err)
+        return None
+
+    # Apply orientation (Y-flip always, then rotation)
+    img = _apply_orientation(img, rotation_deg)
+
+    # Scale up for legibility
+    max_dim = max(img.size)
+    if max_dim < 800:
+        factor = max(1, 800 // max_dim)
+        img = img.resize(
+            (img.size[0] * factor, img.size[1] * factor),
+            resample=Image.Resampling.NEAREST,
+        )
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
 
 
