@@ -1,5 +1,6 @@
 """Test vacuum platform for Dyson integration."""
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -14,7 +15,13 @@ from custom_components.hass_dyson.const import (
     ROBOT_STATE_FULL_CLEAN_RUNNING,
     ROBOT_STATE_INACTIVE_CHARGED,
 )
-from custom_components.hass_dyson.vacuum import DysonVacuumEntity, async_setup_entry
+from custom_components.hass_dyson.vacuum import (
+    DysonVacuumEntity,
+    _clean_maps_cache,
+    _clean_maps_locks,
+    async_setup_entry,
+    fetch_clean_maps,
+)
 
 
 @pytest.fixture
@@ -952,3 +959,344 @@ class TestCleanArea:
             entity._handle_coordinator_update()
 
         mock_issue.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# fetch_clean_maps tests
+# ---------------------------------------------------------------------------
+
+
+def _make_coordinator(serial: str = "FCM-TEST-001", client=None):
+    """Return a minimal coordinator mock suitable for fetch_clean_maps."""
+    coordinator = MagicMock()
+    coordinator.serial_number = serial
+    coordinator.device_type = "RB05"
+
+    @asynccontextmanager
+    async def _cloud_client():
+        yield client
+
+    coordinator.async_cloud_client = _cloud_client
+    return coordinator
+
+
+def _make_v2_record(start_epoch: int, end_epoch: int | None = None):
+    """Return a MagicMock that looks like a v2 CleanRecord."""
+    r = MagicMock()
+    r.start_time_epoch = start_epoch
+    r.end_time_epoch = end_epoch
+    r.timeline = None
+    return r
+
+
+def _make_v1_record(iso_start: str):
+    """Return a MagicMock that looks like a v1 CleanRecord (timeline-based)."""
+    r = MagicMock()
+    r.start_time_epoch = None
+    event = MagicMock()
+    event.time = iso_start
+    r.timeline = [event]
+    return r
+
+
+@pytest.fixture(autouse=True)
+def _reset_clean_maps_state():
+    """Isolate each test: clear the module-level cache and lock dict."""
+    _clean_maps_cache._store.clear()
+    _clean_maps_locks.clear()
+    yield
+    _clean_maps_cache._store.clear()
+    _clean_maps_locks.clear()
+
+
+class TestFetchCleanMaps:
+    """Unit tests for the fetch_clean_maps helper in vacuum.py."""
+
+    # ------------------------------------------------------------------
+    # Cache-hit fast path
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_returns_cached_value_without_api_call(self):
+        """When a fresh cache entry exists, no API call is made."""
+        cached = [_make_v2_record(1000)]
+        _clean_maps_cache.set("FCM-TEST-001", cached)
+
+        client = AsyncMock()
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result is cached
+        client.get_clean_maps.assert_not_called()
+
+    # ------------------------------------------------------------------
+    # Successful fetch — sorting
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_successful_v2_fetch_sorted_newest_first(self):
+        """v2 records are sorted by start_time_epoch descending."""
+        old = _make_v2_record(1000)
+        new = _make_v2_record(2000)
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(return_value=[old, new])
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == [new, old]
+        assert _clean_maps_cache.get("FCM-TEST-001") == [new, old]
+
+    @pytest.mark.asyncio
+    async def test_successful_v1_fetch_sorted_newest_first(self):
+        """v1 records (timeline-based) are sorted by ISO start time descending."""
+        old = _make_v1_record("2024-01-01T10:00:00Z")
+        new = _make_v1_record("2024-06-01T10:00:00Z")
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(return_value=[old, new])
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == [new, old]
+
+    @pytest.mark.asyncio
+    async def test_successful_fetch_caches_result(self):
+        """A successful fetch populates the cache so subsequent calls skip the API."""
+        record = _make_v2_record(5000)
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(return_value=[record])
+        coordinator = _make_coordinator(client=client)
+
+        await fetch_clean_maps(coordinator)
+
+        # Second call — client must NOT be hit again.
+        client.get_clean_maps.reset_mock()
+        result2 = await fetch_clean_maps(coordinator)
+
+        assert result2 == [record]
+        client.get_clean_maps.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_records_list_cached_and_returned(self):
+        """An empty list from the API is cached and returned as-is."""
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(return_value=[])
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == []
+        assert _clean_maps_cache.get("FCM-TEST-001") == []
+
+    # ------------------------------------------------------------------
+    # client is None (no auth_token)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_client_and_no_stale(self):
+        """Returns [] when client is None and no stale cache entry exists."""
+        coordinator = _make_coordinator(client=None)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_stale_when_no_client_and_stale_exists(self):
+        """Returns the stale cache entry when client is None."""
+        stale = [_make_v2_record(3000)]
+        _clean_maps_cache.set("FCM-TEST-001", stale)
+        _clean_maps_cache.expire("FCM-TEST-001")
+
+        coordinator = _make_coordinator(client=None)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == stale
+
+    # ------------------------------------------------------------------
+    # DysonAuthError — must NOT be cached
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_auth_error_not_cached_returns_empty(self):
+        """DysonAuthError is not cached; returns empty list."""
+        from libdyson_rest.exceptions import DysonAuthError
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(side_effect=DysonAuthError("token expired"))
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == []
+        # Cache must remain unpopulated so the next call retries.
+        assert _clean_maps_cache.get("FCM-TEST-001") is None
+
+    @pytest.mark.asyncio
+    async def test_auth_error_returns_stale_when_available(self):
+        """DysonAuthError falls back to stale cache if one exists."""
+        from libdyson_rest.exceptions import DysonAuthError
+
+        stale = [_make_v2_record(9000)]
+        _clean_maps_cache.set("FCM-TEST-001", stale)
+        _clean_maps_cache.expire("FCM-TEST-001")
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(side_effect=DysonAuthError("token expired"))
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == stale
+
+    # ------------------------------------------------------------------
+    # DysonAPIError — must be cached to prevent retry spam
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_api_error_400_cached_returns_empty(self):
+        """A 400 DysonAPIError is cached so the endpoint is not retried."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(side_effect=DysonAPIError("400 Bad Request"))
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == []
+        # Failure must be cached (empty list stored).
+        assert _clean_maps_cache.get("FCM-TEST-001") == []
+
+    @pytest.mark.asyncio
+    async def test_api_error_400_not_retried_on_second_call(self):
+        """After a cached 400 failure, subsequent calls skip the API entirely."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(side_effect=DysonAPIError("400 Bad Request"))
+        coordinator = _make_coordinator(client=client)
+
+        await fetch_clean_maps(coordinator)
+        client.get_clean_maps.reset_mock()
+
+        result2 = await fetch_clean_maps(coordinator)
+
+        assert result2 == []
+        client.get_clean_maps.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_api_error_non_400_cached_returns_stale(self):
+        """Non-400 DysonAPIError is cached and stale fallback is returned."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        stale = [_make_v2_record(7000)]
+        _clean_maps_cache.set("FCM-TEST-001", stale)
+        _clean_maps_cache.expire("FCM-TEST-001")
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(
+            side_effect=DysonAPIError("503 Service Unavailable")
+        )
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == stale
+        # Failure is cached (stale value is stored, not None).
+        assert _clean_maps_cache.get("FCM-TEST-001") == stale
+
+    @pytest.mark.asyncio
+    async def test_api_error_non_400_no_stale_returns_empty(self):
+        """Non-400 DysonAPIError with no stale cache returns []."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(
+            side_effect=DysonAPIError("503 Service Unavailable")
+        )
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result == []
+
+    # ------------------------------------------------------------------
+    # Concurrent stampede prevention (double-checked locking)
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # _sort_epoch edge cases (v1 timeline with degenerate data)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_v1_record_with_all_falsy_times_sorted_last(self):
+        """v1 record whose timeline events all have falsy .time values gets epoch 0."""
+        good = _make_v2_record(5000)
+        bad_event = MagicMock()
+        bad_event.time = None  # falsy → filtered out → times=[] → epoch 0.0
+        bad_v1 = MagicMock()
+        bad_v1.start_time_epoch = None
+        bad_v1.timeline = [bad_event]
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(return_value=[bad_v1, good])
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        # good (epoch 5000) should be first; bad_v1 (epoch 0) last.
+        assert result[0] is good
+        assert result[1] is bad_v1
+
+    @pytest.mark.asyncio
+    async def test_v1_record_with_invalid_iso_string_sorted_last(self):
+        """v1 record with a malformed ISO timestamp falls back to epoch 0."""
+        good = _make_v2_record(5000)
+        bad_event = MagicMock()
+        bad_event.time = "not-a-valid-date"
+        bad_v1 = MagicMock()
+        bad_v1.start_time_epoch = None
+        bad_v1.timeline = [bad_event]
+
+        client = AsyncMock()
+        client.get_clean_maps = AsyncMock(return_value=[bad_v1, good])
+        coordinator = _make_coordinator(client=client)
+
+        result = await fetch_clean_maps(coordinator)
+
+        assert result[0] is good
+        assert result[1] is bad_v1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_callers_only_one_api_hit(self):
+        """Concurrent calls for the same serial trigger only one API request."""
+        import asyncio
+
+        record = _make_v2_record(4000)
+
+        call_count = 0
+
+        async def _slow_get_clean_maps(serial, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0)  # yield so the second coroutine can reach the lock
+            return [record]
+
+        client = AsyncMock()
+        client.get_clean_maps = _slow_get_clean_maps
+        coordinator = _make_coordinator(client=client)
+
+        results = await asyncio.gather(
+            fetch_clean_maps(coordinator),
+            fetch_clean_maps(coordinator),
+        )
+
+        assert call_count == 1
+        assert results[0] == results[1] == [record]
