@@ -33,6 +33,7 @@ from custom_components.hass_dyson.image import (
     _palette_from_floor_plan,
     _render_dust_map_png,
     _render_presentation_png,
+    _render_v2_floor_plan_png,
     _render_v2_map_png,
 )
 
@@ -757,6 +758,120 @@ class TestFetchCleanMapDataImage:
 
 
 # ---------------------------------------------------------------------------
+# Tests: _fetch_v2_floor_plan_image
+# ---------------------------------------------------------------------------
+
+
+class TestFetchV2FloorPlanImage:
+    """Tests for the v2 zone-boundary floor plan fetch helper."""
+
+    @pytest.mark.asyncio
+    async def test_valid_response_renders_and_caches(self, mock_coordinator):
+        """Valid zone-boundary response is rendered and cached."""
+        from custom_components.hass_dyson import image as image_module
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_data = {
+            "cleanId": "clean-fp-1",
+            "dimensions": {
+                "width": 4,
+                "height": 4,
+                "resolution": 0.02,
+                "offsetX": -0.04,
+                "offsetY": -0.04,
+            },
+            "zones": [
+                {
+                    "id": "z1",
+                    "name": "Room",
+                    "type": "room",
+                    "visited": [],
+                    "presentation": [
+                        {
+                            "start": {"x": -0.04, "y": -0.04},
+                            "end": {"x": 0.04, "y": -0.04},
+                            "type": 0,
+                        }
+                    ],
+                }
+            ],
+            "dockLocation": {"x": 0.0, "y": 0.0, "angle": 0.0},
+            "orientation": 0,
+        }
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_floor_plan_cache", cache):
+            result = await image_module._fetch_v2_floor_plan_image(
+                mock_coordinator, "clean-fp-1"
+            )
+
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+        assert cache.get("VS9-GB-HJA0000A:fp:clean-fp-1") == result
+
+    @pytest.mark.asyncio
+    async def test_api_error_caches_sentinel(self, mock_coordinator):
+        """API error stores b'' sentinel and returns None."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson import image as image_module
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(
+            side_effect=DysonAPIError("floor plan fetch error")
+        )
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_floor_plan_cache", cache):
+            result = await image_module._fetch_v2_floor_plan_image(
+                mock_coordinator, "clean-fp-2"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:fp:clean-fp-2") == b""
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_without_api_call(self, mock_coordinator):
+        """A cached PNG is returned without a new API call."""
+        from custom_components.hass_dyson import image as image_module
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        expected_png = b"\x89PNG\r\nfake"
+        fake_client = AsyncMock()
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+        cache.set("VS9-GB-HJA0000A:fp:clean-fp-3", expected_png)
+
+        with patch.object(image_module, "_floor_plan_cache", cache):
+            result = await image_module._fetch_v2_floor_plan_image(
+                mock_coordinator, "clean-fp-3"
+            )
+
+        assert result == expected_png
+        fake_client.get_clean_map_data.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Tests: _render_dust_map_png
 # ---------------------------------------------------------------------------
 
@@ -797,6 +912,121 @@ def _make_v2_clean_map_dict(
 # ---------------------------------------------------------------------------
 # Tests: _render_v2_map_png
 # ---------------------------------------------------------------------------
+
+
+class TestRenderV2FloorPlanPng:
+    """Test the v2 floor plan zone-boundary renderer."""
+
+    def _make_floor_plan_dict(
+        self,
+        *,
+        width: int = 4,
+        height: int = 4,
+        resolution: float = 0.02,
+        num_zones: int = 1,
+        include_dock: bool = True,
+        include_zones: bool = True,
+    ) -> dict:
+        zones = []
+        if include_zones:
+            for i in range(num_zones):
+                zones.append(
+                    {
+                        "id": f"zone-{i}",
+                        "name": f"Room {i}",
+                        "type": "room",
+                        "visited": [],
+                        "presentation": [
+                            {
+                                "start": {"x": -0.04, "y": -0.04},
+                                "end": {"x": 0.04, "y": -0.04},
+                                "type": 0,
+                            },
+                            {
+                                "start": {"x": 0.04, "y": -0.04},
+                                "end": {"x": 0.04, "y": 0.04},
+                                "type": 1,
+                            },
+                        ],
+                    }
+                )
+        return {
+            "cleanId": "test-uuid",
+            "dimensions": {
+                "width": width,
+                "height": height,
+                "resolution": resolution,
+                "offsetX": -0.04,
+                "offsetY": -0.04,
+            },
+            "zones": zones,
+            "dockLocation": (
+                {"x": 0.0, "y": 0.0, "angle": 0.0} if include_dock else None
+            ),
+            "orientation": 0,
+        }
+
+    def test_valid_dict_returns_png(self):
+        """Valid floor plan dict renders to a PNG."""
+        result = _render_v2_floor_plan_png(self._make_floor_plan_dict())
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_has_white_background(self):
+        """The rendered image has a white background (not transparent)."""
+        result = _render_v2_floor_plan_png(
+            self._make_floor_plan_dict(width=4, height=4)
+        )
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        # Top-left corner should be white or very light (background, no line)
+        assert img.mode == "RGBA"
+
+    def test_no_zones_no_dock_returns_none(self):
+        """No zone lines and no dock returns None (nothing useful to render)."""
+        data = self._make_floor_plan_dict(include_zones=False, include_dock=False)
+        assert _render_v2_floor_plan_png(data) is None
+
+    def test_no_zones_but_dock_returns_png(self):
+        """No zone lines but a dock location still renders a PNG."""
+        data = self._make_floor_plan_dict(include_zones=False, include_dock=True)
+        result = _render_v2_floor_plan_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_invalid_dimensions_returns_none(self):
+        """Zero width/height returns None."""
+        data = self._make_floor_plan_dict()
+        data["dimensions"]["width"] = 0
+        assert _render_v2_floor_plan_png(data) is None
+
+    def test_missing_dimensions_returns_none(self):
+        """Missing dimensions key returns None."""
+        data = self._make_floor_plan_dict()
+        del data["dimensions"]
+        assert _render_v2_floor_plan_png(data) is None
+
+    def test_rotation_applied(self):
+        """Rotation argument changes image dimensions (non-square source)."""
+        data = self._make_floor_plan_dict(width=4, height=8)
+        result = _render_v2_floor_plan_png(data, rotation_deg=90)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_small_image_is_upscaled(self):
+        """Images smaller than 800px are scaled up."""
+        data = self._make_floor_plan_dict(width=4, height=4)
+        result = _render_v2_floor_plan_png(data)
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        assert min(img.size) >= 800
+
+    def test_multiple_zones_rendered(self):
+        """Multiple zones each with presentation lines are all drawn."""
+        data = self._make_floor_plan_dict(num_zones=3)
+        result = _render_v2_floor_plan_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
 
 
 class TestRenderV2MapPng:
@@ -1125,16 +1355,49 @@ class TestDysonDustMapImage:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_build_returns_none_when_no_dust_map(self, mock_coordinator):
-        """_build returns None when the latest clean has no dust_map or download_url (v1 path)."""
+    async def test_build_returns_none_when_no_dust_map_and_no_clean_id(
+        self, mock_coordinator
+    ):
+        """_build returns None when latest clean has no dust_map and no clean_id."""
         entity = self._make_entity(mock_coordinator)
-        record = _make_clean_record(has_dust_map=False, download_url=None)
+        record = _make_clean_record(
+            clean_id=None, has_dust_map=False, download_url=None
+        )
         with patch(
             "custom_components.hass_dyson.image.fetch_clean_maps",
             AsyncMock(return_value=[record]),
         ):
             result = await entity._build()
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_no_download_url_still_enters_v2_path(self, mock_coordinator):
+        """_build enters v2 path when clean_id is present even without download_url."""
+        entity = self._make_entity(mock_coordinator)
+        # Simulate RB05: no embedded dust_map, no download_url, but has clean_id
+        record = _make_clean_record(
+            clean_id="clean-nodl",
+            has_dust_map=False,
+            download_url=None,
+        )
+        rendered_png = b"\x89PNG nodl"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_clean_map_data_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_clean_data,
+        ):
+            result = await entity._build()
+        assert result == rendered_png
+        mock_clean_data.assert_awaited_once_with(mock_coordinator, "clean-nodl")
 
     @pytest.mark.asyncio
     async def test_build_v2_calls_map_visualizer_api(self, mock_coordinator):
@@ -1537,10 +1800,10 @@ class TestDysonFloorPlanImage:
     async def test_build_returns_none_when_no_presentation_data_and_visualizer_fails(
         self, mock_coordinator
     ):
-        """_build returns None when persistent map has no presentation data
-        and the Map Visualizer API also returns nothing."""
+        """_build returns None when persistent map has no presentation data,
+        the Map Visualizer fails, and v2 zone-boundary renderer also returns nothing."""
         entity = self._make_entity(mock_coordinator)
-        record = _make_clean_record(pmap_id="pmap-2")
+        record = _make_clean_record(pmap_id="pmap-2", clean_id="clean-fp")
         pmap = _make_persistent_map(presentation_data=None)
         with (
             patch(
@@ -1555,9 +1818,44 @@ class TestDysonFloorPlanImage:
                 "custom_components.hass_dyson.image._fetch_map_image",
                 AsyncMock(return_value=None),
             ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_v2_floor_plan_image",
+                AsyncMock(return_value=None),
+            ),
         ):
             result = await entity._build()
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_v2_floor_plan_from_zone_boundaries(self, mock_coordinator):
+        """_build falls back to v2 zone-boundary renderer when visualizer returns nothing."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(pmap_id="pmap-2", clean_id="clean-fp-id")
+        pmap = _make_persistent_map(presentation_data=None)
+        rendered_png = b"\x89PNG zone-floor"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_persist_map",
+                AsyncMock(return_value=pmap),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_v2_floor_plan_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_fp,
+        ):
+            result = await entity._build()
+        assert result == rendered_png
+        mock_fp.assert_awaited_once_with(mock_coordinator, "clean-fp-id")
+        assert entity._cached_pmap_id == "pmap-2"
+        assert entity._cached_png == rendered_png
 
     @pytest.mark.asyncio
     async def test_build_v2_floor_plan_via_map_visualizer(self, mock_coordinator):

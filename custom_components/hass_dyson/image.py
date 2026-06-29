@@ -9,14 +9,22 @@ Currently provides:
 
 v1 devices: dust map blob embedded in CleanRecord; floor plan from
   GET /v2/app/{serial}/persistent-maps/{id} (presentation_map_data field).
-v2 devices (e.g. RB05 Spot+Scrub): dust map fetch strategy (in priority order):
-  1. Map Visualizer API: GET /v1/mapvisualizer/devices/{serial}/map/{cleanId}
-     (works for Vis Nav; returns 404 for RB05/804A — result cached for TTL).
-  2. Clean Map Data API: GET /v2/{serial}/clean-maps-data/{cleanId}
-     Returns JSON with {dimensions, dustMap, cleanPath, dockLocation, …}.
-     Rendered client-side by _render_v2_map_png (purple→white heatmap +
-     blue robot path + green dock icon).
-  Floor plan: no working endpoint currently confirmed for RB05 — returns None.
+v2 devices (e.g. RB05 Spot+Scrub):
+  Dust map strategy (priority order):
+    1. Map Visualizer API: GET /v1/mapvisualizer/devices/{serial}/map/{cleanId}
+       (Vis Nav only; returns 404 for RB05/804A — result cached for TTL).
+    2. Clean Map Data API: GET /v2/{serial}/clean-maps-data/{cleanId}
+       Returns JSON with {dimensions, dustMap, cleanPath, dockLocation, …}.
+       Rendered client-side by _render_v2_map_png (purple→white heatmap +
+       blue robot path + green dock icon).
+  Floor plan strategy (priority order):
+    1. Presentation bitmap in GET /v2/app/{serial}/persistent-maps/{id}
+       (v1 Vis Nav only — not present for RB05).
+    2. Map Visualizer API: GET /v1/mapvisualizer/devices/{serial}/map/{pmapId}
+       (returns 404 for RB05).
+    3. Zone boundary lines from GET /v2/{serial}/clean-maps-data/{cleanId}
+       Rendered client-side by _render_v2_floor_plan_png (white background +
+       dark zone boundary line segments + green dock icon).
 
 Bitmap rendering ported from thoukydides/matterbridge-dyson-robot
 (src/dyson-bitmap-octet.ts + src/dyson-device-360-map.ts).
@@ -105,6 +113,7 @@ async def async_setup_entry(
 
 _persist_map_cache = TTLCache(6 * 3600)
 _map_image_cache = TTLCache(10 * 60)
+_floor_plan_cache = TTLCache(6 * 3600)
 
 
 async def _fetch_map_image(
@@ -226,6 +235,48 @@ async def _fetch_clean_map_data_image(
     # Nothing renderable — cache the miss.
     _map_image_cache.set(key, b"")
     return None
+
+
+async def _fetch_v2_floor_plan_image(
+    coordinator: DysonDataUpdateCoordinator, clean_id: str
+) -> bytes | None:
+    """Render a v2 floor plan from the clean-maps-data endpoint.
+
+    Calls ``GET /v2/{serial}/clean-maps-data/{cleanId}`` and renders the zone
+    boundary lines via ``_render_v2_floor_plan_png``.  Results are cached in
+    ``_floor_plan_cache`` with a 6-hour TTL (floor plans change infrequently).
+    A ``b""`` sentinel is stored on failure to suppress repeated API calls.
+    """
+    from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
+
+    key = f"{coordinator.serial_number}:fp:{clean_id}"
+    cached = _floor_plan_cache.get(key)
+    if cached is not None:
+        return cached if cached else None
+
+    async with coordinator.async_cloud_client() as client:
+        if client is None:
+            return None
+        try:
+            data = await client.get_clean_map_data(coordinator.serial_number, clean_id)
+        except (DysonAPIError, DysonAuthError) as err:
+            _LOGGER.debug(
+                "v2 floor plan fetch failed for %s clean_id=%s: %s",
+                coordinator.serial_number,
+                clean_id,
+                err,
+            )
+            _floor_plan_cache.set(key, b"")
+            return None
+
+    if not data:
+        _floor_plan_cache.set(key, b"")
+        return None
+
+    rotation = int(data.get("orientation") or 0)
+    png = _render_v2_floor_plan_png(data, rotation)
+    _floor_plan_cache.set(key, png if png else b"")
+    return png
 
 
 async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: str):
@@ -560,6 +611,124 @@ def _render_v2_map_png(data: dict, rotation_deg: int = 0) -> bytes | None:
     return buf.getvalue()
 
 
+def _render_v2_floor_plan_png(data: dict, rotation_deg: int = 0) -> bytes | None:
+    """Render zone boundary lines from a v2 clean-maps-data response as a floor plan PNG.
+
+    Uses the same response as ``_render_v2_map_png`` (``GET /v2/{serial}/clean-maps-data/
+    {cleanId}``) but draws only the zone boundary line segments and dock location on a
+    white canvas — no dust heatmap.  This gives a usable floor plan for v2 devices
+    (e.g. RB05 Spot+Scrub) where ``GET /v2/app/{serial}/persistent-maps/{id}``
+    returns structured JSON instead of a pre-rendered PNG.
+
+    JSON fields used:
+
+    .. code-block:: json
+
+        {
+          "dimensions": {"width": int, "height": int,
+                         "resolution": float,     /* metres per cell */
+                         "offsetX": float,
+                         "offsetY": float},
+          "zones": [
+            {"presentation": [{"start": {"x": float, "y": float},
+                               "end":   {"x": float, "y": float},
+                               "type":   int}]}
+          ],
+          "dockLocation": {"x": float, "y": float, "angle": float},
+          "orientation": int
+        }
+    """
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        _LOGGER.warning("Pillow not available — cannot render v2 floor plan PNG")
+        return None
+
+    try:
+        dims = data.get("dimensions") or {}
+        width = int(dims.get("width") or 0)
+        height = int(dims.get("height") or 0)
+        resolution = float(dims.get("resolution") or 0.0)
+        offset_x = float(dims.get("offsetX") or 0.0)
+        offset_y = float(dims.get("offsetY") or 0.0)
+
+        if width <= 0 or height <= 0:
+            _LOGGER.debug("v2 floor plan: invalid dimensions %dx%d", width, height)
+            return None
+
+        # White background
+        img = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+        draw = ImageDraw.Draw(img)
+
+        def _world_to_px(wx: float, wy: float) -> tuple[int, int]:
+            if resolution <= 0:
+                return (width // 2, height // 2)
+            px = int((wx - offset_x) / resolution)
+            py = int((wy - offset_y) / resolution)
+            return (max(0, min(width - 1, px)), max(0, min(height - 1, py)))
+
+        # Draw zone boundary lines
+        # Line.type: 0 = outer wall (thick dark), other = room separator (thin gray)
+        zones = data.get("zones") or []
+        has_lines = False
+        for zone in zones:
+            if not isinstance(zone, dict):
+                continue
+            for seg in zone.get("presentation") or []:
+                if not isinstance(seg, dict):
+                    continue
+                start = seg.get("start") or {}
+                end = seg.get("end") or {}
+                sx, sy = _world_to_px(
+                    float(start.get("x") or 0), float(start.get("y") or 0)
+                )
+                ex, ey = _world_to_px(
+                    float(end.get("x") or 0), float(end.get("y") or 0)
+                )
+                line_type = seg.get("type", 0)
+                # Type 0 → outer wall (thicker, darker); others → room separator
+                if line_type == 0:
+                    draw.line([sx, sy, ex, ey], fill=(40, 40, 40, 255), width=2)
+                else:
+                    draw.line([sx, sy, ex, ey], fill=(130, 130, 130, 255), width=1)
+                has_lines = True
+
+        # Dock location — green filled circle
+        dock = data.get("dockLocation")
+        has_dock = isinstance(dock, dict) and dock.get("x") is not None
+        if has_dock:
+            dx, dy = _world_to_px(float(dock.get("x") or 0), float(dock.get("y") or 0))
+            draw.ellipse(
+                [dx - 5, dy - 5, dx + 5, dy + 5],
+                fill=(0, 200, 80, 255),
+                outline=(0, 120, 40, 255),
+            )
+
+        if not has_lines and not has_dock:
+            _LOGGER.debug("v2 floor plan: no zones or dock location in response")
+            return None
+
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("v2 floor plan rendering failed: %s", err)
+        return None
+
+    # Apply orientation (Y-flip always, then rotation)
+    img = _apply_orientation(img, rotation_deg)
+
+    # Scale up for legibility
+    max_dim = max(img.size)
+    if max_dim < 800:
+        factor = max(1, 800 // max_dim)
+        img = img.resize(
+            (img.size[0] * factor, img.size[1] * factor),
+            resample=Image.Resampling.NEAREST,
+        )
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def _render_presentation_png(
     presentation_png: bytes, rotation_deg: int = 0
 ) -> bytes | None:
@@ -630,10 +799,12 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         )
 
         # -------------------------------------------------------------------
-        # v2 path: no embedded dust map blob — use the Map Visualizer API to
-        # get a server-rendered image for the clean session.
+        # v2 path: no embedded dust map blob — use the cloud APIs to get or
+        # render a map image for the clean session.
+        # Triggered for any record that has a clean_id but no embedded dust
+        # map, regardless of whether a download_url is present.
         # -------------------------------------------------------------------
-        if download_url and not dust_map_model:
+        if not dust_map_model and clean_id:
             if not clean_id:
                 _LOGGER.debug(
                     "Dust map for %s: v2 record has download_url but no clean_id"
@@ -786,12 +957,25 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             if png is None:
                 _LOGGER.debug(
                     "Floor plan for %s: map visualizer returned no image for"
-                    " persistent_map_id=%s — this is expected for v2 devices"
-                    " (e.g. RB05) where the v1 Map Visualizer is not supported",
+                    " persistent_map_id=%s — trying v2 zone-boundary renderer",
                     self.coordinator.serial_number,
                     pmap_id,
                 )
-                return None
+                # v2 devices (e.g. RB05): no pre-rendered floor plan bitmap
+                # exists anywhere.  Render the zone boundary lines from the
+                # most recent clean-maps-data response instead.
+                clean_id = cleans[0].clean_id
+                if clean_id:
+                    png = await _fetch_v2_floor_plan_image(self.coordinator, clean_id)
+                if png is None:
+                    _LOGGER.debug(
+                        "Floor plan for %s: no floor plan image available for"
+                        " persistent_map_id=%s (v1 Map Visualizer 404, v2"
+                        " zone-boundary render returned nothing)",
+                        self.coordinator.serial_number,
+                        pmap_id,
+                    )
+                    return None
             self._cached_pmap_id = pmap_id
             self._cached_png = png
             self._attr_image_last_updated = datetime.now(timezone.utc)
