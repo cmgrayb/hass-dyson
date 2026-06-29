@@ -301,7 +301,6 @@ class DysonDevice:
                 self._log_serial,
             )
             return self._connected
-<<<<<<< main
 
         async with self._connect_lock:
             if self._connected and not force:
@@ -325,31 +324,6 @@ class DysonDevice:
             if await self._try_preferred_connection_retry():
                 return True
 
-=======
-
-        async with self._connect_lock:
-            if self._connected and not force:
-                _LOGGER.debug(
-                    "Device %s is already connected; skipping duplicate connect()",
-                    self._log_serial,
-                )
-                return True
-
-            # Check reconnection backoff to prevent rapid reconnection attempts
-            if not self._check_reconnect_backoff(force):
-                return False
-
-            self._last_reconnect_attempt = time.time()
-
-            # Try preferred connection after disconnection
-            if await self._try_preferred_connection_after_disconnect():
-                return True
-
-            # Try preferred connection if using fallback and it's time to retry
-            if await self._try_preferred_connection_retry():
-                return True
-
->>>>>>> fix/mqtt_local_connect_storm
             # Try connections in order
             return await self._try_connection_order()
 
@@ -1179,13 +1153,9 @@ class DysonDevice:
                 )
                 success = await self.connect(force=True)
                 if success:
-<<<<<<< main
-                    _LOGGER.info("Automatic reconnect succeeded for %s", self._log_serial)
-=======
                     _LOGGER.info(
                         "Automatic reconnect succeeded for %s", self._log_serial
                     )
->>>>>>> fix/mqtt_local_connect_storm
                     return
 
                 wait_seconds = max(
