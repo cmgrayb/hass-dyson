@@ -1153,7 +1153,9 @@ class DysonDevice:
                 )
                 success = await self.connect(force=True)
                 if success:
-                    _LOGGER.info("Automatic reconnect succeeded for %s", self._log_serial)
+                    _LOGGER.info(
+                        "Automatic reconnect succeeded for %s", self._log_serial
+                    )
                     return
 
                 wait_seconds = max(

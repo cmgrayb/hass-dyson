@@ -231,7 +231,6 @@ class TestDysonDevice:
             device2._last_preferred_retry == 0.0
         )  # Should not set timer for unstable connection
 
-
     def test_unexpected_disconnect_schedules_reconnect(self, mock_hass):
         """Test unexpected established disconnect queues automatic reconnect."""
         device = DysonDevice(
