@@ -33,6 +33,8 @@ from custom_components.hass_dyson.image import (
     _palette_from_floor_plan,
     _render_dust_map_png,
     _render_presentation_png,
+    _render_v2_floor_plan_png,
+    _render_v2_map_png,
 )
 
 # ---------------------------------------------------------------------------
@@ -84,11 +86,19 @@ def _make_clean_record(
     has_dust_map: bool = True,
     position: tuple[float, float] | None = (100.0, 200.0),
     footprint_b64: str | None = None,
+    download_url: str | None = None,
 ) -> MagicMock:
-    """Build a mock CleanRecord."""
+    """Build a mock CleanRecord.
+
+    By default simulates a v1 record (no download_url, embedded dust_map).
+    Pass ``download_url`` and ``has_dust_map=False`` to simulate a v2 record.
+    """
     record = MagicMock()
     record.clean_id = clean_id
     record.persistent_map_id = pmap_id
+    record.download_url = (
+        download_url  # must be explicit — MagicMock auto-attrs are truthy
+    )
 
     if has_dust_map:
         dust_map = MagicMock()
@@ -441,8 +451,679 @@ class TestPaletteFromFloorPlan:
 
 
 # ---------------------------------------------------------------------------
+# Tests: _fetch_map_image
+# ---------------------------------------------------------------------------
+
+
+class TestFetchMapImage:
+    """Test the _fetch_map_image Map Visualizer helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_cached_value(self, mock_coordinator):
+        """Returns immediately on a cache hit."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        png = b"\x89PNG cached"
+        cache.set("VS9-GB-HJA0000A:map-99", png)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_map_image(mock_coordinator, "map-99")
+
+        assert result is png
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_client(self, mock_coordinator):
+        """Returns None when the cloud client context yields None."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        @asynccontextmanager
+        async def null_client():
+            yield None
+
+        mock_coordinator.async_cloud_client = null_client
+
+        with patch.object(image_module, "_map_image_cache", TTLCache(3600)):
+            result = await image_module._fetch_map_image(mock_coordinator, "map-99")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_api_error_returns_none(self, mock_coordinator):
+        """Returns None on DysonAPIError."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_map_image = AsyncMock(side_effect=DysonAPIError("boom"))
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+
+        with patch.object(image_module, "_map_image_cache", TTLCache(3600)):
+            result = await image_module._fetch_map_image(mock_coordinator, "map-99")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetches_and_caches_image(self, mock_coordinator):
+        """Successfully fetched image bytes are cached and returned."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        png = b"\x89PNG server-rendered"
+        fake_client = AsyncMock()
+        fake_client.get_map_image = AsyncMock(return_value=png)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_map_image(mock_coordinator, "map-99")
+
+        assert result is png
+        assert cache.get("VS9-GB-HJA0000A:map-99") is png
+
+    @pytest.mark.asyncio
+    async def test_miss_is_cached_as_sentinel(self, mock_coordinator):
+        """A 404/API error stores b'' sentinel so the endpoint is not retried."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_map_image = AsyncMock(side_effect=DysonAPIError("404"))
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_map_image(mock_coordinator, "map-99")
+            assert result is None
+            # Sentinel stored — second call must not hit the API.
+            fake_client.get_map_image.reset_mock()
+            result2 = await image_module._fetch_map_image(mock_coordinator, "map-99")
+            assert result2 is None
+        fake_client.get_map_image.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Tests: _fetch_clean_map_data_image
+# ---------------------------------------------------------------------------
+
+
+class TestFetchCleanMapDataImage:
+    """Test the _fetch_clean_map_data_image v2 fallback helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_cached_value(self, mock_coordinator):
+        """Returns immediately on a cache hit (non-empty bytes)."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        png = b"\x89PNG cached"
+        cache.set("VS9-GB-HJA0000A:clean-42", png)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+        assert result is png
+
+    @pytest.mark.asyncio
+    async def test_sentinel_returns_none(self, mock_coordinator):
+        """b'' sentinel in cache returns None without an API call."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        cache.set("VS9-GB-HJA0000A:clean-42", b"")
+
+        @asynccontextmanager
+        async def null_client():
+            yield None  # Should never be reached
+
+        mock_coordinator.async_cloud_client = null_client
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_client(self, mock_coordinator):
+        """Returns None when the cloud client context yields None."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        @asynccontextmanager
+        async def null_client():
+            yield None
+
+        mock_coordinator.async_cloud_client = null_client
+
+        with patch.object(image_module, "_map_image_cache", TTLCache(3600)):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_api_error_returns_none_and_caches_sentinel(self, mock_coordinator):
+        """DysonAPIError returns None and caches b'' sentinel."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(side_effect=DysonAPIError("oops"))
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
+
+    @pytest.mark.asyncio
+    async def test_empty_response_returns_none_and_caches_sentinel(
+        self, mock_coordinator
+    ):
+        """Empty dict response returns None and caches b'' sentinel."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value={})
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
+
+    @pytest.mark.asyncio
+    async def test_renderable_response_returns_png(self, mock_coordinator):
+        """Response with width/height/dustData is rendered and cached."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_data = _make_dust_map_dict()  # has width, height, dustData
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == result
+
+    @pytest.mark.asyncio
+    async def test_non_renderable_response_returns_none(self, mock_coordinator):
+        """Response without dust-map keys returns None (diagnostic path)."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_data = {"someOtherKey": "value", "nested": {"x": 1}}
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == b""
+
+    @pytest.mark.asyncio
+    async def test_v2_format_response_renders_png(self, mock_coordinator):
+        """v2 format response (dimensions + dustMap) is rendered and cached."""
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        # _make_v2_clean_map_dict is defined later in this file but accessible
+        fake_data = {
+            "cleanId": "test-uuid",
+            "dimensions": {
+                "width": 4,
+                "height": 4,
+                "resolution": 0.02,
+                "offsetX": -0.04,
+                "offsetY": -0.04,
+            },
+            "dustMap": [{"type": "total", "data": [i + 1 for i in range(16)]}],
+            "cleanPath": [{"x": 0.0, "y": 0.0, "update": 0}],
+            "dockLocation": {"x": 0.0, "y": 0.0, "angle": 0.0},
+            "orientation": 0,
+        }
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_map_image_cache", cache):
+            result = await image_module._fetch_clean_map_data_image(
+                mock_coordinator, "clean-42"
+            )
+
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+        assert cache.get("VS9-GB-HJA0000A:clean-42") == result
+
+
+# ---------------------------------------------------------------------------
+# Tests: _fetch_v2_floor_plan_image
+# ---------------------------------------------------------------------------
+
+
+class TestFetchV2FloorPlanImage:
+    """Tests for the v2 zone-boundary floor plan fetch helper."""
+
+    @pytest.mark.asyncio
+    async def test_valid_response_renders_and_caches(self, mock_coordinator):
+        """Valid zone-boundary response is rendered and cached."""
+        from custom_components.hass_dyson import image as image_module
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_data = {
+            "cleanId": "clean-fp-1",
+            "dimensions": {
+                "width": 4,
+                "height": 4,
+                "resolution": 0.02,
+                "offsetX": -0.04,
+                "offsetY": -0.04,
+            },
+            "zones": [
+                {
+                    "id": "z1",
+                    "name": "Room",
+                    "type": "room",
+                    "visited": [],
+                    "presentation": [
+                        {
+                            "start": {"x": -0.04, "y": -0.04},
+                            "end": {"x": 0.04, "y": -0.04},
+                            "type": 0,
+                        }
+                    ],
+                }
+            ],
+            "dockLocation": {"x": 0.0, "y": 0.0, "angle": 0.0},
+            "orientation": 0,
+        }
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(return_value=fake_data)
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_floor_plan_cache", cache):
+            result = await image_module._fetch_v2_floor_plan_image(
+                mock_coordinator, "clean-fp-1"
+            )
+
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+        assert cache.get("VS9-GB-HJA0000A:fp:clean-fp-1") == result
+
+    @pytest.mark.asyncio
+    async def test_api_error_caches_sentinel(self, mock_coordinator):
+        """API error stores b'' sentinel and returns None."""
+        from libdyson_rest.exceptions import DysonAPIError
+
+        from custom_components.hass_dyson import image as image_module
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        fake_client = AsyncMock()
+        fake_client.get_clean_map_data = AsyncMock(
+            side_effect=DysonAPIError("floor plan fetch error")
+        )
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+
+        with patch.object(image_module, "_floor_plan_cache", cache):
+            result = await image_module._fetch_v2_floor_plan_image(
+                mock_coordinator, "clean-fp-2"
+            )
+
+        assert result is None
+        assert cache.get("VS9-GB-HJA0000A:fp:clean-fp-2") == b""
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_without_api_call(self, mock_coordinator):
+        """A cached PNG is returned without a new API call."""
+        from custom_components.hass_dyson import image as image_module
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        expected_png = b"\x89PNG\r\nfake"
+        fake_client = AsyncMock()
+
+        @asynccontextmanager
+        async def make_client():
+            yield fake_client
+
+        mock_coordinator.async_cloud_client = make_client
+        cache = TTLCache(3600)
+        cache.set("VS9-GB-HJA0000A:fp:clean-fp-3", expected_png)
+
+        with patch.object(image_module, "_floor_plan_cache", cache):
+            result = await image_module._fetch_v2_floor_plan_image(
+                mock_coordinator, "clean-fp-3"
+            )
+
+        assert result == expected_png
+        fake_client.get_clean_map_data.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Tests: _render_dust_map_png
 # ---------------------------------------------------------------------------
+
+
+def _make_v2_clean_map_dict(
+    width: int = 4,
+    height: int = 4,
+    resolution: float = 0.02,
+    dust_type: str = "total",
+    all_zero: bool = False,
+) -> dict:
+    """Return a well-formed v2 clean-maps-data dict for _render_v2_map_png."""
+    data = (
+        [0] * (width * height)
+        if all_zero
+        else [(i % 10) + 1 for i in range(width * height)]
+    )
+    return {
+        "cleanId": "test-clean-uuid",
+        "dimensions": {
+            "width": width,
+            "height": height,
+            "resolution": resolution,
+            "offsetX": -0.04,
+            "offsetY": -0.04,
+        },
+        "dustMap": [{"type": dust_type, "data": data}],
+        "cleanPath": [
+            {"x": -0.02, "y": -0.02, "update": 0},
+            {"x": 0.02, "y": 0.02, "update": 1},
+        ],
+        "dockLocation": {"x": 0.0, "y": 0.0, "angle": 0.0},
+        "orientation": 0,
+        "boundary": {"minX": -40, "maxX": 40, "minY": -40, "maxY": 40},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests: _render_v2_map_png
+# ---------------------------------------------------------------------------
+
+
+class TestRenderV2FloorPlanPng:
+    """Test the v2 floor plan zone-boundary renderer."""
+
+    def _make_floor_plan_dict(
+        self,
+        *,
+        width: int = 4,
+        height: int = 4,
+        resolution: float = 0.02,
+        num_zones: int = 1,
+        include_dock: bool = True,
+        include_zones: bool = True,
+    ) -> dict:
+        zones = []
+        if include_zones:
+            for i in range(num_zones):
+                zones.append(
+                    {
+                        "id": f"zone-{i}",
+                        "name": f"Room {i}",
+                        "type": "room",
+                        "visited": [],
+                        "presentation": [
+                            {
+                                "start": {"x": -0.04, "y": -0.04},
+                                "end": {"x": 0.04, "y": -0.04},
+                                "type": 0,
+                            },
+                            {
+                                "start": {"x": 0.04, "y": -0.04},
+                                "end": {"x": 0.04, "y": 0.04},
+                                "type": 1,
+                            },
+                        ],
+                    }
+                )
+        return {
+            "cleanId": "test-uuid",
+            "dimensions": {
+                "width": width,
+                "height": height,
+                "resolution": resolution,
+                "offsetX": -0.04,
+                "offsetY": -0.04,
+            },
+            "zones": zones,
+            "dockLocation": (
+                {"x": 0.0, "y": 0.0, "angle": 0.0} if include_dock else None
+            ),
+            "orientation": 0,
+        }
+
+    def test_valid_dict_returns_png(self):
+        """Valid floor plan dict renders to a PNG."""
+        result = _render_v2_floor_plan_png(self._make_floor_plan_dict())
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_has_white_background(self):
+        """The rendered image has a white background (not transparent)."""
+        result = _render_v2_floor_plan_png(
+            self._make_floor_plan_dict(width=4, height=4)
+        )
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        # Top-left corner should be white or very light (background, no line)
+        assert img.mode == "RGBA"
+
+    def test_no_zones_no_dock_returns_none(self):
+        """No zone lines and no dock returns None (nothing useful to render)."""
+        data = self._make_floor_plan_dict(include_zones=False, include_dock=False)
+        assert _render_v2_floor_plan_png(data) is None
+
+    def test_no_zones_but_dock_returns_png(self):
+        """No zone lines but a dock location still renders a PNG."""
+        data = self._make_floor_plan_dict(include_zones=False, include_dock=True)
+        result = _render_v2_floor_plan_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_invalid_dimensions_returns_none(self):
+        """Zero width/height returns None."""
+        data = self._make_floor_plan_dict()
+        data["dimensions"]["width"] = 0
+        assert _render_v2_floor_plan_png(data) is None
+
+    def test_missing_dimensions_returns_none(self):
+        """Missing dimensions key returns None."""
+        data = self._make_floor_plan_dict()
+        del data["dimensions"]
+        assert _render_v2_floor_plan_png(data) is None
+
+    def test_rotation_applied(self):
+        """Rotation argument changes image dimensions (non-square source)."""
+        data = self._make_floor_plan_dict(width=4, height=8)
+        result = _render_v2_floor_plan_png(data, rotation_deg=90)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_small_image_is_upscaled(self):
+        """Images smaller than 800px are scaled up."""
+        data = self._make_floor_plan_dict(width=4, height=4)
+        result = _render_v2_floor_plan_png(data)
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        assert min(img.size) >= 800
+
+    def test_multiple_zones_rendered(self):
+        """Multiple zones each with presentation lines are all drawn."""
+        data = self._make_floor_plan_dict(num_zones=3)
+        result = _render_v2_floor_plan_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+
+class TestRenderV2MapPng:
+    """Test the v2 clean-maps-data PNG renderer."""
+
+    def test_valid_v2_dict_returns_png(self):
+        """Valid v2 response renders to a PNG."""
+        result = _render_v2_map_png(_make_v2_clean_map_dict())
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_all_zero_dust_returns_png(self):
+        """All-zero dust data renders a transparent PNG (no crash)."""
+        result = _render_v2_map_png(_make_v2_clean_map_dict(all_zero=True))
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_no_dustmap_key_returns_none(self):
+        """Missing dustMap key returns None."""
+        data = _make_v2_clean_map_dict()
+        del data["dustMap"]
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_empty_dustmap_returns_none(self):
+        """Empty dustMap list returns None."""
+        data = _make_v2_clean_map_dict()
+        data["dustMap"] = []
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_dustmap_with_empty_data_returns_none(self):
+        """dustMap entry with empty data list returns None."""
+        data = _make_v2_clean_map_dict()
+        data["dustMap"] = [{"type": "total", "data": []}]
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_invalid_dimensions_returns_none(self):
+        """Zero width/height returns None."""
+        data = _make_v2_clean_map_dict()
+        data["dimensions"]["width"] = 0
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_missing_dimensions_key_returns_none(self):
+        """Missing dimensions key returns None."""
+        data = _make_v2_clean_map_dict()
+        del data["dimensions"]
+        result = _render_v2_map_png(data)
+        assert result is None
+
+    def test_rotation_is_applied(self):
+        """Rotation argument is applied (non-square result for 90°)."""
+        result = _render_v2_map_png(
+            _make_v2_clean_map_dict(width=4, height=8), rotation_deg=90
+        )
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_no_pillow_returns_none(self):
+        """Returns None when Pillow cannot be imported."""
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if "PIL" in name:
+                raise ImportError(f"mocked: {name}")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=mock_import):
+            result = _render_v2_map_png(_make_v2_clean_map_dict())
+        assert result is None
+
+    def test_prefers_total_type_over_other(self):
+        """When both 'areavisited' and 'total' are present, 'total' is used."""
+        data = _make_v2_clean_map_dict()
+        data["dustMap"] = [
+            {"type": "areavisited", "data": [1] * 16},
+            {"type": "total", "data": [200] * 16},
+        ]
+        result = _render_v2_map_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_falls_back_to_first_type_when_no_total(self):
+        """When there is no 'total' type, the first entry is used."""
+        data = _make_v2_clean_map_dict(dust_type="areavisited")
+        result = _render_v2_map_png(data)
+        assert result is not None
+        assert result[:4] == b"\x89PNG"
+
+    def test_small_image_is_upscaled(self):
+        """Images smaller than 800px are scaled up."""
+        result = _render_v2_map_png(_make_v2_clean_map_dict(width=4, height=4))
+        assert result is not None
+        img = Image.open(io.BytesIO(result))
+        assert min(img.size) >= 800
 
 
 class TestRenderDustMapPng:
@@ -674,16 +1355,149 @@ class TestDysonDustMapImage:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_build_returns_none_when_no_dust_map(self, mock_coordinator):
-        """_build returns None when the latest clean has no dust_map."""
+    async def test_build_returns_none_when_no_dust_map_and_no_clean_id(
+        self, mock_coordinator
+    ):
+        """_build returns None when latest clean has no dust_map and no clean_id."""
         entity = self._make_entity(mock_coordinator)
-        record = _make_clean_record(has_dust_map=False)
+        record = _make_clean_record(
+            clean_id=None, has_dust_map=False, download_url=None
+        )
         with patch(
             "custom_components.hass_dyson.image.fetch_clean_maps",
             AsyncMock(return_value=[record]),
         ):
             result = await entity._build()
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_no_download_url_still_enters_v2_path(self, mock_coordinator):
+        """_build enters v2 path when clean_id is present even without download_url."""
+        entity = self._make_entity(mock_coordinator)
+        # Simulate RB05: no embedded dust_map, no download_url, but has clean_id
+        record = _make_clean_record(
+            clean_id="clean-nodl",
+            has_dust_map=False,
+            download_url=None,
+        )
+        rendered_png = b"\x89PNG nodl"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_clean_map_data_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_clean_data,
+        ):
+            result = await entity._build()
+        assert result == rendered_png
+        mock_clean_data.assert_awaited_once_with(mock_coordinator, "clean-nodl")
+
+    @pytest.mark.asyncio
+    async def test_build_v2_calls_map_visualizer_api(self, mock_coordinator):
+        """_build calls _fetch_map_image when record has download_url but no dust_map (v2 path)."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(
+            clean_id="clean-v2",
+            has_dust_map=False,
+            download_url="https://s3.example.com/map.bin",
+        )
+        rendered_png = b"\x89PNG dust"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_fetch_map_image,
+        ):
+            result = await entity._build()
+        assert result == rendered_png
+        mock_fetch_map_image.assert_awaited_once_with(mock_coordinator, "clean-v2")
+        assert entity._cached_clean_id == "clean-v2"
+        assert entity._cached_png == rendered_png
+
+    @pytest.mark.asyncio
+    async def test_build_v2_returns_none_when_no_clean_id(self, mock_coordinator):
+        """_build returns None for a v2 record with download_url but no clean_id."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(
+            clean_id=None,
+            has_dust_map=False,
+            download_url="https://s3.example.com/map.bin",
+        )
+        with patch(
+            "custom_components.hass_dyson.image.fetch_clean_maps",
+            AsyncMock(return_value=[record]),
+        ):
+            result = await entity._build()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_v2_returns_none_when_map_visualizer_fails(
+        self, mock_coordinator
+    ):
+        """_build returns None when both _fetch_map_image and _fetch_clean_map_data_image fail."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(
+            clean_id="clean-v2",
+            has_dust_map=False,
+            download_url="https://s3.example.com/map.bin",
+        )
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_clean_map_data_image",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            result = await entity._build()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_v2_falls_back_to_clean_map_data(self, mock_coordinator):
+        """_build uses _fetch_clean_map_data_image when _fetch_map_image returns None."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(
+            clean_id="clean-v2",
+            has_dust_map=False,
+            download_url="https://s3.example.com/map.bin",
+        )
+        fallback_png = b"\x89PNG fallback"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_clean_map_data_image",
+                AsyncMock(return_value=fallback_png),
+            ) as mock_fallback,
+        ):
+            result = await entity._build()
+        assert result == fallback_png
+        mock_fallback.assert_awaited_once_with(mock_coordinator, "clean-v2")
+        assert entity._cached_clean_id == "clean-v2"
+        assert entity._cached_png == fallback_png
 
     @pytest.mark.asyncio
     async def test_build_uses_cached_png_for_same_clean_id(self, mock_coordinator):
@@ -983,10 +1797,13 @@ class TestDysonFloorPlanImage:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_build_returns_none_when_no_presentation_data(self, mock_coordinator):
-        """_build returns None when persistent map has no presentation data."""
+    async def test_build_returns_none_when_no_presentation_data_and_visualizer_fails(
+        self, mock_coordinator
+    ):
+        """_build returns None when persistent map has no presentation data,
+        the Map Visualizer fails, and v2 zone-boundary renderer also returns nothing."""
         entity = self._make_entity(mock_coordinator)
-        record = _make_clean_record(pmap_id="pmap-2")
+        record = _make_clean_record(pmap_id="pmap-2", clean_id="clean-fp")
         pmap = _make_persistent_map(presentation_data=None)
         with (
             patch(
@@ -997,9 +1814,75 @@ class TestDysonFloorPlanImage:
                 "custom_components.hass_dyson.image._fetch_persist_map",
                 AsyncMock(return_value=pmap),
             ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_v2_floor_plan_image",
+                AsyncMock(return_value=None),
+            ),
         ):
             result = await entity._build()
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_build_v2_floor_plan_from_zone_boundaries(self, mock_coordinator):
+        """_build falls back to v2 zone-boundary renderer when visualizer returns nothing."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(pmap_id="pmap-2", clean_id="clean-fp-id")
+        pmap = _make_persistent_map(presentation_data=None)
+        rendered_png = b"\x89PNG zone-floor"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_persist_map",
+                AsyncMock(return_value=pmap),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_v2_floor_plan_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_fp,
+        ):
+            result = await entity._build()
+        assert result == rendered_png
+        mock_fp.assert_awaited_once_with(mock_coordinator, "clean-fp-id")
+        assert entity._cached_pmap_id == "pmap-2"
+        assert entity._cached_png == rendered_png
+
+    @pytest.mark.asyncio
+    async def test_build_v2_floor_plan_via_map_visualizer(self, mock_coordinator):
+        """_build uses Map Visualizer when persistent map has no presentation data."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(pmap_id="pmap-2")
+        pmap = _make_persistent_map(presentation_data=None)
+        rendered_png = b"\x89PNG floor"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_persist_map",
+                AsyncMock(return_value=pmap),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_fetch_map_image,
+        ):
+            result = await entity._build()
+        assert result == rendered_png
+        mock_fetch_map_image.assert_awaited_once_with(mock_coordinator, "pmap-2")
+        assert entity._cached_pmap_id == "pmap-2"
+        assert entity._cached_png == rendered_png
 
     @pytest.mark.asyncio
     async def test_build_returns_none_for_invalid_base64(self, mock_coordinator):

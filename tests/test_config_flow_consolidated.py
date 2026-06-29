@@ -453,7 +453,9 @@ class TestDysonConfigFlowErrorHandling:
         from libdyson_rest.exceptions import DysonConnectionError
 
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=DysonConnectionError())
+        mock_client.provision = AsyncMock(
+            side_effect=DysonConnectionError("network error")
+        )
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
         token, errors = await mock_flow._initiate_otp_with_dyson_api(
@@ -471,7 +473,7 @@ class TestDysonConfigFlowErrorHandling:
         mock_flow._otp_token = "test_token"
         mock_flow._cloud_client = MagicMock()
         mock_flow._cloud_client.complete_login = AsyncMock(
-            side_effect=DysonConnectionError()
+            side_effect=DysonConnectionError("network error")
         )
 
         result = await mock_flow.async_step_verify({"verification_code": "123456"})
@@ -803,7 +805,7 @@ class TestDysonConfigFlowComprehensiveAuth:
         from libdyson_rest.exceptions import DysonAPIError
 
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=DysonAPIError())
+        mock_client.provision = AsyncMock(side_effect=DysonAPIError("rate limited"))
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
         token, errors = await mock_flow._initiate_otp_with_dyson_api(
@@ -819,7 +821,9 @@ class TestDysonConfigFlowComprehensiveAuth:
         from libdyson_rest.exceptions import DysonAuthError
 
         mock_client = MagicMock()
-        mock_client.provision = AsyncMock(side_effect=DysonAuthError())
+        mock_client.provision = AsyncMock(
+            side_effect=DysonAuthError("invalid credentials")
+        )
         mock_flow.hass.async_add_executor_job = AsyncMock(return_value=mock_client)
 
         token, errors = await mock_flow._initiate_otp_with_dyson_api(
