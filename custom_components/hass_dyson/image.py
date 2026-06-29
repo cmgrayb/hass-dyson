@@ -805,13 +805,6 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         # map, regardless of whether a download_url is present.
         # -------------------------------------------------------------------
         if not dust_map_model and clean_id:
-            if not clean_id:
-                _LOGGER.debug(
-                    "Dust map for %s: v2 record has download_url but no clean_id"
-                    " — cannot request map image",
-                    self.coordinator.serial_number,
-                )
-                return None
             # Strategy 1: Map Visualizer API (works for Vis Nav, 404 for RB05).
             png = await _fetch_map_image(self.coordinator, clean_id)
             # Strategy 2: v2 clean-maps-data endpoint (logs response for diagnostics).
@@ -901,7 +894,13 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
 
 
 class DysonFloorPlanImage(DysonEntity, ImageEntity):
-    """The Vis Nav's static persistent-map presentation image (floor plan)."""
+    """Floor plan image entity — rendered from the persistent map or v2 zone boundaries.
+
+    For v1 devices (Vis Nav): uses the pre-rendered presentation PNG embedded in
+    ``GET /v2/app/{serial}/persistent-maps/{id}``.
+    For v2 devices (e.g. RB05 Spot+Scrub): renders zone boundary lines from
+    ``GET /v2/{serial}/clean-maps-data/{cleanId}`` via ``_render_v2_floor_plan_png``.
+    """
 
     coordinator: DysonDataUpdateCoordinator
     _attr_should_poll = True
