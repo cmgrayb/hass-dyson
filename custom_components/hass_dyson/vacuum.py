@@ -41,6 +41,7 @@ Position Tracking:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -67,8 +68,16 @@ _LOGGER = logging.getLogger(__name__)
 # Clean-maps fetch helper (shared by sensor.py and image.py for vacuum data)
 # ---------------------------------------------------------------------------
 
-# Cache cleaning runs for 30 minutes to avoid hammering the cloud API.
-_clean_maps_cache: TTLCache = TTLCache(30 * 60)
+# Cache cleaning runs for 10 minutes.  The v2 clean-maps API returns a
+# pre-signed S3 ``downloadUrl`` that expires after 15 minutes (900 s); a
+# 10-minute cache leaves a comfortable 5-minute safety margin so any URL
+# fetched from a cached CleanRecord is still valid.
+_clean_maps_cache: TTLCache = TTLCache(10 * 60)
+
+# Per-serial locks prevent a cache-stampede when multiple entities all call
+# fetch_clean_maps simultaneously on startup (they would all miss the empty
+# cache and each fire a redundant API request).
+_clean_maps_locks: dict[str, asyncio.Lock] = {}
 
 
 async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
@@ -77,32 +86,78 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
     Uses ``AsyncDysonClient.get_clean_maps()`` which requests the dust-map
     blob (``include_dust_map=True``) and returns typed ``CleanRecord`` objects.
 
-    Returns an empty list (or stale cache) on any failure.
+    Returns an empty list (or stale cache) on any failure.  API errors (e.g.
+    400 Bad Request or unexpected response shapes from device models whose
+    clean-maps API differs from the 360 Vis Nav) are cached for the full TTL
+    so the endpoint is not hammered on every entity update.
     """
     from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
 
     serial = coordinator.serial_number
+
+    # Fast path: already cached.
     fresh = _clean_maps_cache.get(serial)
     if fresh is not None:
         return fresh
 
-    async with coordinator.async_cloud_client() as client:
-        if client is None:
-            return _clean_maps_cache.get_stale(serial) or []
-        try:
-            records = await client.get_clean_maps(serial, include_dust_map=True)
-        except (DysonAPIError, DysonAuthError) as err:
-            _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
-            return _clean_maps_cache.get_stale(serial) or []
+    # Acquire a per-serial lock so that only one coroutine performs the
+    # network fetch while any other concurrent callers wait and then re-use
+    # the cached result.
+    if serial not in _clean_maps_locks:
+        _clean_maps_locks[serial] = asyncio.Lock()
 
-    # Newest-first: sort by earliest timeline event timestamp.
-    records.sort(
-        key=lambda c: min(
-            (e.time for e in c.timeline if e.time),
-            default="",
-        ),
-        reverse=True,
-    )
+    async with _clean_maps_locks[serial]:
+        # Re-check after acquiring the lock — a concurrent caller may have
+        # already populated the cache while we were waiting.
+        fresh = _clean_maps_cache.get(serial)
+        if fresh is not None:
+            return fresh
+
+        async with coordinator.async_cloud_client() as client:
+            if client is None:
+                return _clean_maps_cache.get_stale(serial) or []
+            try:
+                records = await client.get_clean_maps(serial, include_dust_map=True)
+            except DysonAuthError as err:
+                # Auth errors may resolve after re-authentication; do not cache.
+                _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
+                return _clean_maps_cache.get_stale(serial) or []
+            except DysonAPIError as err:
+                err_str = str(err)
+                # Cache the failure so we do not re-request on every entity
+                # update.  Log a warning for known incompatibility signals so
+                # users can see a clear message rather than a silent failure.
+                if "400" in err_str:
+                    _LOGGER.warning(
+                        "Clean maps endpoint returned 400 for %s — this device"
+                        " model may not support the clean-maps API; will not"
+                        " retry for 10 minutes",
+                        serial,
+                    )
+                else:
+                    _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
+                fallback = _clean_maps_cache.get_stale(serial) or []
+                _clean_maps_cache.set(serial, fallback)
+                return fallback
+
+    # Newest-first.  v2 records carry Unix epoch integers (start_time_epoch);
+    # v1 records carry ISO-8601 strings in the timeline.  Normalise both to a
+    # float (epoch seconds) for a consistent sort.
+    def _sort_epoch(c) -> float:
+        epoch = getattr(c, "start_time_epoch", None)
+        if epoch is not None:
+            return float(epoch)
+        from datetime import datetime
+
+        times = [e.time for e in (getattr(c, "timeline", None) or []) if e.time]
+        if not times:
+            return 0.0
+        try:
+            return datetime.fromisoformat(min(times).replace("Z", "+00:00")).timestamp()
+        except (ValueError, TypeError):
+            return 0.0
+
+    records.sort(key=_sort_epoch, reverse=True)
     _clean_maps_cache.set(serial, records)
     return records
 
