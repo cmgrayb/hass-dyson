@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hass-dyson"
-version = "0.35.0-beta.2"
+version = "0.35.0"
 description = "Home Assistant Dyson integration focusing on device capabilities and connection information"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -30,14 +30,14 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "cryptography>=45.0.7",
-    "homeassistant==2026.6.0",
-    "libdyson-rest==0.15.0b1",
+    "libdyson-rest==0.15.0",
+    "homeassistant==2026.6.3",
     "paho-mqtt>=2.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "aioresponses==0.7.8",
+    "aioresponses==0.7.9",
     "bandit==1.9.4",
     "mypy==2.1.0",
     "pytest==9.0.3",
@@ -46,7 +46,7 @@ dev = [
     "pytest-mock==3.15.1",
     "pytest-xdist==3.8.0",
     "responses==0.25.8",
-    "ruff==0.15.15",
+    "ruff==0.15.20",
     "types-cryptography==3.3.23.2",
 ]
 

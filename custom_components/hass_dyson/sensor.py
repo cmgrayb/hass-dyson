@@ -71,6 +71,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
+    _PM_SENSOR_UNAVAILABLE_STATES,
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
@@ -1823,11 +1824,11 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
             pm25_raw = env_data.get("p25r") or env_data.get("pm25")
 
             if pm25_raw is not None:
-                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
-                if pm25_raw in ("OFF", "INIT"):
+                # Handle Dyson's non-numeric PM sensor states without warning.
+                if pm25_raw in _PM_SENSOR_UNAVAILABLE_STATES:
                     _LOGGER.debug(
                         "PM2.5 sensor %s for device %s",
-                        "inactive" if pm25_raw == "OFF" else "initializing",
+                        _PM_SENSOR_UNAVAILABLE_STATES[pm25_raw],
                         device_serial,
                     )
                     new_value = None
@@ -1947,11 +1948,11 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
             pm10_raw = env_data.get("p10r") or env_data.get("pm10")
 
             if pm10_raw is not None:
-                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
-                if pm10_raw in ("OFF", "INIT"):
+                # Handle Dyson's non-numeric PM sensor states without warning.
+                if pm10_raw in _PM_SENSOR_UNAVAILABLE_STATES:
                     _LOGGER.debug(
                         "PM10 sensor %s for device %s",
-                        "inactive" if pm10_raw == "OFF" else "initializing",
+                        _PM_SENSOR_UNAVAILABLE_STATES[pm10_raw],
                         device_serial,
                     )
                     new_value = None
@@ -3144,7 +3145,7 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
 # ============================================================================
 # Cleaning history sensor (Vis Nav)
 # ============================================================================
-# Pulls the last N cleaning runs from /v1/{serial}/clean-maps?dustMap=total and
+# Pulls the last N cleaning runs from /{apiVer}/{serial}/clean-maps?dustMap=total and
 # exposes one sensor per slot (state = clean timestamp, attrs = area/duration/zones).
 # Uses HA's built-in polling (should_poll=True, scan_interval=30min) — independent
 # of the MQTT coordinator since this is REST cloud data.
@@ -3155,18 +3156,42 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
 
 
 def _extract_start_time(clean) -> str | None:
-    """Pull the earliest timestamp from the CleanRecord timeline."""
-    times = [e.time for e in clean.timeline if e.time]
+    """Pull the start timestamp from a CleanRecord (v1 or v2 schema).
+
+    v2: ``start_time_epoch`` is a Unix timestamp (int) — converted to ISO-8601.
+    v1: earliest timestamp from the ``timeline`` event list.
+    """
+    epoch = getattr(clean, "start_time_epoch", None)
+    if epoch is not None:
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+    times = [e.time for e in (getattr(clean, "timeline", None) or []) if e.time]
     return min(times) if times else None
 
 
 def _extract_end_time(clean) -> str | None:
-    times = [e.time for e in clean.timeline if e.time]
+    """Pull the end timestamp from a CleanRecord (v1 or v2 schema)."""
+    epoch = getattr(clean, "end_time_epoch", None)
+    if epoch is not None:
+        from datetime import datetime, timezone
+
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+    times = [e.time for e in (getattr(clean, "timeline", None) or []) if e.time]
     return max(times) if times else None
 
 
 def _extract_duration_minutes(clean) -> int | None:
-    """Compute end - start in minutes from the CleanRecord timeline."""
+    """Return clean duration in minutes (v1 or v2 schema).
+
+    v2: ``clean_duration`` is provided directly in minutes.
+    v1: computed from the difference between start and end timeline events.
+    """
+    # v2 direct field
+    duration = getattr(clean, "clean_duration", None)
+    if duration is not None:
+        return int(duration)
+    # v1 fallback: compute from ISO timeline timestamps
     from datetime import datetime
 
     start, end = _extract_start_time(clean), _extract_end_time(clean)
@@ -3181,38 +3206,66 @@ def _extract_duration_minutes(clean) -> int | None:
 
 
 def _extract_cleaned_area_m2(clean) -> float | None:
-    """Return cleaned area in m² from the CleanRecord's cleaned_footprint.
+    """Return cleaned area in m² (v1 or v2 schema).
 
-    Delegates to ``CleanedFootprint.compute_area_m2()``, passing the
-    resolution from the dust map when available (fetched with
-    ``dustMap=total``), otherwise using the Vis Nav default of 20 mm/pixel.
+    v2: ``area_cleaned`` is provided directly in m².
+    v1: computed from ``CleanedFootprint.compute_area_m2()``.
     """
-    if clean.cleaned_footprint is None:
+    # v2 direct field
+    area = getattr(clean, "area_cleaned", None)
+    if area is not None:
+        return round(float(area), 2)
+    # v1 fallback: compute from cleaned_footprint
+    if getattr(clean, "cleaned_footprint", None) is None:
         return None
-    resolution_mm = clean.dust_map.resolution if clean.dust_map else 20
+    resolution_mm = (
+        clean.dust_map.resolution if getattr(clean, "dust_map", None) else 20
+    )
     return clean.cleaned_footprint.compute_area_m2(tile_resolution_mm=resolution_mm)
 
 
 def _extract_zone_ids(clean) -> list[str]:
-    """Return the zone IDs targeted by this CleanRecord.
+    """Return the zone IDs targeted by this CleanRecord (v1 or v2 schema).
 
-    Whole-house ("global") cleans → empty list.
+    v2: ``zones`` list of ``CleanZone`` objects; selected zones only.
+    v1: derived from ``cleaning_programme`` ordered/unordered zone IDs.
+    Whole-house ("global") cleans may return all zone IDs or an empty list.
     """
-    if not clean.cleaning_programme:
+    # v2: zones list with is_selected flag
+    zones = getattr(clean, "zones", None)
+    if zones:
+        return [z.id for z in zones if z.is_selected]
+    # v1 fallback
+    prog = getattr(clean, "cleaning_programme", None)
+    if not prog:
         return []
-    prog = clean.cleaning_programme
     return list(prog.unordered_zones) + list(prog.ordered_zones)
 
 
 def _extract_clean_type(clean) -> str:
-    """Return 'zoneConfigured' or 'global' via ``CleanRecord.clean_type``."""
-    return clean.clean_type
+    """Return a clean-type string (v1 or v2 schema).
+
+    v2: derived from ``is_spot_clean`` bool ("spot" or "global").
+    v1: ``clean_type`` string from the CleanRecord.
+    """
+    is_spot = getattr(clean, "is_spot_clean", None)
+    if is_spot is not None:
+        return "spot" if is_spot else "global"
+    return getattr(clean, "clean_type", "unknown")
 
 
 def _extract_fault_count(clean) -> int:
+    """Return the number of fault events (v1 or v2 schema).
+
+    v2: length of the ``faults`` list.
+    v1: count of timeline events carrying a fault location or name.
+    """
+    faults = getattr(clean, "faults", None)
+    if faults is not None:
+        return len(faults)
     return sum(
         1
-        for e in clean.timeline
+        for e in (getattr(clean, "timeline", None) or [])
         if e.fault_location is not None or "fault" in (e.event_name or "").lower()
     )
 
@@ -3291,7 +3344,11 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
             "zone_ids": zone_ids,
             "zone_names": zone_names,
             "fault_count": _extract_fault_count(clean),
-            "sequence_number": clean.sequence_number,
+            "sequence_number": getattr(clean, "sequence_number", None),
+            # v2 fields (None on v1 records)
+            "start_battery": getattr(clean, "start_battery", None),
+            "end_battery": getattr(clean, "end_battery", None),
+            "is_spot_clean": getattr(clean, "is_spot_clean", None),
         }
 
 

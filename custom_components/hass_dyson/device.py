@@ -188,6 +188,10 @@ class DysonDevice:
         )
         self._intentional_disconnect = False  # Track intentional disconnections
         self._rst_during_handshake = False  # RST arrived before CONNACK (async path)
+        self._connect_lock = asyncio.Lock()
+        self._reconnect_task: asyncio.Task | None = None
+        self._local_connect_block_until = 0.0
+        self._local_failure_count = 0
 
         # Heartbeat mechanism to keep device active and get regular updates
         self._heartbeat_interval = 30.0  # Send REQUEST-CURRENT-STATE every 30 seconds
@@ -287,22 +291,58 @@ class DysonDevice:
             connection to monitor connection health and trigger reconnection
             if the connection is lost.
         """
-        # Check reconnection backoff to prevent rapid reconnection attempts
-        if not self._check_reconnect_backoff(force):
-            return False
+        # Dyson's embedded MQTT broker handles connection churn poorly.  Do not
+        # queue overlapping connect() calls: a second caller that waits behind
+        # the lock would immediately tear down the connection the first caller
+        # just established, creating an orphan/reconnect storm.
+        if self._connect_lock.locked():
+            _LOGGER.debug(
+                "Connection attempt already in progress for %s; suppressing duplicate attempt",
+                self._log_serial,
+            )
+            return self._connected
 
-        self._last_reconnect_attempt = time.time()
+        async with self._connect_lock:
+            if self._connected and not force:
+                _LOGGER.debug(
+                    "Device %s is already connected; skipping duplicate connect()",
+                    self._log_serial,
+                )
+                return True
 
-        # Try preferred connection after disconnection
-        if await self._try_preferred_connection_after_disconnect():
-            return True
+            # Check reconnection backoff to prevent rapid reconnection attempts
+            if not self._check_reconnect_backoff(force):
+                return False
 
-        # Try preferred connection if using fallback and it's time to retry
-        if await self._try_preferred_connection_retry():
-            return True
+            self._last_reconnect_attempt = time.time()
 
-        # Try connections in order
-        return await self._try_connection_order()
+            # Try preferred connection after disconnection
+            if await self._try_preferred_connection_after_disconnect():
+                return True
+
+            # Try preferred connection if using fallback and it's time to retry
+            if await self._try_preferred_connection_retry():
+                return True
+
+            # Try connections in order
+            return await self._try_connection_order()
+
+    def _record_local_connection_failure(self, reason: str) -> None:
+        """Back off local MQTT after failures to avoid overloading Dyson brokers."""
+        self._local_failure_count += 1
+        delay = min(300.0, 30.0 * (2 ** (self._local_failure_count - 1)))
+        self._local_connect_block_until = time.time() + delay
+        _LOGGER.warning(
+            "Local MQTT connection failed for %s (%s); suppressing local retries for %.0f seconds",
+            self._log_serial,
+            reason,
+            delay,
+        )
+
+    def _record_local_connection_success(self) -> None:
+        """Clear local MQTT failure backoff after a successful connection."""
+        self._local_failure_count = 0
+        self._local_connect_block_until = 0.0
 
     def _check_reconnect_backoff(self, force: bool = False) -> bool:
         """Check if reconnection backoff period has passed."""
@@ -552,6 +592,17 @@ class DysonDevice:
         # contaminate the retry / fallback logic in this attempt.
         self._rst_during_handshake = False
         try:
+            now = time.time()
+            if now < self._local_connect_block_until:
+                remaining = self._local_connect_block_until - now
+                _LOGGER.info(
+                    "Skipping local MQTT connection to %s for %s; local retry backoff active for %.0f seconds",
+                    host,
+                    self._log_serial,
+                    remaining,
+                )
+                return False
+
             # Stop any still-running MQTT loop before starting a new connection.
             # If the previous connection ended with an unexpected disconnect (e.g.
             # network drop), _on_disconnect sets self._connected = False but leaves
@@ -579,14 +630,10 @@ class DysonDevice:
                     )
                 self._mqtt_client = None
 
-            # First test basic network connectivity
-            if not await self._test_network_connectivity(host, 1883):
-                _LOGGER.info(
-                    "Skipping MQTT connection attempt to %s due to network connectivity failure. "
-                    "Consider switching to cloud-only connection or checking network configuration.",
-                    host,
-                )
-                return False
+            # Do not open a separate raw TCP probe before the real MQTT CONNECT.
+            # Dyson's embedded broker can leave half-open/stale state when HA
+            # rapidly opens and closes TCP sessions; the MQTT CONNECT below is
+            # the authoritative connectivity test and avoids doubling SYN load.
 
             # Build the ordered list of client IDs to try.
             # Strategy: stable sha256 ID first — attempts MQTT best practices for
@@ -655,6 +702,7 @@ class DysonDevice:
                         client_id=client_id,
                         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                         protocol=mqtt.MQTTv31,
+                        reconnect_on_failure=False,
                     )
                     _LOGGER.debug(
                         "Using MQTT 3.1 for robot vacuum %s", self._log_serial
@@ -663,6 +711,7 @@ class DysonDevice:
                     mqtt_client = mqtt.Client(
                         client_id=client_id,
                         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                        reconnect_on_failure=False,
                     )
                     _LOGGER.debug(
                         "Using default MQTT protocol for %s", self._log_serial
@@ -808,6 +857,10 @@ class DysonDevice:
                             )
                             return False
 
+                    if connection_success:
+                        self._record_local_connection_success()
+                    else:
+                        self._record_local_connection_failure("handshake-timeout")
                     return connection_success
                 else:
                     _LOGGER.warning(
@@ -818,6 +871,7 @@ class DysonDevice:
                         host,
                         result,
                     )
+                    self._record_local_connection_failure(f"mqtt-result-{result}")
                     return False
 
             return False  # Both client ID attempts exhausted (should not reach here)
@@ -839,9 +893,11 @@ class DysonDevice:
                 host,
                 err,
             )
+            self._record_local_connection_failure(type(err).__name__)
             return False
         except Exception as err:
             _LOGGER.error("Local connection failed: %s", err)
+            self._record_local_connection_failure(type(err).__name__)
             return False
 
     async def _attempt_cloud_connection(self, host: str, credential: str) -> bool:
@@ -908,7 +964,11 @@ class DysonDevice:
 
             # Create paho MQTT client for WebSocket connection with exact client_id
             # Note: For AWS IoT, the client_id must be exact - no prefixes allowed
-            mqtt_client = mqtt.Client(client_id=client_id, transport="websockets")
+            mqtt_client = mqtt.Client(
+                client_id=client_id,
+                transport="websockets",
+                reconnect_on_failure=False,
+            )
 
             _LOGGER.debug(
                 "Created MQTT client with exact ID: %s", mask_token(client_id)
@@ -1049,6 +1109,76 @@ class DysonDevice:
         )
         return False
 
+    def _cancel_reconnect_task(self) -> None:
+        """Cancel any queued automatic reconnect attempt."""
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+        self._reconnect_task = None
+
+    def _schedule_reconnect_after_disconnect(self) -> None:
+        """Schedule one reconnect attempt after an unexpected MQTT disconnect.
+
+        Paho invokes ``on_disconnect`` from its network-loop thread, so all
+        Home Assistant/device work must be handed back to the HA event loop.
+        The coordinator only marks the device unavailable on refresh; it does
+        not call ``connect()`` once the device has dropped. Without this task a
+        transient local MQTT disconnect leaves the entity unavailable until a
+        manual config-entry reload or button press.
+        """
+        if self._reconnect_task and not self._reconnect_task.done():
+            _LOGGER.debug(
+                "Reconnect already scheduled for %s; not scheduling duplicate",
+                self._log_serial,
+            )
+            return
+
+        def _create_task() -> None:
+            self._reconnect_task = self.hass.async_create_task(
+                self._reconnect_after_disconnect()
+            )
+
+        self.hass.loop.call_soon_threadsafe(_create_task)
+
+    async def _reconnect_after_disconnect(self) -> None:
+        """Recover from an unexpected MQTT disconnect with paced retries."""
+        try:
+            # Let paho finish disconnect callback cleanup and avoid immediate
+            # reconnect churn against the Dyson's fragile embedded broker.
+            await asyncio.sleep(5)
+
+            while not self._intentional_disconnect and not self._connected:
+                _LOGGER.info(
+                    "Attempting automatic reconnect for %s after unexpected MQTT disconnect",
+                    self._log_serial,
+                )
+                success = await self.connect(force=True)
+                if success:
+                    _LOGGER.info(
+                        "Automatic reconnect succeeded for %s", self._log_serial
+                    )
+                    return
+
+                wait_seconds = max(
+                    self._reconnect_backoff,
+                    self._local_connect_block_until - time.time(),
+                )
+                wait_seconds = min(300.0, max(5.0, wait_seconds))
+                _LOGGER.warning(
+                    "Automatic reconnect failed for %s; retrying in %.0f seconds",
+                    self._log_serial,
+                    wait_seconds,
+                )
+                await asyncio.sleep(wait_seconds)
+        except asyncio.CancelledError:
+            _LOGGER.debug("Automatic reconnect cancelled for %s", self._log_serial)
+            raise
+        except Exception as err:
+            _LOGGER.warning(
+                "Automatic reconnect errored for %s: %s", self._log_serial, err
+            )
+        finally:
+            self._reconnect_task = None
+
     @property
     def connection_status(self) -> str:
         """Return current connection status."""
@@ -1056,17 +1186,25 @@ class DysonDevice:
 
     async def disconnect(self) -> None:
         """Disconnect from the device."""
+        self._cancel_reconnect_task()
+
         # Stop heartbeat before disconnecting
         await self._stop_heartbeat()
 
         # Mark this as an intentional disconnect
         self._intentional_disconnect = True
 
-        if self._mqtt_client and self._connected:
+        if self._mqtt_client:
             try:
                 _LOGGER.debug("Disconnecting from device %s", self._log_serial)
+                # disconnect() first so paho does not keep its loop thread alive
+                # in an auto-reconnect sleep before loop_stop() can terminate it.
+                try:
+                    await self.hass.async_add_executor_job(self._mqtt_client.disconnect)
+                except Exception:
+                    pass  # Socket may already be closed
                 await self.hass.async_add_executor_job(self._mqtt_client.loop_stop)
-                await self.hass.async_add_executor_job(self._mqtt_client.disconnect)
+                self._mqtt_client = None
                 self._connected = False
                 self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
                 # Don't reset _using_fallback here - we want to remember if we were using fallback
@@ -1183,6 +1321,8 @@ class DysonDevice:
             "Force reconnect triggered for %s", mask_serial(self.serial_number)
         )
 
+        self._cancel_reconnect_task()
+
         # Disconnect if currently connected
         if self._connected:
             await self.disconnect()
@@ -1190,8 +1330,8 @@ class DysonDevice:
         # Reset preferred retry timer to force immediate preferred connection attempt
         self._last_preferred_retry = 0.0
 
-        # Attempt reconnection with full intelligent logic
-        return await self.connect()
+        # Attempt reconnection with full intelligent logic, bypassing retry backoff.
+        return await self.connect(force=True)
 
     def _on_connect(
         self, client: mqtt.Client, userdata: Any, flags, rc, properties=None, *args
@@ -1239,9 +1379,27 @@ class DysonDevice:
             )
 
     def _on_disconnect(
-        self, client: mqtt.Client, userdata: Any, rc, properties=None, *args
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        disconnect_flags_or_rc,
+        reason_code=None,
+        properties=None,
+        *args,
     ) -> None:
-        """Handle MQTT disconnection callback."""
+        """Handle MQTT disconnection callback.
+
+        Paho callback API v2 passes ``disconnect_flags`` before ``reason_code``;
+        older callback shapes pass the return code directly in that position.
+        Normalize both forms so we do not mistake a successful/clean v2 reason
+        code for the ``DisconnectFlags`` object itself.
+        """
+        disconnect_flags = None
+        rc = disconnect_flags_or_rc
+        if reason_code is not None:
+            disconnect_flags = disconnect_flags_or_rc
+            rc = reason_code
+
         # Capture state before any mutations so we can reason about the cause.
         was_intentional = self._intentional_disconnect
         was_connected = self._connected  # True only if _on_connect previously fired
@@ -1265,8 +1423,9 @@ class DysonDevice:
         # disconnect is not one we initiated ourselves.
         if not was_connected and not was_intentional:
             is_rst = (
-                hasattr(rc, "is_disconnect_packet_from_server")
-                and not rc.is_disconnect_packet_from_server
+                disconnect_flags is not None
+                and hasattr(disconnect_flags, "is_disconnect_packet_from_server")
+                and not disconnect_flags.is_disconnect_packet_from_server
             )
             if is_rst:
                 self._rst_during_handshake = True
@@ -1300,6 +1459,9 @@ class DysonDevice:
                 "Disconnection during connection attempt for %s, not applying fallback timer",
                 self._log_serial,
             )
+
+        if not was_intentional and was_connected:
+            self._schedule_reconnect_after_disconnect()
 
     def _on_message(
         self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage

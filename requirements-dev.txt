@@ -1,8 +1,8 @@
 # Development dependencies - exact versions for reproducibility
-ruff==0.15.15
+ruff==0.15.20
 bandit==1.9.4
 codecov==2.1.13
-pytest==9.0.3
+pytest==9.1.1
 pytest-cov>=7.1.0
 pytest-asyncio==1.4.0
 pytest-xdist==3.8.0
@@ -11,7 +11,7 @@ types-cryptography==3.3.23.2
 
 # Additional testing utilities
 responses==0.25.8
-aioresponses==0.7.8
+aioresponses==0.7.9
 
 # MQTT testing
 paho-mqtt==2.1.0
