@@ -1,28 +1,11 @@
-# Basic Home Assistant configuration for testing
-homeassistant:
-  name: Dyson Dev
-  latitude: 37.7749
-  longitude: -122.4194
-  elevation: 0
-  unit_system: us_customary
-  time_zone: America/Los_Angeles
 
-logger:
-  default: info
-  logs:
-    custom_components.hass_dyson: debug
+# Loads default set of integrations. Do not remove.
+default_config:
 
-# Enable the frontend
+# Load frontend themes from the themes folder
 frontend:
+  themes: !include_dir_merge_named themes
 
-# Enable configuration UI
-config:
-
-# Enable history
-history:
-
-# Enable logbook
-logbook:
-
-# Track the sun
-sun:
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

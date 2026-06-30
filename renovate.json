@@ -133,7 +133,6 @@
     {
       "description": "Security vulnerability fixes - immediate updates",
       "matchPackageNames": [
-        "requests",
         "aiohttp",
         "paho-mqtt"
       ],

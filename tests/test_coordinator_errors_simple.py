@@ -142,22 +142,22 @@ class TestCoordinatorErrorHandling:
                 mock_fallback.assert_called_once()
 
     @patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__")
-    @patch("libdyson_rest.DysonClient")
+    @patch("custom_components.hass_dyson.coordinator.AsyncDysonClient")
     @pytest.mark.asyncio
     async def test_cloud_device_setup_authentication_failure(
-        self, mock_cloud_class, mock_super_init, mock_hass, mock_config_entry_cloud
+        self, mock_client_class, mock_super_init, mock_hass, mock_config_entry_cloud
     ):
         """Test cloud device setup with authentication failure."""
         mock_super_init.return_value = None
         coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry_cloud)
         coordinator.hass = mock_hass
-        coordinator.hass.async_add_executor_job = AsyncMock(
-            side_effect=RuntimeError("Authentication failed")
-        )
         coordinator._listeners = {}
         coordinator.config_entry = mock_config_entry_cloud
 
-        # Should raise RuntimeError (not wrapped for auth_token path)
+        # Simulate auth failure by making AsyncDysonClient constructor raise
+        mock_client_class.side_effect = RuntimeError("Authentication failed")
+
+        # Should raise RuntimeError propagated from client construction
         with pytest.raises(RuntimeError, match="Authentication failed"):
             await coordinator._authenticate_cloud_client()
 
