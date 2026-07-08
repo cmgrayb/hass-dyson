@@ -289,6 +289,9 @@
       "tilt_oscillation_mode": {
         "name": "Tilt"
       },
+      "find_follow_mode": {
+        "name": "Find+Follow"
+      },
       "heating_mode": {
         "name": "Heating Mode"
       },

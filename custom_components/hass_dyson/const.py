@@ -271,6 +271,8 @@ STATE_KEY_VOC: Final = "va10"  # VOC (Volatile Organic Compounds)
 STATE_KEY_NO2: Final = "noxl"  # NO2 (Nitrogen Dioxide)
 STATE_KEY_FORMALDEHYDE: Final = "hcho"  # Formaldehyde raw value
 STATE_KEY_FORMALDEHYDE_DISPLAY: Final = "hchr"  # Formaldehyde display value
+STATE_KEY_FIND_FOLLOW: Final = "soon"  # Find+Follow on/off/scan command key
+STATE_KEY_FIND_FOLLOW_STATUS: Final = "sost"  # Find+Follow engine status (read-only)
 
 # Filter values
 FILTER_TYPE_GCOM: Final = "GCOM"  # Genuine Combi Filter
