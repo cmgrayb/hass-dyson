@@ -162,6 +162,7 @@ def mock_coordinator():
     coord.config_entry = MagicMock()
     coord.config_entry.data = {"auth_token": "tok-abc"}
     coord.config_entry.entry_id = "entry-1"
+    coord.async_discover_map_api_version = AsyncMock(return_value=2)
     return coord
 
 

@@ -117,7 +117,13 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
             if client is None:
                 return _clean_maps_cache.get_stale(serial) or []
             try:
-                records = await client.get_clean_maps(serial, include_dust_map=True)
+                records = await client.get_clean_maps(
+                    serial,
+                    api_version=await coordinator.async_discover_map_api_version(
+                        client
+                    ),
+                    include_dust_map=True,
+                )
             except DysonAuthError as err:
                 # Auth errors may resolve after re-authentication; do not cache.
                 _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)

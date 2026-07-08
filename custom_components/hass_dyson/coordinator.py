@@ -71,6 +71,11 @@ _LOGGER = logging.getLogger(__name__)
 _CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
 _EXTENDED_CULTURE_PATTERN = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
 
+# Matches any 3-digit HTTP status code in the 4xx or 5xx range inside an error
+# message string.  Used by async_discover_map_api_version to detect endpoint
+# incompatibility when probing the v1 clean-maps endpoint.
+_HTTP_ERROR_RE = re.compile(r"\b[45]\d{2}\b")
+
 
 # Sensitive config-entry field names that must be redacted from logs.
 # Token, password, secret, credential, key (case-insensitive substring match).
@@ -262,6 +267,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
         self._device_type: str = ""  # Will be extracted from device info
+        self._map_api_version: int | None = (
+            None  # Discovered lazily via async_discover_map_api_version
+        )
         self._firmware_version: str = "Unknown"
         self._firmware_auto_update_enabled: bool = False
         self._services_registered: bool = False
@@ -355,6 +363,67 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             >>>     heating_available = True
         """
         return self._device_type
+
+    async def async_discover_map_api_version(self, client) -> int:  # type: ignore[override]
+        """Probe and cache the map-endpoint API version for this device.
+
+        Calls ``get_clean_maps`` with ``api_version=1`` as a lightweight probe
+        (dust maps excluded so no large payloads are transferred).  If the
+        server returns a 4xx or 5xx response the device requires v2 endpoints
+        and the result is cached.  Subsequent calls return the cached value
+        immediately without any network request.
+
+        Args:
+            client: An authenticated ``AsyncDysonClient`` instance.
+
+        Returns:
+            ``1`` for Dyson 360 Vis Nav (v1 endpoints respond successfully),
+            ``2`` for Dyson 360 Spot+Clean / Spot+Scrub and newer devices.
+        """
+        if self._map_api_version is not None:
+            return self._map_api_version
+
+        try:
+            await client.get_clean_maps(
+                self.serial_number,
+                api_version=1,
+                include_dust_map=False,
+            )
+            self._map_api_version = 1
+            _LOGGER.debug(
+                "Map API version for %s: v1 (probe succeeded)",
+                self.serial_number,
+            )
+        except DysonAuthError:
+            # Auth failure is not version-related; do not cache, return v1
+            # as a best-guess and let the caller surface the auth error.
+            _LOGGER.debug(
+                "Map API version probe for %s: auth error — defaulting to v1",
+                self.serial_number,
+            )
+            return 1
+        except DysonAPIError as err:
+            err_str = str(err)
+            if _HTTP_ERROR_RE.search(err_str):
+                self._map_api_version = 2
+                _LOGGER.info(
+                    "Map API version for %s: v2 "
+                    "(v1 probe returned '%s' — device uses v2 endpoints)",
+                    self.serial_number,
+                    err_str,
+                )
+            else:
+                # Non-HTTP error (connection failure, timeout, etc.);
+                # do not cache so the next call retries the probe.
+                _LOGGER.warning(
+                    "Map API version probe for %s: unexpected error '%s'"
+                    " — defaulting to v1 for this call",
+                    self.serial_number,
+                    err_str,
+                )
+                return 1
+
+        return self._map_api_version
 
     @property
     def firmware_version(self) -> str:

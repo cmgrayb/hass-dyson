@@ -966,11 +966,12 @@ class TestCleanArea:
 # ---------------------------------------------------------------------------
 
 
-def _make_coordinator(serial: str = "FCM-TEST-001", client=None):
+def _make_coordinator(serial: str = "FCM-TEST-001", client=None, api_version: int = 1):
     """Return a minimal coordinator mock suitable for fetch_clean_maps."""
     coordinator = MagicMock()
     coordinator.serial_number = serial
     coordinator.device_type = "RB05"
+    coordinator.async_discover_map_api_version = AsyncMock(return_value=api_version)
 
     @asynccontextmanager
     async def _cloud_client():

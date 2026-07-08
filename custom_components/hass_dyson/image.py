@@ -295,7 +295,11 @@ async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: st
         if client is None:
             return _persist_map_cache.get_stale(key)
         try:
-            pmap = await client.get_persistent_map(coordinator.serial_number, map_id)
+            pmap = await client.get_persistent_map(
+                coordinator.serial_number,
+                map_id,
+                api_version=await coordinator.async_discover_map_api_version(client),
+            )
         except (DysonAPIError, DysonAuthError) as err:
             _LOGGER.debug(
                 "Failed to fetch persistent map %s for %s: %s",

@@ -650,7 +650,10 @@ async def _fetch_persistent_map_metadata(
                 "re-authenticate the integration to enable cloud features"
             )
         try:
-            maps = await client.get_persistent_map_metadata(serial)
+            maps = await client.get_persistent_map_metadata(
+                serial,
+                api_version=await coordinator.async_discover_map_api_version(client),
+            )
         except (DysonAPIError, DysonAuthError) as err:
             stale = _persistent_map_cache.get_stale(serial)
             if stale is not None:
