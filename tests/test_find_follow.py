@@ -345,3 +345,207 @@ class TestFindFollowModeSelectCommands:
         entity = DysonFindFollowModeSelect(mock_coordinator)
 
         await entity.async_select_option("Find+Follow")
+
+
+# ---------------------------------------------------------------------------
+# ancp=SMRT interaction — Find+Follow select reads 'soon', not 'ancp'
+# ---------------------------------------------------------------------------
+
+
+class TestFindFollowAncpSmrt:
+    """Tests verifying correct behaviour when device reports ancp=SMRT.
+
+    When Find+Follow is active the device sets ancp=SMRT as a side-effect.
+    The Find+Follow select entity must continue to derive its state from
+    ``soon``, not from ``ancp``.  The oscillation select must handle
+    ancp=SMRT gracefully (falls through to span-based detection → "Custom").
+    """
+
+    def _make_ff_entity(self, coordinator, state: dict) -> DysonFindFollowModeSelect:
+        """Helper: build F+F entity with a full realistic product-state dict."""
+        coordinator.data = {"product-state": state}
+        coordinator.device.get_state_value = Mock(
+            side_effect=lambda data, key, default: data.get(key, default)
+        )
+        entity = DysonFindFollowModeSelect(coordinator)
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    def _make_osc_entity(self, coordinator, state: dict) -> DysonOscillationModeSelect:
+        """Helper: build oscillation select with a full realistic product-state dict."""
+        coordinator.data = {"product-state": state}
+        coordinator.device.get_state_value = Mock(
+            side_effect=lambda data, key, default: data.get(key, default)
+        )
+        entity = DysonOscillationModeSelect(coordinator)
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    # -- Find+Follow select --------------------------------------------------
+
+    def test_find_follow_reads_soon_not_ancp(self, mock_coordinator):
+        """F+F select shows 'Find+Follow' when soon=ON even though ancp=SMRT."""
+        state = {
+            "soon": "ON",
+            "sost": "NOD",
+            "ancp": "SMRT",
+            "oson": "OFF",
+            "osal": "0180",
+            "osau": "0180",
+        }
+        entity = self._make_ff_entity(mock_coordinator, state)
+        entity._handle_coordinator_update()
+        assert entity._attr_current_option == "Find+Follow"
+
+    def test_find_follow_shows_off_when_soon_off_despite_ancp_smrt(
+        self, mock_coordinator
+    ):
+        """F+F select shows 'Off' when soon=OFF even if ancp hasn't reverted yet.
+
+        The disable trace shows ancp still showing SMRT as the old value in
+        the first state element before transitioning to CUST.  soon is the
+        authoritative key.
+        """
+        state = {
+            "soon": "OFF",
+            "sost": "OFF",
+            "ancp": "SMRT",  # stale — device is mid-transition
+            "oson": "OFF",
+            "osal": "0180",
+            "osau": "0180",
+        }
+        entity = self._make_ff_entity(mock_coordinator, state)
+        entity._handle_coordinator_update()
+        assert entity._attr_current_option == "Off"
+
+    def test_find_follow_shows_scanning_when_soon_scan_and_ancp_smrt(
+        self, mock_coordinator
+    ):
+        """F+F select shows 'Scanning' when soon=SCAN and ancp=SMRT."""
+        state = {
+            "soon": "SCAN",
+            "sost": "SCAN",
+            "ancp": "SMRT",
+            "oson": "OFF",
+            "osal": "0180",
+            "osau": "0180",
+        }
+        entity = self._make_ff_entity(mock_coordinator, state)
+        entity._handle_coordinator_update()
+        assert entity._attr_current_option == "Scanning"
+
+    # -- Oscillation select --------------------------------------------------
+
+    def test_oscillation_select_returns_custom_when_ancp_smrt(self, mock_coordinator):
+        """Oscillation select falls through to span detection when ancp=SMRT.
+
+        ancp=SMRT is not in _PRESET_ANCP_MAP and does not match 'BRZE', so
+        the select falls through to osal/osau span detection.  With equal
+        osal/osau (span=0, as seen on the PC3 in F+F mode) no preset matches,
+        giving 'Custom'.
+        """
+        state = {
+            "soon": "ON",
+            "sost": "NOD",
+            "ancp": "SMRT",
+            "oson": "OFF",
+            "osal": "0180",
+            "osau": "0180",  # span = 0 → no preset match → Custom
+        }
+        entity = self._make_osc_entity(mock_coordinator, state)
+        result = entity._detect_mode_from_angles()
+        assert result == "Custom"
+
+    def test_oscillation_select_does_not_crash_when_ancp_smrt(self, mock_coordinator):
+        """Oscillation select handles ancp=SMRT without raising an exception."""
+        state = {
+            "soon": "ON",
+            "sost": "SCAN",
+            "ancp": "SMRT",
+            "oson": "OFF",
+            "osal": "0120",
+            "osau": "0240",  # span = 120 → no preset → Custom
+        }
+        entity = self._make_osc_entity(mock_coordinator, state)
+        # Must not raise
+        result = entity._detect_mode_from_angles()
+        assert result == "Custom"
+
+
+# ---------------------------------------------------------------------------
+# DysonFindFollowModeSelect — extra_state_attributes (scene support)
+# ---------------------------------------------------------------------------
+
+
+class TestFindFollowExtraStateAttributes:
+    """Test extra_state_attributes for scene support."""
+
+    def _make_entity(self, coordinator, state: dict) -> DysonFindFollowModeSelect:
+        """Helper: build entity with given product-state."""
+        coordinator.data = {"product-state": state}
+        coordinator.device.get_state_value = Mock(
+            side_effect=lambda data, key, default: data.get(key, default)
+        )
+        entity = DysonFindFollowModeSelect(coordinator)
+        # Set current_option from the soon value to mirror real state
+        soon = state.get("soon", "OFF")
+        entity._attr_current_option = DysonFindFollowModeSelect._SOON_TO_OPTION.get(
+            soon, "Off"
+        )
+        return entity
+
+    def test_returns_none_when_no_device(self, mock_coordinator):
+        """Returns None when device is unavailable."""
+        mock_coordinator.device = None
+        entity = DysonFindFollowModeSelect(mock_coordinator)
+        assert entity.extra_state_attributes is None
+
+    def test_off_state_attributes(self, mock_coordinator):
+        """Correct attributes when Find+Follow is Off."""
+        state = {"soon": "OFF", "sost": "OFF"}
+        entity = self._make_entity(mock_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["find_follow_mode"] == "Off"
+        assert attrs["find_follow_active"] is False
+        assert attrs["find_follow_command"] == "OFF"
+        assert attrs["find_follow_engine_status"] == "OFF"
+
+    def test_on_state_attributes(self, mock_coordinator):
+        """Correct attributes when Find+Follow is active (NOD = standby tracking)."""
+        state = {"soon": "ON", "sost": "NOD"}
+        entity = self._make_entity(mock_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["find_follow_mode"] == "Find+Follow"
+        assert attrs["find_follow_active"] is True
+        assert attrs["find_follow_command"] == "ON"
+        assert attrs["find_follow_engine_status"] == "NOD"
+
+    def test_scanning_state_attributes(self, mock_coordinator):
+        """Correct attributes during an active scan."""
+        state = {"soon": "SCAN", "sost": "SCAN"}
+        entity = self._make_entity(mock_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["find_follow_mode"] == "Scanning"
+        assert attrs["find_follow_active"] is True
+        assert attrs["find_follow_command"] == "SCAN"
+        assert attrs["find_follow_engine_status"] == "SCAN"
+
+    def test_all_required_keys_present(self, mock_coordinator):
+        """All four expected keys are always present."""
+        state = {"soon": "ON", "sost": "NOD"}
+        entity = self._make_entity(mock_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert set(attrs.keys()) == {
+            "find_follow_mode",
+            "find_follow_active",
+            "find_follow_command",
+            "find_follow_engine_status",
+        }
