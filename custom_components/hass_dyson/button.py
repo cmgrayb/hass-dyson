@@ -71,6 +71,16 @@ async def async_setup_entry(
                 coordinator.serial_number,
             )
 
+    # Add Find+Follow scan button for devices that report the 'soon' state key.
+    # Always visible (regardless of switch state) when the device supports F+F.
+    ff_product_state: dict = {}
+    if coordinator.data:
+        raw_ps = coordinator.data.get("product-state", {})
+        if isinstance(raw_ps, dict):
+            ff_product_state = raw_ps
+    if "soon" in ff_product_state:
+        entities.append(DysonFindFollowScanButton(coordinator))
+
     async_add_entities(entities, True)
 
 
@@ -227,3 +237,48 @@ def _icon_for_zone(icon_key: str | None) -> str:
     if not icon_key:
         return "mdi:vacuum"
     return _ZONE_ICON_MAP.get(str(icon_key), "mdi:vacuum")
+
+
+class DysonFindFollowScanButton(DysonEntity, ButtonEntity):
+    """Button to trigger an immediate Find+Follow person scan.
+
+    Sending ``soon=SCAN`` causes the device camera to immediately sweep for
+    people.  The device automatically returns to Find+Follow ON state after
+    the scan completes, even if Find+Follow was OFF before the scan.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Find+Follow scan button."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_find_follow_scan"
+        self._attr_translation_key = "find_follow_scan"
+        self._attr_icon = "mdi:radar"
+
+    async def async_press(self) -> None:
+        """Trigger an immediate Find+Follow person scan."""
+        if not self.coordinator.device:
+            _LOGGER.warning(
+                "Device not available for Find+Follow scan on %s",
+                self.coordinator.serial_number,
+            )
+            return
+        try:
+            await self.coordinator.device.set_find_follow("SCAN")
+            _LOGGER.debug(
+                "Triggered Find+Follow scan for %s",
+                self.coordinator.serial_number,
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error triggering Find+Follow scan for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error triggering Find+Follow scan for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )

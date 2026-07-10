@@ -106,56 +106,96 @@ Consequently:
   because users control Find+Follow exclusively through the dedicated entity.
 - No mutual-exclusivity logic is required between Find+Follow and horizontal oscillation.
 
-## HA Entity: `DysonFindFollowModeSelect`
+## HA Entities
 
-**Platform**: `select`
-**File**: `select.py` (alongside `DysonTiltOscillationModeSelect`)
-**Translation key**: `find_follow_mode`
+> **Design revision (v0.36.0-beta.2):** The initial beta (`v0.36.0-beta.1`) used a single
+> `select` entity with three options (`Off` / `Find+Follow` / `Scanning`).  Beta testing
+> revealed that `Scanning` is a momentary, push-button action rather than a persistent
+> selectable state; it also reflects the Dyson app's own UI representation of the feature.
+> The design was therefore revised to use a `switch` for on/off control and a `button` for
+> triggering scans.  The `DysonFindFollowModeSelect` entity is removed entirely; no migration
+> path is required because the change occurred within the beta period.
+
+### HA Entity: `DysonFindFollowSwitch`
+
+**Platform**: `switch`
+**File**: `switch.py`
+**Translation key**: `find_follow`
 **Icon**: `mdi:account-eye`
 
-### Options
+#### State Reading Logic
 
-```
-["Off", "Find+Follow", "Scanning"]
-```
+| `soon` value | Switch state |
+|--------------|-------------|
+| `"OFF"`      | Off (`False`) |
+| `"ON"`       | On (`True`)  |
+| `"SCAN"`     | On (`True`) — scanning implies F+F is active/becoming active |
+| absent / unknown | Off (safe fallback) |
 
-### State Reading Logic
+`sost` is exposed as a diagnostic attribute but does not gate the switch state.
 
-The `soon` key is the authoritative source for current state because it directly reflects
-the last command outcome and is updated synchronously with device transitions.
+#### Turn-On / Turn-Off Commands
 
-| `soon` value | Displayed option |
-|--------------|-----------------|
-| `"OFF"`      | `Off`           |
-| `"ON"`       | `Find+Follow`   |
-| `"SCAN"`     | `Scanning`      |
-| absent / unknown | `Off` (safe fallback) |
+| Action   | `soon` value sent |
+|----------|------------------|
+| Turn on  | `ON`             |
+| Turn off | `OFF`            |
 
-`sost` is not used for state display.  It is useful for diagnostics but `soon` is
-sufficient and more consistent.
+#### `extra_state_attributes`
 
-### Command Payloads
+| Attribute | Source | Description |
+|---|---|---|
+| `find_follow_active` | `soon in ("ON", "SCAN")` | True whenever F+F is running or scanning |
+| `find_follow_command` | `soon` raw | Raw device key value |
+| `find_follow_engine_status` | `sost` raw | Engine state (`OFF`, `NOD`, `SCAN`) |
 
-| Selected option | `soon` value sent |
-|-----------------|------------------|
-| `Off`           | `OFF`            |
-| `Find+Follow`   | `ON`             |
-| `Scanning`      | `SCAN`           |
-
-`Scanning` is an action-like selection: after the scan completes the device automatically
-returns `soon=ON`, which causes the select to display `Find+Follow` again.  No HA-side
-timer or state reset is needed.
-
-### Entity Creation in `async_setup_entry`
+#### Entity Creation in `async_setup_entry` (`switch.py`)
 
 ```python
-# Add Find+Follow select for devices that report the 'soon' state key.
+# Add Find+Follow switch for devices that report the 'soon' state key.
 # No dedicated capability flag exists; presence of 'soon' in product-state is
 # the sole gating criterion (same pattern as 'oton' for tilt oscillation).
-product_state = coordinator.data.get("product-state", {}) if coordinator.data else {}
-if "soon" in product_state:
-    entities.append(DysonFindFollowModeSelect(coordinator))
+ff_product_state: dict = {}
+if coordinator.data:
+    raw_ps = coordinator.data.get("product-state", {})
+    if isinstance(raw_ps, dict):
+        ff_product_state = raw_ps
+if "soon" in ff_product_state:
+    entities.append(DysonFindFollowSwitch(coordinator))
 ```
+
+---
+
+### HA Entity: `DysonFindFollowScanButton`
+
+**Platform**: `button`
+**File**: `button.py`
+**Translation key**: `find_follow_scan`
+**Icon**: `mdi:radar`
+
+The scan button triggers an immediate camera sweep for people.  It is always visible
+when the device supports Find+Follow (i.e., `soon` in product-state), regardless of
+whether the switch is currently on or off.
+
+Pressing the button when F+F is `OFF` has a side-effect: the device turns F+F `ON`
+after the scan completes (observed in MQTT traces).  This is intentional device
+behaviour; the switch will update automatically via the MQTT state-change callback.
+
+#### Command Payload
+
+| Action       | `soon` value sent |
+|--------------|------------------|
+| Button press | `SCAN`           |
+
+#### Entity Creation in `async_setup_entry` (`button.py`)
+
+```python
+# Add Find+Follow scan button alongside switch — same 'soon' key gating.
+if "soon" in ff_product_state:
+    entities.append(DysonFindFollowScanButton(coordinator))
+```
+
+---
 
 ## `device.py` Method: `set_find_follow`
 
@@ -184,11 +224,11 @@ STATE_KEY_FIND_FOLLOW_STATUS: Final = "sost"  # Find+Follow engine status (read-
 ## Open Items
 
 - Confirm whether `sost` ever diverges from the `soon`-derived state in edge cases
-  (e.g. camera hardware fault).  If it does, add a fallback that marks the entity
+  (e.g. camera hardware fault).  If it does, add a fallback that marks the switch entity
   unavailable when `sost` indicates an error state.
 - Confirm whether future Dyson devices add a capability flag for Find+Follow
   (e.g. `FindAndFollow`, `SmartOscillation`).  If added, prefer capability-gating
   over key-detection for cleaner setup-time determination.
-- Investigate whether `soon=SCAN` can be sent when Find+Follow is `OFF` to perform
-  a one-shot scan without entering continuous tracking mode (trace shows it does
-  enable F+F after the scan; this may be intentional device behaviour).
+- ~~Investigate whether `soon=SCAN` can be sent when Find+Follow is `OFF`~~ — confirmed
+  by MQTT traces: a `SCAN` from `OFF` always transitions the device to `ON` after the
+  scan.  This is intentional device behaviour and is documented in the button entity notes.

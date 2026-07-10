@@ -277,6 +277,14 @@
       },
       "firmware_auto_update": {
         "name": "Firmware Auto Update"
+      },
+      "find_follow": {
+        "name": "Find+Follow"
+      }
+    },
+    "button": {
+      "find_follow_scan": {
+        "name": "Find+Follow Scan"
       }
     },
     "select": {
@@ -288,9 +296,6 @@
       },
       "tilt_oscillation_mode": {
         "name": "Tilt"
-      },
-      "find_follow_mode": {
-        "name": "Find+Follow"
       },
       "heating_mode": {
         "name": "Heating Mode"

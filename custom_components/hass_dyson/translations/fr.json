@@ -277,6 +277,14 @@
       },
       "firmware_auto_update": {
         "name": "Mise à jour automatique du firmware"
+      },
+      "find_follow": {
+        "name": "Suivi"
+      }
+    },
+    "button": {
+      "find_follow_scan": {
+        "name": "Scan Suivi"
       }
     },
     "select": {
@@ -288,9 +296,6 @@
       },
       "tilt_oscillation_mode": {
         "name": "Inclinaison"
-      },
-      "find_follow_mode": {
-        "name": "Suivi"
       },
       "heating_mode": {
         "name": "Mode de chauffage"
