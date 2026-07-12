@@ -146,9 +146,7 @@ class TestAsyncDiscoverMapApiVersion:
         assert client.get_clean_maps.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_status_extraction_ignores_digit_groups_in_message(
-        self, coordinator
-    ):
+    async def test_status_extraction_ignores_digit_groups_in_message(self, coordinator):
         """Digit groups in serials/URLs are not mistaken for HTTP statuses."""
         client = _client(
             side_effect=DysonAPIError(
