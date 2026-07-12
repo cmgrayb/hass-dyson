@@ -630,9 +630,7 @@ class TestZoneDiscoveryRetry:
         discover.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_refresh_press_discovery_failure_raises(
-        self, mock_robot_coordinator
-    ):
+    async def test_refresh_press_discovery_failure_raises(self, mock_robot_coordinator):
         """Discovery failures on refresh surface as HomeAssistantError."""
         discover = AsyncMock(side_effect=Exception("cloud down"))
         btn = DysonRefreshZonesButton(mock_robot_coordinator, discover)
