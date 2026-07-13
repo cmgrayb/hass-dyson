@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
@@ -17,6 +19,11 @@ from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# Retry schedule (seconds) for zone-button discovery when the cloud fetch
+# fails during setup.  After the schedule is exhausted the Refresh Zone List
+# button remains available for manual recovery.
+ZONE_DISCOVERY_RETRY_DELAYS: tuple[float, ...] = (60.0, 300.0, 900.0)
 
 
 async def async_setup_entry(
@@ -31,47 +38,108 @@ async def async_setup_entry(
         return
     coordinator: DysonDataUpdateCoordinator = entry_data
 
-    entities: list[ButtonEntity] = [DysonReconnectButton(coordinator)]
-
     # Robot vacuums (Vis Nav): auto-discover per-zone clean buttons from the
     # persistent-map metadata fetched from the Dyson cloud.
     is_robot = any(
         cat == DEVICE_CATEGORY_ROBOT for cat in (coordinator.device_category or [])
     )
     has_token = bool(coordinator.config_entry.data.get("auth_token"))
-    if is_robot and has_token:
+
+    if not (is_robot and has_token):
+        async_add_entities([DysonReconnectButton(coordinator)], True)
+        return
+
+    known_zone_ids: set[str] = set()
+
+    async def _async_discover_zone_buttons() -> int:
+        """Fetch map metadata and add buttons for zones not yet seen.
+
+        Returns the number of buttons added; raises if the cloud fetch fails.
+        """
         # Lazy import to avoid a setup-time circular dependency with services.py.
         from .services import _fetch_persistent_map_metadata
 
-        try:
-            maps = await _fetch_persistent_map_metadata(coordinator)
-        except Exception as err:  # noqa: BLE001 — never block setup over zone discovery
-            _LOGGER.warning(
-                "Could not fetch persistent map for %s; skipping zone buttons: %s",
-                coordinator.serial_number,
-                err,
-            )
-            maps = []
+        maps = await _fetch_persistent_map_metadata(coordinator)
 
-        # Most robots have a single persistent map; iterate to handle multi-map setups.
-        seen_zone_ids: set[str] = set()
+        # Most robots have a single persistent map; iterate to handle multi-map
+        # setups.
+        new_buttons: list[ButtonEntity] = []
         for pmap in maps:
             for zone in pmap.zones:
                 zone_id = zone.id
-                if not zone_id or zone_id in seen_zone_ids:
+                if not zone_id or zone_id in known_zone_ids:
                     continue
-                seen_zone_ids.add(zone_id)
-                entities.append(DysonZoneCleanButton(coordinator, pmap, zone))
+                known_zone_ids.add(zone_id)
+                new_buttons.append(DysonZoneCleanButton(coordinator, pmap, zone))
 
-        if seen_zone_ids:
-            entities.append(DysonRefreshZonesButton(coordinator))
+        if new_buttons:
+            async_add_entities(new_buttons, True)
             _LOGGER.info(
                 "Created %d per-zone clean buttons for %s",
-                len(seen_zone_ids),
+                len(new_buttons),
                 coordinator.serial_number,
             )
+        return len(new_buttons)
 
-    async_add_entities(entities, True)
+    # The reconnect and refresh buttons are created unconditionally so a
+    # failed cloud fetch never removes the manual recovery path.
+    async_add_entities(
+        [
+            DysonReconnectButton(coordinator),
+            DysonRefreshZonesButton(coordinator, _async_discover_zone_buttons),
+        ],
+        True,
+    )
+
+    try:
+        await _async_discover_zone_buttons()
+    except Exception as err:  # noqa: BLE001 — never block setup over zone discovery
+        _LOGGER.warning(
+            "Could not fetch persistent map for %s; retrying zone-button"
+            " discovery in the background: %s",
+            coordinator.serial_number,
+            err,
+        )
+    else:
+        return
+
+    # Retry on a backoff schedule so the buttons reappear without a Home
+    # Assistant restart once the cloud recovers.
+    retry_delays = iter(ZONE_DISCOVERY_RETRY_DELAYS)
+    cancel_retry: CALLBACK_TYPE | None = None
+
+    async def _async_retry(_now) -> None:
+        nonlocal cancel_retry
+        cancel_retry = None
+        try:
+            await _async_discover_zone_buttons()
+        except Exception as err:  # noqa: BLE001 — keep retrying on the schedule
+            _LOGGER.debug(
+                "Zone-button discovery retry failed for %s: %s",
+                coordinator.serial_number,
+                err,
+            )
+            _schedule_retry()
+
+    def _schedule_retry() -> None:
+        nonlocal cancel_retry
+        delay = next(retry_delays, None)
+        if delay is None:
+            _LOGGER.warning(
+                "Zone-button discovery for %s did not succeed after %d retries;"
+                " press the Refresh Zone List button to retry",
+                coordinator.serial_number,
+                len(ZONE_DISCOVERY_RETRY_DELAYS),
+            )
+            return
+        cancel_retry = async_call_later(hass, delay, _async_retry)
+
+    def _cancel_pending_retry() -> None:
+        if cancel_retry is not None:
+            cancel_retry()
+
+    config_entry.async_on_unload(_cancel_pending_retry)
+    _schedule_retry()
 
 
 class DysonReconnectButton(DysonEntity, ButtonEntity):
@@ -169,18 +237,23 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
 
 
 class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
-    """Force re-fetch of the persistent map metadata from the Dyson cloud.
+    """Re-fetch the persistent map metadata from the Dyson cloud.
 
     Invalidates the in-process cache used by the start_zone_clean service and
-    zone-clean buttons. To pick up newly added/renamed zones in the HA UI,
-    restart Home Assistant after pressing this button (entities are only
-    created at integration setup).
+    zone-clean buttons, then adds buttons for any newly-discovered zones
+    without requiring a restart.  Renamed zones keep their entity (unique_id
+    is the zone id) and pick up the new name after a Home Assistant restart.
     """
 
     coordinator: DysonDataUpdateCoordinator
 
-    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: DysonDataUpdateCoordinator,
+        discover_zone_buttons: Callable[[], Awaitable[int]] | None = None,
+    ) -> None:
         super().__init__(coordinator)
+        self._discover_zone_buttons = discover_zone_buttons
         self._attr_unique_id = f"{coordinator.serial_number}_refresh_zones"
         self._attr_name = "Refresh Zone List"
         self._attr_icon = "mdi:refresh"
@@ -191,6 +264,14 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
 
         _persistent_map_cache.invalidate(self.coordinator.serial_number)
         try:
+            if self._discover_zone_buttons is not None:
+                added = await self._discover_zone_buttons()
+                _LOGGER.info(
+                    "Refreshed persistent map for %s: %d new zone button(s) added",
+                    self.coordinator.serial_number,
+                    added,
+                )
+                return
             maps = await _fetch_persistent_map_metadata(self.coordinator)
             _LOGGER.info(
                 "Refreshed persistent map for %s: %d map(s), %d zone(s) total. "

@@ -10,6 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from custom_components.hass_dyson.button import (
+    ZONE_DISCOVERY_RETRY_DELAYS,
     DysonReconnectButton,
     DysonRefreshZonesButton,
     DysonZoneCleanButton,
@@ -376,32 +377,43 @@ class TestButtonPlatformRobotSetup:
         ):
             await async_setup_entry(mock_hass, mock_config_entry, add_entities)
 
-        add_entities.assert_called_once()
-        entities = add_entities.call_args[0][0]
-        # reconnect + 2 zone buttons + refresh button
-        assert len(entities) == 4
-        assert isinstance(entities[0], DysonReconnectButton)
-        assert isinstance(entities[1], DysonZoneCleanButton)
-        assert isinstance(entities[2], DysonZoneCleanButton)
-        assert isinstance(entities[3], DysonRefreshZonesButton)
+        # Base call: reconnect + refresh; second call: the discovered zones
+        assert add_entities.call_count == 2
+        base = add_entities.call_args_list[0][0][0]
+        assert len(base) == 2
+        assert isinstance(base[0], DysonReconnectButton)
+        assert isinstance(base[1], DysonRefreshZonesButton)
+        zones = add_entities.call_args_list[1][0][0]
+        assert len(zones) == 2
+        assert all(isinstance(entity, DysonZoneCleanButton) for entity in zones)
 
     @pytest.mark.asyncio
-    async def test_robot_zone_fetch_exception_skips_zones(
+    async def test_robot_zone_fetch_exception_defers_discovery(
         self, mock_hass, mock_config_entry, mock_robot_coordinator
     ):
-        """Exception during zone fetch logs a warning and skips zone buttons."""
+        """Exception during zone fetch keeps recovery buttons and schedules a retry."""
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
         add_entities = MagicMock()
-        with patch(
-            "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
-            AsyncMock(side_effect=Exception("network error")),
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(side_effect=Exception("network error")),
+            ),
+            patch(
+                "custom_components.hass_dyson.button.async_call_later"
+            ) as mock_call_later,
         ):
             await async_setup_entry(mock_hass, mock_config_entry, add_entities)
 
+        # Reconnect + refresh are still created — no zone buttons yet
+        add_entities.assert_called_once()
         entities = add_entities.call_args[0][0]
-        # Only reconnect button — no zone buttons added
-        assert len(entities) == 1
+        assert len(entities) == 2
         assert isinstance(entities[0], DysonReconnectButton)
+        assert isinstance(entities[1], DysonRefreshZonesButton)
+        # The first background retry is scheduled
+        mock_call_later.assert_called_once()
+        assert mock_call_later.call_args[0][1] == ZONE_DISCOVERY_RETRY_DELAYS[0]
 
     @pytest.mark.asyncio
     async def test_robot_empty_maps_no_zone_buttons(
@@ -410,15 +422,24 @@ class TestButtonPlatformRobotSetup:
         """Robot with empty persistent map list creates no zone buttons."""
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
         add_entities = MagicMock()
-        with patch(
-            "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
-            AsyncMock(return_value=[]),
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(return_value=[]),
+            ),
+            patch(
+                "custom_components.hass_dyson.button.async_call_later"
+            ) as mock_call_later,
         ):
             await async_setup_entry(mock_hass, mock_config_entry, add_entities)
 
+        # Recovery buttons only; a successful-but-empty fetch schedules no retry
+        add_entities.assert_called_once()
         entities = add_entities.call_args[0][0]
-        assert len(entities) == 1
+        assert len(entities) == 2
         assert isinstance(entities[0], DysonReconnectButton)
+        assert isinstance(entities[1], DysonRefreshZonesButton)
+        mock_call_later.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_duplicate_zone_ids_deduplicated(
@@ -447,9 +468,10 @@ class TestButtonPlatformRobotSetup:
         ):
             await async_setup_entry(mock_hass, mock_config_entry, add_entities)
 
-        entities = add_entities.call_args[0][0]
-        # reconnect + 1 unique zone + refresh
-        assert len(entities) == 3
+        zones = add_entities.call_args_list[1][0][0]
+        # 1 unique zone across both maps
+        assert len(zones) == 1
+        assert isinstance(zones[0], DysonZoneCleanButton)
 
     @pytest.mark.asyncio
     async def test_non_robot_with_token_no_zone_buttons(
@@ -478,6 +500,143 @@ class TestButtonPlatformRobotSetup:
         entities = add_entities.call_args[0][0]
         assert len(entities) == 1
         assert isinstance(entities[0], DysonReconnectButton)
+
+
+# ---------------------------------------------------------------------------
+# Tests: zone discovery retry + manual recovery
+# ---------------------------------------------------------------------------
+
+
+class TestZoneDiscoveryRetry:
+    """Test background retry and manual recovery for zone discovery."""
+
+    _FAKE_MAPS = [
+        PersistentMapMeta(
+            id="map-1",
+            name=None,
+            zones_definition_last_updated_date=None,
+            zones=[
+                ZoneMeta(id="z1", name="Kitchen", icon="kitchen", area=None),
+                ZoneMeta(id="z2", name="Bedroom", icon="bedroom", area=None),
+            ],
+        )
+    ]
+
+    @pytest.mark.asyncio
+    async def test_retry_adds_zone_buttons_after_recovery(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """A scheduled retry adds the zone buttons once the cloud recovers."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        add_entities = MagicMock()
+        scheduled = []
+
+        def fake_call_later(hass, delay, action):
+            scheduled.append((delay, action))
+            return MagicMock()
+
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(side_effect=[Exception("cloud down"), self._FAKE_MAPS]),
+            ),
+            patch(
+                "custom_components.hass_dyson.button.async_call_later",
+                side_effect=fake_call_later,
+            ),
+        ):
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+            assert add_entities.call_count == 1
+            assert len(scheduled) == 1
+            await scheduled[0][1](None)
+
+        assert add_entities.call_count == 2
+        zones = add_entities.call_args_list[1][0][0]
+        assert len(zones) == 2
+        assert all(isinstance(entity, DysonZoneCleanButton) for entity in zones)
+
+    @pytest.mark.asyncio
+    async def test_retry_schedule_exhausts_with_backoff(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """Retries follow the backoff schedule and stop when it is exhausted."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        add_entities = MagicMock()
+        delays_seen: list[float] = []
+        pending = []
+
+        def fake_call_later(hass, delay, action):
+            delays_seen.append(delay)
+            pending.append(action)
+            return MagicMock()
+
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(side_effect=Exception("cloud down")),
+            ),
+            patch(
+                "custom_components.hass_dyson.button.async_call_later",
+                side_effect=fake_call_later,
+            ),
+        ):
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+            while pending:
+                await pending.pop(0)(None)
+
+        assert delays_seen == list(ZONE_DISCOVERY_RETRY_DELAYS)
+        # Only the base reconnect + refresh call — no zone buttons were added
+        assert add_entities.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_unload_cancels_pending_retry(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """Unloading the entry cancels a pending discovery retry."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        add_entities = MagicMock()
+        cancel = MagicMock()
+
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(side_effect=Exception("cloud down")),
+            ),
+            patch(
+                "custom_components.hass_dyson.button.async_call_later",
+                return_value=cancel,
+            ),
+        ):
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+
+        mock_config_entry.async_on_unload.assert_called_once()
+        unload_callback = mock_config_entry.async_on_unload.call_args[0][0]
+        unload_callback()
+        cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_refresh_press_adds_new_zones_without_restart(
+        self, mock_robot_coordinator
+    ):
+        """Pressing refresh invalidates the cache and adds new zone buttons."""
+        discover = AsyncMock(return_value=3)
+        btn = DysonRefreshZonesButton(mock_robot_coordinator, discover)
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache"
+        ) as mock_cache:
+            await btn.async_press()
+
+        mock_cache.invalidate.assert_called_once_with("VS9-GB-HJA0000A")
+        discover.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_refresh_press_discovery_failure_raises(self, mock_robot_coordinator):
+        """Discovery failures on refresh surface as HomeAssistantError."""
+        discover = AsyncMock(side_effect=Exception("cloud down"))
+        btn = DysonRefreshZonesButton(mock_robot_coordinator, discover)
+        with patch("custom_components.hass_dyson.services._persistent_map_cache"):
+            with pytest.raises(HomeAssistantError, match="Failed to refresh zones"):
+                await btn.async_press()
 
 
 # ---------------------------------------------------------------------------
