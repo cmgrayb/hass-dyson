@@ -71,10 +71,13 @@ _LOGGER = logging.getLogger(__name__)
 _CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
 _EXTENDED_CULTURE_PATTERN = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
 
-# Matches any 3-digit HTTP status code in the 4xx or 5xx range inside an error
-# message string.  Used by async_discover_map_api_version to detect endpoint
-# incompatibility when probing the v1 clean-maps endpoint.
-_HTTP_ERROR_RE = re.compile(r"\b[45]\d{2}\b")
+# Extracts the HTTP status code from a libdyson-rest error message.  httpx
+# renders status failures as "Client error '404 Not Found' for url '...'" /
+# "Server error '500 Internal Server Error' for url '...'", and DysonAPIError
+# wraps that text verbatim.  Anchoring on that shape — rather than matching any
+# 3-digit number — keeps digit groups in URLs or serial numbers from being
+# mistaken for HTTP statuses.  Used by async_discover_map_api_version.
+_HTTP_STATUS_RE = re.compile(r"\b(?:Client|Server) error '([45]\d{2})\b")
 
 
 # Sensitive config-entry field names that must be redacted from logs.
@@ -368,17 +371,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Probe and cache the map-endpoint API version for this device.
 
         Calls ``get_clean_maps`` with ``api_version=1`` as a lightweight probe
-        (dust maps excluded so no large payloads are transferred).  If the
-        server returns a 4xx or 5xx response the device requires v2 endpoints
-        and the result is cached.  Subsequent calls return the cached value
-        immediately without any network request.
+        (dust maps excluded so no large payloads are transferred).
+
+        Outcomes:
+
+        - Probe succeeds → the device is served by the v1 endpoints
+          (360 Vis Nav); ``1`` is cached.
+        - Probe fails with a definitive HTTP 4xx → the device is not served
+          by the v1 endpoints (360 Spot+Clean / Spot+Scrub and newer);
+          ``2`` is cached.
+        - Probe fails with an HTTP 5xx → ambiguous: a v2-only device sees
+          this, but so does a Vis Nav during a transient cloud incident.
+          ``2`` is returned for this call but NOT cached, so a Vis Nav is
+          not locked onto v2 endpoints (which fail for it) until the next
+          restart — the probe re-runs on the next map call and recovers
+          together with the cloud.
+        - Auth or non-HTTP errors → ``1`` is returned without caching and
+          the caller surfaces the underlying failure.
+
+        Once a result is cached, subsequent calls return it immediately
+        without any network request.
 
         Args:
             client: An authenticated ``AsyncDysonClient`` instance.
 
         Returns:
-            ``1`` for Dyson 360 Vis Nav (v1 endpoints respond successfully),
-            ``2`` for Dyson 360 Spot+Clean / Spot+Scrub and newer devices.
+            ``1`` for v1-served devices (360 Vis Nav), ``2`` for v2-served
+            devices (360 Spot+Clean / Spot+Scrub and newer).
         """
         if self._map_api_version is not None:
             return self._map_api_version
@@ -404,17 +423,11 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return 1
         except DysonAPIError as err:
             err_str = str(err)
-            if _HTTP_ERROR_RE.search(err_str):
-                self._map_api_version = 2
-                _LOGGER.info(
-                    "Map API version for %s: v2 "
-                    "(v1 probe returned '%s' — device uses v2 endpoints)",
-                    self.serial_number,
-                    err_str,
-                )
-            else:
-                # Non-HTTP error (connection failure, timeout, etc.);
-                # do not cache so the next call retries the probe.
+            status_match = _HTTP_STATUS_RE.search(err_str)
+            if status_match is None:
+                # Non-HTTP error (connection failure, unexpected response
+                # shape, etc.); do not cache so the next call retries the
+                # probe.
                 _LOGGER.warning(
                     "Map API version probe for %s: unexpected error '%s'"
                     " — defaulting to v1 for this call",
@@ -422,6 +435,27 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     err_str,
                 )
                 return 1
+            status = int(status_match.group(1))
+            if status >= 500:
+                # Ambiguous: a v2-only device sees a 5xx on v1, but so does
+                # a Vis Nav during a transient cloud incident.  Use v2 for
+                # this call without caching; callers fall back to their
+                # stale TTL caches if v2 then fails, and the next map call
+                # re-probes.
+                _LOGGER.warning(
+                    "Map API version probe for %s: v1 endpoint returned"
+                    " HTTP %d — using v2 for this call without caching",
+                    self.serial_number,
+                    status,
+                )
+                return 2
+            self._map_api_version = 2
+            _LOGGER.info(
+                "Map API version for %s: v2 (v1 probe returned HTTP %d"
+                " — device uses v2 endpoints)",
+                self.serial_number,
+                status,
+            )
 
         return self._map_api_version
 
