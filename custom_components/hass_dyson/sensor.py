@@ -67,8 +67,10 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     _PM_SENSOR_UNAVAILABLE_STATES,
@@ -80,7 +82,7 @@ from .const import (
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
-from .vacuum import fetch_clean_maps
+from .vacuum import _clean_maps_cache, fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1461,6 +1463,7 @@ async def async_setup_entry(  # noqa: C901
                 for i in range(5):
                     entities.append(DysonLastCleanSensor(coordinator, slot=i))
                 entities.append(DysonRecommendedCleanSensor(coordinator))
+                entities.append(DysonCurrentMapSensor(coordinator))
 
         # Cloud-fetched purifier sensors (outdoor AQI, daily history,
         # MyDyson scheduled events). Only for ec-category devices (air
@@ -3467,6 +3470,126 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
             "top_zone_dust_mg": (predictions[0]["total_dust_mg"] if predictions else 0),
             "predictions": predictions,
         }
+
+
+class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
+    """Which persistent map a multi-map robot is currently using.
+
+    Source priority (exposed via the ``source`` attribute):
+      1. ``robot`` — the persistentMapId the robot itself announced over
+         MQTT (present in every clean's state stream, retained afterwards);
+      2. ``cloud`` — the isCurrentMap flag from persistent-map metadata
+         (set by v2/Spot+Clean devices; the Vis Nav v1 endpoint omits it);
+      3. ``restored`` — the last known value from before a restart;
+      4. ``clean_history`` — the map of the most recent cloud clean record.
+
+    During zone cleans the robot also streams per-zone progress, surfaced
+    as the ``zone_status`` attribute.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_should_poll = True
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_current_map"
+        self._attr_name = "Current Map"
+        self._attr_icon = "mdi:map-marker-path"
+        self._restored_map_id: str | None = None
+        self._restored_name: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last and last.state not in ("unknown", "unavailable"):
+            self._restored_name = last.state
+            self._restored_map_id = last.attributes.get("map_id")
+
+    async def async_update(self) -> None:
+        """Warm the metadata and clean-history caches (both TTL-cached)."""
+        from .services import _fetch_persistent_map_metadata
+
+        try:
+            await _fetch_persistent_map_metadata(self.coordinator)
+        except HomeAssistantError:
+            pass
+        try:
+            await fetch_clean_maps(self.coordinator)
+        except HomeAssistantError:
+            pass
+
+    def _cached_maps(self) -> list:
+        from .services import _persistent_map_cache
+
+        serial = self.coordinator.serial_number
+        maps = _persistent_map_cache.get(serial)
+        if maps is None:
+            maps = _persistent_map_cache.get_stale(serial)
+        return maps or []
+
+    def _resolve(self) -> tuple[str | None, str | None, str | None]:
+        """Return (map_id, map_name, source) from the best available signal."""
+        from .services import _current_map
+
+        maps = self._cached_maps()
+        by_id = {m.id: m for m in maps}
+
+        device = self.coordinator.device
+        map_id = getattr(device, "robot_current_map_id", None) if device else None
+        if map_id:
+            pmap = by_id.get(map_id)
+            return map_id, (pmap.name if pmap else None), "robot"
+
+        cloud = _current_map(maps)
+        if cloud is not None:
+            return cloud.id, cloud.name, "cloud"
+
+        if self._restored_map_id or self._restored_name:
+            pmap = by_id.get(self._restored_map_id or "")
+            name = pmap.name if pmap else self._restored_name
+            return self._restored_map_id, name, "restored"
+
+        serial = self.coordinator.serial_number
+        records = _clean_maps_cache.get(serial) or _clean_maps_cache.get_stale(serial)
+        for record in records or []:
+            record_map_id = getattr(record, "persistent_map_id", None)
+            if record_map_id:
+                pmap = by_id.get(record_map_id)
+                return record_map_id, (pmap.name if pmap else None), "clean_history"
+
+        return None, None, None
+
+    @property
+    def native_value(self) -> str | None:
+        map_id, name, _source = self._resolve()
+        if name is None and map_id is None:
+            return None
+        return str(name or map_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        map_id, _name, source = self._resolve()
+        attrs: dict[str, Any] = {"map_id": map_id, "source": source}
+
+        pmap = next((m for m in self._cached_maps() if m.id == map_id), None)
+        if pmap is not None:
+            attrs["zones"] = [str(z.name or z.id) for z in pmap.zones]
+
+        # Per-zone progress is only meaningful while a clean is running —
+        # the robot retains the last zoneStatus after docking.
+        device = self.coordinator.device
+        zone_status = getattr(device, "robot_zone_status", None) if device else None
+        robot_state = str(getattr(device, "robot_state", "") or "")
+        if zone_status and robot_state.startswith(("FULL_CLEAN", "MAPPING")):
+            names = {z.id: str(z.name or z.id) for z in pmap.zones} if pmap else {}
+            attrs["zone_status"] = {
+                names.get(entry.get("zoneId"), entry.get("zoneId")): entry.get(
+                    "cleanStatus"
+                )
+                for entry in zone_status
+                if isinstance(entry, dict)
+            }
+        return attrs
 
 
 # ============================================================================

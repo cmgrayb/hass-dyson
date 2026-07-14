@@ -275,17 +275,19 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
 
     @property
     def available(self) -> bool:
-        """Unavailable while the cloud flags a different map as current.
+        """Unavailable while the robot is known to be on a different map.
 
-        The v1 API omits isCurrentMap (currency unknown → None), in which
-        case every zone button stays available.
+        The signal is the robot's MQTT-reported map (announced during every
+        clean), falling back to the cloud isCurrentMap flag. When neither is
+        available (e.g. a freshly restarted Vis Nav on its dock — the v1 API
+        omits isCurrentMap) every zone button stays available.
         """
         if not super().available:
             return False
-        from .services import _current_map, _persistent_map_cache
+        from .services import _effective_current_map, _persistent_map_cache
 
         maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
-        current = _current_map(maps)
+        current = _effective_current_map(maps, self.coordinator)
         return current is None or current.id == self._pmap_id
 
     async def async_press(self) -> None:
@@ -294,10 +296,10 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
                 f"Device {self.coordinator.serial_number} not available"
             )
         # Guard against a stale UI: the robot can only clean the map it is on.
-        from .services import _current_map, _persistent_map_cache
+        from .services import _effective_current_map, _persistent_map_cache
 
         maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
-        current = _current_map(maps)
+        current = _effective_current_map(maps, self.coordinator)
         if current is not None and current.id != self._pmap_id:
             raise HomeAssistantError(
                 f"The robot is currently using map {current.name or current.id!r}; "
