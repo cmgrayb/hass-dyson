@@ -905,6 +905,12 @@ class TestDysonZoneCleanButton:
         ):
             assert btn.available is True
 
+    def test_available_false_when_base_unavailable(self, mock_robot_coordinator):
+        """Coordinator/device unavailability wins before any map gating."""
+        mock_robot_coordinator.last_update_success = False
+        btn = self._make(mock_robot_coordinator)
+        assert btn.available is False
+
 
 # ---------------------------------------------------------------------------
 # Tests: DysonRefreshZonesButton
@@ -1117,3 +1123,27 @@ class TestZoneButtonUniqueIdMigration:
         self._run(registry, mock_robot_coordinator)
         assert registry.updates == []
         assert registry.entries["VS9-GB-HJA0000A_clean_zone_1"] == "button.old_hallway"
+
+    def test_zone_without_id_is_skipped(self, mock_robot_coordinator):
+        """A zone with a falsy id never owned an old unique_id — skip it."""
+        maps = [
+            PersistentMapMeta(
+                id="map-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[
+                    ZoneMeta(id="", name="Ghost", icon=None, area=None),
+                    ZoneMeta(id="1", name="Hallway", icon=None, area=None),
+                ],
+            ),
+        ]
+        registry = _FakeEntityRegistry(
+            {
+                "VS9-GB-HJA0000A_clean_zone_": "button.visnav_clean_ghost",
+                "VS9-GB-HJA0000A_clean_zone_1": "button.visnav_clean_hallway",
+            }
+        )
+        self._run(registry, mock_robot_coordinator, maps=maps)
+        assert registry.updates == [
+            ("button.visnav_clean_hallway", "VS9-GB-HJA0000A_clean_zone_map-1_1")
+        ]

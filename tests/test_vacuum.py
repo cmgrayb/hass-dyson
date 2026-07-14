@@ -1423,6 +1423,17 @@ class TestCleanAreaMultiMap:
         mock_coordinator_robot.device.robot_start_clean.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_clean_segments_empty_list_raises(self, mock_coordinator_robot):
+        """An empty segment list must not be sent as a whole-house clean."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with pytest.raises(HomeAssistantError, match="No segments specified"):
+            await entity.async_clean_segments([])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_clean_segments_bare_id_inferred_across_maps(
         self, mock_coordinator_robot
     ):
