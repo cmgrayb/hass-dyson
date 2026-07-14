@@ -881,9 +881,7 @@ class TestDysonZoneCleanButton:
         ):
             assert btn.available is False
 
-    def test_available_false_when_robot_reports_other_map(
-        self, mock_robot_coordinator
-    ):
+    def test_available_false_when_robot_reports_other_map(self, mock_robot_coordinator):
         """The robot's own MQTT-reported map gates availability (no cloud flag)."""
         cached_maps = [
             PersistentMapMeta(

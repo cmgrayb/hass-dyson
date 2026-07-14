@@ -156,9 +156,7 @@ class TestCurrentMapSensor:
                 "custom_components.hass_dyson.services._persistent_map_cache",
                 pmap_cache,
             ),
-            patch(
-                "custom_components.hass_dyson.sensor._clean_maps_cache", clean_cache
-            ),
+            patch("custom_components.hass_dyson.sensor._clean_maps_cache", clean_cache),
         )
 
     def test_unique_id_and_name(self):
