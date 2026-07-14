@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
@@ -24,6 +25,47 @@ _LOGGER = logging.getLogger(__name__)
 # fails during setup.  After the schedule is exhausted the Refresh Zone List
 # button remains available for manual recovery.
 ZONE_DISCOVERY_RETRY_DELAYS: tuple[float, ...] = (60.0, 300.0, 900.0)
+
+
+def _async_migrate_zone_button_unique_ids(
+    hass: HomeAssistant,
+    coordinator: DysonDataUpdateCoordinator,
+    maps: list[PersistentMapMeta],
+) -> None:
+    """Migrate pre-multi-map zone-button unique_ids to the map-qualified form.
+
+    The old ``{serial}_clean_zone_{zone_id}`` unique_id is ambiguous across
+    maps (zone ids restart from 1 per map). The old dedupe created each
+    button for the first map in API order carrying that zone id, so the
+    first map claiming an old unique_id here reproduces exactly which map
+    the entity belonged to — existing entities keep their entity_id and
+    history.
+    """
+    ent_reg = er.async_get(hass)
+    serial = coordinator.serial_number
+    for pmap in maps:
+        for zone in pmap.zones:
+            if not zone.id:
+                continue
+            old_unique_id = f"{serial}_clean_zone_{zone.id}"
+            entity_id = ent_reg.async_get_entity_id("button", DOMAIN, old_unique_id)
+            if entity_id is None:
+                continue
+            new_unique_id = f"{serial}_clean_zone_{pmap.id}_{zone.id}"
+            if ent_reg.async_get_entity_id("button", DOMAIN, new_unique_id):
+                _LOGGER.debug(
+                    "Zone button %s already exists; leaving %s unmigrated",
+                    new_unique_id,
+                    old_unique_id,
+                )
+                continue
+            ent_reg.async_update_entity(entity_id, new_unique_id=new_unique_id)
+            _LOGGER.info(
+                "Migrated zone button %s unique_id: %s → %s",
+                entity_id,
+                old_unique_id,
+                new_unique_id,
+            )
 
 
 async def async_setup_entry(
@@ -49,7 +91,7 @@ async def async_setup_entry(
         async_add_entities([DysonReconnectButton(coordinator)], True)
         return
 
-    known_zone_ids: set[str] = set()
+    known_zone_keys: set[tuple[str, str]] = set()
 
     async def _async_discover_zone_buttons() -> int:
         """Fetch map metadata and add buttons for zones not yet seen.
@@ -61,16 +103,22 @@ async def async_setup_entry(
 
         maps = await _fetch_persistent_map_metadata(coordinator)
 
-        # Most robots have a single persistent map; iterate to handle multi-map
-        # setups.
+        _async_migrate_zone_button_unique_ids(hass, coordinator, maps)
+
+        # Zone ids restart from 1 on every map, so dedupe on (map, zone) —
+        # a bare-zone-id key would silently drop every later map's buttons.
+        qualify_names = len(maps) > 1
         new_buttons: list[ButtonEntity] = []
         for pmap in maps:
             for zone in pmap.zones:
-                zone_id = zone.id
-                if not zone_id or zone_id in known_zone_ids:
+                if not zone.id or (pmap.id, zone.id) in known_zone_keys:
                     continue
-                known_zone_ids.add(zone_id)
-                new_buttons.append(DysonZoneCleanButton(coordinator, pmap, zone))
+                known_zone_keys.add((pmap.id, zone.id))
+                new_buttons.append(
+                    DysonZoneCleanButton(
+                        coordinator, pmap, zone, qualify_name=qualify_names
+                    )
+                )
 
         if new_buttons:
             async_add_entities(new_buttons, True)
@@ -187,7 +235,7 @@ class DysonReconnectButton(DysonEntity, ButtonEntity):
 class DysonZoneCleanButton(DysonEntity, ButtonEntity):
     """Per-zone 'Clean this room' button (Vis Nav).
 
-    One entity per zone in the persistent map. Tapping sends a START MQTT
+    One entity per zone per persistent map. Tapping sends a START MQTT
     command with cleaningMode='zoneConfigured' targeting just that zone.
     """
 
@@ -198,31 +246,72 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
         coordinator: DysonDataUpdateCoordinator,
         pmap: PersistentMapMeta,
         zone: ZoneMeta,
+        qualify_name: bool = False,
     ) -> None:
         super().__init__(coordinator)
         self._pmap_id: str = pmap.id
+        self._pmap_name: str = str(pmap.name or pmap.id)
+        self._pmap_zdlud: str | None = pmap.zones_definition_last_updated_date
         self._zone_id: str = zone.id
         self._zone_name: str = str(zone.name or f"Zone {self._zone_id}")
-        # unique_id uses zone_id (stable in MyDyson app even if user renames the zone)
-        self._attr_unique_id = f"{coordinator.serial_number}_clean_zone_{self._zone_id}"
-        self._attr_name = f"Clean {self._zone_name}"
+        # unique_id is map-qualified — zone ids restart from 1 on every map.
+        # Both components are stable in MyDyson even if the user renames them.
+        self._attr_unique_id = (
+            f"{coordinator.serial_number}_clean_zone_{self._pmap_id}_{self._zone_id}"
+        )
+        self._attr_name = (
+            f"Clean {self._zone_name} ({self._pmap_name})"
+            if qualify_name
+            else f"Clean {self._zone_name}"
+        )
         self._attr_icon = _icon_for_zone(zone.icon)
+
+    @property
+    def available(self) -> bool:
+        """Unavailable while the cloud flags a different map as current.
+
+        The v1 API omits isCurrentMap (currency unknown → None), in which
+        case every zone button stays available.
+        """
+        if not super().available:
+            return False
+        from .services import _current_map, _persistent_map_cache
+
+        maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
+        current = _current_map(maps)
+        return current is None or current.id == self._pmap_id
 
     async def async_press(self) -> None:
         if not self.coordinator.device:
             raise HomeAssistantError(
                 f"Device {self.coordinator.serial_number} not available"
             )
+        # Guard against a stale UI: the robot can only clean the map it is on.
+        from .services import _current_map, _persistent_map_cache
+
+        maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
+        current = _current_map(maps)
+        if current is not None and current.id != self._pmap_id:
+            raise HomeAssistantError(
+                f"The robot is currently using map {current.name or current.id!r}; "
+                f"{self._zone_name!r} is on map {self._pmap_name!r}. Move the robot "
+                "to that map and refresh the zone list, then retry."
+            )
         cleaning_programme = {
             "persistentMapId": self._pmap_id,
             "orderedZones": [],
             "unorderedZones": [self._zone_id],
         }
+        # Without zonesDefinitionLastUpdatedDate the device silently
+        # downgrades the START to a global (whole-house) clean.
+        if self._pmap_zdlud:
+            cleaning_programme["zonesDefinitionLastUpdatedDate"] = self._pmap_zdlud
         _LOGGER.info(
-            "Zone-clean button pressed: %s → zone %s (%s)",
+            "Zone-clean button pressed: %s → zone %s (%s, map %s)",
             self.coordinator.serial_number,
             self._zone_id,
             self._zone_name,
+            self._pmap_name,
         )
         try:
             await self.coordinator.device.robot_start_clean(
@@ -242,7 +331,8 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
     Invalidates the in-process cache used by the start_zone_clean service and
     zone-clean buttons, then adds buttons for any newly-discovered zones
     without requiring a restart.  Renamed zones keep their entity (unique_id
-    is the zone id) and pick up the new name after a Home Assistant restart.
+    is the map + zone id) and pick up the new name after a Home Assistant
+    restart.
     """
 
     coordinator: DysonDataUpdateCoordinator
