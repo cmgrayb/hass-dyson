@@ -1106,9 +1106,7 @@ class TestZoneButtonUniqueIdMigration:
         self._run(registry, mock_robot_coordinator)
         assert registry.updates == []
 
-    def test_collision_with_existing_new_unique_id_skips(
-        self, mock_robot_coordinator
-    ):
+    def test_collision_with_existing_new_unique_id_skips(self, mock_robot_coordinator):
         """If the map-qualified unique_id already exists, the old one is left."""
         registry = _FakeEntityRegistry(
             {
@@ -1118,6 +1116,4 @@ class TestZoneButtonUniqueIdMigration:
         )
         self._run(registry, mock_robot_coordinator)
         assert registry.updates == []
-        assert (
-            registry.entries["VS9-GB-HJA0000A_clean_zone_1"] == "button.old_hallway"
-        )
+        assert registry.entries["VS9-GB-HJA0000A_clean_zone_1"] == "button.old_hallway"
