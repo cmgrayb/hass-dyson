@@ -43,14 +43,21 @@ def _async_migrate_zone_button_unique_ids(
     """
     ent_reg = er.async_get(hass)
     serial = coordinator.serial_number
+    claimed_old_ids: set[str] = set()
     for pmap in maps:
         for zone in pmap.zones:
             if not zone.id:
                 continue
             old_unique_id = f"{serial}_clean_zone_{zone.id}"
+            if old_unique_id in claimed_old_ids:
+                continue
             entity_id = ent_reg.async_get_entity_id("button", DOMAIN, old_unique_id)
             if entity_id is None:
                 continue
+            # The first map (in API order) carrying this zone id owns the old
+            # entity — even when the migration below is skipped, a later map
+            # with a colliding zone id must not claim it.
+            claimed_old_ids.add(old_unique_id)
             new_unique_id = f"{serial}_clean_zone_{pmap.id}_{zone.id}"
             if ent_reg.async_get_entity_id("button", DOMAIN, new_unique_id):
                 _LOGGER.debug(
