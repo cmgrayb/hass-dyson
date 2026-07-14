@@ -14,6 +14,7 @@ from custom_components.hass_dyson.button import (
     DysonReconnectButton,
     DysonRefreshZonesButton,
     DysonZoneCleanButton,
+    _async_migrate_zone_button_unique_ids,
     _icon_for_zone,
     async_setup_entry,
 )
@@ -60,6 +61,20 @@ def mock_hass():
     hass = MagicMock(spec=HomeAssistant)
     hass.data = {DOMAIN: {}}
     return hass
+
+
+@pytest.fixture(autouse=True)
+def mock_entity_registry():
+    """Stub the entity registry used by the zone-button unique_id migration.
+
+    Defaults to an empty registry (no pre-multi-map entities to migrate).
+    """
+    registry = MagicMock()
+    registry.async_get_entity_id.return_value = None
+    with patch(
+        "custom_components.hass_dyson.button.er.async_get", return_value=registry
+    ):
+        yield registry
 
 
 class TestButtonPlatformSetup:
@@ -442,22 +457,22 @@ class TestButtonPlatformRobotSetup:
         mock_call_later.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_duplicate_zone_ids_deduplicated(
+    async def test_same_zone_id_on_two_maps_creates_two_buttons(
         self, mock_hass, mock_config_entry, mock_robot_coordinator
     ):
-        """Zones with the same ID across maps are deduplicated."""
+        """Zone ids restart per map — each map gets its own button (issue #398)."""
         mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
         add_entities = MagicMock()
         fake_maps = [
             PersistentMapMeta(
                 id="map-1",
-                name=None,
+                name="Upstairs",
                 zones_definition_last_updated_date=None,
                 zones=[ZoneMeta(id="z1", name="Kitchen", icon=None, area=None)],
             ),
             PersistentMapMeta(
                 id="map-2",
-                name=None,
+                name="Downstairs",
                 zones_definition_last_updated_date=None,
                 zones=[ZoneMeta(id="z1", name="Kitchen", icon=None, area=None)],
             ),
@@ -469,9 +484,43 @@ class TestButtonPlatformRobotSetup:
             await async_setup_entry(mock_hass, mock_config_entry, add_entities)
 
         zones = add_entities.call_args_list[1][0][0]
-        # 1 unique zone across both maps
+        assert len(zones) == 2
+        assert all(isinstance(entity, DysonZoneCleanButton) for entity in zones)
+        # Map-qualified unique_ids and names disambiguate the two buttons
+        assert {b._attr_unique_id for b in zones} == {
+            "VS9-GB-HJA0000A_clean_zone_map-1_z1",
+            "VS9-GB-HJA0000A_clean_zone_map-2_z1",
+        }
+        assert {b._attr_name for b in zones} == {
+            "Clean Kitchen (Upstairs)",
+            "Clean Kitchen (Downstairs)",
+        }
+
+    @pytest.mark.asyncio
+    async def test_single_map_names_not_qualified(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """Single-map robots keep the unqualified 'Clean <zone>' names."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        add_entities = MagicMock()
+        fake_maps = [
+            PersistentMapMeta(
+                id="map-1",
+                name="Home",
+                zones_definition_last_updated_date=None,
+                zones=[ZoneMeta(id="z1", name="Kitchen", icon=None, area=None)],
+            )
+        ]
+        with patch(
+            "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+            AsyncMock(return_value=fake_maps),
+        ):
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+
+        zones = add_entities.call_args_list[1][0][0]
         assert len(zones) == 1
-        assert isinstance(zones[0], DysonZoneCleanButton)
+        assert zones[0]._attr_name == "Clean Kitchen"
+        assert zones[0]._attr_unique_id == "VS9-GB-HJA0000A_clean_zone_map-1_z1"
 
     @pytest.mark.asyncio
     async def test_non_robot_with_token_no_zone_buttons(
@@ -660,14 +709,27 @@ class TestDysonZoneCleanButton:
         )
 
     def test_init_sets_unique_id(self, mock_robot_coordinator):
-        """unique_id is based on serial + zone id."""
+        """unique_id is map-qualified: serial + map id + zone id."""
         btn = self._make(mock_robot_coordinator)
-        assert btn._attr_unique_id == "VS9-GB-HJA0000A_clean_zone_zone-99"
+        assert btn._attr_unique_id == "VS9-GB-HJA0000A_clean_zone_pmap-1_zone-99"
 
     def test_init_sets_name_from_zone(self, mock_robot_coordinator):
         """Name is 'Clean <zone name>'."""
         btn = self._make(mock_robot_coordinator)
         assert btn._attr_name == "Clean Kitchen"
+
+    def test_init_qualified_name_includes_map(self, mock_robot_coordinator):
+        """qualify_name=True appends the map name (multi-map robots)."""
+        pmap = PersistentMapMeta(
+            id="pmap-2",
+            name="Downstairs",
+            zones_definition_last_updated_date=None,
+            zones=[],
+        )
+        btn = DysonZoneCleanButton(
+            mock_robot_coordinator, pmap, self._FAKE_ZONE, qualify_name=True
+        )
+        assert btn._attr_name == "Clean Kitchen (Downstairs)"
 
     def test_init_zone_name_fallback(self, mock_robot_coordinator):
         """Missing zone name falls back to 'Zone <id>'."""
@@ -722,6 +784,126 @@ class TestDysonZoneCleanButton:
         btn = self._make(mock_robot_coordinator)
         with pytest.raises(HomeAssistantError, match="Failed to start clean"):
             await btn.async_press()
+
+    @pytest.mark.asyncio
+    async def test_async_press_includes_zdlud_when_present(
+        self, mock_robot_coordinator
+    ):
+        """zonesDefinitionLastUpdatedDate from the map is sent in the programme."""
+        mock_robot_coordinator.device.robot_start_clean = AsyncMock()
+        pmap = PersistentMapMeta(
+            id="pmap-1",
+            name=None,
+            zones_definition_last_updated_date="2026-03-01T12:00:00Z",
+            zones=[],
+        )
+        btn = self._make(mock_robot_coordinator, pmap=pmap)
+        await btn.async_press()
+
+        programme = mock_robot_coordinator.device.robot_start_clean.call_args.kwargs[
+            "cleaning_programme"
+        ]
+        assert programme["zonesDefinitionLastUpdatedDate"] == "2026-03-01T12:00:00Z"
+
+    @pytest.mark.asyncio
+    async def test_async_press_blocked_when_other_map_is_current(
+        self, mock_robot_coordinator
+    ):
+        """Pressing a zone on a non-current map raises instead of sending."""
+        mock_robot_coordinator.device.robot_start_clean = AsyncMock()
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+                is_current_map=True,
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        btn = self._make(mock_robot_coordinator)  # button belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            with pytest.raises(HomeAssistantError, match="currently using map"):
+                await btn.async_press()
+
+        mock_robot_coordinator.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_press_allowed_when_own_map_is_current(
+        self, mock_robot_coordinator
+    ):
+        """Pressing a zone on the current map sends the command."""
+        mock_robot_coordinator.device.robot_start_clean = AsyncMock()
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+                is_current_map=True,
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        btn = self._make(mock_robot_coordinator)
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            await btn.async_press()
+
+        mock_robot_coordinator.device.robot_start_clean.assert_called_once()
+
+    def test_available_false_when_other_map_is_current(self, mock_robot_coordinator):
+        """Button is unavailable while the cloud flags a different map current."""
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+                is_current_map=True,
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            assert btn.available is False
+
+    def test_available_when_currency_unknown(self, mock_robot_coordinator):
+        """No isCurrentMap flag anywhere (v1 API) → every button stays available."""
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name=None,
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name=None,
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        btn = self._make(mock_robot_coordinator)
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            assert btn.available is True
 
 
 # ---------------------------------------------------------------------------
@@ -827,3 +1009,115 @@ class TestIconForZone:
     def test_empty_string_returns_vacuum(self):
         """Empty string falls back to mdi:vacuum."""
         assert _icon_for_zone("") == "mdi:vacuum"
+
+
+# ---------------------------------------------------------------------------
+# Tests: pre-multi-map unique_id migration
+# ---------------------------------------------------------------------------
+
+
+class _FakeEntityRegistry:
+    """Minimal entity-registry stand-in: unique_id → entity_id mapping."""
+
+    def __init__(self, entries: dict[str, str]):
+        # entries: {unique_id: entity_id}
+        self.entries = dict(entries)
+        self.updates: list[tuple[str, str]] = []
+
+    def async_get_entity_id(self, domain, platform, unique_id):
+        return self.entries.get(unique_id)
+
+    def async_update_entity(self, entity_id, *, new_unique_id):
+        for uid, eid in list(self.entries.items()):
+            if eid == entity_id:
+                del self.entries[uid]
+        self.entries[new_unique_id] = entity_id
+        self.updates.append((entity_id, new_unique_id))
+
+
+class TestZoneButtonUniqueIdMigration:
+    """Test _async_migrate_zone_button_unique_ids."""
+
+    @staticmethod
+    def _maps():
+        return [
+            PersistentMapMeta(
+                id="map-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[
+                    ZoneMeta(id="1", name="Hallway", icon=None, area=None),
+                    ZoneMeta(id="2", name="Office", icon=None, area=None),
+                ],
+            ),
+            PersistentMapMeta(
+                id="map-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[ZoneMeta(id="1", name="Kitchen", icon=None, area=None)],
+            ),
+        ]
+
+    def _run(self, registry, mock_robot_coordinator, maps=None):
+        with patch(
+            "custom_components.hass_dyson.button.er.async_get",
+            return_value=registry,
+        ):
+            _async_migrate_zone_button_unique_ids(
+                MagicMock(), mock_robot_coordinator, maps or self._maps()
+            )
+
+    def test_old_unique_ids_migrate_to_first_map_in_api_order(
+        self, mock_robot_coordinator
+    ):
+        """Old bare-zone-id unique_ids migrate to the first map carrying the id.
+
+        This reproduces which map the pre-multi-map dedupe created the button
+        for, so existing entities keep their entity_id and history.
+        """
+        registry = _FakeEntityRegistry(
+            {
+                "VS9-GB-HJA0000A_clean_zone_1": "button.visnav_clean_hallway",
+                "VS9-GB-HJA0000A_clean_zone_2": "button.visnav_clean_office",
+            }
+        )
+        self._run(registry, mock_robot_coordinator)
+
+        assert sorted(registry.updates) == [
+            ("button.visnav_clean_hallway", "VS9-GB-HJA0000A_clean_zone_map-1_1"),
+            ("button.visnav_clean_office", "VS9-GB-HJA0000A_clean_zone_map-1_2"),
+        ]
+        # The second map's colliding zone id "1" did NOT steal the old entity
+        assert "VS9-GB-HJA0000A_clean_zone_map-2_1" not in registry.entries
+
+    def test_migration_is_idempotent(self, mock_robot_coordinator):
+        """A second run after migration performs no further updates."""
+        registry = _FakeEntityRegistry(
+            {"VS9-GB-HJA0000A_clean_zone_1": "button.visnav_clean_hallway"}
+        )
+        self._run(registry, mock_robot_coordinator)
+        first = list(registry.updates)
+        self._run(registry, mock_robot_coordinator)
+        assert registry.updates == first
+
+    def test_no_old_entities_no_updates(self, mock_robot_coordinator):
+        """Fresh installs (no old-format unique_ids) are untouched."""
+        registry = _FakeEntityRegistry({})
+        self._run(registry, mock_robot_coordinator)
+        assert registry.updates == []
+
+    def test_collision_with_existing_new_unique_id_skips(
+        self, mock_robot_coordinator
+    ):
+        """If the map-qualified unique_id already exists, the old one is left."""
+        registry = _FakeEntityRegistry(
+            {
+                "VS9-GB-HJA0000A_clean_zone_1": "button.old_hallway",
+                "VS9-GB-HJA0000A_clean_zone_map-1_1": "button.new_hallway",
+            }
+        )
+        self._run(registry, mock_robot_coordinator)
+        assert registry.updates == []
+        assert (
+            registry.entries["VS9-GB-HJA0000A_clean_zone_1"] == "button.old_hallway"
+        )
