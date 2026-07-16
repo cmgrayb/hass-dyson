@@ -1336,7 +1336,7 @@ class TestDysonDustMapImage:
         """Content type is image/png and polling is enabled."""
         entity = self._make_entity(mock_coordinator)
         assert entity._attr_content_type == "image/png"
-        assert entity._attr_should_poll is True
+        assert entity.should_poll is True
 
     def test_init_cache_attrs_are_none(self, mock_coordinator):
         """Cache attributes start as None."""
@@ -1730,7 +1730,7 @@ class TestDysonFloorPlanImage:
         """Content type is image/png and polling is enabled."""
         entity = self._make_entity(mock_coordinator)
         assert entity._attr_content_type == "image/png"
-        assert entity._attr_should_poll is True
+        assert entity.should_poll is True
 
     def test_init_cache_attrs_are_none(self, mock_coordinator):
         """Cache attributes start as None."""
