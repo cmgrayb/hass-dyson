@@ -576,13 +576,24 @@ def _make_zone(zone_id: str, zone_name: str, icon: str = "living_room"):
     return z
 
 
-def _make_pmap(pmap_id: str, zones: list, zdlud: str | None = "2026-01-01T00:00:00Z"):
+def _make_pmap(
+    pmap_id: str,
+    zones: list,
+    zdlud: str | None = "2026-01-01T00:00:00Z",
+    name: str = "Ground floor",
+    is_current: bool = False,
+):
     """Create a minimal PersistentMapMeta-like mock."""
     p = MagicMock()
     p.id = pmap_id
-    p.name = "Ground floor"
+    p.name = name
     p.zones = zones
     p.zones_definition_last_updated_date = zdlud
+    p.is_current_map = is_current
+    p.zone_by_id = lambda zid: next((z for z in zones if z.id == zid), None)
+    p.zone_by_name = lambda n: next(
+        (z for z in zones if (z.name or "").lower() == n.lower()), None
+    )
     return p
 
 
@@ -1301,3 +1312,204 @@ class TestFetchCleanMaps:
 
         assert call_count == 1
         assert results[0] == results[1] == [record]
+
+
+# ---------------------------------------------------------------------------
+# Multi-map CLEAN_AREA behaviour (issue #398)
+# ---------------------------------------------------------------------------
+
+
+class TestCleanAreaMultiMap:
+    """Segments and zone cleans on robots with more than one persistent map."""
+
+    @staticmethod
+    def _maps():
+        upstairs = _make_pmap(
+            "map-up",
+            [_make_zone("1", "Hallway"), _make_zone("2", "Office")],
+            zdlud="2026-03-23T07:02:59Z",
+            name="Upstairs",
+        )
+        downstairs = _make_pmap(
+            "map-down",
+            [_make_zone("1", "Hallway"), _make_zone("5", "Kitchen")],
+            zdlud="2026-07-10T14:09:15Z",
+            name="Downstairs",
+        )
+        return [upstairs, downstairs]
+
+    @pytest.mark.asyncio
+    async def test_get_segments_multi_map_qualified(self, mock_coordinator_robot):
+        """Multi-map segments get map-qualified ids and map-suffixed names."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=self._maps()),
+        ):
+            segments = await entity.async_get_segments()
+
+        assert len(segments) == 4
+        assert segments[0] == Segment(id="map-up:1", name="Hallway (Upstairs)")
+        assert segments[3] == Segment(id="map-down:5", name="Kitchen (Downstairs)")
+
+    @pytest.mark.asyncio
+    async def test_clean_segments_qualified_ids_target_their_map(
+        self, mock_coordinator_robot
+    ):
+        """Qualified segment ids clean on the map they name."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=self._maps()),
+        ):
+            await entity.async_clean_segments(["map-down:1", "map-down:5"])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_called_once_with(
+            cleaning_mode="zoneConfigured",
+            full_clean_type="immediate",
+            cleaning_programme={
+                "persistentMapId": "map-down",
+                "orderedZones": [],
+                "unorderedZones": ["1", "5"],
+                "zonesDefinitionLastUpdatedDate": "2026-07-10T14:09:15Z",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_clean_segments_spanning_maps_raises(self, mock_coordinator_robot):
+        """One run cannot clean zones from two different maps."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=self._maps()),
+        ):
+            with pytest.raises(HomeAssistantError, match="span multiple maps"):
+                await entity.async_clean_segments(["map-up:1", "map-down:5"])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clean_segments_unknown_map_id_raises(self, mock_coordinator_robot):
+        """A qualified id for a map that no longer exists raises."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=self._maps()),
+        ):
+            with pytest.raises(HomeAssistantError, match="Unknown map id"):
+                await entity.async_clean_segments(["map-gone:1"])
+
+    @pytest.mark.asyncio
+    async def test_clean_segments_zone_not_on_map_raises(self, mock_coordinator_robot):
+        """Zone ids that are not on the targeted map raise instead of sending."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=self._maps()),
+        ):
+            with pytest.raises(HomeAssistantError, match="not on map"):
+                await entity.async_clean_segments(["map-up:5"])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clean_segments_empty_list_raises(self, mock_coordinator_robot):
+        """An empty segment list must not be sent as a whole-house clean."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with pytest.raises(HomeAssistantError, match="No segments specified"):
+            await entity.async_clean_segments([])
+
+        mock_coordinator_robot.device.robot_start_clean.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_clean_segments_bare_id_inferred_across_maps(
+        self, mock_coordinator_robot
+    ):
+        """Pre-multi-map bare ids still work when they match exactly one map."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        with patch(
+            "custom_components.hass_dyson.vacuum._fetch_persistent_map_metadata",
+            new=AsyncMock(return_value=self._maps()),
+        ):
+            await entity.async_clean_segments(["5"])
+
+        programme = mock_coordinator_robot.device.robot_start_clean.call_args.kwargs[
+            "cleaning_programme"
+        ]
+        assert programme["persistentMapId"] == "map-down"
+        assert programme["unorderedZones"] == ["5"]
+
+    def test_segment_drift_uses_qualified_ids_when_multi_map(
+        self, mock_coordinator_robot
+    ):
+        """Drift comparison keys mirror the qualified segment ids."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        entity.registry_entry = MagicMock()
+        last_seen = [
+            Segment(id="map-up:1", name="Hallway (Upstairs)"),
+            Segment(id="map-up:2", name="Office (Upstairs)"),
+            Segment(id="map-down:1", name="Hallway (Downstairs)"),
+            Segment(id="map-down:5", name="Kitchen (Downstairs)"),
+        ]
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(
+                type(entity),
+                "last_seen_segments",
+                new_callable=PropertyMock,
+                return_value=last_seen,
+            ),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = self._maps()
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_not_called()
+
+    def test_segment_drift_bare_mapping_on_multi_map_raises_issue(
+        self, mock_coordinator_robot
+    ):
+        """A pre-multi-map bare-id mapping flags re-mapping once a 2nd map exists."""
+        mock_coordinator_robot.config_entry.data = {"auth_token": "tok"}
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        entity.registry_entry = MagicMock()
+        last_seen = [Segment(id="1", name="Hallway"), Segment(id="2", name="Office")]
+
+        with (
+            patch.object(entity, "async_write_ha_state"),
+            patch.object(
+                type(entity),
+                "last_seen_segments",
+                new_callable=PropertyMock,
+                return_value=last_seen,
+            ),
+            patch.object(entity, "async_create_segments_issue") as mock_issue,
+            patch(
+                "custom_components.hass_dyson.vacuum._persistent_map_cache"
+            ) as mock_cache,
+        ):
+            mock_cache.get.return_value = self._maps()
+            entity._handle_coordinator_update()
+
+        mock_issue.assert_called_once()

@@ -3328,10 +3328,14 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
                         self.coordinator.serial_number
                     )
                 if maps:
+                    # Zone ids restart from 1 on every map — resolve names
+                    # from the map the clean ran on, falling back to the
+                    # other maps only for ids it does not carry.
+                    clean_map_id = getattr(clean, "persistent_map_id", None)
                     id_to_name: dict[str, str] = {}
-                    for pmap in maps:
+                    for pmap in sorted(maps, key=lambda m: m.id != clean_map_id):
                         for z in pmap.zones:
-                            id_to_name[z.id] = z.name or z.id
+                            id_to_name.setdefault(z.id, z.name or z.id)
                     zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
             except Exception:  # noqa: BLE001 — names are a nice-to-have
                 zone_names = []
@@ -3409,6 +3413,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
         # stale-cache fallback so we still get friendly names even if the
         # main metadata TTL has expired since the last fetch.
         id_to_name: dict[str, str] = {}
+        names_by_map: dict[str, dict[str, str]] = {}
         try:
             from .services import _persistent_map_cache
 
@@ -3417,8 +3422,10 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
                 maps = _persistent_map_cache.get_stale(self.coordinator.serial_number)
             if maps:
                 for pmap in maps:
-                    for z in pmap.zones:
-                        id_to_name[z.id] = z.name or z.id
+                    per_map = {z.id: (z.name or z.id) for z in pmap.zones}
+                    names_by_map[pmap.id] = per_map
+                    for zid, zname in per_map.items():
+                        id_to_name.setdefault(zid, zname)
         except Exception:  # noqa: BLE001
             pass
 
@@ -3426,6 +3433,11 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
         # Each has .zone_predictions (list[ZonePrediction]) with .dust.total etc.
         predictions: list[dict] = []
         for rcm in data:
+            # Zone ids restart from 1 per map — resolve against this
+            # recommendation's own map when it is in the cache.
+            rcm_names = names_by_map.get(
+                getattr(rcm, "persistent_map_id", None), id_to_name
+            )
             for pred in rcm.zone_predictions:
                 zid = pred.zone_id
                 dust_breakdown = {
@@ -3439,7 +3451,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
                 predictions.append(
                     {
                         "zone_id": zid,
-                        "zone_name": id_to_name.get(zid, zid),
+                        "zone_name": rcm_names.get(zid, id_to_name.get(zid, zid)),
                         "total_dust_mg": round(pred.dust.total, 1),
                         "dust_breakdown_mg": dust_breakdown,
                     }

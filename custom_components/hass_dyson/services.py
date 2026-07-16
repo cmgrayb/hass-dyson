@@ -179,13 +179,16 @@ SERVICE_GET_CLOUD_DEVICES_SCHEMA = vol.Schema(
 )
 
 # Zone-cleaning schema: device + list of zone IDs or names. Names are resolved
-# against the persistent-map metadata fetched from the Dyson cloud.
+# against the persistent-map metadata fetched from the Dyson cloud. The
+# optional map (ID or name) disambiguates multi-map robots; when omitted the
+# map is chosen by _select_map (current map → only map → inferred from zones).
 SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
     {
         vol.Required("device_id"): str,
         vol.Required("zones"): vol.All(
             cv.ensure_list, [vol.All(str, vol.Length(min=1))], vol.Length(min=1)
         ),
+        vol.Optional("map"): vol.All(str, vol.Length(min=1)),
     }
 )
 
@@ -206,6 +209,7 @@ SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA = vol.Schema(
         vol.Required("device_id"): str,
         vol.Required("zone"): vol.All(str, vol.Length(min=1)),
         vol.Required("cleaning_strategy"): vol.In(_ZONE_CLEANING_STRATEGIES),
+        vol.Optional("map"): vol.All(str, vol.Length(min=1)),
     }
 )
 
@@ -673,10 +677,99 @@ async def _fetch_persistent_map_metadata(
     return maps
 
 
+def _zone_in_map(pmap, entry: str):
+    """Resolve a zone ID (exact) or name (case-insensitive) within one map."""
+    return pmap.zone_by_id(entry) or (pmap.zone_by_name(entry) if entry else None)
+
+
+def _current_map(maps: list):
+    """Return the map the cloud flags as current, when exactly one is flagged.
+
+    The v1 (Vis Nav) persistent-map-metadata endpoint has been observed to
+    omit isCurrentMap entirely, in which case every map parses as False and
+    this returns None — callers must treat that as "currency unknown".
+    """
+    current = [m for m in maps if m.is_current_map]
+    return current[0] if len(current) == 1 else None
+
+
+def _maps_summary(maps: list) -> str:
+    """Human-readable map→zones listing for error messages."""
+    return "; ".join(
+        f"{m.name or m.id}: {sorted(str(z.name or z.id) for z in m.zones)}"
+        for m in maps
+    )
+
+
+def _select_map(
+    maps: list,
+    requested: str | None,
+    zone_entries: list[str],
+    *,
+    prefer_current: bool = True,
+):
+    """Pick the persistent map a zone operation should target.
+
+    Precedence (named identification, never positional):
+      1. explicit ``requested`` map — exact ID, else case-insensitive name;
+      2. the only map, when there is just one;
+      3. with ``prefer_current`` (physical cleans, where the robot can only
+         work the map it is on): the map the cloud flags as current
+         (isCurrentMap), then the single map on which every requested zone
+         resolves;
+      4. without it (cloud-only ops like zone behaviours, valid for any
+         map): zone resolution first, currency only as ambiguity tiebreak;
+      5. otherwise raise, listing the maps so the caller can pass ``map``.
+    """
+    if requested:
+        req = requested.strip()
+        by_id = next((m for m in maps if m.id == req), None)
+        if by_id is not None:
+            return by_id
+        matches = [m for m in maps if (m.name or "").lower() == req.lower()]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            raise ServiceValidationError(
+                f"Map name {requested!r} is ambiguous — use a map ID instead: "
+                f"{sorted(m.id for m in matches)}"
+            )
+        raise ServiceValidationError(
+            f"Unknown map {requested!r}. Known maps: "
+            f"{sorted(str(m.name or m.id) for m in maps)}"
+        )
+
+    if len(maps) == 1:
+        return maps[0]
+
+    current = _current_map(maps)
+    if prefer_current and current is not None:
+        return current
+
+    candidates = [
+        m for m in maps if all(_zone_in_map(m, str(e).strip()) for e in zone_entries)
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates and current in candidates:
+        return current
+    if not candidates:
+        raise ServiceValidationError(
+            f"Zone(s) {zone_entries!r} do not all belong to a single map. "
+            f"Known zones — {_maps_summary(maps)}"
+        )
+    raise ServiceValidationError(
+        f"Zone(s) {zone_entries!r} exist on more than one map "
+        f"({sorted(str(m.name or m.id) for m in candidates)}) — "
+        "pass 'map' to choose one"
+    )
+
+
 async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle hass_dyson.start_zone_clean — Vis Nav zone-specific cleaning."""
     device_id = call.data["device_id"]
     requested_zones: list[str] = call.data["zones"]
+    requested_map: str | None = call.data.get("map")
 
     coordinator = await _get_coordinator_from_device_id(hass, device_id)
     if not coordinator or not coordinator.device:
@@ -689,26 +782,34 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
             f"No persistent maps returned for {coordinator.serial_number} — "
             "has the robot finished its initial map run?"
         )
-    # Use the first (most-recently-visited) map. Multi-map handling is a v2 concern.
-    pmap = maps[0]
+    pmap = _select_map(maps, requested_map, requested_zones)
     pmap_id = pmap.id
-    zones_by_id = {z.id: z for z in pmap.zones}
-    zones_by_name_lc = {(z.name or "").lower(): z for z in pmap.zones if z.name}
 
     resolved_ids: list[str] = []
     unknown: list[str] = []
     for entry in requested_zones:
         entry_str = str(entry).strip()
-        if entry_str in zones_by_id:
-            resolved_ids.append(entry_str)
-        elif entry_str.lower() in zones_by_name_lc:
-            resolved_ids.append(zones_by_name_lc[entry_str.lower()].id)
+        zone = _zone_in_map(pmap, entry_str)
+        if zone is not None:
+            resolved_ids.append(zone.id)
         else:
             unknown.append(entry_str)
     if unknown:
-        known_names = sorted(z.name for z in pmap.zones if z.name)
+        # Point at the map that does carry the zone, if any — a zone-clean can
+        # only target one map per run.
+        hints = []
+        for entry in unknown:
+            elsewhere = sorted(
+                str(m.name or m.id)
+                for m in maps
+                if m is not pmap and _zone_in_map(m, entry)
+            )
+            if elsewhere:
+                hints.append(f"{entry!r} is on map {elsewhere}")
+        hint = f" ({'; '.join(hints)} — pass 'map' to target it.)" if hints else ""
         raise ServiceValidationError(
-            f"Unknown zone(s) {unknown!r} for map {pmap.name!r}. Known: {known_names}"
+            f"Unknown zone(s) {unknown!r} for map {pmap.name!r}.{hint} "
+            f"Known zones — {_maps_summary(maps)}"
         )
 
     # IMPORTANT: zonesDefinitionLastUpdatedDate must be included for the
@@ -757,6 +858,7 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
     device_id = call.data["device_id"]
     zone_in = str(call.data["zone"]).strip()
     cleaning_strategy = call.data["cleaning_strategy"]
+    requested_map: str | None = call.data.get("map")
 
     coordinator = await _get_coordinator_from_device_id(hass, device_id)
     if not coordinator:
@@ -766,19 +868,15 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
     maps = await _fetch_persistent_map_metadata(coordinator)
     if not maps:
         raise HomeAssistantError(f"No persistent maps for {coordinator.serial_number}")
-    pmap = maps[0]
+    pmap = _select_map(maps, requested_map, [zone_in], prefer_current=False)
     pmap_id = pmap.id
-    zones_by_id = {z.id: z for z in pmap.zones}
-    zones_by_name_lc = {(z.name or "").lower(): z for z in pmap.zones if z.name}
-    if zone_in in zones_by_id:
-        zone_id = zone_in
-    elif zone_in.lower() in zones_by_name_lc:
-        zone_id = zones_by_name_lc[zone_in.lower()].id
-    else:
+    zone = _zone_in_map(pmap, zone_in)
+    if zone is None:
         raise ServiceValidationError(
-            f"Unknown zone {zone_in!r}. Known: "
-            f"{sorted(z.name for z in pmap.zones if z.name)}"
+            f"Unknown zone {zone_in!r} for map {pmap.name!r}. "
+            f"Known zones — {_maps_summary(maps)}"
         )
+    zone_id = zone.id
 
     from libdyson_rest.exceptions import DysonAPIError, DysonAuthError
 
