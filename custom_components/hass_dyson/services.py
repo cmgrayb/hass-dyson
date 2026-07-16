@@ -693,18 +693,27 @@ def _current_map(maps: list):
     return current[0] if len(current) == 1 else None
 
 
+# Robot states in which the MQTT-reported map is live truth. Docked/idle the
+# robot stops reporting a map, and HA cannot tell whether it has been carried
+# to another floor — so a retained value must not gate anything.
+_ACTIVE_ROBOT_STATE_PREFIXES = ("FULL_CLEAN", "MAPPING")
+
+
 def _effective_current_map(maps: list, coordinator=None):
     """Return the map the robot is on, from the best available signal.
 
-    The robot's own MQTT state stream is authoritative when it has reported
-    a map this session (it announces the persistentMapId during every
-    clean); otherwise fall back to the cloud isCurrentMap flag, which v2
-    (Spot+Clean) devices set but the Vis Nav v1 endpoint never sends.
-    Returns None when neither signal is available.
+    The robot's MQTT stream is authoritative only while it is actually
+    working a map (it stops reporting once docked, so a retained value
+    cannot see the robot being carried to another floor); otherwise fall
+    back to the cloud isCurrentMap flag, which v2 (Spot+Clean) devices
+    update on self-detected relocation — the Vis Nav v1 endpoint never
+    sends it. Returns None when neither signal is available; callers
+    treat that as "currency unknown" and fail open rather than block.
     """
     device = getattr(coordinator, "device", None) if coordinator else None
     map_id = getattr(device, "robot_current_map_id", None)
-    if map_id:
+    robot_state = str(getattr(device, "robot_state", "") or "")
+    if map_id and robot_state.startswith(_ACTIVE_ROBOT_STATE_PREFIXES):
         match = next((m for m in maps if m.id == map_id), None)
         if match is not None:
             return match

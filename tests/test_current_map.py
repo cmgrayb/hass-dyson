@@ -111,10 +111,13 @@ class TestEffectiveCurrentMap:
     """Test the robot-first, cloud-fallback current-map resolution."""
 
     @staticmethod
-    def _coordinator(device_map_id) -> MagicMock:
+    def _coordinator(
+        device_map_id, robot_state: str = "FULL_CLEAN_RUNNING"
+    ) -> MagicMock:
         coordinator = MagicMock()
         coordinator.device = MagicMock()
         coordinator.device.robot_current_map_id = device_map_id
+        coordinator.device.robot_state = robot_state
         return coordinator
 
     def test_robot_reported_map_wins_over_cloud_flag(self):
@@ -129,6 +132,17 @@ class TestEffectiveCurrentMap:
 
     def test_no_signals_returns_none(self):
         coordinator = self._coordinator(None)
+        assert _effective_current_map(_maps(), coordinator) is None
+
+    def test_docked_retained_map_defers_to_cloud_flag(self):
+        """Docked, the retained MQTT map is stale — the cloud flag wins."""
+        maps = _maps(current="map-up")
+        coordinator = self._coordinator("map-down", robot_state="INACTIVE_CHARGED")
+        assert _effective_current_map(maps, coordinator).id == "map-up"
+
+    def test_docked_retained_map_without_cloud_flag_is_unknown(self):
+        """Docked with no cloud flag: currency is unknown, not the stale map."""
+        coordinator = self._coordinator("map-down", robot_state="INACTIVE_CHARGED")
         assert _effective_current_map(_maps(), coordinator) is None
 
     def test_no_coordinator_uses_cloud_flag(self):
