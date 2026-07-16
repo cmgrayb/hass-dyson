@@ -3481,7 +3481,9 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
       2. ``cloud`` — the isCurrentMap flag from persistent-map metadata
          (set by v2/Spot+Clean devices; the Vis Nav v1 endpoint omits it);
       3. ``restored`` — the last known value from before a restart;
-      4. ``clean_history`` — the map of the most recent cloud clean record.
+      4. ``last_visited`` — the map with the newest lastVisited timestamp
+         in the persistent-map metadata (v1 payloads include it);
+      5. ``clean_history`` — the map of the most recent cloud clean record.
 
     During zone cleans the robot also streams per-zone progress, surfaced
     as the ``zone_status`` attribute.
@@ -3548,6 +3550,15 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
             pmap = by_id.get(self._restored_map_id or "")
             name = pmap.name if pmap else self._restored_name
             return self._restored_map_id, name, "restored"
+
+        # Restricted to maps that carry lastVisited (and none is flagged
+        # is_current_map here), find_current_map just picks the newest.
+        visited = [m for m in maps if m.last_visited]
+        if visited:
+            from libdyson_rest.models import find_current_map
+
+            pmap = find_current_map(visited)
+            return pmap.id, pmap.name, "last_visited"
 
         serial = self.coordinator.serial_number
         records = _clean_maps_cache.get(serial) or _clean_maps_cache.get_stale(serial)

@@ -22,7 +22,10 @@ def _zone(zone_id: str, name: str) -> ZoneMeta:
     return ZoneMeta(id=zone_id, name=name, icon=None, area=None)
 
 
-def _maps(current: str | None = None) -> list[PersistentMapMeta]:
+def _maps(
+    current: str | None = None, visited: dict[str, str] | None = None
+) -> list[PersistentMapMeta]:
+    visited = visited or {}
     return [
         PersistentMapMeta(
             id="map-up",
@@ -30,6 +33,7 @@ def _maps(current: str | None = None) -> list[PersistentMapMeta]:
             zones_definition_last_updated_date=None,
             zones=[_zone("1", "Hallway"), _zone("2", "Office")],
             is_current_map=current == "map-up",
+            last_visited=visited.get("map-up"),
         ),
         PersistentMapMeta(
             id="map-down",
@@ -37,6 +41,7 @@ def _maps(current: str | None = None) -> list[PersistentMapMeta]:
             zones_definition_last_updated_date=None,
             zones=[_zone("1", "Hallway"), _zone("3", "Mud Room")],
             is_current_map=current == "map-down",
+            last_visited=visited.get("map-down"),
         ),
     ]
 
@@ -190,7 +195,42 @@ class TestCurrentMapSensor:
             assert sensor.native_value == "Downstairs"
             assert sensor.extra_state_attributes["source"] == "restored"
 
+    def test_last_visited_newest_wins(self):
+        sensor = self._sensor(device_map_id=None)
+        p1, p2 = self._patched(
+            _maps(
+                visited={
+                    "map-up": "2026-07-10T09:12:00Z",
+                    "map-down": "2026-07-11T16:39:57.525Z",
+                }
+            )
+        )
+        with p1, p2:
+            assert sensor.native_value == "Downstairs"
+            assert sensor.extra_state_attributes["source"] == "last_visited"
+
+    def test_restored_outranks_last_visited(self):
+        sensor = self._sensor(device_map_id=None)
+        sensor._restored_map_id = "map-up"
+        sensor._restored_name = "Upstairs"
+        p1, p2 = self._patched(_maps(visited={"map-down": "2026-07-11T16:39:57Z"}))
+        with p1, p2:
+            assert sensor.native_value == "Upstairs"
+            assert sensor.extra_state_attributes["source"] == "restored"
+
+    def test_last_visited_outranks_clean_history(self):
+        sensor = self._sensor(device_map_id=None)
+        record = MagicMock()
+        record.persistent_map_id = "map-up"
+        p1, p2 = self._patched(
+            _maps(visited={"map-down": "2026-07-11T16:39:57Z"}), records=[record]
+        )
+        with p1, p2:
+            assert sensor.native_value == "Downstairs"
+            assert sensor.extra_state_attributes["source"] == "last_visited"
+
     def test_clean_history_fallback(self):
+        """All-None lastVisited must skip the last_visited source entirely."""
         sensor = self._sensor(device_map_id=None)
         record = MagicMock()
         record.persistent_map_id = "map-up"
