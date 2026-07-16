@@ -620,16 +620,26 @@ BLE_AUTH_CHAR_UUID: Final = "2dd10011-1c37-452d-8979-d1b4a787d0a4"
 BLE_RSSI_CHAR_UUID: Final = "2dd10013-1c37-452d-8979-d1b4a787d0a4"
 
 # Light control characteristics
-BLE_BRIGHTNESS_UUID: Final = "2dd11000-1c37-452d-8979-d1b4a787d0a4"  # 1 byte, 0-100 %
+#
+# NOTE: The Lightcycle Morph (CF06 / CD06) is a daylight-capable device.
+# The Android MyDyson app (class a20.g, mod-connectivity_release) maps
+# brightness to characteristic 11009 (BRIGHTNESS_OUTPUT_LUMENS_UUID) for
+# daylight-capable devices, and to 11000 only for non-daylight devices.
+# The CF06 firmware does NOT respond to writes on 11000.
+BLE_BRIGHTNESS_UUID: Final = "2dd11000-1c37-452d-8979-d1b4a787d0a4"  # 1 byte, 0-100 % — non-daylight devices only
+BLE_BRIGHTNESS_LUMENS_UUID: Final = "2dd11009-1c37-452d-8979-d1b4a787d0a4"  # uint16 LE, 100-1000 lm — daylight-capable (CF06)
 BLE_COLOR_TEMP_UUID: Final = "2dd11001-1c37-452d-8979-d1b4a787d0a4"  # uint16 LE, Kelvin
 BLE_POWER_UUID: Final = "2dd11005-1c37-452d-8979-d1b4a787d0a4"  # 1 byte: 0=off, 1=on
 
+# Brightness lumens range (characteristic 11009, daylight-capable devices)
+BLE_BRIGHTNESS_LUMENS_MIN: Final = 100  # minimum lamp brightness in lm
+BLE_BRIGHTNESS_LUMENS_MAX: Final = 1000  # maximum lamp brightness in lm
+
 # Runtime / diagnostic characteristics (partially decoded)
 BLE_CHAR_11006_UUID: Final = (
-    "2dd11006-1c37-452d-8979-d1b4a787d0a4"  # scheduled-light flags
+    "2dd11006-1c37-452d-8979-d1b4a787d0a4"  # scheduled-light / auto-brightness flags
 )
-BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # ambient sensor
-BLE_CHAR_11009_UUID: Final = "2dd11009-1c37-452d-8979-d1b4a787d0a4"  # runtime flags
+BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # movement sensor (MOVEMENT_SENSOR_UUID in Android)
 
 # Motion detection characteristic — notify; non-zero payload = motion detected
 BLE_MOTION_UUID: Final = "2dd11008-1c37-452d-8979-d1b4a787d0a4"
