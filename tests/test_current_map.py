@@ -9,6 +9,7 @@ v2/Spot+Clean devices set the cloud flag instead. Both signals are covered.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.exceptions import HomeAssistantError
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from custom_components.hass_dyson.device import DysonDevice
@@ -145,6 +146,11 @@ class TestEffectiveCurrentMap:
         coordinator = self._coordinator("map-down", robot_state="INACTIVE_CHARGED")
         assert _effective_current_map(_maps(), coordinator) is None
 
+    def test_mapping_state_counts_as_active(self):
+        """First-run mapping announces the map being built — trust it."""
+        coordinator = self._coordinator("map-down", robot_state="MAPPING_RUNNING")
+        assert _effective_current_map(_maps(), coordinator).id == "map-down"
+
     def test_no_coordinator_uses_cloud_flag(self):
         assert _effective_current_map(_maps(current="map-down")).id == "map-down"
 
@@ -201,13 +207,23 @@ class TestCurrentMapSensor:
             assert sensor.extra_state_attributes["source"] == "cloud"
 
     def test_restored_source(self):
+        """A restored id resolves to the LIVE metadata name, not the persisted one."""
         sensor = self._sensor(device_map_id=None)
         sensor._restored_map_id = "map-down"
-        sensor._restored_name = "Downstairs"
+        sensor._restored_name = "Stale Persisted Name"
         p1, p2 = self._patched(_maps())
         with p1, p2:
             assert sensor.native_value == "Downstairs"
             assert sensor.extra_state_attributes["source"] == "restored"
+
+    def test_cloud_outranks_restored(self):
+        sensor = self._sensor(device_map_id=None)
+        sensor._restored_map_id = "map-down"
+        sensor._restored_name = "Downstairs"
+        p1, p2 = self._patched(_maps(current="map-up"))
+        with p1, p2:
+            assert sensor.native_value == "Upstairs"
+            assert sensor.extra_state_attributes["source"] == "cloud"
 
     def test_last_visited_newest_wins(self):
         sensor = self._sensor(device_map_id=None)
@@ -259,6 +275,25 @@ class TestCurrentMapSensor:
         with p1, p2:
             assert sensor.native_value is None
 
+    def test_stale_metadata_cache_still_resolves(self):
+        """A fresh-cache miss must fall back to the stale metadata copy."""
+        sensor = self._sensor(device_map_id=None)
+        pmap_cache = MagicMock()
+        pmap_cache.get.return_value = None
+        pmap_cache.get_stale.return_value = _maps(current="map-up")
+        clean_cache = MagicMock()
+        clean_cache.get.return_value = None
+        clean_cache.get_stale.return_value = None
+        with (
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache",
+                pmap_cache,
+            ),
+            patch("custom_components.hass_dyson.sensor._clean_maps_cache", clean_cache),
+        ):
+            assert sensor.native_value == "Upstairs"
+            assert sensor.extra_state_attributes["source"] == "cloud"
+
     def test_robot_map_id_without_metadata_shows_id(self):
         sensor = self._sensor(device_map_id="map-mystery")
         p1, p2 = self._patched([])
@@ -306,4 +341,21 @@ class TestCurrentMapSensor:
         ):
             await sensor.async_update()
         fetch_maps.assert_awaited_once()
+        fetch_cleans.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_async_update_metadata_failure_still_warms_clean_history(self):
+        """A cloud failure on one cache must not stop warming the other."""
+        sensor = self._sensor()
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(side_effect=HomeAssistantError("cloud down")),
+            ),
+            patch(
+                "custom_components.hass_dyson.sensor.fetch_clean_maps",
+                AsyncMock(return_value=[]),
+            ) as fetch_cleans,
+        ):
+            await sensor.async_update()
         fetch_cleans.assert_awaited_once()

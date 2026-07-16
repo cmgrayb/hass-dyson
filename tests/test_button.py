@@ -907,6 +907,32 @@ class TestDysonZoneCleanButton:
         ):
             assert btn.available is False
 
+    def test_available_true_when_robot_on_own_map(self, mock_robot_coordinator):
+        """A zone button on the robot's actively-reported map stays available."""
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        mock_robot_coordinator.device.robot_current_map_id = "pmap-1"
+        mock_robot_coordinator.device.robot_state = "FULL_CLEAN_RUNNING"
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            assert btn.available is True
+
     @pytest.mark.asyncio
     async def test_async_press_blocked_when_robot_reports_other_map(
         self, mock_robot_coordinator

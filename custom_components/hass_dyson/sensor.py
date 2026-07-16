@@ -3551,8 +3551,9 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
             name = pmap.name if pmap else self._restored_name
             return self._restored_map_id, name, "restored"
 
-        # Restricted to maps that carry lastVisited (and none is flagged
-        # is_current_map here), find_current_map just picks the newest.
+        # Restricted to maps that carry lastVisited so find_current_map
+        # cannot raise; with no cloud flag set (the v1 norm) it returns
+        # the newest-visited map.
         visited = [m for m in maps if m.last_visited]
         if visited:
             from libdyson_rest.models import find_current_map
@@ -3579,6 +3580,8 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        from .services import _ACTIVE_ROBOT_STATE_PREFIXES
+
         map_id, _name, source = self._resolve()
         attrs: dict[str, Any] = {"map_id": map_id, "source": source}
 
@@ -3591,7 +3594,7 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
         device = self.coordinator.device
         zone_status = getattr(device, "robot_zone_status", None) if device else None
         robot_state = str(getattr(device, "robot_state", "") or "")
-        if zone_status and robot_state.startswith(("FULL_CLEAN", "MAPPING")):
+        if zone_status and robot_state.startswith(_ACTIVE_ROBOT_STATE_PREFIXES):
             names = {z.id: str(z.name or z.id) for z in pmap.zones} if pmap else {}
             attrs["zone_status"] = {
                 names.get(entry.get("zoneId"), entry.get("zoneId")): entry.get(
