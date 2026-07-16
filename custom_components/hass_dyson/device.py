@@ -2568,13 +2568,13 @@ class DysonDevice:
             return 0
 
     @property
-    def carbon_filter_life(self) -> int:
-        """Return carbon filter life percentage."""
+    def carbon_filter_life(self) -> int | None:
+        """Return carbon filter life percentage, or None if no filter is installed."""
         try:
             product_state = self._state_data.get("product-state", {})
             cflr = self.get_state_value(product_state, "cflr", "0000")
-            if cflr == "INV":  # Invalid/no filter installed
-                return 0
+            if cflr == "INV":  # No filter installed
+                return None
             return int(cflr)
         except (ValueError, TypeError):
             return 0
@@ -3098,6 +3098,32 @@ class DysonDevice:
 
         _LOGGER.debug(
             "Set Breeze oscillation mode for %s",
+            self._log_serial,
+        )
+
+    async def set_find_follow(self, mode: str) -> None:
+        """Set Find+Follow mode.
+
+        Find+Follow uses the device camera to track people in the room and
+        direct airflow toward them.  Only available on devices that report
+        the ``soon`` state key (e.g. Dyson PC3, product type 438).
+
+        Args:
+            mode: One of ``"ON"``, ``"OFF"``, or ``"SCAN"``.
+                  ``SCAN`` triggers an immediate person-scan; the device
+                  returns to ``ON`` automatically after the scan completes.
+
+        Raises:
+            ValueError: If *mode* is not one of the supported values.
+        """
+        if mode not in ("ON", "OFF", "SCAN"):
+            raise ValueError(
+                f"Invalid Find+Follow mode '{mode}'. Must be one of: 'ON', 'OFF', 'SCAN'."
+            )
+        await self.send_command("STATE-SET", {"soon": mode})
+        _LOGGER.debug(
+            "Set Find+Follow mode to '%s' for %s",
+            mode,
             self._log_serial,
         )
 

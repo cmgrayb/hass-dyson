@@ -553,6 +553,12 @@ class TestFilterLifeCalculations:
         result = mock_device_basic.carbon_filter_life
         assert result == 100
 
+    def test_carbon_filter_life_inv_returns_none(self, mock_device_basic):
+        """Test carbon filter life returns None when no filter is installed (INV)."""
+        mock_device_basic._state_data = {"product-state": {"cflr": "INV"}}
+        result = mock_device_basic.carbon_filter_life
+        assert result is None
+
     def test_hepa_filter_type_detection(self, mock_device_basic):
         """Test HEPA filter type detection."""
         mock_device_basic._state_data = {"product-state": {"hflt": "HEPA"}}

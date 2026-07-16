@@ -1470,7 +1470,7 @@ class TestDysonWaterHardnessSelect:
     def test_water_hardness_coordinator_update_soft(self, mock_humidifier_coordinator):
         """Test coordinator update with soft water hardness."""
 
-        mock_humidifier_coordinator.device.get_state_value.return_value = "2025"
+        mock_humidifier_coordinator.device.get_state_value.return_value = "0675"
 
         entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
         entity.hass = MagicMock()
@@ -1482,7 +1482,7 @@ class TestDysonWaterHardnessSelect:
     def test_water_hardness_coordinator_update_hard(self, mock_humidifier_coordinator):
         """Test coordinator update with hard water hardness."""
 
-        mock_humidifier_coordinator.device.get_state_value.return_value = "0675"
+        mock_humidifier_coordinator.device.get_state_value.return_value = "2025"
 
         entity = DysonWaterHardnessSelect(mock_humidifier_coordinator)
         entity.hass = MagicMock()
