@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from custom_components.hass_dyson.device import DysonDevice
+from custom_components.hass_dyson.entity import DysonEntity
 from custom_components.hass_dyson.sensor import DysonCurrentMapSensor
 from custom_components.hass_dyson.services import _effective_current_map
 
@@ -299,6 +300,20 @@ class TestCurrentMapSensor:
         p1, p2 = self._patched([])
         with p1, p2:
             assert sensor.native_value == "map-mystery"
+            attrs = sensor.extra_state_attributes
+        assert attrs["map_id"] == "map-mystery"
+        assert "zones" not in attrs
+
+    def test_clean_history_skips_records_without_map_id(self):
+        sensor = self._sensor(device_map_id=None)
+        empty = MagicMock()
+        empty.persistent_map_id = None
+        record = MagicMock()
+        record.persistent_map_id = "map-up"
+        p1, p2 = self._patched(_maps(), records=[empty, record])
+        with p1, p2:
+            assert sensor.native_value == "Upstairs"
+            assert sensor.extra_state_attributes["source"] == "clean_history"
 
     def test_zone_status_attribute_while_cleaning(self):
         sensor = self._sensor(
@@ -344,6 +359,45 @@ class TestCurrentMapSensor:
         fetch_cleans.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_added_to_hass_restores_state(self):
+        """A valid previous state seeds the restored map name and id."""
+        sensor = self._sensor()
+        last = MagicMock()
+        last.state = "Downstairs"
+        last.attributes = {"map_id": "map-down"}
+        with (
+            patch.object(DysonEntity, "async_added_to_hass", AsyncMock()),
+            patch.object(sensor, "async_get_last_state", AsyncMock(return_value=last)),
+        ):
+            await sensor.async_added_to_hass()
+        assert sensor._restored_name == "Downstairs"
+        assert sensor._restored_map_id == "map-down"
+
+    @pytest.mark.asyncio
+    async def test_added_to_hass_ignores_unknown_state(self):
+        sensor = self._sensor()
+        last = MagicMock()
+        last.state = "unknown"
+        with (
+            patch.object(DysonEntity, "async_added_to_hass", AsyncMock()),
+            patch.object(sensor, "async_get_last_state", AsyncMock(return_value=last)),
+        ):
+            await sensor.async_added_to_hass()
+        assert sensor._restored_name is None
+        assert sensor._restored_map_id is None
+
+    @pytest.mark.asyncio
+    async def test_added_to_hass_without_previous_state(self):
+        sensor = self._sensor()
+        with (
+            patch.object(DysonEntity, "async_added_to_hass", AsyncMock()),
+            patch.object(sensor, "async_get_last_state", AsyncMock(return_value=None)),
+        ):
+            await sensor.async_added_to_hass()
+        assert sensor._restored_name is None
+        assert sensor._restored_map_id is None
+
+    @pytest.mark.asyncio
     async def test_async_update_metadata_failure_still_warms_clean_history(self):
         """A cloud failure on one cache must not stop warming the other."""
         sensor = self._sensor()
@@ -359,3 +413,20 @@ class TestCurrentMapSensor:
         ):
             await sensor.async_update()
         fetch_cleans.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_async_update_clean_history_failure_is_swallowed(self):
+        """A clean-history fetch failure must not escape async_update."""
+        sensor = self._sensor()
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                AsyncMock(return_value=[]),
+            ) as fetch_maps,
+            patch(
+                "custom_components.hass_dyson.sensor.fetch_clean_maps",
+                AsyncMock(side_effect=HomeAssistantError("cloud down")),
+            ),
+        ):
+            await sensor.async_update()
+        fetch_maps.assert_awaited_once()
