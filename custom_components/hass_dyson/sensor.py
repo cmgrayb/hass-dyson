@@ -3490,7 +3490,6 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
@@ -3499,6 +3498,12 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
         self._attr_icon = "mdi:map-marker-path"
         self._restored_map_id: str | None = None
         self._restored_name: str | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408);
+        # the explicit override keeps the cache-warming async_update polling.
+        return True
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

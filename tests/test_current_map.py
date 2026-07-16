@@ -190,6 +190,10 @@ class TestCurrentMapSensor:
         assert sensor._attr_unique_id == f"{SERIAL}_current_map"
         assert sensor._attr_name == "Current Map"
 
+    def test_should_poll_is_effective(self):
+        """_attr_should_poll is inert on CoordinatorEntity subclasses (#408)."""
+        assert self._sensor().should_poll is True
+
     def test_robot_source_wins(self):
         sensor = self._sensor(device_map_id="map-down")
         p1, p2 = self._patched(_maps(current="map-up"))
