@@ -695,8 +695,24 @@ def _current_map(maps: list):
 
 # Robot states in which the MQTT-reported map is live truth. Docked/idle the
 # robot stops reporting a map, and HA cannot tell whether it has been carried
-# to another floor — so a retained value must not gate anything.
+# to another floor — so a retained value must not gate anything. Fallback
+# only — the device's session-tracked robot_session_active is preferred
+# because it also survives transient mid-clean FAULT_* states.
 _ACTIVE_ROBOT_STATE_PREFIXES = ("FULL_CLEAN", "MAPPING")
+
+
+def _robot_session_active(device) -> bool:
+    """Whether the robot is out working a map right now.
+
+    Prefers the device's session flag (survives mid-clean faults); falls
+    back to the state-prefix heuristic for device objects that do not
+    provide a real boolean (older wrappers, test doubles).
+    """
+    session = getattr(device, "robot_session_active", None)
+    if isinstance(session, bool):
+        return session
+    robot_state = str(getattr(device, "robot_state", "") or "")
+    return robot_state.startswith(_ACTIVE_ROBOT_STATE_PREFIXES)
 
 
 def _effective_current_map(maps: list, coordinator=None):
@@ -712,8 +728,7 @@ def _effective_current_map(maps: list, coordinator=None):
     """
     device = getattr(coordinator, "device", None) if coordinator else None
     map_id = getattr(device, "robot_current_map_id", None)
-    robot_state = str(getattr(device, "robot_state", "") or "")
-    if map_id and robot_state.startswith(_ACTIVE_ROBOT_STATE_PREFIXES):
+    if map_id and _robot_session_active(device):
         match = next((m for m in maps if m.id == map_id), None)
         if match is not None:
             return match

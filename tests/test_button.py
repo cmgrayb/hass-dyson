@@ -10,6 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
 from custom_components.hass_dyson.button import (
+    MANIFEST_REFRESH_DEBOUNCE,
     ZONE_DISCOVERY_RETRY_DELAYS,
     DysonReconnectButton,
     DysonRefreshZonesButton,
@@ -18,7 +19,11 @@ from custom_components.hass_dyson.button import (
     _icon_for_zone,
     async_setup_entry,
 )
-from custom_components.hass_dyson.const import DEVICE_CATEGORY_ROBOT, DOMAIN
+from custom_components.hass_dyson.const import (
+    DEVICE_CATEGORY_ROBOT,
+    DOMAIN,
+    ROBOT_MSG_MAP_MANIFEST_UPDATED,
+)
 
 
 @pytest.fixture
@@ -658,10 +663,17 @@ class TestZoneDiscoveryRetry:
         ):
             await async_setup_entry(mock_hass, mock_config_entry, add_entities)
 
-        mock_config_entry.async_on_unload.assert_called_once()
-        unload_callback = mock_config_entry.async_on_unload.call_args[0][0]
-        unload_callback()
+        # Two unload hooks: the manifest listener, then the retry cancel.
+        assert mock_config_entry.async_on_unload.call_count == 2
+        manifest_unload = mock_config_entry.async_on_unload.call_args_list[0][0][0]
+        retry_unload = mock_config_entry.async_on_unload.call_args_list[1][0][0]
+        retry_unload()
         cancel.assert_called_once()
+        manifest_unload()
+        device = mock_robot_coordinator.device
+        device.remove_message_callback.assert_called_once_with(
+            device.add_message_callback.call_args[0][0]
+        )
 
     @pytest.mark.asyncio
     async def test_refresh_press_adds_new_zones_without_restart(
@@ -1290,3 +1302,459 @@ class TestZoneButtonUniqueIdMigration:
         assert registry.updates == [
             ("button.visnav_clean_hallway", "VS9-GB-HJA0000A_clean_zone_map-1_1")
         ]
+
+
+# ---------------------------------------------------------------------------
+# Tests: manifest-broadcast auto-refresh and zone-meta reconciliation
+# ---------------------------------------------------------------------------
+
+
+def _map_with_zones(map_id, name, zdlud, zones):
+    return PersistentMapMeta(
+        id=map_id,
+        name=name,
+        zones_definition_last_updated_date=zdlud,
+        zones=[
+            ZoneMeta(id=zid, name=zname, icon=None, area=None) for zid, zname in zones
+        ],
+    )
+
+
+class TestManifestAutoRefresh:
+    """The robot's PERSISTENT-MAP-MANIFEST-UPDATED broadcast drives a
+    debounced metadata re-fetch without a manual refresh or restart."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        hass = MagicMock(spec=HomeAssistant)
+        hass.data = {DOMAIN: {}}
+        # loop is an instance attribute, invisible to spec= — attach one and
+        # run thread-hops inline so tests stay synchronous.
+        hass.loop = MagicMock()
+        hass.loop.call_soon_threadsafe.side_effect = lambda fn, *args: fn(*args)
+        return hass
+
+    @pytest.fixture
+    def mock_config_entry(self):
+        entry = MagicMock(spec=ConfigEntry)
+        entry.entry_id = "robot-entry"
+        return entry
+
+    async def _setup(self, hass, entry, coordinator, fetch):
+        add_entities = MagicMock()
+        with patch(
+            "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+            fetch,
+        ):
+            await async_setup_entry(hass, entry, add_entities)
+        listener = coordinator.device.add_message_callback.call_args[0][0]
+        return add_entities, listener
+
+    @pytest.mark.asyncio
+    async def test_manifest_message_schedules_debounced_refresh(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        fetch = AsyncMock(
+            return_value=[_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        )
+        with patch(
+            "custom_components.hass_dyson.button.async_call_later"
+        ) as call_later:
+            _, listener = await self._setup(
+                mock_hass, mock_config_entry, mock_robot_coordinator, fetch
+            )
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+        call_later.assert_called_once()
+        assert call_later.call_args[0][1] == MANIFEST_REFRESH_DEBOUNCE
+
+    @pytest.mark.asyncio
+    async def test_other_messages_do_not_schedule_refresh(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        fetch = AsyncMock(
+            return_value=[_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        )
+        with patch(
+            "custom_components.hass_dyson.button.async_call_later"
+        ) as call_later:
+            _, listener = await self._setup(
+                mock_hass, mock_config_entry, mock_robot_coordinator, fetch
+            )
+            listener("topic", {"msg": "STATE-CHANGE", "newstate": "FULL_CLEAN_RUNNING"})
+        call_later.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_repeated_broadcasts_coalesce(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        fetch = AsyncMock(
+            return_value=[_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        )
+        cancel = MagicMock()
+        with patch(
+            "custom_components.hass_dyson.button.async_call_later",
+            return_value=cancel,
+        ) as call_later:
+            _, listener = await self._setup(
+                mock_hass, mock_config_entry, mock_robot_coordinator, fetch
+            )
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+        assert call_later.call_count == 2
+        cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_debounced_refresh_invalidates_cache_and_refetches(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        maps = [_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        fetch = AsyncMock(return_value=maps)
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                fetch,
+            ),
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache"
+            ) as cache,
+            patch("custom_components.hass_dyson.button.async_call_later") as call_later,
+        ):
+            add_entities = MagicMock()
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+            listener = mock_robot_coordinator.device.add_message_callback.call_args[0][
+                0
+            ]
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+            refresh_cb = call_later.call_args[0][2]
+            await refresh_cb(None)
+        cache.invalidate.assert_called_once_with("VS9-GB-HJA0000A")
+        assert fetch.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_refresh_failure_is_swallowed(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """A failed manifest-triggered fetch must not raise — the next
+        broadcast (or the manual refresh button) retries."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        maps = [_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        fetch = AsyncMock(side_effect=[maps, Exception("cloud down")])
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                fetch,
+            ),
+            patch("custom_components.hass_dyson.services._persistent_map_cache"),
+            patch("custom_components.hass_dyson.button.async_call_later") as call_later,
+        ):
+            add_entities = MagicMock()
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+            listener = mock_robot_coordinator.device.add_message_callback.call_args[0][
+                0
+            ]
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+            refresh_cb = call_later.call_args[0][2]
+            await refresh_cb(None)  # must not raise
+
+
+class TestZoneMetaReconciliation:
+    """Re-discovery updates existing buttons in place: renames, icon and
+    zdlud snapshots, and retirement of zones deleted in the MyDyson app."""
+
+    @pytest.fixture
+    def mock_hass(self):
+        hass = MagicMock(spec=HomeAssistant)
+        hass.data = {DOMAIN: {}}
+        # loop is an instance attribute, invisible to spec= — attach one and
+        # run thread-hops inline so tests stay synchronous.
+        hass.loop = MagicMock()
+        hass.loop.call_soon_threadsafe.side_effect = lambda fn, *args: fn(*args)
+        return hass
+
+    @pytest.fixture
+    def mock_config_entry(self):
+        entry = MagicMock(spec=ConfigEntry)
+        entry.entry_id = "robot-entry"
+        return entry
+
+    async def _setup_and_rediscover(
+        self, hass, entry, coordinator, first_maps, second_maps
+    ):
+        """Run setup with first_maps, then a refresh press with second_maps.
+
+        Returns the zone buttons created during setup.
+        """
+        add_entities = MagicMock()
+        fetch = AsyncMock(side_effect=[first_maps, second_maps])
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                fetch,
+            ),
+            patch("custom_components.hass_dyson.services._persistent_map_cache"),
+        ):
+            await async_setup_entry(hass, entry, add_entities)
+            base = add_entities.call_args_list[0][0][0]
+            refresh_button = base[1]
+            assert isinstance(refresh_button, DysonRefreshZonesButton)
+            zone_buttons = add_entities.call_args_list[1][0][0]
+            await refresh_button.async_press()
+        return zone_buttons
+
+    @pytest.mark.asyncio
+    async def test_rename_propagates_to_existing_button(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        buttons = await self._setup_and_rediscover(
+            mock_hass,
+            mock_config_entry,
+            mock_robot_coordinator,
+            [_map_with_zones("m1", "Home", "v1", [("1", "Living room")])],
+            [_map_with_zones("m1", "Home", "v2", [("1", "Balcony")])],
+        )
+        (button,) = buttons
+        assert button._attr_name == "Clean Balcony"
+        assert button._pmap_zdlud == "v2"
+        assert button.available is not False  # not retired
+
+    @pytest.mark.asyncio
+    async def test_zdlud_refreshes_even_without_rename(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """Any app-side edit bumps zdlud; the START snapshot must follow."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        buttons = await self._setup_and_rediscover(
+            mock_hass,
+            mock_config_entry,
+            mock_robot_coordinator,
+            [_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])],
+            [_map_with_zones("m1", "Home", "v2", [("1", "Kitchen")])],
+        )
+        (button,) = buttons
+        assert button._pmap_zdlud == "v2"
+        assert button._attr_name == "Clean Kitchen"
+
+    @pytest.mark.asyncio
+    async def test_deleted_zone_retires_button(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        buttons = await self._setup_and_rediscover(
+            mock_hass,
+            mock_config_entry,
+            mock_robot_coordinator,
+            [_map_with_zones("m1", "Home", "v1", [("1", "Kitchen"), ("2", "Study")])],
+            [_map_with_zones("m1", "Home", "v2", [("1", "Kitchen")])],
+        )
+        study = next(b for b in buttons if b._zone_id == "2")
+        kitchen = next(b for b in buttons if b._zone_id == "1")
+        assert study._zone_deleted is True
+        assert study.available is False
+        assert kitchen._zone_deleted is False
+        with pytest.raises(HomeAssistantError, match="was removed from map"):
+            await study.async_press()
+
+    @pytest.mark.asyncio
+    async def test_empty_fetch_never_retires(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """An empty maps list means a failed read, not an empty home."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        buttons = await self._setup_and_rediscover(
+            mock_hass,
+            mock_config_entry,
+            mock_robot_coordinator,
+            [_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])],
+            [],
+        )
+        (button,) = buttons
+        assert button._zone_deleted is False
+
+    @pytest.mark.asyncio
+    async def test_second_map_appearing_qualifies_existing_names(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        """Multi-map homes qualify names with the map — including in-place."""
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        buttons = await self._setup_and_rediscover(
+            mock_hass,
+            mock_config_entry,
+            mock_robot_coordinator,
+            [_map_with_zones("m1", "Up", "v1", [("1", "Kitchen")])],
+            [
+                _map_with_zones("m1", "Up", "v1", [("1", "Kitchen")]),
+                _map_with_zones("m2", "Down", "v1", [("1", "Garage")]),
+            ],
+        )
+        (button,) = buttons
+        assert button._attr_name == "Clean Kitchen (Up)"
+
+    @pytest.mark.asyncio
+    async def test_reappeared_zone_is_resurrected(
+        self, mock_hass, mock_config_entry, mock_robot_coordinator
+    ):
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = mock_robot_coordinator
+        add_entities = MagicMock()
+        first = [
+            _map_with_zones("m1", "Home", "v1", [("1", "Kitchen"), ("2", "Study")])
+        ]
+        without = [_map_with_zones("m1", "Home", "v2", [("1", "Kitchen")])]
+        again = [
+            _map_with_zones("m1", "Home", "v3", [("1", "Kitchen"), ("2", "Study")])
+        ]
+        fetch = AsyncMock(side_effect=[first, without, again])
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                fetch,
+            ),
+            patch("custom_components.hass_dyson.services._persistent_map_cache"),
+        ):
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+            refresh_button = add_entities.call_args_list[0][0][0][1]
+            zone_buttons = add_entities.call_args_list[1][0][0]
+            await refresh_button.async_press()
+            study = next(b for b in zone_buttons if b._zone_id == "2")
+            assert study._zone_deleted is True
+            await refresh_button.async_press()
+        assert study._zone_deleted is False
+        assert study._pmap_zdlud == "v3"
+
+    def test_registry_original_name_syncs_on_rename(self, mock_robot_coordinator):
+        """A live (added) entity pushes the new suggested name into the
+        registry; user overrides still win because only original_name moves."""
+        pmap_v1 = _map_with_zones("m1", "Home", "v1", [("1", "Living room")])
+        button = DysonZoneCleanButton(
+            mock_robot_coordinator, pmap_v1, pmap_v1.zones[0], qualify_name=False
+        )
+        button.hass = MagicMock()
+        button.entity_id = "button.visnav_clean_living_room"
+        button.registry_entry = MagicMock()
+        button.async_write_ha_state = MagicMock()
+        registry = MagicMock()
+        pmap_v2 = _map_with_zones("m1", "Home", "v2", [("1", "Balcony")])
+        with patch(
+            "custom_components.hass_dyson.button.er.async_get", return_value=registry
+        ):
+            button.async_update_zone_meta(pmap_v2, pmap_v2.zones[0], qualify_name=False)
+        registry.async_update_entity.assert_called_once_with(
+            "button.visnav_clean_living_room", original_name="Clean Balcony"
+        )
+        button.async_write_ha_state.assert_called_once()
+
+    def test_unadded_button_updates_without_registry(self, mock_robot_coordinator):
+        """Meta updates on a not-yet-added entity must not touch hass."""
+        pmap_v1 = _map_with_zones("m1", "Home", "v1", [("1", "Living room")])
+        button = DysonZoneCleanButton(
+            mock_robot_coordinator, pmap_v1, pmap_v1.zones[0], qualify_name=False
+        )
+        button.hass = None
+        pmap_v2 = _map_with_zones("m1", "Home", "v2", [("1", "Balcony")])
+        button.async_update_zone_meta(pmap_v2, pmap_v2.zones[0], qualify_name=False)
+        assert button._attr_name == "Clean Balcony"
+        assert button._pmap_zdlud == "v2"
+
+
+class TestManifestListenerUnload:
+    """Unload with a pending debounced refresh cancels it."""
+
+    @pytest.mark.asyncio
+    async def test_unload_cancels_pending_manifest_refresh(
+        self, mock_robot_coordinator
+    ):
+        hass = MagicMock(spec=HomeAssistant)
+        hass.data = {DOMAIN: {}}
+        hass.loop = MagicMock()
+        hass.loop.call_soon_threadsafe.side_effect = lambda fn, *args: fn(*args)
+        entry = MagicMock(spec=ConfigEntry)
+        entry.entry_id = "robot-entry"
+        hass.data[DOMAIN][entry.entry_id] = mock_robot_coordinator
+        cancel = MagicMock()
+        fetch = AsyncMock(
+            return_value=[_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        )
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                fetch,
+            ),
+            patch(
+                "custom_components.hass_dyson.button.async_call_later",
+                return_value=cancel,
+            ),
+        ):
+            await async_setup_entry(hass, entry, MagicMock())
+            listener = mock_robot_coordinator.device.add_message_callback.call_args[0][
+                0
+            ]
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+            manifest_unload = entry.async_on_unload.call_args_list[0][0][0]
+            manifest_unload()
+        cancel.assert_called_once()
+        mock_robot_coordinator.device.remove_message_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_broadcast_in_flight_at_unload_does_not_rearm(
+        self, mock_robot_coordinator
+    ):
+        """A broadcast queued to the loop when the entry unloads must not
+        schedule a fresh debounce timer after teardown."""
+        hass = MagicMock(spec=HomeAssistant)
+        hass.data = {DOMAIN: {}}
+        hass.loop = MagicMock()
+        # Queue thread-hops instead of running them, like the real loop does.
+        queued = []
+        hass.loop.call_soon_threadsafe.side_effect = lambda fn, *args: queued.append(
+            (fn, args)
+        )
+        entry = MagicMock(spec=ConfigEntry)
+        entry.entry_id = "robot-entry"
+        hass.data[DOMAIN][entry.entry_id] = mock_robot_coordinator
+        fetch = AsyncMock(
+            return_value=[_map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])]
+        )
+        with (
+            patch(
+                "custom_components.hass_dyson.services._fetch_persistent_map_metadata",
+                fetch,
+            ),
+            patch("custom_components.hass_dyson.button.async_call_later") as call_later,
+        ):
+            await async_setup_entry(hass, entry, MagicMock())
+            listener = mock_robot_coordinator.device.add_message_callback.call_args[0][
+                0
+            ]
+            # Broadcast arrives on the paho thread: the hop is queued...
+            listener("topic", {"msg": ROBOT_MSG_MAP_MANIFEST_UPDATED})
+            # ...but the entry unloads before the loop drains it.
+            manifest_unload = entry.async_on_unload.call_args_list[0][0][0]
+            manifest_unload()
+            for fn, args in queued:
+                fn(*args)
+        call_later.assert_not_called()
+
+
+class TestMarkZoneDeleted:
+    """Direct unit coverage of the retire path on a live (added) entity."""
+
+    def test_mark_zone_deleted_is_idempotent_and_writes_state(
+        self, mock_robot_coordinator
+    ):
+        pmap = _map_with_zones("m1", "Home", "v1", [("1", "Kitchen")])
+        button = DysonZoneCleanButton(
+            mock_robot_coordinator, pmap, pmap.zones[0], qualify_name=False
+        )
+        button.hass = MagicMock()
+        button.entity_id = "button.visnav_clean_kitchen"
+        button.async_write_ha_state = MagicMock()
+
+        button.async_mark_zone_deleted()
+        button.async_mark_zone_deleted()  # second call takes the early return
+
+        button.async_write_ha_state.assert_called_once()
+        assert button.available is False

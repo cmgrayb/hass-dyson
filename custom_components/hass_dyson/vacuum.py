@@ -378,7 +378,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         device = self.coordinator.device
         robot_state = device.robot_state or ""
 
-        # Anything in an INACTIVE_* / FULL_CLEAN_FINISHED / FAULT_ON_DOCK
+        # Anything in an INACTIVE_* / FULL_CLEAN_FINISHED / FAULT_ON_DOCK*
         # state means the robot isn't mid-clean, so vacuum.start must begin a
         # new cycle rather than send RESUME (which the device would ignore).
         dock_states = {
@@ -387,6 +387,8 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             "INACTIVE_DISCHARGING",
             "FULL_CLEAN_FINISHED",
             "FAULT_ON_DOCK",
+            "FAULT_ON_DOCK_CHARGED",
+            "FAULT_ON_DOCK_CHARGING",
         }
         start_new = robot_state in dock_states
 

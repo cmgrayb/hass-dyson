@@ -1548,6 +1548,12 @@ class DysonDevice:
                     )
 
             self._handle_state_change(data)
+        elif message_type == "PERSISTENT-MAP-MANIFEST-UPDATED":
+            # Robot announcement that its persistent-map manifest changed
+            # (zone edits in the MyDyson app, or its own post-clean map
+            # update). Payload is only {msg, time} — no state to merge;
+            # consumers react via the message callbacks below.
+            _LOGGER.debug("Persistent-map manifest updated for %s", self._log_serial)
         else:
             _LOGGER.debug(
                 "Unknown message type '%s' for device %s: %s",
@@ -1578,6 +1584,8 @@ class DysonDevice:
         # For CURRENT-STATE messages, values are already strings - store directly
         self._state_data.update(data)
         _LOGGER.debug("Updated device state for %s", self._log_serial)
+
+        self._update_robot_session(data.get("state") or data.get("newstate"))
 
         # Notify callbacks (including coordinator)
         self._notify_callbacks(topic, data)
@@ -1783,7 +1791,48 @@ class DysonDevice:
         programme = data.get("cleaningProgramme")
         if isinstance(programme, dict) and programme.get("persistentMapId"):
             self._state_data["persistentMapId"] = programme["persistentMapId"]
+        self._update_robot_session(data.get("newstate") or data.get("state"))
         _LOGGER.debug("State change for %s", self._log_serial)
+
+    # Robot states that end a clean/mapping session even though they carry
+    # an active-looking prefix. FINISHED means the robot is back on (or at)
+    # its dock; ABANDONED means it gave up. ABORTED is deliberately NOT here:
+    # the robot is still out on the floor returning to the dock.
+    # FAULT_REPLACE_ON_DOCK is terminal too — the robot needs manual
+    # re-docking and will not resume, wherever it physically sits.
+    _ROBOT_SESSION_END_STATES = frozenset(
+        {
+            "FULL_CLEAN_FINISHED",
+            "FULL_CLEAN_ABANDONED",
+            "MAPPING_FINISHED",
+            "FAULT_REPLACE_ON_DOCK",
+        }
+    )
+
+    # Class-level default so partially-constructed instances read False.
+    _robot_session_active: bool = False
+
+    def _update_robot_session(self, state: Any) -> None:
+        """Track whether the robot is out working a map (clean/mapping session).
+
+        Opens on FULL_CLEAN_*/MAPPING_* activity and closes on finished,
+        inactive, FAULT_ON_DOCK*/FAULT_REPLACE_ON_DOCK, or powered-off
+        states. Other FAULT_* states
+        deliberately preserve the current value: a fault mid-clean
+        (e.g. FULL_CLEAN_PAUSED → FAULT_USER_RECOVERABLE) leaves the robot on
+        the floor mid-session, while the same fault arriving while docked
+        (INACTIVE_CHARGING → FAULT_USER_RECOVERABLE) keeps the session closed.
+        """
+        if not isinstance(state, str) or not state:
+            return
+        if (
+            state in self._ROBOT_SESSION_END_STATES
+            or state.startswith(("INACTIVE", "FAULT_ON_DOCK"))
+            or state == "MACHINE_OFF"
+        ):
+            self._robot_session_active = False
+        elif state.startswith(("FULL_CLEAN", "MAPPING")):
+            self._robot_session_active = True
 
     def _notify_callbacks(self, topic: str, data: dict[str, Any]) -> None:
         """Notify registered callbacks of new message."""
@@ -2759,11 +2808,25 @@ class DysonDevice:
         """Return the robot's per-zone clean progress, if reported.
 
         List of ``{"zoneId": str, "cleanStatus": str}`` dicts from the MQTT
-        state stream during zone cleans (e.g. CLEAN_IN_PROGRESS /
-        CLEAN_NOT_REQUESTED), retained after the clean ends.
+        state stream during zone cleans, retained after the clean ends.
+        The full ``cleanStatus`` vocabulary observed across community
+        captures is CLEAN_NOT_REQUESTED / CLEAN_PENDING / CLEAN_IN_PROGRESS /
+        CLEAN_COMPLETE / CANT_CLEAN (zone unreachable).
         """
         value = self._state_data.get("zoneStatus")
         return value if isinstance(value, list) else None
+
+    @property
+    def robot_session_active(self) -> bool:
+        """True while the robot is out working a map (clean/mapping session).
+
+        Unlike a prefix check on the instantaneous state, this survives
+        transient mid-clean FAULT_* states (the robot is still on the floor,
+        so its MQTT-reported map and per-zone progress remain live truth) and
+        closes on finished/inactive/on-dock-fault states. False after a
+        restart until the robot reports activity.
+        """
+        return self._robot_session_active
 
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""

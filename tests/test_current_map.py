@@ -109,6 +109,99 @@ class TestDeviceMapHarvest:
         assert device.robot_zone_status is None
 
 
+class TestRobotSessionTracking:
+    """robot_session_active opens on activity, survives faults, closes docked.
+
+    Fault semantics come from real captures (matterbridge-dyson-robot
+    277.jsonl, firmware RB03PR.01.08.006.5079): FAULT_USER_RECOVERABLE was
+    observed both mid-clean (from FULL_CLEAN_PAUSED — robot on the floor)
+    and while docked (from INACTIVE_CHARGING) — the flag must differ.
+    """
+
+    @staticmethod
+    def _sc(device, newstate, oldstate=None):
+        device._handle_state_change(
+            {"msg": "STATE-CHANGE", "oldstate": oldstate, "newstate": newstate}
+        )
+
+    def test_defaults_inactive(self):
+        assert _bare_device().robot_session_active is False
+
+    def test_opens_on_clean_and_closes_on_finish(self):
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_INITIATED", oldstate="INACTIVE_CHARGED")
+        assert device.robot_session_active is True
+        self._sc(device, "FULL_CLEAN_FINISHED")
+        assert device.robot_session_active is False
+
+    def test_mid_clean_fault_keeps_session_open(self):
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_RUNNING")
+        self._sc(device, "FULL_CLEAN_PAUSED")
+        self._sc(device, "FAULT_USER_RECOVERABLE", oldstate="FULL_CLEAN_PAUSED")
+        assert device.robot_session_active is True
+        self._sc(device, "FULL_CLEAN_RUNNING", oldstate="FAULT_USER_RECOVERABLE")
+        assert device.robot_session_active is True
+
+    def test_docked_fault_keeps_session_closed(self):
+        device = _bare_device()
+        self._sc(device, "FAULT_USER_RECOVERABLE", oldstate="INACTIVE_CHARGING")
+        assert device.robot_session_active is False
+
+    def test_on_dock_fault_closes_session(self):
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_RUNNING")
+        self._sc(device, "FAULT_ON_DOCK_CHARGING")
+        assert device.robot_session_active is False
+
+    def test_abort_keeps_session_until_inactive(self):
+        """ABORTED means returning to dock — still out on the floor."""
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_RUNNING")
+        self._sc(device, "FULL_CLEAN_ABORTED")
+        assert device.robot_session_active is True
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "INACTIVE_CHARGING"}, "topic"
+        )
+        assert device.robot_session_active is False
+
+    def test_current_state_primes_session_after_restart(self):
+        """HA restarting mid-clean re-learns the session from CURRENT-STATE."""
+        device = _bare_device()
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "FULL_CLEAN_RUNNING"}, "topic"
+        )
+        assert device.robot_session_active is True
+
+    def test_mapping_lifecycle(self):
+        device = _bare_device()
+        self._sc(device, "MAPPING_RUNNING")
+        assert device.robot_session_active is True
+        self._sc(device, "MAPPING_FINISHED")
+        assert device.robot_session_active is False
+
+    def test_replace_on_dock_fault_closes_session(self):
+        """FAULT_REPLACE_ON_DOCK is terminal — the robot will not resume."""
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_RUNNING")
+        self._sc(device, "FAULT_REPLACE_ON_DOCK")
+        assert device.robot_session_active is False
+
+    def test_machine_off_closes_session(self):
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_RUNNING")
+        self._sc(device, "MACHINE_OFF")
+        assert device.robot_session_active is False
+
+    def test_missing_state_field_preserves_session(self):
+        device = _bare_device()
+        self._sc(device, "FULL_CLEAN_RUNNING")
+        device._handle_state_change(
+            {"msg": "STATE-CHANGE", "persistentMapId": "map-down"}
+        )
+        assert device.robot_session_active is True
+
+
 class TestEffectiveCurrentMap:
     """Test the robot-first, cloud-fallback current-map resolution."""
 
@@ -151,6 +244,27 @@ class TestEffectiveCurrentMap:
         """First-run mapping announces the map being built — trust it."""
         coordinator = self._coordinator("map-down", robot_state="MAPPING_RUNNING")
         assert _effective_current_map(_maps(), coordinator).id == "map-down"
+
+    def test_mid_clean_fault_trusts_robot_map_via_session(self):
+        """A transient fault mid-clean keeps the MQTT map authoritative.
+
+        Real devices report FAULT_USER_RECOVERABLE while still out on the
+        floor mid-clean; the session flag (a real bool on DysonDevice)
+        outranks the state-prefix heuristic.
+        """
+        maps = _maps(current="map-up")
+        coordinator = self._coordinator(
+            "map-down", robot_state="FAULT_USER_RECOVERABLE"
+        )
+        coordinator.device.robot_session_active = True
+        assert _effective_current_map(maps, coordinator).id == "map-down"
+
+    def test_session_flag_false_defers_to_cloud(self):
+        """An explicit closed session ignores the retained MQTT map."""
+        maps = _maps(current="map-up")
+        coordinator = self._coordinator("map-down", robot_state="FULL_CLEAN_FINISHED")
+        coordinator.device.robot_session_active = False
+        assert _effective_current_map(maps, coordinator).id == "map-up"
 
     def test_no_coordinator_uses_cloud_flag(self):
         assert _effective_current_map(_maps(current="map-down")).id == "map-down"
@@ -339,6 +453,34 @@ class TestCurrentMapSensor:
         sensor = self._sensor(device_map_id="map-down", robot_state="INACTIVE_CHARGED")
         sensor.coordinator.device.robot_zone_status = [
             {"zoneId": "3", "cleanStatus": "CLEAN_IN_PROGRESS"}
+        ]
+        p1, p2 = self._patched(_maps())
+        with p1, p2:
+            attrs = sensor.extra_state_attributes
+        assert "zone_status" not in attrs
+
+    def test_zone_status_survives_mid_clean_fault(self):
+        """A transient fault must not hide live per-zone progress."""
+        sensor = self._sensor(
+            device_map_id="map-down", robot_state="FAULT_USER_RECOVERABLE"
+        )
+        sensor.coordinator.device.robot_session_active = True
+        sensor.coordinator.device.robot_zone_status = [
+            {"zoneId": "3", "cleanStatus": "CLEAN_IN_PROGRESS"}
+        ]
+        p1, p2 = self._patched(_maps())
+        with p1, p2:
+            attrs = sensor.extra_state_attributes
+        assert attrs["zone_status"] == {"Mud Room": "CLEAN_IN_PROGRESS"}
+
+    def test_zone_status_hidden_when_session_closed(self):
+        """Explicit closed session hides retained zoneStatus even mid-FINISHED."""
+        sensor = self._sensor(
+            device_map_id="map-down", robot_state="FULL_CLEAN_FINISHED"
+        )
+        sensor.coordinator.device.robot_session_active = False
+        sensor.coordinator.device.robot_zone_status = [
+            {"zoneId": "3", "cleanStatus": "CLEAN_COMPLETE"}
         ]
         p1, p2 = self._patched(_maps())
         with p1, p2:
