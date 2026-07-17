@@ -3589,7 +3589,7 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        from .services import _ACTIVE_ROBOT_STATE_PREFIXES
+        from .services import _robot_session_active
 
         map_id, _name, source = self._resolve()
         attrs: dict[str, Any] = {"map_id": map_id, "source": source}
@@ -3599,11 +3599,12 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
             attrs["zones"] = [str(z.name or z.id) for z in pmap.zones]
 
         # Per-zone progress is only meaningful while a clean is running —
-        # the robot retains the last zoneStatus after docking.
+        # the robot retains the last zoneStatus after docking. The session
+        # flag (rather than a state check) keeps it visible across transient
+        # mid-clean FAULT_* states.
         device = self.coordinator.device
         zone_status = getattr(device, "robot_zone_status", None) if device else None
-        robot_state = str(getattr(device, "robot_state", "") or "")
-        if zone_status and robot_state.startswith(_ACTIVE_ROBOT_STATE_PREFIXES):
+        if zone_status and device is not None and _robot_session_active(device):
             names = {z.id: str(z.name or z.id) for z in pmap.zones} if pmap else {}
             attrs["zone_status"] = {
                 names.get(entry.get("zoneId"), entry.get("zoneId")): entry.get(
