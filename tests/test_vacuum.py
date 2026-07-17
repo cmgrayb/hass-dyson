@@ -166,6 +166,21 @@ class TestDysonVacuumEntity:
             ("INACTIVE_CHARGED", VacuumActivity.DOCKED),
             ("MAPPING_RUNNING", VacuumActivity.IDLE),
             ("FAULT_CRITICAL", VacuumActivity.ERROR),
+            # States from the community-verified enum (matterbridge
+            # dyson-360-types) that a single healthy robot never shows
+            ("FULL_CLEAN_NEEDS_CHARGE", VacuumActivity.RETURNING),
+            ("MAPPING_NEEDS_CHARGE", VacuumActivity.RETURNING),
+            ("MAPPING_ABORTED", VacuumActivity.RETURNING),
+            ("MAPPING_INITIATED", VacuumActivity.IDLE),
+            ("FULL_CLEAN_ABANDONED", VacuumActivity.IDLE),
+            ("MACHINE_OFF", VacuumActivity.IDLE),
+            ("FAULT_ON_DOCK_CHARGED", VacuumActivity.ERROR),
+            ("FAULT_ON_DOCK_CHARGING", VacuumActivity.ERROR),
+            ("FAULT_REPLACE_ON_DOCK", VacuumActivity.ERROR),
+            ("FAULT_CALL_HELPLINE", VacuumActivity.ERROR),
+            ("FAULT_CONTACT_HELPLINE", VacuumActivity.ERROR),
+            ("FAULT_GETTING_INFO", VacuumActivity.ERROR),
+            ("FAULT_RUNNING_DIAGNOSTIC", VacuumActivity.ERROR),
         ]
 
         for robot_state, expected_ha_state in test_cases:
@@ -320,6 +335,19 @@ class TestDysonVacuumEntity:
         # INACTIVE_CHARGED is the default in the fixture — set explicitly here
         # so the test stays correct if the fixture default ever changes.
         mock_coordinator_robot.device.robot_state = "INACTIVE_CHARGED"
+        entity = DysonVacuumEntity(mock_coordinator_robot)
+
+        await entity.async_start()
+
+        mock_coordinator_robot.device.robot_start_clean.assert_called_once()
+        mock_coordinator_robot.device.robot_resume.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_start_from_on_dock_fault_calls_robot_start_clean(
+        self, mock_coordinator_robot
+    ):
+        """FAULT_ON_DOCK_CHARGING means docked — START, never RESUME."""
+        mock_coordinator_robot.device.robot_state = "FAULT_ON_DOCK_CHARGING"
         entity = DysonVacuumEntity(mock_coordinator_robot)
 
         await entity.async_start()

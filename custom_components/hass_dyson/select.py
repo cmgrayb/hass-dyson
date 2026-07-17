@@ -790,11 +790,11 @@ class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
             )
 
             # Map device values to display names
-            if water_hardness == "2025":
+            if water_hardness == "0675":
                 self._attr_current_option = "Soft"
             elif water_hardness == "1350":
                 self._attr_current_option = "Medium"
-            elif water_hardness == "0675":
+            elif water_hardness == "2025":
                 self._attr_current_option = "Hard"
             else:
                 _LOGGER.warning(
@@ -815,9 +815,9 @@ class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
 
         # Map display names to device values
         value_map = {
-            "Soft": "2025",
+            "Soft": "0675",
             "Medium": "1350",
-            "Hard": "0675",
+            "Hard": "2025",
         }
 
         if option not in value_map:

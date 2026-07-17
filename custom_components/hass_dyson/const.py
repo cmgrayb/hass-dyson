@@ -379,8 +379,8 @@ FAULT_TRANSLATIONS: Final = {
         "OK": "Water tank level normal",
     },
     "tnkp": {
-        "FAIL": "Water tank problem - check placement",
-        "OK": "Water tank status normal",
+        "FAIL": "Water tank not detected - please check that the tank is seated correctly",
+        "OK": "Water tank detected",
     },
     "cldu": {
         "FAIL": "Humidifier cleaning required",
@@ -473,11 +473,16 @@ ROBOT_STATE_FULL_CLEAN_DISCOVERING: Final = "FULL_CLEAN_DISCOVERING"
 ROBOT_STATE_FULL_CLEAN_TRAVERSING: Final = "FULL_CLEAN_TRAVERSING"
 ROBOT_STATE_FULL_CLEAN_INITIATED: Final = "FULL_CLEAN_INITIATED"
 ROBOT_STATE_FULL_CLEAN_ABORTED: Final = "FULL_CLEAN_ABORTED"
+ROBOT_STATE_FULL_CLEAN_NEEDS_CHARGE: Final = "FULL_CLEAN_NEEDS_CHARGE"
+ROBOT_STATE_FULL_CLEAN_ABANDONED: Final = "FULL_CLEAN_ABANDONED"
 
 # Mapping and Navigation
 ROBOT_STATE_MAPPING_RUNNING: Final = "MAPPING_RUNNING"
 ROBOT_STATE_MAPPING_PAUSED: Final = "MAPPING_PAUSED"
 ROBOT_STATE_MAPPING_FINISHED: Final = "MAPPING_FINISHED"
+ROBOT_STATE_MAPPING_INITIATED: Final = "MAPPING_INITIATED"
+ROBOT_STATE_MAPPING_NEEDS_CHARGE: Final = "MAPPING_NEEDS_CHARGE"
+ROBOT_STATE_MAPPING_ABORTED: Final = "MAPPING_ABORTED"
 
 # Dock and Charging States
 ROBOT_STATE_INACTIVE_CHARGED: Final = "INACTIVE_CHARGED"
@@ -491,18 +496,46 @@ ROBOT_STATE_FAULT_CRITICAL: Final = "FAULT_CRITICAL"
 ROBOT_STATE_FAULT_USER_RECOVERABLE: Final = "FAULT_USER_RECOVERABLE"
 ROBOT_STATE_FAULT_LOST: Final = "FAULT_LOST"
 ROBOT_STATE_FAULT_ON_DOCK: Final = "FAULT_ON_DOCK"
+ROBOT_STATE_FAULT_ON_DOCK_CHARGED: Final = "FAULT_ON_DOCK_CHARGED"
+ROBOT_STATE_FAULT_ON_DOCK_CHARGING: Final = "FAULT_ON_DOCK_CHARGING"
 ROBOT_STATE_FAULT_RETURN_TO_DOCK: Final = "FAULT_RETURN_TO_DOCK"
+ROBOT_STATE_FAULT_REPLACE_ON_DOCK: Final = "FAULT_REPLACE_ON_DOCK"
+ROBOT_STATE_FAULT_CALL_HELPLINE: Final = "FAULT_CALL_HELPLINE"
+ROBOT_STATE_FAULT_CONTACT_HELPLINE: Final = "FAULT_CONTACT_HELPLINE"
+ROBOT_STATE_FAULT_GETTING_INFO: Final = "FAULT_GETTING_INFO"
+ROBOT_STATE_FAULT_RUNNING_DIAGNOSTIC: Final = "FAULT_RUNNING_DIAGNOSTIC"
+
+# Power state
+ROBOT_STATE_MACHINE_OFF: Final = "MACHINE_OFF"
 
 # Robot Vacuum Commands (MQTT)
 ROBOT_CMD_START: Final = "START"
 ROBOT_CMD_PAUSE: Final = "PAUSE"
 ROBOT_CMD_RESUME: Final = "RESUME"
 ROBOT_CMD_ABORT: Final = "ABORT"
+
 ROBOT_CMD_REQUEST_STATE: Final = "REQUEST-CURRENT-STATE"
 
 # Robot Vacuum MQTT Message Types
 ROBOT_MSG_CURRENT_STATE: Final = "CURRENT-STATE"
 ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
+# Broadcast within ~1 minute of any persistent-map manifest change (zone
+# edits in the MyDyson app, or the robot's own post-clean map update);
+# payload is only {msg, time} — re-fetch the cloud metadata to see what.
+ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
+
+# Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
+# dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
+# product-state CURRENT-FAULTS codes the generic fault sensors read.
+ROBOT_FAULT_SUBSYSTEMS: Final = {
+    "AIRWAYS": ("Airways", "mdi:weather-windy"),
+    "BATTERY": ("Battery", "mdi:battery-alert"),
+    "BRUSH_BAR_AND_TRACTION": ("Brush Bar & Traction", "mdi:robot-vacuum-alert"),
+    "CHARGE_STATION": ("Charge Station", "mdi:ev-station"),
+    "LIFT": ("Lift", "mdi:arrow-up-bold-box"),
+    "LOST": ("Lost", "mdi:map-marker-question"),
+    "OPTICS": ("Optics", "mdi:camera-off"),
+}
 
 # Robot Vacuum Cleaning Types
 ROBOT_CLEAN_TYPE_IMMEDIATE: Final = "immediate"
@@ -566,15 +599,28 @@ ROBOT_STATE_TO_HA_STATE: Final = {
     ROBOT_STATE_FULL_CLEAN_CHARGING: VacuumActivity.RETURNING,
     ROBOT_STATE_MAPPING_CHARGING: VacuumActivity.RETURNING,
     ROBOT_STATE_FULL_CLEAN_ABORTED: VacuumActivity.RETURNING,
+    ROBOT_STATE_FULL_CLEAN_NEEDS_CHARGE: VacuumActivity.RETURNING,
+    ROBOT_STATE_MAPPING_NEEDS_CHARGE: VacuumActivity.RETURNING,
+    ROBOT_STATE_MAPPING_ABORTED: VacuumActivity.RETURNING,
     # Mapping as idle (non-cleaning operation)
     ROBOT_STATE_MAPPING_RUNNING: VacuumActivity.IDLE,
     ROBOT_STATE_MAPPING_FINISHED: VacuumActivity.IDLE,
+    ROBOT_STATE_MAPPING_INITIATED: VacuumActivity.IDLE,
+    ROBOT_STATE_FULL_CLEAN_ABANDONED: VacuumActivity.IDLE,
+    ROBOT_STATE_MACHINE_OFF: VacuumActivity.IDLE,
     # Error states
     ROBOT_STATE_FAULT_CRITICAL: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_USER_RECOVERABLE: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_LOST: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_ON_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_ON_DOCK_CHARGED: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_ON_DOCK_CHARGING: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_RETURN_TO_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_REPLACE_ON_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_CALL_HELPLINE: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_CONTACT_HELPLINE: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_GETTING_INFO: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_RUNNING_DIAGNOSTIC: VacuumActivity.ERROR,
 }
 
 # Capability-based fault code filtering
@@ -598,8 +644,8 @@ CAPABILITY_FAULT_CODES: Final = {
     "Humidifier": [
         "humi",  # Humidity sensor
         "fltr",  # General filter (covers humidifier filter)
-        "tnke",  # Tank empty
-        "tnkp",  # Tank problem
+        "tnke",  # Water tank empty
+        "tnkp",  # Water tank undetected
         "cldu",  # Unknown humidifier fault
         "etwd",  # Unknown humidifier fault
     ],

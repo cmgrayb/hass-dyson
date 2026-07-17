@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from libdyson_rest.models import PersistentMapMeta, ZoneMeta
 
-from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
+from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_MSG_MAP_MANIFEST_UPDATED
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -25,6 +26,11 @@ _LOGGER = logging.getLogger(__name__)
 # fails during setup.  After the schedule is exhausted the Refresh Zone List
 # button remains available for manual recovery.
 ZONE_DISCOVERY_RETRY_DELAYS: tuple[float, ...] = (60.0, 300.0, 900.0)
+
+# Coalescing delay (seconds) between the robot's PERSISTENT-MAP-MANIFEST-
+# UPDATED broadcast and the metadata re-fetch it triggers — the broadcast
+# can repeat, and device message callbacks may deliver a message twice.
+MANIFEST_REFRESH_DEBOUNCE: float = 5.0
 
 
 def _async_migrate_zone_button_unique_ids(
@@ -98,10 +104,14 @@ async def async_setup_entry(
         async_add_entities([DysonReconnectButton(coordinator)], True)
         return
 
-    known_zone_keys: set[tuple[str, str]] = set()
+    known_zone_buttons: dict[tuple[str, str], DysonZoneCleanButton] = {}
 
     async def _async_discover_zone_buttons() -> int:
-        """Fetch map metadata and add buttons for zones not yet seen.
+        """Fetch map metadata; add, update, and retire zone buttons to match.
+
+        Existing buttons pick up zone/map renames, icon changes, and a fresh
+        zonesDefinitionLastUpdatedDate snapshot; buttons whose zone vanished
+        from the manifest are retired (unavailable).
 
         Returns the number of buttons added; raises if the cloud fetch fails.
         """
@@ -116,16 +126,33 @@ async def async_setup_entry(
         # a bare-zone-id key would silently drop every later map's buttons.
         qualify_names = len(maps) > 1
         new_buttons: list[ButtonEntity] = []
+        fresh_keys: set[tuple[str, str]] = set()
         for pmap in maps:
             for zone in pmap.zones:
-                if not zone.id or (pmap.id, zone.id) in known_zone_keys:
+                if not zone.id:
                     continue
-                known_zone_keys.add((pmap.id, zone.id))
-                new_buttons.append(
-                    DysonZoneCleanButton(
-                        coordinator, pmap, zone, qualify_name=qualify_names
+                key = (pmap.id, zone.id)
+                fresh_keys.add(key)
+                existing = known_zone_buttons.get(key)
+                if existing is not None:
+                    existing.async_update_zone_meta(
+                        pmap, zone, qualify_name=qualify_names
                     )
+                    continue
+                button = DysonZoneCleanButton(
+                    coordinator, pmap, zone, qualify_name=qualify_names
                 )
+                known_zone_buttons[key] = button
+                new_buttons.append(button)
+
+        # A zone deleted in the MyDyson app leaves a button whose START the
+        # robot would mishandle (per-zone commands degrade silently) — retire
+        # it. An empty maps list means a failed read, not an empty home:
+        # never retire on it.
+        if maps:
+            for key, button in known_zone_buttons.items():
+                if key not in fresh_keys:
+                    button.async_mark_zone_deleted()
 
         if new_buttons:
             async_add_entities(new_buttons, True)
@@ -145,6 +172,59 @@ async def async_setup_entry(
         ],
         True,
     )
+
+    # React to the robot's own manifest broadcast: within ~1 minute of a zone
+    # edit in the MyDyson app (or its post-clean map update) the robot
+    # publishes PERSISTENT-MAP-MANIFEST-UPDATED, so the buttons follow
+    # app-side changes without a manual refresh or restart.
+    manifest_refresh_unsub: CALLBACK_TYPE | None = None
+    manifest_listener_removed = False
+
+    async def _async_manifest_refresh(_now) -> None:
+        nonlocal manifest_refresh_unsub
+        manifest_refresh_unsub = None
+        from .services import _persistent_map_cache
+
+        _persistent_map_cache.invalidate(coordinator.serial_number)
+        try:
+            await _async_discover_zone_buttons()
+        except Exception as err:  # noqa: BLE001 — the next broadcast retries
+            _LOGGER.debug(
+                "Manifest-triggered zone refresh failed for %s: %s",
+                coordinator.serial_number,
+                err,
+            )
+
+    def _schedule_manifest_refresh() -> None:
+        nonlocal manifest_refresh_unsub
+        # A broadcast can be in flight (queued via call_soon_threadsafe)
+        # when the entry unloads — never re-arm after teardown.
+        if manifest_listener_removed:
+            return
+        if manifest_refresh_unsub is not None:
+            manifest_refresh_unsub()
+        manifest_refresh_unsub = async_call_later(
+            hass, MANIFEST_REFRESH_DEBOUNCE, _async_manifest_refresh
+        )
+
+    def _on_device_message(topic: str, data: dict[str, Any]) -> None:
+        # Fires on paho's network thread — hop to the event loop.
+        if data.get("msg") != ROBOT_MSG_MAP_MANIFEST_UPDATED:
+            return
+        hass.loop.call_soon_threadsafe(_schedule_manifest_refresh)
+
+    device = coordinator.device
+    if device is not None:
+        device.add_message_callback(_on_device_message)
+
+        def _remove_manifest_listener() -> None:
+            nonlocal manifest_listener_removed
+            manifest_listener_removed = True
+            device.remove_message_callback(_on_device_message)
+            if manifest_refresh_unsub is not None:
+                manifest_refresh_unsub()
+
+        config_entry.async_on_unload(_remove_manifest_listener)
 
     try:
         await _async_discover_zone_buttons()
@@ -257,15 +337,22 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
     ) -> None:
         super().__init__(coordinator)
         self._pmap_id: str = pmap.id
-        self._pmap_name: str = str(pmap.name or pmap.id)
-        self._pmap_zdlud: str | None = pmap.zones_definition_last_updated_date
         self._zone_id: str = zone.id
-        self._zone_name: str = str(zone.name or f"Zone {self._zone_id}")
+        self._zone_deleted: bool = False
         # unique_id is map-qualified — zone ids restart from 1 on every map.
         # Both components are stable in MyDyson even if the user renames them.
         self._attr_unique_id = (
             f"{coordinator.serial_number}_clean_zone_{self._pmap_id}_{self._zone_id}"
         )
+        self._apply_zone_meta(pmap, zone, qualify_name)
+
+    def _apply_zone_meta(
+        self, pmap: PersistentMapMeta, zone: ZoneMeta, qualify_name: bool
+    ) -> None:
+        """Snapshot the map/zone fields the entity presents and sends."""
+        self._pmap_name = str(pmap.name or pmap.id)
+        self._pmap_zdlud: str | None = pmap.zones_definition_last_updated_date
+        self._zone_name = str(zone.name or f"Zone {self._zone_id}")
         self._attr_name = (
             f"Clean {self._zone_name} ({self._pmap_name})"
             if qualify_name
@@ -273,31 +360,89 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
         )
         self._attr_icon = _icon_for_zone(zone.icon)
 
+    @callback
+    def async_update_zone_meta(
+        self, pmap: PersistentMapMeta, zone: ZoneMeta, qualify_name: bool
+    ) -> None:
+        """Refresh the construction-time snapshots after a metadata re-fetch.
+
+        Propagates zone/map renames and icon changes to the live entity and
+        the registry, resurfaces a button whose zone reappeared, and renews
+        the zonesDefinitionLastUpdatedDate snapshot sent with every START —
+        the device mishandles zone commands carrying a stale one.
+        """
+        old_name, old_icon = self._attr_name, self._attr_icon
+        was_deleted = self._zone_deleted
+        self._zone_deleted = False
+        self._apply_zone_meta(pmap, zone, qualify_name)
+        if self.hass is None or self.entity_id is None:
+            return
+        if self._attr_name != old_name and self.registry_entry is not None:
+            # Keep the registry's suggested name in sync — a user's manual
+            # rename (the registry ``name`` field) still wins over this.
+            er.async_get(self.hass).async_update_entity(
+                self.entity_id, original_name=self._attr_name
+            )
+        if self._attr_name != old_name or self._attr_icon != old_icon or was_deleted:
+            _LOGGER.info(
+                "Zone button %s updated: %r → %r",
+                self.entity_id,
+                old_name,
+                self._attr_name,
+            )
+            self.async_write_ha_state()
+
+    @callback
+    def async_mark_zone_deleted(self) -> None:
+        """Retire the button after its zone vanished from the map manifest."""
+        if self._zone_deleted:
+            return
+        self._zone_deleted = True
+        _LOGGER.info(
+            "Zone %s (%s) no longer exists on map %s; disabling its clean button",
+            self._zone_id,
+            self._zone_name,
+            self._pmap_name,
+        )
+        if self.hass is not None and self.entity_id is not None:
+            self.async_write_ha_state()
+
     @property
     def available(self) -> bool:
-        """Unavailable while the cloud flags a different map as current.
+        """Unavailable while the robot is known to be on a different map.
 
-        The v1 API omits isCurrentMap (currency unknown → None), in which
-        case every zone button stays available.
+        The signal is the robot's MQTT-reported map (announced during every
+        clean), falling back to the cloud isCurrentMap flag. When neither is
+        available (e.g. a freshly restarted Vis Nav on its dock — the v1 API
+        omits isCurrentMap) every zone button stays available. A button whose
+        zone was deleted in the MyDyson app is always unavailable.
         """
+        if self._zone_deleted:
+            return False
         if not super().available:
             return False
-        from .services import _current_map, _persistent_map_cache
+        from .services import _effective_current_map, _persistent_map_cache
 
         maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
-        current = _current_map(maps)
+        current = _effective_current_map(maps, self.coordinator)
         return current is None or current.id == self._pmap_id
 
     async def async_press(self) -> None:
+        if self._zone_deleted:
+            raise HomeAssistantError(
+                f"Zone {self._zone_name!r} was removed from map "
+                f"{self._pmap_name!r} in the MyDyson app; this button no "
+                "longer has a zone to clean"
+            )
         if not self.coordinator.device:
             raise HomeAssistantError(
                 f"Device {self.coordinator.serial_number} not available"
             )
         # Guard against a stale UI: the robot can only clean the map it is on.
-        from .services import _current_map, _persistent_map_cache
+        from .services import _effective_current_map, _persistent_map_cache
 
         maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
-        current = _current_map(maps)
+        current = _effective_current_map(maps, self.coordinator)
         if current is not None and current.id != self._pmap_id:
             raise HomeAssistantError(
                 f"The robot is currently using map {current.name or current.id!r}; "
@@ -336,10 +481,11 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
     """Re-fetch the persistent map metadata from the Dyson cloud.
 
     Invalidates the in-process cache used by the start_zone_clean service and
-    zone-clean buttons, then adds buttons for any newly-discovered zones
-    without requiring a restart.  Renamed zones keep their entity (unique_id
-    is the map + zone id) and pick up the new name after a Home Assistant
-    restart.
+    zone-clean buttons, then reconciles the buttons with the fresh manifest:
+    new zones gain buttons, renamed zones/maps pick up their new names in
+    place (unique_id is the map + zone id, so the entity survives), and
+    deleted zones have their buttons retired.  The same reconciliation runs
+    automatically when the robot broadcasts PERSISTENT-MAP-MANIFEST-UPDATED.
     """
 
     coordinator: DysonDataUpdateCoordinator
