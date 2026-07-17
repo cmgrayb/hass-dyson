@@ -379,8 +379,8 @@ FAULT_TRANSLATIONS: Final = {
         "OK": "Water tank level normal",
     },
     "tnkp": {
-        "FAIL": "Water tank problem - check placement",
-        "OK": "Water tank status normal",
+        "FAIL": "Water tank not detected - please check that the tank is seated correctly",
+        "OK": "Water tank detected",
     },
     "cldu": {
         "FAIL": "Humidifier cleaning required",
@@ -598,8 +598,8 @@ CAPABILITY_FAULT_CODES: Final = {
     "Humidifier": [
         "humi",  # Humidity sensor
         "fltr",  # General filter (covers humidifier filter)
-        "tnke",  # Tank empty
-        "tnkp",  # Tank problem
+        "tnke",  # Water tank empty
+        "tnkp",  # Water tank undetected
         "cldu",  # Unknown humidifier fault
         "etwd",  # Unknown humidifier fault
     ],
