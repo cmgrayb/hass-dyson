@@ -784,3 +784,114 @@ class TestBLEBinarySensorSetup:
         entities = add_entities.call_args[0][0]
         assert len(entities) == 1
         assert isinstance(entities[0], DysonMotionBinarySensor)
+
+
+class TestDysonRobotFaultSensor:
+    """Robot per-subsystem fault sensors (STATE-CHANGE faults dict source)."""
+
+    def _sensor(self, pure_mock_coordinator, subsystem="LIFT"):
+        from custom_components.hass_dyson.binary_sensor import DysonRobotFaultSensor
+
+        sensor = DysonRobotFaultSensor(pure_mock_coordinator, subsystem)
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_init(self, pure_mock_coordinator):
+        sensor = self._sensor(pure_mock_coordinator)
+        assert sensor._attr_unique_id.endswith("_robot_fault_lift")
+        assert sensor._attr_name == "Fault Lift"
+        from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+
+        assert sensor._attr_device_class == BinarySensorDeviceClass.PROBLEM
+
+    def test_unknown_until_faults_dict_reported(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_faults = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+        assert sensor._attr_extra_state_attributes == {}
+
+    def test_active_fault_with_detail_attributes(self, pure_mock_coordinator):
+        """Real community-capture shape: LIFT active with 23.0.3."""
+        pure_mock_coordinator.device.robot_faults = {
+            "AIRWAYS": {"active": False},
+            "LIFT": {"active": True, "description": "23.0.3"},
+        }
+        pure_mock_coordinator.device.robot_active_faults = [
+            {
+                "faultCode": "23.0.3",
+                "nextActionRequired": "WAIT_TO_CLEAR",
+                "present": "PRESENT",
+                "requiredUserAction": "USER_RECOVERABLE",
+            }
+        ]
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is True
+        assert sensor._attr_extra_state_attributes == {
+            "fault_code": "23.0.3",
+            "requiredUserAction": "USER_RECOVERABLE",
+            "nextActionRequired": "WAIT_TO_CLEAR",
+        }
+
+    def test_inactive_subsystem_is_off_without_attributes(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_faults = {
+            "AIRWAYS": {"active": False},
+            "LIFT": {"active": False},
+        }
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is False
+        assert sensor._attr_extra_state_attributes == {}
+
+    def test_subsystem_missing_from_dict_is_unknown(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_faults = {"AIRWAYS": {"active": False}}
+        sensor = self._sensor(pure_mock_coordinator, subsystem="OPTICS")
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    def test_no_device_is_unknown(self, pure_mock_coordinator):
+        pure_mock_coordinator.device = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_setup_creates_seven_subsystem_sensors_for_robot(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        from custom_components.hass_dyson.binary_sensor import DysonRobotFaultSensor
+        from custom_components.hass_dyson.const import ROBOT_FAULT_SUBSYSTEMS
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_ROBOT]
+        pure_mock_coordinator.device_capabilities = []
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+        entities = mock_add_entities.call_args[0][0]
+        subsystem_sensors = [
+            e for e in entities if isinstance(e, DysonRobotFaultSensor)
+        ]
+        assert len(subsystem_sensors) == len(ROBOT_FAULT_SUBSYSTEMS)
+
+    @pytest.mark.asyncio
+    async def test_setup_creates_none_for_ec_device(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        from custom_components.hass_dyson.binary_sensor import DysonRobotFaultSensor
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
+        pure_mock_coordinator.device_capabilities = []
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+        entities = mock_add_entities.call_args[0][0]
+        assert not any(isinstance(e, DysonRobotFaultSensor) for e in entities)

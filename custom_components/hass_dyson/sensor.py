@@ -66,10 +66,10 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfTime,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -1015,6 +1015,72 @@ class DysonDominantPollutantSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+# Delay (seconds) between the robot reporting endOfClean and invalidating
+# the clean-maps cache. The cloud history entry was observed live within
+# ~2 minutes of endOfClean; the polling history/dust-map entities then pick
+# it up on their next update instead of waiting out the 30-minute TTL.
+CLEAN_HISTORY_REFRESH_DELAY: float = 120.0
+
+
+def _register_end_of_clean_listener(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    coordinator: DysonDataUpdateCoordinator,
+) -> None:
+    """Invalidate the clean-history cache shortly after a clean ends.
+
+    Listens for ``endOfClean: true`` in the robot's STATE-CHANGE stream and
+    schedules a one-shot cache invalidation, so the Last Clean sensors and
+    dust-map/floor-plan images refresh minutes after docking rather than up
+    to 30 minutes later. Also the hook that lets the MQTT zone stitch reach
+    the fresh entry while the robot still retains the matching cleanId.
+    """
+    device = coordinator.device
+    if device is None:
+        return
+
+    refresh_unsub: CALLBACK_TYPE | None = None
+    listener_removed = False
+
+    async def _async_refresh_history(_now) -> None:
+        nonlocal refresh_unsub
+        refresh_unsub = None
+        from .vacuum import _clean_maps_cache
+
+        _clean_maps_cache.invalidate(coordinator.serial_number)
+        _LOGGER.debug(
+            "Clean finished on %s: history cache invalidated for refresh",
+            coordinator.serial_number,
+        )
+
+    def _schedule_refresh() -> None:
+        nonlocal refresh_unsub
+        if listener_removed:
+            return
+        if refresh_unsub is not None:
+            refresh_unsub()
+        refresh_unsub = async_call_later(
+            hass, CLEAN_HISTORY_REFRESH_DELAY, _async_refresh_history
+        )
+
+    def _on_device_message(topic: str, data: dict[str, Any]) -> None:
+        # Fires on paho's network thread — hop to the event loop.
+        if data.get("msg") != "STATE-CHANGE" or not data.get("endOfClean"):
+            return
+        hass.loop.call_soon_threadsafe(_schedule_refresh)
+
+    device.add_message_callback(_on_device_message)
+
+    def _remove_listener() -> None:
+        nonlocal listener_removed
+        listener_removed = True
+        device.remove_message_callback(_on_device_message)
+        if refresh_unsub is not None:
+            refresh_unsub()
+
+    config_entry.async_on_unload(_remove_listener)
+
+
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -1464,6 +1530,7 @@ async def async_setup_entry(  # noqa: C901
                     entities.append(DysonLastCleanSensor(coordinator, slot=i))
                 entities.append(DysonRecommendedCleanSensor(coordinator))
                 entities.append(DysonCurrentMapSensor(coordinator))
+                _register_end_of_clean_listener(hass, config_entry, coordinator)
 
         # Cloud-fetched purifier sensors (outdoor AQI, daily history,
         # MyDyson scheduled events). Only for ec-category devices (air
@@ -3320,6 +3387,15 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
         # Cross-reference zone IDs with the persistent-map metadata cache
         # (populated by services.py) to resolve human-readable room names.
         zone_ids = _extract_zone_ids(clean)
+        zone_source = "cloud" if zone_ids else None
+        stitch_map_id: str | None = None
+        if not zone_ids:
+            # The cloud records MQTT-initiated zone cleans as plain "global"
+            # entries with no zone info — the robot's retained programme
+            # echo (matched by cleanId) is the only zone record for them.
+            zone_ids, stitch_map_id = self._stitch_zone_ids_from_mqtt(clean)
+            if zone_ids:
+                zone_source = "device_mqtt"
         zone_names: list[str] = []
         if zone_ids:
             try:
@@ -3334,7 +3410,11 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
                     # Zone ids restart from 1 on every map — resolve names
                     # from the map the clean ran on, falling back to the
                     # other maps only for ids it does not carry.
-                    clean_map_id = getattr(clean, "persistent_map_id", None)
+                    # Stitched (MQTT) cleans carry no map on the cloud
+                    # record — the robot's retained map is that clean's map.
+                    clean_map_id = (
+                        getattr(clean, "persistent_map_id", None) or stitch_map_id
+                    )
                     id_to_name: dict[str, str] = {}
                     for pmap in sorted(maps, key=lambda m: m.id != clean_map_id):
                         for z in pmap.zones:
@@ -3350,6 +3430,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
             "area_m2": _extract_cleaned_area_m2(clean),
             "zone_ids": zone_ids,
             "zone_names": zone_names,
+            "zone_source": zone_source,
             "fault_count": _extract_fault_count(clean),
             "sequence_number": getattr(clean, "sequence_number", None),
             # v2 fields (None on v1 records)
@@ -3357,6 +3438,26 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
             "end_battery": getattr(clean, "end_battery", None),
             "is_spot_clean": getattr(clean, "is_spot_clean", None),
         }
+
+    def _stitch_zone_ids_from_mqtt(self, clean) -> tuple[list[str], str | None]:
+        """Zone ids (and their map) from the robot's MQTT echo, if it matches.
+
+        Only the robot's current/most recent session (matched on cleanId)
+        can be stitched — older history entries have no MQTT record.
+        """
+        device = self.coordinator.device
+        if device is None:
+            return [], None
+        device_clean_id = getattr(device, "robot_clean_id", None)
+        if not isinstance(device_clean_id, str) or device_clean_id != getattr(
+            clean, "clean_id", None
+        ):
+            return [], None
+        zones = getattr(device, "robot_last_clean_zones", None)
+        if not isinstance(zones, list) or not zones:
+            return [], None
+        map_id = getattr(device, "robot_current_map_id", None)
+        return list(zones), map_id if isinstance(map_id, str) else None
 
 
 # ============================================================================
@@ -3598,14 +3699,17 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
         if pmap is not None:
             attrs["zones"] = [str(z.name or z.id) for z in pmap.zones]
 
-        # Per-zone progress is only meaningful while a clean is running —
-        # the robot retains the last zoneStatus after docking. The session
-        # flag (rather than a state check) keeps it visible across transient
+        # Live progress is only meaningful while a clean is running — the
+        # robot retains the last values after docking. The session flag
+        # (rather than a state check) keeps it visible across transient
         # mid-clean FAULT_* states.
         device = self.coordinator.device
-        zone_status = getattr(device, "robot_zone_status", None) if device else None
-        if zone_status and device is not None and _robot_session_active(device):
-            names = {z.id: str(z.name or z.id) for z in pmap.zones} if pmap else {}
+        if device is None or not _robot_session_active(device):
+            return attrs
+        names = {z.id: str(z.name or z.id) for z in pmap.zones} if pmap else {}
+
+        zone_status = getattr(device, "robot_zone_status", None)
+        if zone_status:
             attrs["zone_status"] = {
                 names.get(entry.get("zoneId"), entry.get("zoneId")): entry.get(
                     "cleanStatus"
@@ -3613,6 +3717,15 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
                 for entry in zone_status
                 if isinstance(entry, dict)
             }
+
+        # The robot reports its zone on every state message — including
+        # whole-house cleans, where zoneStatus is absent.
+        zone_id = getattr(device, "robot_current_zone_id", None)
+        if isinstance(zone_id, str) and zone_id:
+            attrs["current_zone"] = names.get(zone_id, zone_id)
+        target_id = getattr(device, "robot_traverse_target_id", None)
+        if isinstance(target_id, str) and target_id:
+            attrs["traverse_target"] = names.get(target_id, target_id)
         return attrs
 
 
