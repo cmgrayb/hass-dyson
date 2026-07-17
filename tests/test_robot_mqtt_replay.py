@@ -169,3 +169,79 @@ class TestCommunityVocabulary:
             }
         )
         assert device.robot_session_active is False
+
+
+class TestRobotDetailRetention:
+    """Retention + properties for zone position, faults, and clean session."""
+
+    def test_replay_final_zone_and_clean_session(self):
+        device = _bare_device()
+        for payload in _load_messages():
+            device._process_message_data(payload, "277/TEST-SERIAL/status")
+        # Last reported zone was the Mud Room (id 3), retained after docking
+        assert device.robot_current_zone_id == "3"
+        # Not traversing at the end of the capture
+        assert device.robot_traverse_target_id is None
+        # Clean session retained for the history stitch (sanitized GUID)
+        assert device.robot_clean_id == "1f000000-4d4f-434b-5345-5249414c3031"
+        assert device.robot_last_clean_zones == ["3"]
+
+    def test_zone_zero_means_no_zone(self):
+        device = _bare_device()
+        device._handle_state_change(
+            {"msg": "STATE-CHANGE", "newstate": "INACTIVE_CHARGED", "newZoneId": "0"}
+        )
+        assert device.robot_current_zone_id is None
+
+    def test_traverse_target_clears_when_transit_ends(self):
+        device = _bare_device()
+        device._handle_state_change(
+            {
+                "msg": "STATE-CHANGE",
+                "newstate": "FULL_CLEAN_TRAVERSING",
+                "traverseTargetId": "4",
+            }
+        )
+        assert device.robot_traverse_target_id == "4"
+        device._handle_state_change(
+            {"msg": "STATE-CHANGE", "newstate": "FULL_CLEAN_RUNNING"}
+        )
+        assert device.robot_traverse_target_id is None
+
+    def test_faults_dict_retained_with_detail(self):
+        """Real community-capture fault shape (fault 23.0.3 = LIFT)."""
+        device = _bare_device()
+        device._handle_state_change(
+            {
+                "msg": "STATE-CHANGE",
+                "oldstate": "FULL_CLEAN_PAUSED",
+                "newstate": "FAULT_USER_RECOVERABLE",
+                "newActiveFaults": [
+                    {
+                        "faultCode": "23.0.3",
+                        "nextActionRequired": "WAIT_TO_CLEAR",
+                        "present": "PRESENT",
+                        "requiredUserAction": "USER_RECOVERABLE",
+                    }
+                ],
+                "faults": {
+                    "AIRWAYS": {"active": False},
+                    "LIFT": {"active": True, "description": "23.0.3"},
+                },
+            }
+        )
+        assert device.robot_faults["LIFT"]["active"] is True
+        assert device.robot_active_faults[0]["faultCode"] == "23.0.3"
+
+    def test_active_faults_from_current_state(self):
+        """CURRENT-STATE activeFaults feeds the property after a restart."""
+        device = _bare_device()
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "INACTIVE_CHARGED", "activeFaults": []},
+            "topic",
+        )
+        assert device.robot_active_faults == []
+        assert device.robot_faults is None  # dict only comes in STATE-CHANGE
+
+    def test_no_programme_means_no_zones(self):
+        assert _bare_device().robot_last_clean_zones == []

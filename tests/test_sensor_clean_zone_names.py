@@ -159,3 +159,128 @@ class TestRecommendedCleanZoneNames:
             mock_robot_coordinator, [_rcm("map-gone", [_pred("1")])]
         )
         assert sensor._attr_native_value == "Hallway"
+
+
+class TestLastCleanZoneStitch:
+    """Cloud entries for MQTT-initiated cleans carry no zone info — the
+    robot's retained cleaningProgramme echo fills the gap (matched on
+    cleanId)."""
+
+    async def _update(self, coordinator, clean):
+        sensor = DysonLastCleanSensor(coordinator, 0)
+        with (
+            patch(
+                "custom_components.hass_dyson.sensor.fetch_clean_maps",
+                new=AsyncMock(return_value=[clean]),
+            ),
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache",
+                _map_cache(_maps()),
+            ),
+        ):
+            await sensor.async_update()
+        return sensor
+
+    @pytest.mark.asyncio
+    async def test_matching_clean_id_stitches_zones(self, mock_robot_coordinator):
+        clean = _clean([], "map-down")
+        mock_robot_coordinator.device.robot_clean_id = "clean-1"
+        mock_robot_coordinator.device.robot_last_clean_zones = ["1"]
+        sensor = await self._update(mock_robot_coordinator, clean)
+        attrs = sensor._attr_extra_state_attributes
+        assert attrs["zone_ids"] == ["1"]
+        assert attrs["zone_names"] == ["Kitchen"]
+        assert attrs["zone_source"] == "device_mqtt"
+
+    @pytest.mark.asyncio
+    async def test_mismatched_clean_id_does_not_stitch(self, mock_robot_coordinator):
+        clean = _clean([], "map-down")
+        mock_robot_coordinator.device.robot_clean_id = "some-older-clean"
+        mock_robot_coordinator.device.robot_last_clean_zones = ["1"]
+        sensor = await self._update(mock_robot_coordinator, clean)
+        attrs = sensor._attr_extra_state_attributes
+        assert attrs["zone_ids"] == []
+        assert attrs["zone_source"] is None
+
+    @pytest.mark.asyncio
+    async def test_cloud_zones_win_over_stitch(self, mock_robot_coordinator):
+        clean = _clean(["2"], "map-up")
+        mock_robot_coordinator.device.robot_clean_id = "clean-1"
+        mock_robot_coordinator.device.robot_last_clean_zones = ["1"]
+        sensor = await self._update(mock_robot_coordinator, clean)
+        attrs = sensor._attr_extra_state_attributes
+        assert attrs["zone_ids"] == ["2"]
+        assert attrs["zone_source"] == "cloud"
+
+    @pytest.mark.asyncio
+    async def test_no_device_no_stitch(self, mock_robot_coordinator):
+        clean = _clean([], "map-down")
+        mock_robot_coordinator.device = None
+        sensor = await self._update(mock_robot_coordinator, clean)
+        assert sensor._attr_extra_state_attributes["zone_ids"] == []
+
+
+class TestStitchMapHint:
+    """Stitched cleans resolve colliding zone ids on the robot's own map."""
+
+    async def _update(self, coordinator, clean):
+        sensor = DysonLastCleanSensor(coordinator, 0)
+        with (
+            patch(
+                "custom_components.hass_dyson.sensor.fetch_clean_maps",
+                new=AsyncMock(return_value=[clean]),
+            ),
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache",
+                _map_cache(_maps()),
+            ),
+        ):
+            await sensor.async_update()
+        return sensor
+
+    @pytest.mark.asyncio
+    async def test_device_map_disambiguates_colliding_zone_id(
+        self, mock_robot_coordinator
+    ):
+        """Record without a map id: the retained MQTT map picks the names."""
+        clean = _clean([])  # no persistent_map_id, no zones — MQTT-initiated
+        mock_robot_coordinator.device.robot_clean_id = "clean-1"
+        mock_robot_coordinator.device.robot_last_clean_zones = ["1"]
+        mock_robot_coordinator.device.robot_current_map_id = "map-down"
+        sensor = await self._update(mock_robot_coordinator, clean)
+        assert sensor._attr_extra_state_attributes["zone_names"] == ["Kitchen"]
+
+    @pytest.mark.asyncio
+    async def test_other_map_resolves_its_own_name(self, mock_robot_coordinator):
+        clean = _clean([])
+        mock_robot_coordinator.device.robot_clean_id = "clean-1"
+        mock_robot_coordinator.device.robot_last_clean_zones = ["1"]
+        mock_robot_coordinator.device.robot_current_map_id = "map-up"
+        sensor = await self._update(mock_robot_coordinator, clean)
+        assert sensor._attr_extra_state_attributes["zone_names"] == ["Hallway"]
+
+
+class TestStitchEmptyZones:
+    @pytest.mark.asyncio
+    async def test_matching_id_with_empty_zone_list_does_not_stitch(
+        self, mock_robot_coordinator
+    ):
+        """A whole-house MQTT clean retains no programme zones — no stitch."""
+        clean = _clean([])
+        mock_robot_coordinator.device.robot_clean_id = "clean-1"
+        mock_robot_coordinator.device.robot_last_clean_zones = []
+        sensor = DysonLastCleanSensor(mock_robot_coordinator, 0)
+        with (
+            patch(
+                "custom_components.hass_dyson.sensor.fetch_clean_maps",
+                new=AsyncMock(return_value=[clean]),
+            ),
+            patch(
+                "custom_components.hass_dyson.services._persistent_map_cache",
+                _map_cache(_maps()),
+            ),
+        ):
+            await sensor.async_update()
+        attrs = sensor._attr_extra_state_attributes
+        assert attrs["zone_ids"] == []
+        assert attrs["zone_source"] is None

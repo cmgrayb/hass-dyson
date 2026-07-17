@@ -18,8 +18,10 @@ from .const import (
     CAPABILITY_FAULT_CODES,
     DEVICE_CATEGORY_EC,
     DEVICE_CATEGORY_FAULT_CODES,
+    DEVICE_CATEGORY_ROBOT,
     DOMAIN,
     FAULT_TRANSLATIONS,
+    ROBOT_FAULT_SUBSYSTEMS,
 )
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
 from .device_utils import mask_serial
@@ -168,6 +170,18 @@ async def async_setup_entry(
             _LOGGER.debug("Adding fault sensor for code: %s", fault_code)
         else:
             _LOGGER.debug("Skipping fault sensor for irrelevant code: %s", fault_code)
+
+    # Robot vacuums additionally report per-subsystem faults (AIRWAYS, LIFT,
+    # LOST, ...) in their STATE-CHANGE stream — a separate source from the
+    # CURRENT-FAULTS codes above.
+    if DEVICE_CATEGORY_ROBOT in _normalize_categories(device_categories):
+        for subsystem in ROBOT_FAULT_SUBSYSTEMS:
+            entities.append(DysonRobotFaultSensor(coordinator, subsystem))
+        _LOGGER.debug(
+            "Adding %d robot subsystem fault sensors for %s",
+            len(ROBOT_FAULT_SUBSYSTEMS),
+            coordinator.serial_number,
+        )
 
     async_add_entities(entities, True)
     return True
@@ -457,6 +471,59 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
             return "Maintenance"
         else:
             return "Unknown"
+
+
+class DysonRobotFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Per-subsystem fault sensor for robot vacuums.
+
+    Driven by the top-level ``faults`` dict in the robot's STATE-CHANGE
+    stream (see ``DysonDevice.robot_faults``). Distinct from the generic
+    CURRENT-FAULTS sensors above. Unknown until the robot's first
+    STATE-CHANGE after a restart — the dict is not sent while idle.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator, subsystem: str) -> None:
+        super().__init__(coordinator)
+        self._subsystem = subsystem
+        friendly, icon = ROBOT_FAULT_SUBSYSTEMS[subsystem]
+        self._attr_unique_id = (
+            f"{coordinator.serial_number}_robot_fault_{subsystem.lower()}"
+        )
+        self._attr_name = f"Fault {friendly}"
+        self._attr_icon = icon
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        device = self.coordinator.device
+        faults = getattr(device, "robot_faults", None) if device else None
+        if not isinstance(faults, dict) or self._subsystem not in faults:
+            # Not reported yet (restart, or firmware without the dict) —
+            # unknown, not "ok".
+            self._attr_is_on = None
+            self._attr_extra_state_attributes = {}
+            super()._handle_coordinator_update()
+            return
+
+        entry = faults.get(self._subsystem) or {}
+        active = bool(entry.get("active"))
+        self._attr_is_on = active
+        attributes: dict[str, Any] = {}
+        fault_code = entry.get("description")
+        if fault_code:
+            attributes["fault_code"] = fault_code
+            # Match the action metadata from the active-fault detail list.
+            detail_list = getattr(device, "robot_active_faults", None) or []
+            for detail in detail_list:
+                if isinstance(detail, dict) and detail.get("faultCode") == fault_code:
+                    for key in ("requiredUserAction", "nextActionRequired"):
+                        if detail.get(key):
+                            attributes[key] = detail[key]
+                    break
+        self._attr_extra_state_attributes = attributes
+        super()._handle_coordinator_update()
 
 
 # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection

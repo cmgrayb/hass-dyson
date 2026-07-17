@@ -1785,12 +1785,30 @@ class DysonDevice:
         # the latest values so the current-map sensor and cross-map zone
         # guards can read them (CURRENT-STATE merges whole payloads above,
         # but STATE-CHANGE arrives first when a clean starts).
-        for key in ("persistentMapId", "zoneStatus"):
+        for key in (
+            "persistentMapId",
+            "zoneStatus",
+            "newZoneId",
+            "faults",
+            "newActiveFaults",
+            "cleanId",
+            "sessionId",
+        ):
             if key in data:
                 self._state_data[key] = data[key]
+        # traverseTargetId is only meaningful while actually traversing —
+        # a state-bearing message without it means the transit is over.
+        if "traverseTargetId" in data:
+            self._state_data["traverseTargetId"] = data["traverseTargetId"]
+        elif data.get("newstate") or data.get("state"):
+            self._state_data.pop("traverseTargetId", None)
         programme = data.get("cleaningProgramme")
-        if isinstance(programme, dict) and programme.get("persistentMapId"):
-            self._state_data["persistentMapId"] = programme["persistentMapId"]
+        if isinstance(programme, dict):
+            # Retain the whole echoed programme: the cloud omits zone info
+            # for MQTT-initiated cleans, so this is the only zone record.
+            self._state_data["cleaningProgramme"] = programme
+            if programme.get("persistentMapId"):
+                self._state_data["persistentMapId"] = programme["persistentMapId"]
         self._update_robot_session(data.get("newstate") or data.get("state"))
         _LOGGER.debug("State change for %s", self._log_serial)
 
@@ -2827,6 +2845,71 @@ class DysonDevice:
         restart until the robot reports activity.
         """
         return self._robot_session_active
+
+    @property
+    def robot_current_zone_id(self) -> str | None:
+        """Return the zone the robot is in, from the MQTT state stream.
+
+        STATE-CHANGE carries ``newZoneId`` and CURRENT-STATE ``zoneId`` on
+        every message during cleans — including whole-house cleans, where
+        ``zoneStatus`` is absent. Zone id ``"0"`` (dock / no zone) maps to
+        None.
+        """
+        value = self._state_data.get("newZoneId") or self._state_data.get("zoneId")
+        if not isinstance(value, str) or value in ("", "0"):
+            return None
+        return value
+
+    @property
+    def robot_traverse_target_id(self) -> str | None:
+        """Return the zone the robot is heading to, while traversing only."""
+        value = self._state_data.get("traverseTargetId")
+        if not isinstance(value, str) or value in ("", "0"):
+            return None
+        return value
+
+    @property
+    def robot_faults(self) -> dict | None:
+        """Return the robot's per-subsystem fault map, if reported.
+
+        STATE-CHANGE carries a top-level ``faults`` dict keyed by subsystem
+        (AIRWAYS, BATTERY, BRUSH_BAR_AND_TRACTION, CHARGE_STATION, LIFT,
+        LOST, OPTICS) with ``{"active": bool}`` plus a ``description`` fault
+        code while active. Not sent in CURRENT-STATE, so this is None after
+        a restart until the robot's next STATE-CHANGE.
+        """
+        value = self._state_data.get("faults")
+        return value if isinstance(value, dict) else None
+
+    @property
+    def robot_active_faults(self) -> list | None:
+        """Return the robot's active-fault detail list, if reported.
+
+        ``newActiveFaults`` (STATE-CHANGE) / ``activeFaults`` (CURRENT-STATE)
+        entries carry ``faultCode``, ``requiredUserAction`` (e.g.
+        USER_RECOVERABLE) and ``nextActionRequired`` (e.g. WAIT_TO_CLEAR).
+        """
+        value = self._state_data.get("newActiveFaults")
+        if not isinstance(value, list):
+            value = self._state_data.get("activeFaults")
+        return value if isinstance(value, list) else None
+
+    @property
+    def robot_last_clean_zones(self) -> list[str]:
+        """Zones targeted by the current/most recent MQTT-commanded clean.
+
+        From the ``cleaningProgramme`` echo the robot repeats in its state
+        stream during zone cleans. Empty for whole-house cleans and after a
+        restart. Pairs with :attr:`robot_clean_id` so cloud history entries
+        — which omit zone info for MQTT-initiated cleans — can be enriched.
+        """
+        programme = self._state_data.get("cleaningProgramme")
+        if not isinstance(programme, dict):
+            return []
+        zones = list(programme.get("orderedZones") or []) + list(
+            programme.get("unorderedZones") or []
+        )
+        return [str(z) for z in zones if z]
 
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""

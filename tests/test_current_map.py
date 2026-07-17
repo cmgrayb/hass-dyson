@@ -576,3 +576,51 @@ class TestCurrentMapSensor:
         ):
             await sensor.async_update()
         fetch_maps.assert_awaited_once()
+
+
+class TestCurrentZoneAttribute:
+    """current_zone / traverse_target on the current-map sensor."""
+
+    @staticmethod
+    def _sensor_with_zone(zone_id, target=None, session=True):
+        coordinator = MagicMock()
+        coordinator.serial_number = SERIAL
+        coordinator.device = MagicMock()
+        coordinator.device.robot_current_map_id = "map-down"
+        coordinator.device.robot_zone_status = None
+        coordinator.device.robot_state = "FULL_CLEAN_RUNNING"
+        coordinator.device.robot_session_active = session
+        coordinator.device.robot_current_zone_id = zone_id
+        coordinator.device.robot_traverse_target_id = target
+        return DysonCurrentMapSensor(coordinator)
+
+    def test_zone_name_resolved_while_active(self):
+        sensor = self._sensor_with_zone("3")
+        p1, p2 = TestCurrentMapSensor._patched(_maps())
+        with p1, p2:
+            attrs = sensor.extra_state_attributes
+        assert attrs["current_zone"] == "Mud Room"
+        assert "traverse_target" not in attrs
+
+    def test_traverse_target_resolved_during_transit(self):
+        sensor = self._sensor_with_zone("1", target="3")
+        p1, p2 = TestCurrentMapSensor._patched(_maps())
+        with p1, p2:
+            attrs = sensor.extra_state_attributes
+        assert attrs["current_zone"] == "Hallway"
+        assert attrs["traverse_target"] == "Mud Room"
+
+    def test_hidden_when_session_closed(self):
+        sensor = self._sensor_with_zone("3", session=False)
+        sensor.coordinator.device.robot_state = "INACTIVE_CHARGED"
+        p1, p2 = TestCurrentMapSensor._patched(_maps())
+        with p1, p2:
+            attrs = sensor.extra_state_attributes
+        assert "current_zone" not in attrs
+
+    def test_unknown_zone_id_passes_through_raw(self):
+        sensor = self._sensor_with_zone("99")
+        p1, p2 = TestCurrentMapSensor._patched(_maps())
+        with p1, p2:
+            attrs = sensor.extra_state_attributes
+        assert attrs["current_zone"] == "99"

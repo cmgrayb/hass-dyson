@@ -524,6 +524,19 @@ ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
 # payload is only {msg, time} — re-fetch the cloud metadata to see what.
 ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
 
+# Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
+# dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
+# product-state CURRENT-FAULTS codes the generic fault sensors read.
+ROBOT_FAULT_SUBSYSTEMS: Final = {
+    "AIRWAYS": ("Airways", "mdi:weather-windy"),
+    "BATTERY": ("Battery", "mdi:battery-alert"),
+    "BRUSH_BAR_AND_TRACTION": ("Brush Bar & Traction", "mdi:robot-vacuum-alert"),
+    "CHARGE_STATION": ("Charge Station", "mdi:ev-station"),
+    "LIFT": ("Lift", "mdi:arrow-up-bold-box"),
+    "LOST": ("Lost", "mdi:map-marker-question"),
+    "OPTICS": ("Optics", "mdi:camera-off"),
+}
+
 # Robot Vacuum Cleaning Types
 ROBOT_CLEAN_TYPE_IMMEDIATE: Final = "immediate"
 ROBOT_CLEAN_TYPE_MANUAL: Final = "manual"
