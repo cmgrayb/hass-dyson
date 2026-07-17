@@ -311,6 +311,8 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
             "sys": "System",
             "brsh": "Brush",
             "bin": "Dustbin",
+            "tnke": "Water Level",
+            "tnkp": "Water Tank Status",
         }
         return fault_names.get(self._fault_code, self._fault_code.upper())
 
