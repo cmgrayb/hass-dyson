@@ -18,8 +18,8 @@
   ],
   "quality_scale": "gold",
   "requirements": [
-    "libdyson-rest==0.15.0",
+    "libdyson-rest==0.16.0b3",
     "paho-mqtt>=2.1.0"
   ],
-  "version": "0.36.0-beta.2"
+  "version": "0.36.0-beta.3"
 }

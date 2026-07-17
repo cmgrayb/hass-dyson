@@ -71,6 +71,14 @@ _LOGGER = logging.getLogger(__name__)
 _CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
 _EXTENDED_CULTURE_PATTERN = re.compile(r"^([a-z]{2})-[A-Za-z]+-([A-Z]{2})$")
 
+# Extracts the HTTP status code from a libdyson-rest error message.  httpx
+# renders status failures as "Client error '404 Not Found' for url '...'" /
+# "Server error '500 Internal Server Error' for url '...'", and DysonAPIError
+# wraps that text verbatim.  Anchoring on that shape — rather than matching any
+# 3-digit number — keeps digit groups in URLs or serial numbers from being
+# mistaken for HTTP statuses.  Used by async_discover_map_api_version.
+_HTTP_STATUS_RE = re.compile(r"\b(?:Client|Server) error '([45]\d{2})\b")
+
 
 # Sensitive config-entry field names that must be redacted from logs.
 # Token, password, secret, credential, key (case-insensitive substring match).
@@ -262,6 +270,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
         self._device_type: str = ""  # Will be extracted from device info
+        self._map_api_version: int | None = (
+            None  # Discovered lazily via async_discover_map_api_version
+        )
         self._firmware_version: str = "Unknown"
         self._firmware_auto_update_enabled: bool = False
         self._services_registered: bool = False
@@ -355,6 +366,98 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             >>>     heating_available = True
         """
         return self._device_type
+
+    async def async_discover_map_api_version(self, client) -> int:  # type: ignore[override]
+        """Probe and cache the map-endpoint API version for this device.
+
+        Calls ``get_clean_maps`` with ``api_version=1`` as a lightweight probe
+        (dust maps excluded so no large payloads are transferred).
+
+        Outcomes:
+
+        - Probe succeeds → the device is served by the v1 endpoints
+          (360 Vis Nav); ``1`` is cached.
+        - Probe fails with a definitive HTTP 4xx → the device is not served
+          by the v1 endpoints (360 Spot+Clean / Spot+Scrub and newer);
+          ``2`` is cached.
+        - Probe fails with an HTTP 5xx → ambiguous: a v2-only device sees
+          this, but so does a Vis Nav during a transient cloud incident.
+          ``2`` is returned for this call but NOT cached, so a Vis Nav is
+          not locked onto v2 endpoints (which fail for it) until the next
+          restart — the probe re-runs on the next map call and recovers
+          together with the cloud.
+        - Auth or non-HTTP errors → ``1`` is returned without caching and
+          the caller surfaces the underlying failure.
+
+        Once a result is cached, subsequent calls return it immediately
+        without any network request.
+
+        Args:
+            client: An authenticated ``AsyncDysonClient`` instance.
+
+        Returns:
+            ``1`` for v1-served devices (360 Vis Nav), ``2`` for v2-served
+            devices (360 Spot+Clean / Spot+Scrub and newer).
+        """
+        if self._map_api_version is not None:
+            return self._map_api_version
+
+        try:
+            await client.get_clean_maps(
+                self.serial_number,
+                api_version=1,
+                include_dust_map=False,
+            )
+            self._map_api_version = 1
+            _LOGGER.debug(
+                "Map API version for %s: v1 (probe succeeded)",
+                self.serial_number,
+            )
+        except DysonAuthError:
+            # Auth failure is not version-related; do not cache, return v1
+            # as a best-guess and let the caller surface the auth error.
+            _LOGGER.debug(
+                "Map API version probe for %s: auth error — defaulting to v1",
+                self.serial_number,
+            )
+            return 1
+        except DysonAPIError as err:
+            err_str = str(err)
+            status_match = _HTTP_STATUS_RE.search(err_str)
+            if status_match is None:
+                # Non-HTTP error (connection failure, unexpected response
+                # shape, etc.); do not cache so the next call retries the
+                # probe.
+                _LOGGER.warning(
+                    "Map API version probe for %s: unexpected error '%s'"
+                    " — defaulting to v1 for this call",
+                    self.serial_number,
+                    err_str,
+                )
+                return 1
+            status = int(status_match.group(1))
+            if status >= 500:
+                # Ambiguous: a v2-only device sees a 5xx on v1, but so does
+                # a Vis Nav during a transient cloud incident.  Use v2 for
+                # this call without caching; callers fall back to their
+                # stale TTL caches if v2 then fails, and the next map call
+                # re-probes.
+                _LOGGER.warning(
+                    "Map API version probe for %s: v1 endpoint returned"
+                    " HTTP %d — using v2 for this call without caching",
+                    self.serial_number,
+                    status,
+                )
+                return 2
+            self._map_api_version = 2
+            _LOGGER.info(
+                "Map API version for %s: v2 (v1 probe returned HTTP %d"
+                " — device uses v2 endpoints)",
+                self.serial_number,
+                status,
+            )
+
+        return self._map_api_version
 
     @property
     def firmware_version(self) -> str:
@@ -2036,12 +2139,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         if product_type:
-            # PH model (Purifier/Humidifier) should have virtual Humidifier capability
-            if product_type.startswith("PH"):
+            # PH and 358-series models (Purifier/Humidifier) should have virtual Humidifier capability
+            if product_type.startswith("PH") or product_type.startswith("358"):
                 if "Humidifier" not in capabilities:
                     capabilities.append("Humidifier")
                     _LOGGER.debug(
-                        "Added virtual Humidifier capability for PH model %s",
+                        "Added virtual Humidifier capability for model %s",
                         product_type,
                     )
 

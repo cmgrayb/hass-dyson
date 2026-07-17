@@ -295,7 +295,11 @@ async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: st
         if client is None:
             return _persist_map_cache.get_stale(key)
         try:
-            pmap = await client.get_persistent_map(coordinator.serial_number, map_id)
+            pmap = await client.get_persistent_map(
+                coordinator.serial_number,
+                map_id,
+                api_version=await coordinator.async_discover_map_api_version(client),
+            )
         except (DysonAPIError, DysonAuthError) as err:
             _LOGGER.debug(
                 "Failed to fetch persistent map %s for %s: %s",
@@ -764,7 +768,6 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
     """Dust-density heatmap of the most recent clean, rendered as PNG."""
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_content_type = "image/png"
 
     def __init__(
@@ -777,6 +780,11 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         self._attr_icon = "mdi:map-search"
         self._cached_clean_id: str | None = None
         self._cached_png: bytes | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
 
     async def _build(self) -> bytes | None:
         cleans = await fetch_clean_maps(self.coordinator)
@@ -903,7 +911,6 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_content_type = "image/png"
 
     def __init__(
@@ -916,6 +923,11 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         self._attr_icon = "mdi:floor-plan"
         self._cached_pmap_id: str | None = None
         self._cached_png: bytes | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
 
     async def _build(self) -> bytes | None:
         cleans = await fetch_clean_maps(self.coordinator)
