@@ -60,7 +60,12 @@ from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
-from .services import _fetch_persistent_map_metadata, _persistent_map_cache, _select_map
+from .services import (
+    _effective_current_map,
+    _fetch_persistent_map_metadata,
+    _persistent_map_cache,
+    _select_map,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -566,9 +571,15 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
                 )
             zone_ids = zone_ids + bare_ids
         else:
-            # Selection by named identification: current map when the cloud
-            # flags one, the only map, or the map the zones uniquely match.
-            pmap = _select_map(maps, None, bare_ids)
+            # Selection by named identification: the map the robot is on
+            # (MQTT-reported or cloud-flagged), the only map, or the map the
+            # zones uniquely match.
+            pmap = _select_map(
+                maps,
+                None,
+                bare_ids,
+                current_map=_effective_current_map(maps, self.coordinator),
+            )
             zone_ids = bare_ids
 
         unknown = [z for z in zone_ids if not any(zz.id == z for zz in pmap.zones)]
