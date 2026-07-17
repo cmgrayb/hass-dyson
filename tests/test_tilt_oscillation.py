@@ -453,3 +453,95 @@ class TestDeviceSetTiltOscillation:
 
         with pytest.raises(ValueError, match="Invalid tilt oscillation option"):
             await DysonDevice.set_tilt_oscillation(device, "invalid")
+
+
+# ---------------------------------------------------------------------------
+# DysonTiltOscillationModeSelect — extra_state_attributes (scene support)
+# ---------------------------------------------------------------------------
+
+
+class TestTiltOscillationExtraStateAttributes:
+    """Test extra_state_attributes for scene support."""
+
+    def _make_entity(self, coordinator, state: dict) -> DysonTiltOscillationModeSelect:
+        """Helper: build entity with given product-state."""
+        coordinator.data = {"product-state": state}
+        coordinator.device.get_state_value = Mock(
+            side_effect=lambda data, key, default: data.get(key, default)
+        )
+        entity = DysonTiltOscillationModeSelect(coordinator)
+        entity._attr_current_option = entity._detect_tilt_mode()
+        return entity
+
+    def test_returns_none_when_no_device(self, tilt_coordinator):
+        """Returns None when device is unavailable."""
+        tilt_coordinator.device = None
+        entity = DysonTiltOscillationModeSelect(tilt_coordinator)
+        assert entity.extra_state_attributes is None
+
+    def test_zero_degrees_attributes(self, tilt_coordinator):
+        """Correct attributes for 0° tilt."""
+        state = {"oton": "OFF", "otal": "0000", "otau": "0000", "anct": "CUST"}
+        entity = self._make_entity(tilt_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["tilt_mode"] == "0°"
+        assert attrs["tilt_oscillation_on"] is False
+        assert attrs["tilt_angle_lower"] == 0
+        assert attrs["tilt_angle_upper"] == 0
+        assert attrs["tilt_angle_control"] == "CUST"
+
+    def test_25_degrees_attributes(self, tilt_coordinator):
+        """Correct attributes for 25° tilt."""
+        state = {"oton": "OFF", "otal": "0025", "otau": "0025", "anct": "CUST"}
+        entity = self._make_entity(tilt_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["tilt_mode"] == "25°"
+        assert attrs["tilt_oscillation_on"] is False
+        assert attrs["tilt_angle_lower"] == 25
+        assert attrs["tilt_angle_upper"] == 25
+        assert attrs["tilt_angle_control"] == "CUST"
+
+    def test_50_degrees_attributes(self, tilt_coordinator):
+        """Correct attributes for 50° tilt."""
+        state = {"oton": "OFF", "otal": "0050", "otau": "0050", "anct": "CUST"}
+        entity = self._make_entity(tilt_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["tilt_mode"] == "50°"
+        assert attrs["tilt_oscillation_on"] is False
+        assert attrs["tilt_angle_lower"] == 50
+        assert attrs["tilt_angle_upper"] == 50
+        assert attrs["tilt_angle_control"] == "CUST"
+
+    def test_breeze_attributes(self, tilt_coordinator):
+        """Correct attributes for Breeze tilt mode."""
+        state = {"oton": "ON", "otal": "0359", "otau": "0359", "anct": "BRZE"}
+        entity = self._make_entity(tilt_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert attrs["tilt_mode"] == "Breeze"
+        assert attrs["tilt_oscillation_on"] is True
+        assert attrs["tilt_angle_lower"] == 359
+        assert attrs["tilt_angle_upper"] == 359
+        assert attrs["tilt_angle_control"] == "BRZE"
+
+    def test_all_required_keys_present(self, tilt_coordinator):
+        """All five expected keys are always present."""
+        state = {"oton": "OFF", "otal": "0025", "otau": "0025", "anct": "CUST"}
+        entity = self._make_entity(tilt_coordinator, state)
+
+        attrs = entity.extra_state_attributes
+
+        assert set(attrs.keys()) == {
+            "tilt_mode",
+            "tilt_oscillation_on",
+            "tilt_angle_lower",
+            "tilt_angle_upper",
+            "tilt_angle_control",
+        }

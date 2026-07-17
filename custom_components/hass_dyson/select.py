@@ -1319,3 +1319,38 @@ class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
                 self.coordinator.serial_number,
                 err,
             )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return tilt oscillation state attributes for scene support."""
+        if not self.coordinator.device:
+            return None
+
+        attributes: dict[str, Any] = {}
+        product_state = self.coordinator.data.get("product-state", {})
+
+        # Current tilt mode for scene support
+        attributes["tilt_mode"] = self._attr_current_option
+
+        # Raw oton value — ON means Breeze mode is active
+        oton = self.coordinator.device.get_state_value(product_state, "oton", "OFF")
+        attributes["tilt_oscillation_on"] = oton == "ON"
+
+        # Raw tilt angles (otal == otau in all observed traces)
+        try:
+            otal = self.coordinator.device.get_state_value(
+                product_state, "otal", "0000"
+            )
+            otau = self.coordinator.device.get_state_value(
+                product_state, "otau", "0000"
+            )
+            attributes["tilt_angle_lower"] = int(otal.lstrip("0") or "0")
+            attributes["tilt_angle_upper"] = int(otau.lstrip("0") or "0")
+        except (ValueError, TypeError):
+            pass
+
+        # Angle control preset (CUST or BRZE)
+        anct = self.coordinator.device.get_state_value(product_state, "anct", "CUST")
+        attributes["tilt_angle_control"] = anct
+
+        return attributes
