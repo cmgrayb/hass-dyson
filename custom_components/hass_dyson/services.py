@@ -693,6 +693,33 @@ def _current_map(maps: list):
     return current[0] if len(current) == 1 else None
 
 
+# Robot states in which the MQTT-reported map is live truth. Docked/idle the
+# robot stops reporting a map, and HA cannot tell whether it has been carried
+# to another floor — so a retained value must not gate anything.
+_ACTIVE_ROBOT_STATE_PREFIXES = ("FULL_CLEAN", "MAPPING")
+
+
+def _effective_current_map(maps: list, coordinator=None):
+    """Return the map the robot is on, from the best available signal.
+
+    The robot's MQTT stream is authoritative only while it is actually
+    working a map (it stops reporting once docked, so a retained value
+    cannot see the robot being carried to another floor); otherwise fall
+    back to the cloud isCurrentMap flag, which v2 (Spot+Clean) devices
+    update on self-detected relocation — the Vis Nav v1 endpoint never
+    sends it. Returns None when neither signal is available; callers
+    treat that as "currency unknown" and fail open rather than block.
+    """
+    device = getattr(coordinator, "device", None) if coordinator else None
+    map_id = getattr(device, "robot_current_map_id", None)
+    robot_state = str(getattr(device, "robot_state", "") or "")
+    if map_id and robot_state.startswith(_ACTIVE_ROBOT_STATE_PREFIXES):
+        match = next((m for m in maps if m.id == map_id), None)
+        if match is not None:
+            return match
+    return _current_map(maps)
+
+
 def _maps_summary(maps: list) -> str:
     """Human-readable map→zones listing for error messages."""
     return "; ".join(
@@ -707,6 +734,7 @@ def _select_map(
     zone_entries: list[str],
     *,
     prefer_current: bool = True,
+    current_map=None,
 ):
     """Pick the persistent map a zone operation should target.
 
@@ -714,9 +742,10 @@ def _select_map(
       1. explicit ``requested`` map — exact ID, else case-insensitive name;
       2. the only map, when there is just one;
       3. with ``prefer_current`` (physical cleans, where the robot can only
-         work the map it is on): the map the cloud flags as current
-         (isCurrentMap), then the single map on which every requested zone
-         resolves;
+         work the map it is on): the current map — ``current_map`` when the
+         caller resolved one (e.g. from the robot's MQTT state via
+         ``_effective_current_map``), else the cloud isCurrentMap flag —
+         then the single map on which every requested zone resolves;
       4. without it (cloud-only ops like zone behaviours, valid for any
          map): zone resolution first, currency only as ambiguity tiebreak;
       5. otherwise raise, listing the maps so the caller can pass ``map``.
@@ -742,7 +771,7 @@ def _select_map(
     if len(maps) == 1:
         return maps[0]
 
-    current = _current_map(maps)
+    current = current_map if current_map is not None else _current_map(maps)
     if prefer_current and current is not None:
         return current
 
@@ -782,7 +811,12 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
             f"No persistent maps returned for {coordinator.serial_number} — "
             "has the robot finished its initial map run?"
         )
-    pmap = _select_map(maps, requested_map, requested_zones)
+    pmap = _select_map(
+        maps,
+        requested_map,
+        requested_zones,
+        current_map=_effective_current_map(maps, coordinator),
+    )
     pmap_id = pmap.id
 
     resolved_ids: list[str] = []
@@ -868,7 +902,13 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
     maps = await _fetch_persistent_map_metadata(coordinator)
     if not maps:
         raise HomeAssistantError(f"No persistent maps for {coordinator.serial_number}")
-    pmap = _select_map(maps, requested_map, [zone_in], prefer_current=False)
+    pmap = _select_map(
+        maps,
+        requested_map,
+        [zone_in],
+        prefer_current=False,
+        current_map=_effective_current_map(maps, coordinator),
+    )
     pmap_id = pmap.id
     zone = _zone_in_map(pmap, zone_in)
     if zone is None:

@@ -1771,6 +1771,18 @@ class DysonDevice:
         if "product-state" not in self._state_data:
             self._state_data["product-state"] = {}
         self._state_data["product-state"].update(normalized_product_state)
+
+        # Robot vacuums report the active persistent map and per-zone
+        # progress at the top level of state messages during cleans; retain
+        # the latest values so the current-map sensor and cross-map zone
+        # guards can read them (CURRENT-STATE merges whole payloads above,
+        # but STATE-CHANGE arrives first when a clean starts).
+        for key in ("persistentMapId", "zoneStatus"):
+            if key in data:
+                self._state_data[key] = data[key]
+        programme = data.get("cleaningProgramme")
+        if isinstance(programme, dict) and programme.get("persistentMapId"):
+            self._state_data["persistentMapId"] = programme["persistentMapId"]
         _LOGGER.debug("State change for %s", self._log_serial)
 
     def _notify_callbacks(self, topic: str, data: dict[str, Any]) -> None:
@@ -2730,6 +2742,28 @@ class DysonDevice:
                 "Failed to get robot clean ID for %s: %s", self._log_serial, e
             )
             return None
+
+    @property
+    def robot_current_map_id(self) -> str | None:
+        """Return the persistent map the robot last reported operating on.
+
+        Sourced from the MQTT state stream (present during cleans, retained
+        afterwards). None until the robot has reported a map this session —
+        the 360 Vis Nav does not include it while idle on the dock.
+        """
+        value = self._state_data.get("persistentMapId")
+        return str(value) if value else None
+
+    @property
+    def robot_zone_status(self) -> list | None:
+        """Return the robot's per-zone clean progress, if reported.
+
+        List of ``{"zoneId": str, "cleanStatus": str}`` dicts from the MQTT
+        state stream during zone cleans (e.g. CLEAN_IN_PROGRESS /
+        CLEAN_NOT_REQUESTED), retained after the clean ends.
+        """
+        value = self._state_data.get("zoneStatus")
+        return value if isinstance(value, list) else None
 
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""

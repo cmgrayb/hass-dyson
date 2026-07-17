@@ -881,6 +881,149 @@ class TestDysonZoneCleanButton:
         ):
             assert btn.available is False
 
+    def test_available_false_when_robot_reports_other_map(self, mock_robot_coordinator):
+        """The robot's own MQTT-reported map gates availability (no cloud flag)."""
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        mock_robot_coordinator.device.robot_current_map_id = "pmap-2"
+        mock_robot_coordinator.device.robot_state = "FULL_CLEAN_RUNNING"
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            assert btn.available is False
+
+    def test_available_true_when_robot_on_own_map(self, mock_robot_coordinator):
+        """A zone button on the robot's actively-reported map stays available."""
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        mock_robot_coordinator.device.robot_current_map_id = "pmap-1"
+        mock_robot_coordinator.device.robot_state = "FULL_CLEAN_RUNNING"
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            assert btn.available is True
+
+    @pytest.mark.asyncio
+    async def test_async_press_blocked_when_robot_reports_other_map(
+        self, mock_robot_coordinator
+    ):
+        """MQTT-reported map blocks a cross-map press even without cloud flags."""
+        mock_robot_coordinator.device.robot_start_clean = AsyncMock()
+        mock_robot_coordinator.device.robot_current_map_id = "pmap-2"
+        mock_robot_coordinator.device.robot_state = "FULL_CLEAN_RUNNING"
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            with pytest.raises(HomeAssistantError, match="currently using map"):
+                await btn.async_press()
+
+        mock_robot_coordinator.device.robot_start_clean.assert_not_called()
+
+    def test_available_when_docked_despite_retained_map(self, mock_robot_coordinator):
+        """Docked robot: the retained MQTT map must not gate availability."""
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        mock_robot_coordinator.device.robot_current_map_id = "pmap-2"
+        mock_robot_coordinator.device.robot_state = "INACTIVE_CHARGED"
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            assert btn.available is True
+
+    @pytest.mark.asyncio
+    async def test_async_press_allowed_when_docked_despite_retained_map(
+        self, mock_robot_coordinator
+    ):
+        """Docked robot: a retained other-map value must not block a press."""
+        mock_robot_coordinator.device.robot_start_clean = AsyncMock()
+        mock_robot_coordinator.device.robot_current_map_id = "pmap-2"
+        mock_robot_coordinator.device.robot_state = "INACTIVE_CHARGED"
+        cached_maps = [
+            PersistentMapMeta(
+                id="pmap-1",
+                name="Upstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+            PersistentMapMeta(
+                id="pmap-2",
+                name="Downstairs",
+                zones_definition_last_updated_date=None,
+                zones=[],
+            ),
+        ]
+        cache = MagicMock()
+        cache.get_stale.return_value = cached_maps
+        btn = self._make(mock_robot_coordinator)  # belongs to pmap-1
+        with patch(
+            "custom_components.hass_dyson.services._persistent_map_cache", cache
+        ):
+            await btn.async_press()
+
+        mock_robot_coordinator.device.robot_start_clean.assert_called_once()
+
     def test_available_when_currency_unknown(self, mock_robot_coordinator):
         """No isCurrentMap flag anywhere (v1 API) → every button stays available."""
         cached_maps = [

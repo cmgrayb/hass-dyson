@@ -96,6 +96,13 @@ class TestSelectMap:
         maps = _two_maps(current="map-down")
         assert _select_map(maps, None, ["Hallway"]).id == "map-down"
 
+    def test_caller_resolved_current_map_wins(self):
+        # The robot's MQTT-derived map (resolved by the caller via
+        # _effective_current_map) short-circuits without any cloud flag.
+        maps = _two_maps()
+        pmap = _select_map(maps, None, ["Hallway"], current_map=maps[1])
+        assert pmap.id == "map-down"
+
     def test_current_map_wins_over_zone_inference(self):
         # "Office" only exists Upstairs, but the robot is on Downstairs —
         # physical cleans must target the map the robot is on.
