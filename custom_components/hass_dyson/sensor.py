@@ -3402,13 +3402,17 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_icon = "mdi:lightbulb-on-outline"
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_recommended_clean"
         self._attr_name = "Recommended Clean"
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
 
     async def async_update(self) -> None:
         data = await _fetch_recommended_cleans(self.coordinator)
