@@ -283,9 +283,7 @@ async def async_setup_entry(
         if isinstance(raw_ps, dict):
             ff_product_state = raw_ps
     if "soon" in ff_product_state:
-        entities.append(DysonFindFollowScanButton(coordinator))
-
-    async_add_entities(entities, True)
+        async_add_entities([DysonFindFollowScanButton(coordinator)], True)
 
 
 class DysonReconnectButton(DysonEntity, ButtonEntity):
