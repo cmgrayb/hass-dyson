@@ -874,8 +874,17 @@ class TestDysonZoneCleanButton:
 
         mock_robot_coordinator.device.robot_start_clean.assert_called_once()
 
-    def test_available_false_when_other_map_is_current(self, mock_robot_coordinator):
-        """Button is unavailable while the cloud flags a different map current."""
+    def test_available_true_even_when_other_map_is_current(
+        self, mock_robot_coordinator
+    ):
+        """A non-current map's button stays available (no per-clean churn).
+
+        Gating availability on map currency made every other-map button flip
+        unavailable→available on each clean, spamming the logbook. The button
+        now stays available even when the cloud flags a different map current;
+        the cross-map command is still blocked at press time (see the
+        async_press guard tests).
+        """
         cached_maps = [
             PersistentMapMeta(
                 id="pmap-2",
@@ -891,10 +900,19 @@ class TestDysonZoneCleanButton:
         with patch(
             "custom_components.hass_dyson.services._persistent_map_cache", cache
         ):
-            assert btn.available is False
+            assert btn.available is True
 
-    def test_available_false_when_robot_reports_other_map(self, mock_robot_coordinator):
-        """The robot's own MQTT-reported map gates availability (no cloud flag)."""
+    def test_available_true_even_when_robot_reports_other_map(
+        self, mock_robot_coordinator
+    ):
+        """Mid-clean on another map, the button still reports available.
+
+        This is the scenario that previously produced the logbook churn: the
+        robot actively reports a different map, so the old gate flipped this
+        button unavailable for the duration of the clean. Availability no
+        longer depends on the map; the async_press guard still blocks the
+        cross-map command.
+        """
         cached_maps = [
             PersistentMapMeta(
                 id="pmap-1",
@@ -917,7 +935,7 @@ class TestDysonZoneCleanButton:
         with patch(
             "custom_components.hass_dyson.services._persistent_map_cache", cache
         ):
-            assert btn.available is False
+            assert btn.available is True
 
     def test_available_true_when_robot_on_own_map(self, mock_robot_coordinator):
         """A zone button on the robot's actively-reported map stays available."""

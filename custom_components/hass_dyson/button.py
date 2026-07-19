@@ -418,23 +418,20 @@ class DysonZoneCleanButton(DysonEntity, ButtonEntity):
 
     @property
     def available(self) -> bool:
-        """Unavailable while the robot is known to be on a different map.
+        """Available whenever the device is connected and the zone still exists.
 
-        The signal is the robot's MQTT-reported map (announced during every
-        clean), falling back to the cloud isCurrentMap flag. When neither is
-        available (e.g. a freshly restarted Vis Nav on its dock — the v1 API
-        omits isCurrentMap) every zone button stays available. A button whose
-        zone was deleted in the MyDyson app is always unavailable.
+        Deliberately does NOT gray out buttons for maps the robot is not
+        currently on. The map-currency signal is only known mid-clean (the v1
+        API omits isCurrentMap while docked), so gating availability on it made
+        every other-map button flip unavailable→available on each clean, churning
+        the logbook with spurious entries. Wrong-map presses are still blocked at
+        press time by async_press, which fails closed during a clean and open
+        when currency is unknown. A button whose zone was deleted in the MyDyson
+        app stays unavailable.
         """
         if self._zone_deleted:
             return False
-        if not super().available:
-            return False
-        from .services import _effective_current_map, _persistent_map_cache
-
-        maps = _persistent_map_cache.get_stale(self.coordinator.serial_number) or []
-        current = _effective_current_map(maps, self.coordinator)
-        return current is None or current.id == self._pmap_id
+        return super().available
 
     async def async_press(self) -> None:
         if self._zone_deleted:
