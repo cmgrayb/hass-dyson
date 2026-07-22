@@ -1319,6 +1319,10 @@ class TestDysonDustMapImage:
         with self._PATCH_IMAGE_INIT, self._PATCH_DYSON_INIT:
             entity = DysonDustMapImage(MagicMock(), coordinator)
         entity.coordinator = coordinator
+        entity.hass = MagicMock()
+        entity.hass.async_add_executor_job = AsyncMock(
+            side_effect=lambda func, *args: func(*args)
+        )
         return entity
 
     def test_init_sets_unique_id(self, mock_coordinator):
@@ -1341,7 +1345,7 @@ class TestDysonDustMapImage:
     def test_init_cache_attrs_are_none(self, mock_coordinator):
         """Cache attributes start as None."""
         entity = self._make_entity(mock_coordinator)
-        assert entity._cached_clean_id is None
+        assert entity._render_cache_key is None
         assert entity._cached_png is None
 
     @pytest.mark.asyncio
@@ -1423,7 +1427,7 @@ class TestDysonDustMapImage:
             result = await entity._build()
         assert result == rendered_png
         mock_fetch_map_image.assert_awaited_once_with(mock_coordinator, "clean-v2")
-        assert entity._cached_clean_id == "clean-v2"
+        assert entity._render_cache_key == ("v2", "clean-v2")
         assert entity._cached_png == rendered_png
 
     @pytest.mark.asyncio
@@ -1497,24 +1501,64 @@ class TestDysonDustMapImage:
             result = await entity._build()
         assert result == fallback_png
         mock_fallback.assert_awaited_once_with(mock_coordinator, "clean-v2")
-        assert entity._cached_clean_id == "clean-v2"
+        assert entity._render_cache_key == ("v2", "clean-v2")
         assert entity._cached_png == fallback_png
 
     @pytest.mark.asyncio
-    async def test_build_uses_cached_png_for_same_clean_id(self, mock_coordinator):
-        """_build returns the cached PNG when the clean_id has not changed."""
-        entity = self._make_entity(mock_coordinator)
-        entity._cached_clean_id = "clean-001"
-        cached = b"\x89PNG fake"
-        entity._cached_png = cached
+    async def test_build_uses_cached_png_for_same_content(self, mock_coordinator):
+        """_build reuses the cached PNG only while the record content is unchanged.
 
-        record = _make_clean_record(clean_id="clean-001")
-        with patch(
-            "custom_components.hass_dyson.image.fetch_clean_maps",
-            AsyncMock(return_value=[record]),
+        Dyson updates the clean record in place during a clean (same cleanId,
+        growing dust blob), so a second build with identical content must not
+        re-render, but changed dust data under the same cleanId must.
+        """
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(clean_id="clean-001", pmap_id=None, position=None)
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._render_dust_map_png",
+                return_value=b"\x89PNG one",
+            ) as mock_render,
         ):
-            result = await entity._build()
-        assert result is cached
+            first = await entity._build()
+            second = await entity._build()
+        assert first == b"\x89PNG one"
+        assert second is first
+        mock_render.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_build_rerenders_when_dust_data_changes(self, mock_coordinator):
+        """A mid-clean record updated in place (same cleanId) is re-rendered."""
+        entity = self._make_entity(mock_coordinator)
+        partial_rec = _make_clean_record(
+            clean_id="clean-001", pmap_id=None, position=None
+        )
+        final_rec = _make_clean_record(
+            clean_id="clean-001", pmap_id=None, position=None
+        )
+        final_rec.dust_map.dust_data = [
+            {
+                "data": base64.b64encode(zlib.compress(bytes(range(16, 32)))).decode(),
+                "scaleFactor": 255,
+            }
+        ]
+        fetch = AsyncMock(side_effect=[[partial_rec], [final_rec]])
+        with (
+            patch("custom_components.hass_dyson.image.fetch_clean_maps", fetch),
+            patch(
+                "custom_components.hass_dyson.image._render_dust_map_png",
+                side_effect=[b"\x89PNG partial", b"\x89PNG final"],
+            ) as mock_render,
+        ):
+            first = await entity._build()
+            second = await entity._build()
+        assert first == b"\x89PNG partial"
+        assert second == b"\x89PNG final"
+        assert mock_render.call_count == 2
 
     @pytest.mark.asyncio
     async def test_build_renders_without_persistent_map(self, mock_coordinator):
@@ -1533,7 +1577,8 @@ class TestDysonDustMapImage:
         ):
             result = await entity._build()
         assert result == b"\x89PNG rendered"
-        assert entity._cached_clean_id == "clean-001"
+        assert entity._render_cache_key is not None
+        assert entity._render_cache_key[:2] == ("v1", "clean-001")
         assert entity._cached_png == b"\x89PNG rendered"
 
     @pytest.mark.asyncio
@@ -1573,7 +1618,7 @@ class TestDysonDustMapImage:
         ):
             result = await entity._build()
         assert result is None
-        assert entity._cached_clean_id is None
+        assert entity._render_cache_key is None
 
     @pytest.mark.asyncio
     async def test_build_with_persistent_map_composites(self, mock_coordinator):
@@ -1713,6 +1758,10 @@ class TestDysonFloorPlanImage:
         with self._PATCH_IMAGE_INIT, self._PATCH_DYSON_INIT:
             entity = DysonFloorPlanImage(MagicMock(), coordinator)
         entity.coordinator = coordinator
+        entity.hass = MagicMock()
+        entity.hass.async_add_executor_job = AsyncMock(
+            side_effect=lambda func, *args: func(*args)
+        )
         return entity
 
     def test_init_sets_unique_id(self, mock_coordinator):
@@ -1735,7 +1784,7 @@ class TestDysonFloorPlanImage:
     def test_init_cache_attrs_are_none(self, mock_coordinator):
         """Cache attributes start as None."""
         entity = self._make_entity(mock_coordinator)
-        assert entity._cached_pmap_id is None
+        assert entity._render_cache_key is None
         assert entity._cached_png is None
 
     @pytest.mark.asyncio
@@ -1762,20 +1811,67 @@ class TestDysonFloorPlanImage:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_build_uses_cached_png_for_same_pmap_id(self, mock_coordinator):
-        """_build returns the cached PNG when pmap_id has not changed."""
-        entity = self._make_entity(mock_coordinator)
-        entity._cached_pmap_id = "pmap-1"
-        cached = b"\x89PNG cached"
-        entity._cached_png = cached
+    async def test_build_uses_cached_png_for_same_map_version(self, mock_coordinator):
+        """_build reuses the cached PNG only while the map content is unchanged.
 
+        The map UUID never changes across versions of the same map, so the
+        cache must key on the map's content: a second build with an identical
+        map must not re-render, but a re-versioned map (new offset/bitmap)
+        under the same UUID must.
+        """
+        entity = self._make_entity(mock_coordinator)
+        png_b64 = base64.b64encode(_make_png()).decode()
         record = _make_clean_record(pmap_id="pmap-1")
-        with patch(
-            "custom_components.hass_dyson.image.fetch_clean_maps",
-            AsyncMock(return_value=[record]),
+        pmap = _make_persistent_map(presentation_data=png_b64)
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_persist_map",
+                AsyncMock(return_value=pmap),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._render_presentation_png",
+                return_value=b"\x89PNG one",
+            ) as mock_render,
         ):
-            result = await entity._build()
-        assert result is cached
+            first = await entity._build()
+            second = await entity._build()
+        assert first == b"\x89PNG one"
+        assert second is first
+        mock_render.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_build_rerenders_when_map_reversioned(self, mock_coordinator):
+        """A re-versioned map (same UUID, new offset) is re-rendered."""
+        entity = self._make_entity(mock_coordinator)
+        png_b64 = base64.b64encode(_make_png()).decode()
+        record = _make_clean_record(pmap_id="pmap-1")
+        pmap_v5 = _make_persistent_map(presentation_data=png_b64)
+        pmap_v6 = _make_persistent_map(
+            presentation_data=png_b64, offset_x=-384.0, offset_y=-155.0
+        )
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_persist_map",
+                AsyncMock(side_effect=[pmap_v5, pmap_v6]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._render_presentation_png",
+                side_effect=[b"\x89PNG v5", b"\x89PNG v6"],
+            ) as mock_render,
+        ):
+            first = await entity._build()
+            second = await entity._build()
+        assert first == b"\x89PNG v5"
+        assert second == b"\x89PNG v6"
+        assert mock_render.call_count == 2
 
     @pytest.mark.asyncio
     async def test_build_returns_none_when_fetch_persist_map_fails(
@@ -1855,7 +1951,7 @@ class TestDysonFloorPlanImage:
             result = await entity._build()
         assert result == rendered_png
         mock_fp.assert_awaited_once_with(mock_coordinator, "clean-fp-id")
-        assert entity._cached_pmap_id == "pmap-2"
+        assert entity._render_cache_key == ("v2fp", "pmap-2", "clean-fp-id")
         assert entity._cached_png == rendered_png
 
     @pytest.mark.asyncio
@@ -1882,7 +1978,7 @@ class TestDysonFloorPlanImage:
             result = await entity._build()
         assert result == rendered_png
         mock_fetch_map_image.assert_awaited_once_with(mock_coordinator, "pmap-2")
-        assert entity._cached_pmap_id == "pmap-2"
+        assert entity._render_cache_key == ("v2fp", "pmap-2", "clean-001")
         assert entity._cached_png == rendered_png
 
     @pytest.mark.asyncio
@@ -1931,7 +2027,8 @@ class TestDysonFloorPlanImage:
         ):
             result = await entity._build()
         assert result == b"\x89PNG rendered"
-        assert entity._cached_pmap_id == "pmap-2"
+        assert entity._render_cache_key is not None
+        assert entity._render_cache_key[:2] == ("v1fp", "pmap-2")
         assert entity._cached_png == b"\x89PNG rendered"
 
     @pytest.mark.asyncio
@@ -1957,7 +2054,7 @@ class TestDysonFloorPlanImage:
         ):
             result = await entity._build()
         assert result is None
-        assert entity._cached_pmap_id is None
+        assert entity._render_cache_key is None
 
     @pytest.mark.asyncio
     async def test_build_updates_image_last_updated_on_success(self, mock_coordinator):

@@ -210,6 +210,21 @@ class TTLCache:
         """Remove *key* from the cache."""
         self._store.pop(key, None)
 
+    def invalidate_prefix(self, prefix: str) -> None:
+        """Remove every key that starts with *prefix* from the cache."""
+        for key in [k for k in self._store if k.startswith(prefix)]:
+            self._store.pop(key, None)
+
+    def expire_prefix(self, prefix: str) -> None:
+        """Expire every key that starts with *prefix* (see :meth:`expire`).
+
+        Unlike :meth:`invalidate_prefix` the values stay available through
+        :meth:`get_stale`, so callers with a stale-fallback path keep working
+        if the refetch after expiry fails.
+        """
+        for key in [k for k in self._store if k.startswith(prefix)]:
+            self.expire(key)
+
 
 class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for managing individual Dyson device state and communication.

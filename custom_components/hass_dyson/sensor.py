@@ -1016,9 +1016,13 @@ class DysonDominantPollutantSensor(DysonEntity, SensorEntity):
 
 
 # Delay (seconds) between the robot reporting endOfClean and invalidating
-# the clean-maps cache. The cloud history entry was observed live within
-# ~2 minutes of endOfClean; the polling history/dust-map entities then pick
-# it up on their next update instead of waiting out the 30-minute TTL.
+# the clean-history caches. The cloud history entry was observed live within
+# ~2 minutes of endOfClean; the polling history sensors and the dust-map/
+# floor-plan images then pick it up on their next update instead of waiting
+# out the cache TTLs. The image-side caches must be dropped here as well —
+# the robot re-versions the persistent map (new offset/dimensions/bitmap)
+# after a clean, so a floor plan cached before the clean no longer matches
+# the coordinates in the fresh clean record.
 CLEAN_HISTORY_REFRESH_DELAY: float = 120.0
 
 
@@ -1045,12 +1049,21 @@ def _register_end_of_clean_listener(
     async def _async_refresh_history(_now) -> None:
         nonlocal refresh_unsub
         refresh_unsub = None
+        from .image import _floor_plan_cache, _map_image_cache, _persist_map_cache
         from .vacuum import _clean_maps_cache
 
-        _clean_maps_cache.invalidate(coordinator.serial_number)
+        serial = coordinator.serial_number
+        _clean_maps_cache.invalidate(serial)
+        prefix = f"{serial}:"
+        # expire (not invalidate): _fetch_persist_map falls back to get_stale
+        # on a failed refetch, so the pre-clean map must stay reachable.
+        _persist_map_cache.expire_prefix(prefix)
+        _floor_plan_cache.invalidate_prefix(prefix)
+        _map_image_cache.invalidate_prefix(prefix)
+        _recommended_cleans_cache.invalidate(serial)
         _LOGGER.debug(
-            "Clean finished on %s: history cache invalidated for refresh",
-            coordinator.serial_number,
+            "Clean finished on %s: history and map-image caches invalidated",
+            serial,
         )
 
     def _schedule_refresh() -> None:
