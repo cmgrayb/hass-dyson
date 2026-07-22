@@ -1831,9 +1831,7 @@ class DysonDevice:
         if not isinstance(active_faults, list):
             return
         active_codes = {
-            entry.get("faultCode")
-            for entry in active_faults
-            if isinstance(entry, dict)
+            entry.get("faultCode") for entry in active_faults if isinstance(entry, dict)
         }
         faults = self._state_data.get("faults")
         if isinstance(faults, dict):
