@@ -17,6 +17,7 @@ import json
 import logging
 from pathlib import Path
 
+from custom_components.hass_dyson.const import ROBOT_FAULT_SUBSYSTEMS
 from custom_components.hass_dyson.device import DysonDevice
 
 FIXTURE = (
@@ -241,7 +242,153 @@ class TestRobotDetailRetention:
             "topic",
         )
         assert device.robot_active_faults == []
-        assert device.robot_faults is None  # dict only comes in STATE-CHANGE
+        # An empty snapshot also seeds the all-healthy faults dict so the
+        # subsystem sensors can restore to "off" instead of sitting unknown.
+        assert device.robot_faults["AIRWAYS"] == {"active": False}
 
     def test_no_programme_means_no_zones(self):
         assert _bare_device().robot_last_clean_zones == []
+
+
+class TestRobotFaultReconciliation:
+    """activeFaults snapshots repair the event-only per-subsystem faults dict.
+
+    The faults dict only rides fault-transition STATE-CHANGE messages, so a
+    clear that arrives while disconnected would otherwise latch a subsystem
+    active forever. Every heartbeat CURRENT-STATE carries the authoritative
+    ``activeFaults`` snapshot; ``oldActiveFaults`` clears immediately.
+    """
+
+    def _faulted_device(self) -> DysonDevice:
+        device = _bare_device()
+        device._handle_state_change(
+            {
+                "msg": "STATE-CHANGE",
+                "oldstate": "INACTIVE_CHARGED",
+                "newstate": "FAULT_USER_RECOVERABLE",
+                "newActiveFaults": [
+                    {
+                        "faultCode": "7.0.-1",
+                        "nextActionRequired": "WAIT_TO_CLEAR",
+                        "present": "PRESENT",
+                        "requiredUserAction": "USER_RECOVERABLE",
+                    }
+                ],
+                "faults": {
+                    "AIRWAYS": {"active": True, "description": "7.0.-1"},
+                    "LIFT": {"active": False},
+                },
+            }
+        )
+        assert device.robot_faults["AIRWAYS"]["active"] is True
+        return device
+
+    def test_snapshot_clears_latched_fault(self):
+        """A missed fault clear self-heals on the next heartbeat snapshot."""
+        device = self._faulted_device()
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "INACTIVE_CHARGED", "activeFaults": []},
+            "topic",
+        )
+        assert device.robot_faults["AIRWAYS"] == {"active": False}
+        assert device.robot_faults["LIFT"] == {"active": False}
+
+    def test_snapshot_keeps_still_active_fault(self):
+        device = self._faulted_device()
+        device._handle_current_state(
+            {
+                "msg": "CURRENT-STATE",
+                "state": "FAULT_USER_RECOVERABLE",
+                "activeFaults": [
+                    {
+                        "faultCode": "7.0.-1",
+                        "nextActionRequired": "WAIT_TO_CLEAR",
+                        "present": "PRESENT",
+                        "requiredUserAction": "USER_RECOVERABLE",
+                    }
+                ],
+            },
+            "topic",
+        )
+        assert device.robot_faults["AIRWAYS"]["active"] is True
+
+    def test_empty_snapshot_seeds_all_subsystems_healthy(self):
+        """After a restart the fault sensors restore to off, not unknown."""
+        device = _bare_device()
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "INACTIVE_CHARGED", "activeFaults": []},
+            "topic",
+        )
+        assert device.robot_faults == {
+            subsystem: {"active": False} for subsystem in ROBOT_FAULT_SUBSYSTEMS
+        }
+
+    def test_populated_snapshot_does_not_seed(self):
+        """Codes cannot be mapped to subsystems without a retained description."""
+        device = _bare_device()
+        device._handle_current_state(
+            {
+                "msg": "CURRENT-STATE",
+                "state": "FAULT_USER_RECOVERABLE",
+                "activeFaults": [{"faultCode": "23.0.3"}],
+            },
+            "topic",
+        )
+        assert device.robot_faults is None
+
+    def test_missing_snapshot_is_a_no_op(self):
+        """CURRENT-STATE without activeFaults (purifiers) leaves the dict alone."""
+        device = self._faulted_device()
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "INACTIVE_CHARGED"}, "topic"
+        )
+        assert device.robot_faults["AIRWAYS"]["active"] is True
+
+    def test_malformed_entries_are_tolerated(self):
+        device = self._faulted_device()
+        device._state_data["faults"]["LIFT"] = "garbage"
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "state": "INACTIVE_CHARGED", "activeFaults": []},
+            "topic",
+        )
+        assert device.robot_faults["AIRWAYS"] == {"active": False}
+        assert device.robot_faults["LIFT"] == "garbage"
+
+    def test_old_active_faults_clears_immediately(self):
+        """STATE-CHANGE oldActiveFaults clears without waiting for a heartbeat."""
+        device = self._faulted_device()
+        device._handle_state_change(
+            {
+                "msg": "STATE-CHANGE",
+                "oldstate": "FAULT_USER_RECOVERABLE",
+                "newstate": "INACTIVE_CHARGED",
+                "oldActiveFaults": [{"faultCode": "7.0.-1"}],
+                "newActiveFaults": [],
+            }
+        )
+        assert device.robot_faults["AIRWAYS"] == {"active": False}
+
+    def test_old_active_faults_ignores_unrelated_codes(self):
+        device = self._faulted_device()
+        device._handle_state_change(
+            {
+                "msg": "STATE-CHANGE",
+                "oldstate": "FAULT_USER_RECOVERABLE",
+                "newstate": "INACTIVE_CHARGED",
+                "oldActiveFaults": [{"faultCode": "23.0.3"}],
+                "newActiveFaults": [],
+            }
+        )
+        assert device.robot_faults["AIRWAYS"]["active"] is True
+
+    def test_old_active_faults_without_retained_dict_is_a_no_op(self):
+        device = _bare_device()
+        device._handle_state_change(
+            {
+                "msg": "STATE-CHANGE",
+                "oldstate": "FAULT_USER_RECOVERABLE",
+                "newstate": "INACTIVE_CHARGED",
+                "oldActiveFaults": [{"faultCode": "7.0.-1"}],
+            }
+        )
+        assert device.robot_faults is None
