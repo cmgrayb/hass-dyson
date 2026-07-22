@@ -95,6 +95,38 @@ class TestEndOfCleanListener:
             await refresh_cb(None)
         cache.invalidate.assert_called_once_with(SERIAL)
 
+    @pytest.mark.asyncio
+    async def test_refresh_invalidates_image_and_recommendation_caches(self):
+        """The robot re-versions the persistent map after a clean, so the
+        image-side caches (floor plan, offsets, rendered maps) and the
+        recommended-cleans cache must be dropped alongside the history."""
+        hass, entry, coordinator = _hass(), _entry(), _coordinator()
+        with (
+            patch("custom_components.hass_dyson.sensor.async_call_later") as call_later,
+            patch("custom_components.hass_dyson.vacuum._clean_maps_cache"),
+            patch(
+                "custom_components.hass_dyson.image._persist_map_cache"
+            ) as persist_cache,
+            patch(
+                "custom_components.hass_dyson.image._floor_plan_cache"
+            ) as floor_cache,
+            patch(
+                "custom_components.hass_dyson.image._map_image_cache"
+            ) as map_img_cache,
+            patch(
+                "custom_components.hass_dyson.sensor._recommended_cleans_cache"
+            ) as rec_cache,
+        ):
+            _register_end_of_clean_listener(hass, entry, coordinator)
+            listener = coordinator.device.add_message_callback.call_args[0][0]
+            listener("topic", {"msg": "STATE-CHANGE", "endOfClean": True})
+            refresh_cb = call_later.call_args[0][2]
+            await refresh_cb(None)
+        persist_cache.expire_prefix.assert_called_once_with(f"{SERIAL}:")
+        floor_cache.invalidate_prefix.assert_called_once_with(f"{SERIAL}:")
+        map_img_cache.invalidate_prefix.assert_called_once_with(f"{SERIAL}:")
+        rec_cache.invalidate.assert_called_once_with(SERIAL)
+
     def test_repeated_end_of_clean_coalesces(self):
         hass, entry, coordinator = _hass(), _entry(), _coordinator()
         cancel = MagicMock()
@@ -138,3 +170,36 @@ class TestEndOfCleanListener:
             listener("topic", {"msg": "STATE-CHANGE", "endOfClean": True})
             entry.async_on_unload.call_args[0][0]()
         cancel.assert_called_once()
+
+
+class TestTTLCacheInvalidatePrefix:
+    def test_removes_only_matching_keys(self):
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        cache.set(f"{SERIAL}:map-1", "a")
+        cache.set(f"{SERIAL}:map-2", "b")
+        cache.set("OTHER-SERIAL:map-1", "c")
+        cache.invalidate_prefix(f"{SERIAL}:")
+        assert cache.get(f"{SERIAL}:map-1") is None
+        assert cache.get_stale(f"{SERIAL}:map-1") is None
+        assert cache.get(f"{SERIAL}:map-2") is None
+        assert cache.get("OTHER-SERIAL:map-1") == "c"
+
+    def test_empty_cache_is_a_noop(self):
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        cache.invalidate_prefix("anything:")
+        assert cache.get_stale("anything:x") is None
+
+    def test_expire_prefix_keeps_stale_fallback(self):
+        from custom_components.hass_dyson.coordinator import TTLCache
+
+        cache = TTLCache(3600)
+        cache.set(f"{SERIAL}:map-1", "a")
+        cache.set("OTHER-SERIAL:map-1", "c")
+        cache.expire_prefix(f"{SERIAL}:")
+        assert cache.get(f"{SERIAL}:map-1") is None
+        assert cache.get_stale(f"{SERIAL}:map-1") == "a"
+        assert cache.get("OTHER-SERIAL:map-1") == "c"
