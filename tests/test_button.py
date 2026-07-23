@@ -46,6 +46,10 @@ def mock_robot_coordinator():
     coordinator.serial_number = "VS9-GB-HJA0000A"
     coordinator.device_name = "Vis Nav"
     coordinator.device = MagicMock()
+    # Pin real booleans so DysonEntity.available evaluates to True rather
+    # than returning the is_connected MagicMock (identity asserts need it).
+    coordinator.last_update_success = True
+    coordinator.device.is_connected = True
     coordinator.device_category = [DEVICE_CATEGORY_ROBOT]
     coordinator.config_entry = MagicMock()
     coordinator.config_entry.data = {"auth_token": "tok"}

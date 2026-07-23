@@ -101,7 +101,15 @@ async def async_setup_entry(
     has_token = bool(coordinator.config_entry.data.get("auth_token"))
 
     if not (is_robot and has_token):
-        async_add_entities([DysonReconnectButton(coordinator)], True)
+        non_robot_entities: list[ButtonEntity] = [DysonReconnectButton(coordinator)]
+        ff_ps: dict = {}
+        if coordinator.data:
+            raw = coordinator.data.get("product-state", {})
+            if isinstance(raw, dict):
+                ff_ps = raw
+        if "soon" in ff_ps:
+            non_robot_entities.append(DysonFindFollowScanButton(coordinator))
+        async_add_entities(non_robot_entities, True)
         return
 
     known_zone_buttons: dict[tuple[str, str], DysonZoneCleanButton] = {}
