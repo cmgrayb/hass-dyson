@@ -51,6 +51,7 @@ from .const import (
     DOMAIN,
     FAULT_TRANSLATIONS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
+    ROBOT_FAULT_SUBSYSTEMS,
 )
 from .device_utils import mask_serial, mask_token
 
@@ -1585,6 +1586,7 @@ class DysonDevice:
         self._state_data.update(data)
         _LOGGER.debug("Updated device state for %s", self._log_serial)
 
+        self._reconcile_robot_faults(data.get("activeFaults"))
         self._update_robot_session(data.get("state") or data.get("newstate"))
 
         # Notify callbacks (including coordinator)
@@ -1809,8 +1811,61 @@ class DysonDevice:
             self._state_data["cleaningProgramme"] = programme
             if programme.get("persistentMapId"):
                 self._state_data["persistentMapId"] = programme["persistentMapId"]
+        self._clear_robot_faults(data.get("oldActiveFaults"))
         self._update_robot_session(data.get("newstate") or data.get("state"))
         _LOGGER.debug("State change for %s", self._log_serial)
+
+    def _reconcile_robot_faults(self, active_faults: Any) -> None:
+        """Apply an ``activeFaults`` snapshot to the retained ``faults`` dict.
+
+        The per-subsystem ``faults`` dict only rides fault-transition
+        STATE-CHANGE messages, so a clear that arrives while disconnected
+        (or is never re-sent) would latch a subsystem active forever.
+        CURRENT-STATE's ``activeFaults`` is an authoritative snapshot —
+        empty when healthy — so deactivate any retained subsystem whose
+        fault code is no longer listed. When the robot affirms nothing is
+        active and no ``faults`` dict has been seen yet (e.g. after a
+        restart), seed one so the fault sensors can report "off" instead
+        of sitting unknown until the next fault transition.
+        """
+        if not isinstance(active_faults, list):
+            return
+        active_codes = {
+            entry.get("faultCode") for entry in active_faults if isinstance(entry, dict)
+        }
+        faults = self._state_data.get("faults")
+        if isinstance(faults, dict):
+            for subsystem, entry in faults.items():
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("active")
+                    and entry.get("description") not in active_codes
+                ):
+                    faults[subsystem] = {"active": False}
+        elif not active_codes:
+            self._state_data["faults"] = {
+                subsystem: {"active": False} for subsystem in ROBOT_FAULT_SUBSYSTEMS
+            }
+
+    def _clear_robot_faults(self, old_active_faults: Any) -> None:
+        """Deactivate retained subsystem faults named in ``oldActiveFaults``."""
+        if not isinstance(old_active_faults, list) or not old_active_faults:
+            return
+        faults = self._state_data.get("faults")
+        if not isinstance(faults, dict):
+            return
+        cleared_codes = {
+            entry.get("faultCode")
+            for entry in old_active_faults
+            if isinstance(entry, dict)
+        }
+        for subsystem, entry in faults.items():
+            if (
+                isinstance(entry, dict)
+                and entry.get("active")
+                and entry.get("description") in cleared_codes
+            ):
+                faults[subsystem] = {"active": False}
 
     # Robot states that end a clean/mapping session even though they carry
     # an active-looking prefix. FINISHED means the robot is back on (or at)
