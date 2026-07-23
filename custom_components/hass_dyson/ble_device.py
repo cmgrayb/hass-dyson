@@ -564,7 +564,14 @@ class DysonBLEDevice:
         press).  Updates cached state and fires to HA entities.
         """
         raw = bytes(data)
-        self.state.power = bool(raw and raw[0] != 0)
+        power_on = bool(raw and raw[0] != 0)
+        _LOGGER.debug(
+            "Power notification from %s: raw=%s → %s",
+            self.serial_number,
+            raw.hex(),
+            "ON" if power_on else "OFF",
+        )
+        self.state.power = power_on
         self._fire_state_change()
 
     def _on_brightness_notification(
@@ -578,11 +585,32 @@ class DysonBLEDevice:
         the lamp are reflected in HA immediately via this callback.
         """
         raw = bytes(data)
+        _LOGGER.debug(
+            "Brightness notification from %s: raw=%s (%d bytes)",
+            self.serial_number,
+            raw.hex(),
+            len(raw),
+        )
         if len(raw) >= 2:  # noqa: PLR2004
             lumens = int.from_bytes(raw[:2], byteorder="little")
+            ha_brightness = raw_lumens_to_ha_brightness(lumens)
+            _LOGGER.debug(
+                "Brightness update for %s: %d lm → HA brightness %d",
+                self.serial_number,
+                lumens,
+                ha_brightness,
+            )
             self.state.brightness_raw = lumens
-            self.state.brightness = raw_lumens_to_ha_brightness(lumens)
+            self.state.brightness = ha_brightness
             self._fire_state_change()
+        else:
+            _LOGGER.warning(
+                "Brightness notification from %s has unexpected length %d (raw=%s); "
+                "expected at least 2 bytes — value format may differ from assumption",
+                self.serial_number,
+                len(raw),
+                raw.hex(),
+            )
 
     def _on_color_temp_notification(
         self, _characteristic: Any, data: bytearray
@@ -593,11 +621,29 @@ class DysonBLEDevice:
         physical controls.  Updates cached state and fires to HA entities.
         """
         raw = bytes(data)
+        _LOGGER.debug(
+            "Color temp notification from %s: raw=%s (%d bytes)",
+            self.serial_number,
+            raw.hex(),
+            len(raw),
+        )
         if len(raw) >= 2:  # noqa: PLR2004
             kelvin = int.from_bytes(raw[:2], byteorder="little")
+            _LOGGER.debug(
+                "Color temp update for %s: %d K",
+                self.serial_number,
+                kelvin,
+            )
             self.state.color_temp_kelvin = kelvin
             self.state.color_temp_mired = kelvin_to_mired(kelvin)
             self._fire_state_change()
+        else:
+            _LOGGER.warning(
+                "Color temp notification from %s has unexpected length %d (raw=%s)",
+                self.serial_number,
+                len(raw),
+                raw.hex(),
+            )
 
     def _on_runtime_notification(self, short_id: str):
         """Return a notify handler for a runtime diagnostic characteristic."""
@@ -968,6 +1014,12 @@ class DysonBLEDevice:
         try:
             power_raw = bytes(await self._client.read_gatt_char(BLE_POWER_UUID))
             self.state.power = bool(power_raw and power_raw[0] != 0)
+            _LOGGER.debug(
+                "Initial power read from %s: raw=%s → %s",
+                self.serial_number,
+                power_raw.hex(),
+                "ON" if self.state.power else "OFF",
+            )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug(
                 "Could not read power state from %s: %s", self.serial_number, exc
@@ -978,10 +1030,30 @@ class DysonBLEDevice:
             brightness_raw = bytes(
                 await self._client.read_gatt_char(BLE_BRIGHTNESS_LUMENS_UUID)
             )
+            _LOGGER.debug(
+                "Initial brightness read from %s (char 11009): raw=%s (%d bytes)",
+                self.serial_number,
+                brightness_raw.hex(),
+                len(brightness_raw),
+            )
             if len(brightness_raw) >= 2:  # noqa: PLR2004
                 lumens = int.from_bytes(brightness_raw[:2], byteorder="little")
                 self.state.brightness_raw = lumens
                 self.state.brightness = raw_lumens_to_ha_brightness(lumens)
+                _LOGGER.debug(
+                    "Initial brightness for %s: %d lm → HA %d",
+                    self.serial_number,
+                    lumens,
+                    self.state.brightness,
+                )
+            else:
+                _LOGGER.warning(
+                    "Brightness char 11009 on %s returned %d bytes (raw=%s); "
+                    "expected uint16 LE — value format may differ from assumption",
+                    self.serial_number,
+                    len(brightness_raw),
+                    brightness_raw.hex(),
+                )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug(
                 "Could not read brightness from %s: %s", self.serial_number, exc
@@ -992,11 +1064,22 @@ class DysonBLEDevice:
             color_temp_raw = bytes(
                 await self._client.read_gatt_char(BLE_COLOR_TEMP_UUID)
             )
+            _LOGGER.debug(
+                "Initial color temp read from %s (char 11001): raw=%s (%d bytes)",
+                self.serial_number,
+                color_temp_raw.hex(),
+                len(color_temp_raw),
+            )
             if len(color_temp_raw) >= 2:  # noqa: PLR2004
                 kelvin = int.from_bytes(color_temp_raw[:2], byteorder="little")
                 self.state.color_temp_kelvin = kelvin
                 self.state.color_temp_mired = (
                     kelvin_to_mired(kelvin) if kelvin > 0 else None
+                )
+                _LOGGER.debug(
+                    "Initial color temp for %s: %d K",
+                    self.serial_number,
+                    kelvin,
                 )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug(
@@ -1026,14 +1109,20 @@ class DysonBLEDevice:
             try:
                 await self._client.start_notify(uuid, handler)
                 _LOGGER.debug(
-                    "Subscribed to %s notifications for %s", name, self.serial_number
-                )
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug(
-                    "%s characteristic does not support notifications for %s "
-                    "(state will be read once at connect and updated optimistically)",
+                    "Subscribed to %s notifications for %s (UUID %s)",
                     name,
                     self.serial_number,
+                    uuid,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not subscribe to %s notifications for %s (UUID %s): %s "
+                    "— commands to this characteristic will not be confirmed via "
+                    "notification; state will be updated optimistically only",
+                    name,
+                    self.serial_number,
+                    uuid,
+                    exc,
                 )
 
         # Motion notifications (most important — drives binary sensor)
@@ -1237,9 +1326,14 @@ class DysonBLEDevice:
         if not self.is_connected or self._client is None:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
-            await self._client.write_gatt_char(
-                BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False
+            payload = b"\x01" if on else b"\x00"
+            _LOGGER.debug(
+                "Writing power %s to %s (char 11005, payload=%s)",
+                "ON" if on else "OFF",
+                self.serial_number,
+                payload.hex(),
             )
+            await self._client.write_gatt_char(BLE_POWER_UUID, payload, response=False)
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;
             # BLE notifications will keep state current.
@@ -1254,9 +1348,6 @@ class DysonBLEDevice:
         (CF06) is a daylight-capable device; the Android MyDyson app always
         targets 11009 for this product, ignoring 11000.
 
-        Write-with-response (``response=True``) is required — the lamp's GATT
-        server only reliably processes ATT Write Requests on this characteristic.
-
         Args:
             ha_brightness: Home Assistant brightness value (0–255).
 
@@ -1267,10 +1358,19 @@ class DysonBLEDevice:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
             raw = ha_to_raw_brightness_lumens(ha_brightness)
+            payload = raw.to_bytes(2, byteorder="little")
+            _LOGGER.debug(
+                "Writing brightness to %s: HA %d → %d lm (char 11009=%s, payload=%s)",
+                self.serial_number,
+                ha_brightness,
+                raw,
+                BLE_BRIGHTNESS_LUMENS_UUID,
+                payload.hex(),
+            )
             await self._client.write_gatt_char(
                 BLE_BRIGHTNESS_LUMENS_UUID,
-                raw.to_bytes(2, byteorder="little"),
-                response=True,
+                payload,
+                response=False,
             )
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;
@@ -1285,11 +1385,6 @@ class DysonBLEDevice:
         Writes to characteristic 11001 as a uint16 little-endian Kelvin value
         (2700–6500 K).
 
-        Write-with-response (``response=True``) is required — the Android
-        MyDyson app uses ``WRITE_TYPE_DEFAULT`` (write-with-response) for this
-        characteristic and it does not reliably respond to write-without-response
-        commands.
-
         Args:
             kelvin: Color temperature in Kelvin (clamped to 2700–6500).
 
@@ -1300,10 +1395,20 @@ class DysonBLEDevice:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
             kelvin_clamped = max(BLE_MIN_KELVIN, min(BLE_MAX_KELVIN, kelvin))
+            payload = kelvin_clamped.to_bytes(2, byteorder="little")
+            _LOGGER.debug(
+                "Writing color temp to %s: %d K (clamped from %d K) "
+                "(char 11001=%s, payload=%s)",
+                self.serial_number,
+                kelvin_clamped,
+                kelvin,
+                BLE_COLOR_TEMP_UUID,
+                payload.hex(),
+            )
             await self._client.write_gatt_char(
                 BLE_COLOR_TEMP_UUID,
-                kelvin_clamped.to_bytes(2, byteorder="little"),
-                response=True,
+                payload,
+                response=False,
             )
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;

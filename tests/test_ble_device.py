@@ -483,7 +483,7 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(
             BLE_BRIGHTNESS_LUMENS_UUID,
             expected_lumens.to_bytes(2, byteorder="little"),
-            response=True,
+            response=False,
         )
 
     @pytest.mark.asyncio
@@ -506,7 +506,7 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(
             BLE_COLOR_TEMP_UUID,
             (4000).to_bytes(2, byteorder="little"),
-            response=True,
+            response=False,
         )
 
     @pytest.mark.asyncio
@@ -530,7 +530,7 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(
             BLE_COLOR_TEMP_UUID,
             BLE_MIN_KELVIN.to_bytes(2, byteorder="little"),
-            response=True,
+            response=False,
         )
 
     def test_on_motion_notification_sets_motion_detected(self):
