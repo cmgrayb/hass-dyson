@@ -1561,6 +1561,54 @@ class TestDysonDustMapImage:
         assert mock_render.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_build_v2_reuses_cached_png_for_same_clean_id(self, mock_coordinator):
+        """The v2 path serves the cached PNG on a repeat build of the same cleanId."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(
+            clean_id="clean-v2",
+            has_dust_map=False,
+            download_url="https://s3.example.com/map.bin",
+        )
+        rendered_png = b"\x89PNG dust"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_fetch_map_image,
+        ):
+            first = await entity._build()
+            second = await entity._build()
+        assert first == rendered_png
+        assert second is first
+        mock_fetch_map_image.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_build_tolerates_empty_dust_data(self, mock_coordinator):
+        """A record whose embedded dust map has no tiles yet uses an empty
+        fingerprint instead of raising on dust_data[0]."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(pmap_id=None, position=None)
+        record.dust_map.dust_data = []
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._render_dust_map_png",
+                return_value=b"\x89PNG empty",
+            ),
+        ):
+            result = await entity._build()
+        assert result == b"\x89PNG empty"
+        assert entity._render_cache_key[:2] == ("v1", "clean-001")
+        assert entity._render_cache_key[2] is None
+
+    @pytest.mark.asyncio
     async def test_build_renders_without_persistent_map(self, mock_coordinator):
         """_build renders the dust map when no persistent map is available."""
         entity = self._make_entity(mock_coordinator)
@@ -1980,6 +2028,33 @@ class TestDysonFloorPlanImage:
         mock_fetch_map_image.assert_awaited_once_with(mock_coordinator, "pmap-2")
         assert entity._render_cache_key == ("v2fp", "pmap-2", "clean-001")
         assert entity._cached_png == rendered_png
+
+    @pytest.mark.asyncio
+    async def test_build_v2_floor_plan_reuses_cached_png(self, mock_coordinator):
+        """The v2 floor-plan fallback serves the cached PNG on a repeat build."""
+        entity = self._make_entity(mock_coordinator)
+        record = _make_clean_record(pmap_id="pmap-2")
+        pmap = _make_persistent_map(presentation_data=None)
+        rendered_png = b"\x89PNG floor"
+        with (
+            patch(
+                "custom_components.hass_dyson.image.fetch_clean_maps",
+                AsyncMock(return_value=[record]),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_persist_map",
+                AsyncMock(return_value=pmap),
+            ),
+            patch(
+                "custom_components.hass_dyson.image._fetch_map_image",
+                AsyncMock(return_value=rendered_png),
+            ) as mock_fetch_map_image,
+        ):
+            first = await entity._build()
+            second = await entity._build()
+        assert first == rendered_png
+        assert second is first
+        mock_fetch_map_image.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_build_returns_none_for_invalid_base64(self, mock_coordinator):
