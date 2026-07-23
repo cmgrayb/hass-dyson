@@ -294,18 +294,33 @@ HA entity attributes: `min_color_temp_kelvin = 2700`, `max_color_temp_kelvin = 6
 
 ## Write Operations
 
-All characteristic writes use `response=False` (write-without-response):
+Write type varies by characteristic:
+
+| Characteristic | response | Reason |
+|----------------|----------|--------|
+| 11005 (power) | `response=False` | Characteristic supports `WRITE_NO_RESPONSE`; both write types accepted by lamp |
+| **11009** (brightness) | **`response=True`** | Lamp only reliably processes ATT Write Request; `WRITE_COMMAND` is silently discarded |
+| 11001 (color temp) | **`response=True`** | Same — Android MyDyson app uses `WRITE_TYPE_DEFAULT` (write-with-response) |
+
+The Android MyDyson app sends all characteristic writes via
+`BluetoothGatt.writeCharacteristic()` without explicitly calling `setWriteType()`,
+which defaults to `WRITE_TYPE_DEFAULT` (ATT Write Request / write-with-response).
+Using `response=False` (ATT Write Command) for brightness and color temperature
+causes commands to be silently discarded by the lamp's GATT server.
 
 ```python
-# Power
+# Power — write-without-response (supports WRITE_NO_RESPONSE property)
 await client.write_gatt_char(BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False)
 
-# Brightness (0-100 raw)
-await client.write_gatt_char(BLE_BRIGHTNESS_UUID, bytes([raw_percent]), response=False)
-
-# Color temperature (Kelvin, uint16 little-endian)
+# Brightness — uint16 LE lumens, write-WITH-response, characteristic 11009
+lumens = ha_to_raw_brightness_lumens(ha_brightness)  # 100–1000
 await client.write_gatt_char(
-    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=False
+    BLE_BRIGHTNESS_LUMENS_UUID, lumens.to_bytes(2, byteorder="little"), response=True
+)
+
+# Color temperature — uint16 LE Kelvin, write-WITH-response
+await client.write_gatt_char(
+    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=True
 )
 ```
 
@@ -403,11 +418,21 @@ products, as they are generic over the device type.
 
 ## Known Limitations and Open Questions
 
+- **Daylight capability detection**: The integration currently hard-codes the
+  CF06 brightness path (characteristic 11009, lumens format) for all devices.
+  Non-daylight-capable devices that use characteristic 11000 are not currently
+  supported.  Support for both paths can be added by reading the device's
+  capability list from the Dyson cloud or from the product info BLE message (0x0B).
+- **Brightness scaling curve**: The Android MyDyson app presents a logarithmic
+  brightness slider to the user (perceived linearity), while the integration maps
+  HA brightness 0–255 linearly to lumens 100–1000.  The physical lamp behavior is
+  identical in both cases; only the slider progression differs.
 - **Fresh pairing**: Fresh pairing requires a one-time physical button press on the
   lamp.  The config flow guides users through the full handshake in the Home Assistant
   UI and stores the resulting LTK automatically.
-- **Char 11006/11007/11009**: These characteristics are observed but not fully decoded.
+- **Char 11006/11007**: These characteristics are observed but not fully decoded.
   Their purpose is logged as diagnostic attributes but not surfaced as HA entities.
+  11007 is confirmed as `MOVEMENT_SENSOR_UUID` in the Android source.
 - **RSSI gating**: The original bridge implements an RSSI threshold gate before
   fresh pairing.  The HA integration omits this (HA's bluetooth framework handles
   device proximity natively).

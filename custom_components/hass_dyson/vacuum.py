@@ -60,7 +60,12 @@ from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
-from .services import _fetch_persistent_map_metadata, _persistent_map_cache
+from .services import (
+    _effective_current_map,
+    _fetch_persistent_map_metadata,
+    _persistent_map_cache,
+    _select_map,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,7 +122,13 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
             if client is None:
                 return _clean_maps_cache.get_stale(serial) or []
             try:
-                records = await client.get_clean_maps(serial, include_dust_map=True)
+                records = await client.get_clean_maps(
+                    serial,
+                    api_version=await coordinator.async_discover_map_api_version(
+                        client
+                    ),
+                    include_dust_map=True,
+                )
             except DysonAuthError as err:
                 # Auth errors may resolve after re-authentication; do not cache.
                 _LOGGER.debug("Failed to fetch clean maps for %s: %s", serial, err)
@@ -367,7 +378,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         device = self.coordinator.device
         robot_state = device.robot_state or ""
 
-        # Anything in an INACTIVE_* / FULL_CLEAN_FINISHED / FAULT_ON_DOCK
+        # Anything in an INACTIVE_* / FULL_CLEAN_FINISHED / FAULT_ON_DOCK*
         # state means the robot isn't mid-clean, so vacuum.start must begin a
         # new cycle rather than send RESUME (which the device would ignore).
         dock_states = {
@@ -376,6 +387,8 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             "INACTIVE_DISCHARGING",
             "FULL_CLEAN_FINISHED",
             "FAULT_ON_DOCK",
+            "FAULT_ON_DOCK_CHARGED",
+            "FAULT_ON_DOCK_CHARGING",
         }
         start_new = robot_state in dock_states
 
@@ -461,7 +474,8 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         to their supported_features.
 
         Returns:
-            List of Segment objects, one per zone in the active persistent map.
+            List of Segment objects, one per zone across all stored persistent
+            maps (map-qualified ids when there is more than one map).
             Empty list if no map is available yet.
 
         Raises:
@@ -476,12 +490,26 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             )
             return []
 
+        # With multiple maps, zone ids collide (they restart from 1 per map),
+        # so segment ids are map-qualified and names carry the map for
+        # disambiguation. Single-map robots keep bare zone ids so existing
+        # area mappings stay valid.
+        multi_map = len(maps) > 1
         segments: list[Segment] = []
         for pmap in maps:
             for zone in pmap.zones:
                 if not zone.id:
                     continue
-                segments.append(Segment(id=zone.id, name=str(zone.name or zone.id)))
+                zone_name = str(zone.name or zone.id)
+                if multi_map:
+                    segments.append(
+                        Segment(
+                            id=f"{pmap.id}:{zone.id}",
+                            name=f"{zone_name} ({pmap.name or pmap.id})",
+                        )
+                    )
+                else:
+                    segments.append(Segment(id=zone.id, name=zone_name))
 
         _LOGGER.debug(
             "Returning %d segments for %s",
@@ -506,6 +534,10 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         """
         if not self.available or not self.coordinator.device:
             raise HomeAssistantError("Device not available for zone clean command")
+        if not segment_ids:
+            # An empty unorderedZones list risks being honoured as a
+            # whole-house clean — refuse instead.
+            raise HomeAssistantError("No segments specified for zone clean")
 
         maps = await _fetch_persistent_map_metadata(self.coordinator)
         if not maps:
@@ -514,12 +546,55 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
                 "has the robot completed its initial map run?"
             )
 
-        # Use the first (most-recently-visited) map — mirrors services.py behaviour.
-        pmap = maps[0]
+        # Segment ids from async_get_segments are map-qualified
+        # ("{map_id}:{zone_id}") on multi-map robots and bare zone ids on
+        # single-map robots (or pre-multi-map area mappings).
+        by_map: dict[str, list[str]] = {}
+        bare_ids: list[str] = []
+        for seg in segment_ids:
+            map_id, sep, zone_id = str(seg).rpartition(":")
+            if sep:
+                by_map.setdefault(map_id, []).append(zone_id)
+            else:
+                bare_ids.append(str(seg))
+
+        if len(by_map) > 1:
+            raise HomeAssistantError(
+                f"Requested segments span multiple maps "
+                f"({sorted(by_map)}) — the robot can only clean one map per run"
+            )
+        if by_map:
+            map_id, zone_ids = next(iter(by_map.items()))
+            pmap = next((m for m in maps if m.id == map_id), None)
+            if pmap is None:
+                raise HomeAssistantError(
+                    f"Unknown map id {map_id!r} in segment ids — re-map the "
+                    "vacuum segments to areas (the map list has changed)"
+                )
+            zone_ids = zone_ids + bare_ids
+        else:
+            # Selection by named identification: the map the robot is on
+            # (MQTT-reported or cloud-flagged), the only map, or the map the
+            # zones uniquely match.
+            pmap = _select_map(
+                maps,
+                None,
+                bare_ids,
+                current_map=_effective_current_map(maps, self.coordinator),
+            )
+            zone_ids = bare_ids
+
+        unknown = [z for z in zone_ids if not any(zz.id == z for zz in pmap.zones)]
+        if unknown:
+            raise HomeAssistantError(
+                f"Zone id(s) {unknown!r} are not on map "
+                f"{pmap.name or pmap.id!r} — re-map the vacuum segments to areas"
+            )
+
         cleaning_programme: dict[str, Any] = {
             "persistentMapId": pmap.id,
             "orderedZones": [],
-            "unorderedZones": segment_ids,
+            "unorderedZones": zone_ids,
         }
         # zonesDefinitionLastUpdatedDate is required for the device to honour
         # a zoneConfigured request; without it the robot silently falls back to
@@ -579,8 +654,16 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             # Cache miss; skip this cycle.
             return
 
+        # Keys must mirror async_get_segments: map-qualified when multi-map,
+        # bare zone ids otherwise. A pre-multi-map mapping on a robot that
+        # now has two maps therefore differs and raises the repair issue —
+        # which is correct, because its bare-id mapping is ambiguous.
+        multi_map = len(cached_maps) > 1
         current_ids = {
-            zone.id for pmap in cached_maps for zone in pmap.zones if zone.id
+            f"{pmap.id}:{zone.id}" if multi_map else zone.id
+            for pmap in cached_maps
+            for zone in pmap.zones
+            if zone.id
         }
         last_seen_ids = {seg.id for seg in last_seen}
 

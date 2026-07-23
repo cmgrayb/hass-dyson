@@ -271,6 +271,8 @@ STATE_KEY_VOC: Final = "va10"  # VOC (Volatile Organic Compounds)
 STATE_KEY_NO2: Final = "noxl"  # NO2 (Nitrogen Dioxide)
 STATE_KEY_FORMALDEHYDE: Final = "hcho"  # Formaldehyde raw value
 STATE_KEY_FORMALDEHYDE_DISPLAY: Final = "hchr"  # Formaldehyde display value
+STATE_KEY_FIND_FOLLOW: Final = "soon"  # Find+Follow on/off/scan command key
+STATE_KEY_FIND_FOLLOW_STATUS: Final = "sost"  # Find+Follow engine status (read-only)
 
 # Filter values
 FILTER_TYPE_GCOM: Final = "GCOM"  # Genuine Combi Filter
@@ -379,8 +381,8 @@ FAULT_TRANSLATIONS: Final = {
         "OK": "Water tank level normal",
     },
     "tnkp": {
-        "FAIL": "Water tank problem - check placement",
-        "OK": "Water tank status normal",
+        "FAIL": "Water tank not detected - please check that the tank is seated correctly",
+        "OK": "Water tank detected",
     },
     "cldu": {
         "FAIL": "Humidifier cleaning required",
@@ -473,11 +475,16 @@ ROBOT_STATE_FULL_CLEAN_DISCOVERING: Final = "FULL_CLEAN_DISCOVERING"
 ROBOT_STATE_FULL_CLEAN_TRAVERSING: Final = "FULL_CLEAN_TRAVERSING"
 ROBOT_STATE_FULL_CLEAN_INITIATED: Final = "FULL_CLEAN_INITIATED"
 ROBOT_STATE_FULL_CLEAN_ABORTED: Final = "FULL_CLEAN_ABORTED"
+ROBOT_STATE_FULL_CLEAN_NEEDS_CHARGE: Final = "FULL_CLEAN_NEEDS_CHARGE"
+ROBOT_STATE_FULL_CLEAN_ABANDONED: Final = "FULL_CLEAN_ABANDONED"
 
 # Mapping and Navigation
 ROBOT_STATE_MAPPING_RUNNING: Final = "MAPPING_RUNNING"
 ROBOT_STATE_MAPPING_PAUSED: Final = "MAPPING_PAUSED"
 ROBOT_STATE_MAPPING_FINISHED: Final = "MAPPING_FINISHED"
+ROBOT_STATE_MAPPING_INITIATED: Final = "MAPPING_INITIATED"
+ROBOT_STATE_MAPPING_NEEDS_CHARGE: Final = "MAPPING_NEEDS_CHARGE"
+ROBOT_STATE_MAPPING_ABORTED: Final = "MAPPING_ABORTED"
 
 # Dock and Charging States
 ROBOT_STATE_INACTIVE_CHARGED: Final = "INACTIVE_CHARGED"
@@ -491,18 +498,46 @@ ROBOT_STATE_FAULT_CRITICAL: Final = "FAULT_CRITICAL"
 ROBOT_STATE_FAULT_USER_RECOVERABLE: Final = "FAULT_USER_RECOVERABLE"
 ROBOT_STATE_FAULT_LOST: Final = "FAULT_LOST"
 ROBOT_STATE_FAULT_ON_DOCK: Final = "FAULT_ON_DOCK"
+ROBOT_STATE_FAULT_ON_DOCK_CHARGED: Final = "FAULT_ON_DOCK_CHARGED"
+ROBOT_STATE_FAULT_ON_DOCK_CHARGING: Final = "FAULT_ON_DOCK_CHARGING"
 ROBOT_STATE_FAULT_RETURN_TO_DOCK: Final = "FAULT_RETURN_TO_DOCK"
+ROBOT_STATE_FAULT_REPLACE_ON_DOCK: Final = "FAULT_REPLACE_ON_DOCK"
+ROBOT_STATE_FAULT_CALL_HELPLINE: Final = "FAULT_CALL_HELPLINE"
+ROBOT_STATE_FAULT_CONTACT_HELPLINE: Final = "FAULT_CONTACT_HELPLINE"
+ROBOT_STATE_FAULT_GETTING_INFO: Final = "FAULT_GETTING_INFO"
+ROBOT_STATE_FAULT_RUNNING_DIAGNOSTIC: Final = "FAULT_RUNNING_DIAGNOSTIC"
+
+# Power state
+ROBOT_STATE_MACHINE_OFF: Final = "MACHINE_OFF"
 
 # Robot Vacuum Commands (MQTT)
 ROBOT_CMD_START: Final = "START"
 ROBOT_CMD_PAUSE: Final = "PAUSE"
 ROBOT_CMD_RESUME: Final = "RESUME"
 ROBOT_CMD_ABORT: Final = "ABORT"
+
 ROBOT_CMD_REQUEST_STATE: Final = "REQUEST-CURRENT-STATE"
 
 # Robot Vacuum MQTT Message Types
 ROBOT_MSG_CURRENT_STATE: Final = "CURRENT-STATE"
 ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
+# Broadcast within ~1 minute of any persistent-map manifest change (zone
+# edits in the MyDyson app, or the robot's own post-clean map update);
+# payload is only {msg, time} — re-fetch the cloud metadata to see what.
+ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
+
+# Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
+# dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
+# product-state CURRENT-FAULTS codes the generic fault sensors read.
+ROBOT_FAULT_SUBSYSTEMS: Final = {
+    "AIRWAYS": ("Airways", "mdi:weather-windy"),
+    "BATTERY": ("Battery", "mdi:battery-alert"),
+    "BRUSH_BAR_AND_TRACTION": ("Brush Bar & Traction", "mdi:robot-vacuum-alert"),
+    "CHARGE_STATION": ("Charge Station", "mdi:ev-station"),
+    "LIFT": ("Lift", "mdi:arrow-up-bold-box"),
+    "LOST": ("Lost", "mdi:map-marker-question"),
+    "OPTICS": ("Optics", "mdi:camera-off"),
+}
 
 # Robot Vacuum Cleaning Types
 ROBOT_CLEAN_TYPE_IMMEDIATE: Final = "immediate"
@@ -566,15 +601,28 @@ ROBOT_STATE_TO_HA_STATE: Final = {
     ROBOT_STATE_FULL_CLEAN_CHARGING: VacuumActivity.RETURNING,
     ROBOT_STATE_MAPPING_CHARGING: VacuumActivity.RETURNING,
     ROBOT_STATE_FULL_CLEAN_ABORTED: VacuumActivity.RETURNING,
+    ROBOT_STATE_FULL_CLEAN_NEEDS_CHARGE: VacuumActivity.RETURNING,
+    ROBOT_STATE_MAPPING_NEEDS_CHARGE: VacuumActivity.RETURNING,
+    ROBOT_STATE_MAPPING_ABORTED: VacuumActivity.RETURNING,
     # Mapping as idle (non-cleaning operation)
     ROBOT_STATE_MAPPING_RUNNING: VacuumActivity.IDLE,
     ROBOT_STATE_MAPPING_FINISHED: VacuumActivity.IDLE,
+    ROBOT_STATE_MAPPING_INITIATED: VacuumActivity.IDLE,
+    ROBOT_STATE_FULL_CLEAN_ABANDONED: VacuumActivity.IDLE,
+    ROBOT_STATE_MACHINE_OFF: VacuumActivity.IDLE,
     # Error states
     ROBOT_STATE_FAULT_CRITICAL: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_USER_RECOVERABLE: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_LOST: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_ON_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_ON_DOCK_CHARGED: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_ON_DOCK_CHARGING: VacuumActivity.ERROR,
     ROBOT_STATE_FAULT_RETURN_TO_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_REPLACE_ON_DOCK: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_CALL_HELPLINE: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_CONTACT_HELPLINE: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_GETTING_INFO: VacuumActivity.ERROR,
+    ROBOT_STATE_FAULT_RUNNING_DIAGNOSTIC: VacuumActivity.ERROR,
 }
 
 # Capability-based fault code filtering
@@ -598,8 +646,8 @@ CAPABILITY_FAULT_CODES: Final = {
     "Humidifier": [
         "humi",  # Humidity sensor
         "fltr",  # General filter (covers humidifier filter)
-        "tnke",  # Tank empty
-        "tnkp",  # Tank problem
+        "tnke",  # Water tank empty
+        "tnkp",  # Water tank undetected
         "cldu",  # Unknown humidifier fault
         "etwd",  # Unknown humidifier fault
     ],
@@ -620,16 +668,26 @@ BLE_AUTH_CHAR_UUID: Final = "2dd10011-1c37-452d-8979-d1b4a787d0a4"
 BLE_RSSI_CHAR_UUID: Final = "2dd10013-1c37-452d-8979-d1b4a787d0a4"
 
 # Light control characteristics
-BLE_BRIGHTNESS_UUID: Final = "2dd11000-1c37-452d-8979-d1b4a787d0a4"  # 1 byte, 0-100 %
+#
+# NOTE: The Lightcycle Morph (CF06 / CD06) is a daylight-capable device.
+# The Android MyDyson app (class a20.g, mod-connectivity_release) maps
+# brightness to characteristic 11009 (BRIGHTNESS_OUTPUT_LUMENS_UUID) for
+# daylight-capable devices, and to 11000 only for non-daylight devices.
+# The CF06 firmware does NOT respond to writes on 11000.
+BLE_BRIGHTNESS_UUID: Final = "2dd11000-1c37-452d-8979-d1b4a787d0a4"  # 1 byte, 0-100 % — non-daylight devices only
+BLE_BRIGHTNESS_LUMENS_UUID: Final = "2dd11009-1c37-452d-8979-d1b4a787d0a4"  # uint16 LE, 100-1000 lm — daylight-capable (CF06)
 BLE_COLOR_TEMP_UUID: Final = "2dd11001-1c37-452d-8979-d1b4a787d0a4"  # uint16 LE, Kelvin
 BLE_POWER_UUID: Final = "2dd11005-1c37-452d-8979-d1b4a787d0a4"  # 1 byte: 0=off, 1=on
 
+# Brightness lumens range (characteristic 11009, daylight-capable devices)
+BLE_BRIGHTNESS_LUMENS_MIN: Final = 100  # minimum lamp brightness in lm
+BLE_BRIGHTNESS_LUMENS_MAX: Final = 1000  # maximum lamp brightness in lm
+
 # Runtime / diagnostic characteristics (partially decoded)
 BLE_CHAR_11006_UUID: Final = (
-    "2dd11006-1c37-452d-8979-d1b4a787d0a4"  # scheduled-light flags
+    "2dd11006-1c37-452d-8979-d1b4a787d0a4"  # scheduled-light / auto-brightness flags
 )
-BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # ambient sensor
-BLE_CHAR_11009_UUID: Final = "2dd11009-1c37-452d-8979-d1b4a787d0a4"  # runtime flags
+BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # movement sensor (MOVEMENT_SENSOR_UUID in Android)
 
 # Motion detection characteristic — notify; non-zero payload = motion detected
 BLE_MOTION_UUID: Final = "2dd11008-1c37-452d-8979-d1b4a787d0a4"

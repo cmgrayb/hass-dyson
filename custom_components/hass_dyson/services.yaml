@@ -140,6 +140,17 @@ start_zone_clean:
       required: true
       selector:
         object:
+    map:
+      name: Map
+      description: >-
+        Persistent map to clean on (name or ID), for robots with more than
+        one map. When omitted, the robot's current map is used if the cloud
+        reports one, then a single stored map, then the map the requested
+        zones uniquely belong to.
+      required: false
+      example: Downstairs
+      selector:
+        text:
 
 set_zone_behaviour:
   name: Set Zone Behaviour (Vis Nav)
@@ -174,3 +185,13 @@ set_zone_behaviour:
             - quick
             - quiet
             - boost
+    map:
+      name: Map
+      description: >-
+        Persistent map the zone belongs to (name or ID), for robots with
+        more than one map. When omitted, the zone is matched across all
+        stored maps and the map is inferred when unambiguous.
+      required: false
+      example: Downstairs
+      selector:
+        text:
