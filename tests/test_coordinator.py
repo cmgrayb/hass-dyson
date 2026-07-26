@@ -1488,3 +1488,143 @@ class TestCoordinatorMQTTClientId:
         for _ in range(5):
             result = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
             assert result == expected
+
+
+class TestWaitForInitialMqttData:
+    """Tests for _wait_for_initial_mqtt_data - added in the speed-up-startup PR."""
+
+    def _make_coordinator(self):
+        """Return a bare DysonDataUpdateCoordinator with minimal attributes set."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            coordinator._listeners = {}
+            coordinator.async_update_listeners = MagicMock()
+            return coordinator
+
+    @pytest.mark.asyncio
+    async def test_no_device_returns_immediately(self):
+        """When self.device is None the method returns without touching the loop."""
+        coordinator = self._make_coordinator()
+        coordinator.device = None
+
+        # No asyncio.sleep or get_state calls should happen
+        await coordinator._wait_for_initial_mqtt_data(timeout=5.0)
+
+    @pytest.mark.asyncio
+    async def test_has_state_returns_early(self):
+        """When product-state is present in the first poll, the method returns early."""
+        coordinator = self._make_coordinator()
+
+        mock_device = AsyncMock()
+        mock_device.get_state.return_value = {"product-state": {"fpwr": "ON"}}
+        # get_environmental_data is called synchronously - must be a MagicMock
+        mock_device.get_environmental_data = MagicMock(return_value=None)
+        coordinator.device = mock_device
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await coordinator._wait_for_initial_mqtt_data(timeout=5.0)
+
+        # Should NOT have slept - returned as soon as state was found
+        mock_sleep.assert_not_called()
+        mock_device.get_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_has_environmental_returns_early(self):
+        """When environmental data is present (but no product-state) the method returns early."""
+        coordinator = self._make_coordinator()
+
+        mock_device = AsyncMock()
+        mock_device.get_state.return_value = {}  # no product-state key
+        mock_device.get_environmental_data = MagicMock(return_value={"pm25": "010"})
+        coordinator.device = mock_device
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await coordinator._wait_for_initial_mqtt_data(timeout=5.0)
+
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_require_environmental_returns_early(self):
+        """With require_environmental=True, returns as soon as env data is present."""
+        coordinator = self._make_coordinator()
+
+        mock_device = AsyncMock()
+        mock_device.get_state.return_value = {"product-state": {"fpwr": "ON"}}
+        mock_device.get_environmental_data = MagicMock(return_value={"pm25": "020"})
+        coordinator.device = mock_device
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await coordinator._wait_for_initial_mqtt_data(
+                timeout=5.0, require_environmental=True
+            )
+
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_require_environmental_waits_then_finds_data(self):
+        """With require_environmental=True and no env data on first poll, sleeps then returns on second."""
+        coordinator = self._make_coordinator()
+
+        mock_device = AsyncMock()
+        # First call: no env data; second call: env data present
+        mock_device.get_state.return_value = {"product-state": {"fpwr": "ON"}}
+        mock_device.get_environmental_data = MagicMock(
+            side_effect=[None, {"pm25": "005"}]
+        )
+        coordinator.device = mock_device
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            # Patch monotonic so the deadline is far in the future (avoids timeout)
+            import time
+
+            base = time.monotonic()
+            with patch("time.monotonic", side_effect=[base, base + 0.05, base + 0.1]):
+                await coordinator._wait_for_initial_mqtt_data(
+                    timeout=5.0, require_environmental=True
+                )
+
+        assert mock_device.get_environmental_data.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_deadline_exceeded_exits_loop(self):
+        """When the deadline passes with no data available the method exits silently."""
+        coordinator = self._make_coordinator()
+
+        mock_device = AsyncMock()
+        mock_device.get_state.return_value = {}  # no product-state
+        mock_device.get_environmental_data = MagicMock(return_value=None)
+        coordinator.device = mock_device
+
+        import time
+
+        base = time.monotonic()
+        # deadline = base + 0.5;  first iteration check is base+0.6 → already past deadline
+        with patch("time.monotonic", side_effect=[base, base + 0.6]):
+            # Should exit without raising
+            await coordinator._wait_for_initial_mqtt_data(timeout=0.5)
+
+    @pytest.mark.asyncio
+    async def test_no_data_sleeps_then_finds_state(self):
+        """With require_environmental=False and no data on first poll, sleeps then finds state."""
+        coordinator = self._make_coordinator()
+
+        mock_device = AsyncMock()
+        # First poll: nothing; second poll: state present
+        mock_device.get_state.side_effect = [
+            {},  # no product-state
+            {"product-state": {"fpwr": "ON"}},
+        ]
+        mock_device.get_environmental_data = MagicMock(return_value=None)
+        coordinator.device = mock_device
+
+        import time
+
+        base = time.monotonic()
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            with patch("time.monotonic", side_effect=[base, base + 0.05, base + 0.1]):
+                await coordinator._wait_for_initial_mqtt_data(timeout=5.0)
+
+        # Two calls to get_state: first returned no state, second returned state
+        assert mock_device.get_state.call_count == 2

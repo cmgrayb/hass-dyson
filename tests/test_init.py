@@ -16,6 +16,8 @@ from custom_components.hass_dyson import (
     _create_device_entry,
     _create_discovery_flow,
     _get_platforms_for_device,
+    _run_initial_device_refresh,
+    _start_cloud_coordinator_refresh,
     async_setup,
     async_setup_entry,
     async_unload_entry,
@@ -455,6 +457,64 @@ class TestInitBackgroundTasks:
         await _create_discovery_flow(mock_hass, mock_config_entry, device_info)
 
         mock_hass.config_entries.flow.async_init.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_start_cloud_coordinator_refresh_success(self, mock_hass):
+        """Test _start_cloud_coordinator_refresh when refresh succeeds."""
+        mock_cloud_coordinator = MagicMock()
+        mock_cloud_coordinator.async_config_entry_first_refresh = AsyncMock()
+
+        mock_entry = MagicMock()
+        mock_entry.data = {"email": "test@example.com"}
+
+        await _start_cloud_coordinator_refresh(mock_cloud_coordinator, mock_entry)
+
+        mock_cloud_coordinator.async_config_entry_first_refresh.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_start_cloud_coordinator_refresh_failure(self, mock_hass):
+        """Test _start_cloud_coordinator_refresh when refresh fails - should log warning but not raise."""
+        mock_cloud_coordinator = MagicMock()
+        mock_cloud_coordinator.async_config_entry_first_refresh = AsyncMock(
+            side_effect=Exception("Cloud refresh failed")
+        )
+
+        mock_entry = MagicMock()
+        mock_entry.data = {"email": "test@example.com"}
+
+        # Should not raise - failure is logged as a warning
+        await _start_cloud_coordinator_refresh(mock_cloud_coordinator, mock_entry)
+
+        mock_cloud_coordinator.async_config_entry_first_refresh.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_initial_device_refresh_success(self, mock_hass):
+        """Test _run_initial_device_refresh when refresh succeeds."""
+        mock_coordinator = MagicMock()
+        mock_coordinator.async_refresh = AsyncMock()
+
+        mock_entry = MagicMock()
+        mock_entry.title = "Test Device"
+
+        await _run_initial_device_refresh(mock_coordinator, mock_entry)
+
+        mock_coordinator.async_refresh.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_initial_device_refresh_failure(self, mock_hass):
+        """Test _run_initial_device_refresh when refresh fails - should log debug but not raise."""
+        mock_coordinator = MagicMock()
+        mock_coordinator.async_refresh = AsyncMock(
+            side_effect=Exception("Refresh error")
+        )
+
+        mock_entry = MagicMock()
+        mock_entry.title = "Test Device"
+
+        # Should not raise - failure is logged at debug level
+        await _run_initial_device_refresh(mock_coordinator, mock_entry)
+
+        mock_coordinator.async_refresh.assert_called_once()
 
 
 class TestInitAccountManagement:
