@@ -178,7 +178,7 @@ class TestInitModule:
         ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator_class.return_value = mock_coordinator
-            mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+            mock_coordinator._async_setup_device = AsyncMock()
             mock_coordinator.serial_number = "TEST123456"
 
             with patch("custom_components.hass_dyson.async_setup_services"):
@@ -260,7 +260,7 @@ class TestInitModule:
         ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
             mock_coordinator_class.return_value = mock_coordinator
-            mock_coordinator.async_config_entry_first_refresh = AsyncMock(
+            mock_coordinator._async_setup_device = AsyncMock(
                 side_effect=UnsupportedDeviceError("no MQTT support")
             )
 
@@ -611,7 +611,7 @@ class TestInitDeviceManagement:
             "custom_components.hass_dyson.DysonDataUpdateCoordinator"
         ) as mock_coordinator_class:
             mock_coordinator = MagicMock()
-            mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+            mock_coordinator._async_setup_device = AsyncMock()
             mock_coordinator_class.return_value = mock_coordinator
 
             # Mock platform setup with one platform failing
@@ -629,7 +629,7 @@ class TestInitDeviceManagement:
                     ):  # ConfigEntryNotReady or platform error
                         await async_setup_entry(mock_hass, mock_config_entry)
 
-                    mock_coordinator.async_config_entry_first_refresh.assert_called_once()
+                    mock_coordinator._async_setup_device.assert_called_once()
                     mock_setup_services.assert_called_once()
 
     @pytest.mark.asyncio
