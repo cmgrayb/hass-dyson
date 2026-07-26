@@ -1809,9 +1809,6 @@ class DysonDevice:
             _LOGGER.debug("Publish result: %s", result)
             _LOGGER.debug("Requested current state from %s", self._log_serial)
 
-            # Give device time to respond
-            await asyncio.sleep(3.0)
-
         except Exception as err:
             _LOGGER.error("Failed to request state from %s: %s", self._log_serial, err)
 
