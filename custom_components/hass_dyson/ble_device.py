@@ -43,10 +43,11 @@ if TYPE_CHECKING:
 
 from .const import (
     BLE_AUTH_CHAR_UUID,
-    BLE_BRIGHTNESS_UUID,
+    BLE_BRIGHTNESS_LUMENS_MAX,
+    BLE_BRIGHTNESS_LUMENS_MIN,
+    BLE_BRIGHTNESS_LUMENS_UUID,
     BLE_CHAR_11006_UUID,
     BLE_CHAR_11007_UUID,
-    BLE_CHAR_11009_UUID,
     BLE_COLOR_TEMP_UUID,
     BLE_HKDF_INFO,
     BLE_MAX_KELVIN,
@@ -356,6 +357,50 @@ def raw_to_ha_brightness(raw: int) -> int:
     return max(0, min(255, round(raw * 255 / 100)))
 
 
+def ha_to_raw_brightness_lumens(ha_brightness: int) -> int:
+    """Map Home Assistant brightness (0-255) to lamp lumens (100-1000).
+
+    Used for daylight-capable devices (e.g. CF06 / CD06 Lightcycle Morph)
+    that store brightness in characteristic 11009 as a uint16 LE lumens value.
+
+    The mapping is linear over the range
+    ``BLE_BRIGHTNESS_LUMENS_MIN``–``BLE_BRIGHTNESS_LUMENS_MAX``.
+
+    Args:
+        ha_brightness: HA brightness value in range 0–255.
+
+    Returns:
+        Lamp brightness in lumens, range 100–1000.
+    """
+    if ha_brightness <= 0:
+        return BLE_BRIGHTNESS_LUMENS_MIN
+    lm_range = BLE_BRIGHTNESS_LUMENS_MAX - BLE_BRIGHTNESS_LUMENS_MIN
+    return max(
+        BLE_BRIGHTNESS_LUMENS_MIN,
+        min(
+            BLE_BRIGHTNESS_LUMENS_MAX,
+            round(BLE_BRIGHTNESS_LUMENS_MIN + ha_brightness * lm_range / 255),
+        ),
+    )
+
+
+def raw_lumens_to_ha_brightness(lumens: int) -> int:
+    """Map lamp lumens (100-1000) to Home Assistant brightness (0-255).
+
+    Inverse of :func:`ha_to_raw_brightness_lumens`.
+
+    Args:
+        lumens: Lamp brightness in lumens, range 100–1000.
+
+    Returns:
+        HA brightness value in range 0–255.
+    """
+    lm_range = BLE_BRIGHTNESS_LUMENS_MAX - BLE_BRIGHTNESS_LUMENS_MIN
+    return max(
+        0, min(255, round((lumens - BLE_BRIGHTNESS_LUMENS_MIN) * 255 / lm_range))
+    )
+
+
 def kelvin_to_mired(kelvin: int) -> int:
     """Convert Kelvin to mired (reciprocal megakelvin).
 
@@ -403,7 +448,6 @@ class BLELightState:
     last_motion_at: float = 0.0
     char_11006_hex: str | None = None
     char_11007_hex: str | None = None
-    char_11009_hex: str | None = None
     last_error: str = ""
     firmware_major: int | None = None
     firmware_minor: int | None = None
@@ -520,22 +564,53 @@ class DysonBLEDevice:
         press).  Updates cached state and fires to HA entities.
         """
         raw = bytes(data)
-        self.state.power = bool(raw and raw[0] != 0)
+        power_on = bool(raw and raw[0] != 0)
+        _LOGGER.debug(
+            "Power notification from %s: raw=%s → %s",
+            self.serial_number,
+            raw.hex(),
+            "ON" if power_on else "OFF",
+        )
+        self.state.power = power_on
         self._fire_state_change()
 
     def _on_brightness_notification(
         self, _characteristic: Any, data: bytearray
     ) -> None:
-        """Handle notification from the brightness characteristic.
+        """Handle notification from the brightness characteristic (11009).
 
-        Called when the lamp reports a brightness change from its physical
-        controls.  Updates cached state and fires to HA entities.
+        The Lightcycle Morph (CF06) is a daylight-capable device and reports
+        brightness on characteristic 11009 as a uint16 little-endian lumens
+        value in the range 100–1000.  Physical-button brightness changes on
+        the lamp are reflected in HA immediately via this callback.
         """
         raw = bytes(data)
-        if raw:
-            self.state.brightness_raw = raw[0]
-            self.state.brightness = raw_to_ha_brightness(raw[0])
+        _LOGGER.debug(
+            "Brightness notification from %s: raw=%s (%d bytes)",
+            self.serial_number,
+            raw.hex(),
+            len(raw),
+        )
+        if len(raw) >= 2:  # noqa: PLR2004
+            lumens = int.from_bytes(raw[:2], byteorder="little")
+            ha_brightness = raw_lumens_to_ha_brightness(lumens)
+            _LOGGER.debug(
+                "Brightness update for %s: %d lm → HA brightness %d",
+                self.serial_number,
+                lumens,
+                ha_brightness,
+            )
+            self.state.brightness_raw = lumens
+            self.state.brightness = ha_brightness
             self._fire_state_change()
+        else:
+            _LOGGER.warning(
+                "Brightness notification from %s has unexpected length %d (raw=%s); "
+                "expected at least 2 bytes — value format may differ from assumption",
+                self.serial_number,
+                len(raw),
+                raw.hex(),
+            )
 
     def _on_color_temp_notification(
         self, _characteristic: Any, data: bytearray
@@ -546,11 +621,29 @@ class DysonBLEDevice:
         physical controls.  Updates cached state and fires to HA entities.
         """
         raw = bytes(data)
+        _LOGGER.debug(
+            "Color temp notification from %s: raw=%s (%d bytes)",
+            self.serial_number,
+            raw.hex(),
+            len(raw),
+        )
         if len(raw) >= 2:  # noqa: PLR2004
             kelvin = int.from_bytes(raw[:2], byteorder="little")
+            _LOGGER.debug(
+                "Color temp update for %s: %d K",
+                self.serial_number,
+                kelvin,
+            )
             self.state.color_temp_kelvin = kelvin
             self.state.color_temp_mired = kelvin_to_mired(kelvin)
             self._fire_state_change()
+        else:
+            _LOGGER.warning(
+                "Color temp notification from %s has unexpected length %d (raw=%s)",
+                self.serial_number,
+                len(raw),
+                raw.hex(),
+            )
 
     def _on_runtime_notification(self, short_id: str):
         """Return a notify handler for a runtime diagnostic characteristic."""
@@ -921,19 +1014,46 @@ class DysonBLEDevice:
         try:
             power_raw = bytes(await self._client.read_gatt_char(BLE_POWER_UUID))
             self.state.power = bool(power_raw and power_raw[0] != 0)
+            _LOGGER.debug(
+                "Initial power read from %s: raw=%s → %s",
+                self.serial_number,
+                power_raw.hex(),
+                "ON" if self.state.power else "OFF",
+            )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug(
                 "Could not read power state from %s: %s", self.serial_number, exc
             )
 
-        # Brightness
+        # Brightness — characteristic 11009, uint16 LE, 100-1000 lm (CF06)
         try:
             brightness_raw = bytes(
-                await self._client.read_gatt_char(BLE_BRIGHTNESS_UUID)
+                await self._client.read_gatt_char(BLE_BRIGHTNESS_LUMENS_UUID)
             )
-            if brightness_raw:
-                self.state.brightness_raw = brightness_raw[0]
-                self.state.brightness = raw_to_ha_brightness(brightness_raw[0])
+            _LOGGER.debug(
+                "Initial brightness read from %s (char 11009): raw=%s (%d bytes)",
+                self.serial_number,
+                brightness_raw.hex(),
+                len(brightness_raw),
+            )
+            if len(brightness_raw) >= 2:  # noqa: PLR2004
+                lumens = int.from_bytes(brightness_raw[:2], byteorder="little")
+                self.state.brightness_raw = lumens
+                self.state.brightness = raw_lumens_to_ha_brightness(lumens)
+                _LOGGER.debug(
+                    "Initial brightness for %s: %d lm → HA %d",
+                    self.serial_number,
+                    lumens,
+                    self.state.brightness,
+                )
+            else:
+                _LOGGER.warning(
+                    "Brightness char 11009 on %s returned %d bytes (raw=%s); "
+                    "expected uint16 LE — value format may differ from assumption",
+                    self.serial_number,
+                    len(brightness_raw),
+                    brightness_raw.hex(),
+                )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug(
                 "Could not read brightness from %s: %s", self.serial_number, exc
@@ -944,11 +1064,22 @@ class DysonBLEDevice:
             color_temp_raw = bytes(
                 await self._client.read_gatt_char(BLE_COLOR_TEMP_UUID)
             )
+            _LOGGER.debug(
+                "Initial color temp read from %s (char 11001): raw=%s (%d bytes)",
+                self.serial_number,
+                color_temp_raw.hex(),
+                len(color_temp_raw),
+            )
             if len(color_temp_raw) >= 2:  # noqa: PLR2004
                 kelvin = int.from_bytes(color_temp_raw[:2], byteorder="little")
                 self.state.color_temp_kelvin = kelvin
                 self.state.color_temp_mired = (
                     kelvin_to_mired(kelvin) if kelvin > 0 else None
+                )
+                _LOGGER.debug(
+                    "Initial color temp for %s: %d K",
+                    self.serial_number,
+                    kelvin,
                 )
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug(
@@ -963,27 +1094,35 @@ class DysonBLEDevice:
             return
 
         # Light-control characteristics: power, brightness, color temperature.
-        # The Dyson lamp firmware may or may not set the NOTIFY property on these
-        # characteristics.  We try to subscribe; if the characteristic doesn't
-        # support notifications we catch the exception silently.  When
-        # subscriptions succeed, physical-button changes on the lamp are reflected
-        # in HA in real time and we avoid periodic GATT reads for state refresh.
+        # The Lightcycle Morph (CF06) uses characteristic 11009 for brightness
+        # (uint16 LE lumens) rather than 11000.  Power and color temperature
+        # use their respective characteristics on all supported devices.
         for uuid, handler, name in (
             (BLE_POWER_UUID, self._on_power_notification, "power"),
-            (BLE_BRIGHTNESS_UUID, self._on_brightness_notification, "brightness"),
+            (
+                BLE_BRIGHTNESS_LUMENS_UUID,
+                self._on_brightness_notification,
+                "brightness",
+            ),
             (BLE_COLOR_TEMP_UUID, self._on_color_temp_notification, "color_temp"),
         ):
             try:
                 await self._client.start_notify(uuid, handler)
                 _LOGGER.debug(
-                    "Subscribed to %s notifications for %s", name, self.serial_number
-                )
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug(
-                    "%s characteristic does not support notifications for %s "
-                    "(state will be read once at connect and updated optimistically)",
+                    "Subscribed to %s notifications for %s (UUID %s)",
                     name,
                     self.serial_number,
+                    uuid,
+                )
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning(
+                    "Could not subscribe to %s notifications for %s (UUID %s): %s "
+                    "— commands to this characteristic will not be confirmed via "
+                    "notification; state will be updated optimistically only",
+                    name,
+                    self.serial_number,
+                    uuid,
+                    exc,
                 )
 
         # Motion notifications (most important — drives binary sensor)
@@ -1002,10 +1141,11 @@ class DysonBLEDevice:
             )
 
         # Runtime / diagnostic notifications (best-effort)
+        # Note: 11009 is now the primary brightness channel and is subscribed
+        # above; only 11006 and 11007 remain as diagnostic characteristics.
         for short_id, uuid in (
             ("11006", BLE_CHAR_11006_UUID),
             ("11007", BLE_CHAR_11007_UUID),
-            ("11009", BLE_CHAR_11009_UUID),
         ):
             try:
                 await self._client.start_notify(
@@ -1186,9 +1326,14 @@ class DysonBLEDevice:
         if not self.is_connected or self._client is None:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
-            await self._client.write_gatt_char(
-                BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False
+            payload = b"\x01" if on else b"\x00"
+            _LOGGER.debug(
+                "Writing power %s to %s (char 11005, payload=%s)",
+                "ON" if on else "OFF",
+                self.serial_number,
+                payload.hex(),
             )
+            await self._client.write_gatt_char(BLE_POWER_UUID, payload, response=False)
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;
             # BLE notifications will keep state current.
@@ -1197,6 +1342,11 @@ class DysonBLEDevice:
 
     async def set_brightness(self, ha_brightness: int) -> None:
         """Set brightness.
+
+        Writes to characteristic 11009 (``BRIGHTNESS_OUTPUT_LUMENS_UUID``) as
+        a uint16 little-endian lumens value (100–1000).  The Lightcycle Morph
+        (CF06) is a daylight-capable device; the Android MyDyson app always
+        targets 11009 for this product, ignoring 11000.
 
         Args:
             ha_brightness: Home Assistant brightness value (0–255).
@@ -1207,19 +1357,33 @@ class DysonBLEDevice:
         if not self.is_connected or self._client is None:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
-            raw = ha_to_raw_brightness(ha_brightness)
+            raw = ha_to_raw_brightness_lumens(ha_brightness)
+            payload = raw.to_bytes(2, byteorder="little")
+            _LOGGER.debug(
+                "Writing brightness to %s: HA %d → %d lm (char 11009=%s, payload=%s)",
+                self.serial_number,
+                ha_brightness,
+                raw,
+                BLE_BRIGHTNESS_LUMENS_UUID,
+                payload.hex(),
+            )
             await self._client.write_gatt_char(
-                BLE_BRIGHTNESS_UUID, bytes([raw]), response=False
+                BLE_BRIGHTNESS_LUMENS_UUID,
+                payload,
+                response=False,
             )
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;
             # BLE notifications will keep state current.
             self.state.brightness_raw = raw
-            self.state.brightness = raw_to_ha_brightness(raw)
+            self.state.brightness = raw_lumens_to_ha_brightness(raw)
             self._fire_state_change()
 
     async def set_color_temp_kelvin(self, kelvin: int) -> None:
         """Set color temperature in Kelvin.
+
+        Writes to characteristic 11001 as a uint16 little-endian Kelvin value
+        (2700–6500 K).
 
         Args:
             kelvin: Color temperature in Kelvin (clamped to 2700–6500).
@@ -1231,9 +1395,19 @@ class DysonBLEDevice:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
             kelvin_clamped = max(BLE_MIN_KELVIN, min(BLE_MAX_KELVIN, kelvin))
+            payload = kelvin_clamped.to_bytes(2, byteorder="little")
+            _LOGGER.debug(
+                "Writing color temp to %s: %d K (clamped from %d K) "
+                "(char 11001=%s, payload=%s)",
+                self.serial_number,
+                kelvin_clamped,
+                kelvin,
+                BLE_COLOR_TEMP_UUID,
+                payload.hex(),
+            )
             await self._client.write_gatt_char(
                 BLE_COLOR_TEMP_UUID,
-                kelvin_clamped.to_bytes(2, byteorder="little"),
+                payload,
                 response=False,
             )
             # Update state optimistically from the written value.

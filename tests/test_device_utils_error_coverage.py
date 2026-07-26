@@ -287,6 +287,20 @@ class TestExtractCapabilitiesFromDeviceInfoErrorHandling:
         assert "Purifier" in result
         assert "Humidifier" in result
 
+    def test_extract_capabilities_358_model_adds_humidifier(self):
+        """Test extract_capabilities adds Humidifier for 358-series models."""
+        # Arrange
+        device_info = MagicMock()
+        device_info.capabilities = ["Purifier"]
+        device_info.product_type = "358K"
+
+        # Act
+        result = extract_capabilities_from_device_info(device_info)
+
+        # Assert
+        assert "Purifier" in result
+        assert "Humidifier" in result
+
     def test_extract_capabilities_ph_model_does_not_duplicate_humidifier(self):
         """Test extract_capabilities doesn't duplicate Humidifier if already present."""
         # Arrange

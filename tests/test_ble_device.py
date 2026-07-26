@@ -18,9 +18,11 @@ from custom_components.hass_dyson.ble_device import (
     fragment_dyson_message,
     g20c_encrypt,
     ha_to_raw_brightness,
+    ha_to_raw_brightness_lumens,
     hkdf_derive_aes_key,
     kelvin_to_mired,
     mired_to_kelvin,
+    raw_lumens_to_ha_brightness,
     raw_to_ha_brightness,
 )
 from custom_components.hass_dyson.const import (
@@ -267,6 +269,43 @@ class TestBrightnessScaling:
         assert ha_to_raw_brightness(300) == 100
 
 
+class TestBrightnessLumensScaling:
+    """Tests for ha_to_raw_brightness_lumens / raw_lumens_to_ha_brightness."""
+
+    def test_ha_zero_maps_to_min_lumens(self):
+        """HA brightness 0 maps to minimum lamp lumens (100)."""
+        assert ha_to_raw_brightness_lumens(0) == 100
+
+    def test_ha_max_maps_to_max_lumens(self):
+        """HA brightness 255 maps to maximum lamp lumens (1000)."""
+        assert ha_to_raw_brightness_lumens(255) == 1000
+
+    def test_ha_negative_clamps_to_min(self):
+        assert ha_to_raw_brightness_lumens(-10) == 100
+
+    def test_ha_over_255_clamps_to_max(self):
+        assert ha_to_raw_brightness_lumens(300) == 1000
+
+    def test_midpoint_is_in_range(self):
+        lm = ha_to_raw_brightness_lumens(128)
+        assert 100 <= lm <= 1000
+
+    def test_roundtrip(self):
+        """Converting HA→lumens→HA stays within 1 HA unit."""
+        for ha in (0, 64, 128, 191, 255):
+            lm = ha_to_raw_brightness_lumens(ha)
+            ha_back = raw_lumens_to_ha_brightness(lm)
+            assert abs(ha_back - ha) <= 1, (
+                f"roundtrip failed for ha={ha}: got {ha_back}"
+            )
+
+    def test_lumens_min_maps_to_ha_zero(self):
+        assert raw_lumens_to_ha_brightness(100) == 0
+
+    def test_lumens_max_maps_to_ha_255(self):
+        assert raw_lumens_to_ha_brightness(1000) == 255
+
+
 class TestColorTempScaling:
     """Tests for kelvin_to_mired / mired_to_kelvin."""
 
@@ -422,22 +461,29 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(BLE_POWER_UUID, b"\x00", response=False)
 
     @pytest.mark.asyncio
-    async def test_set_brightness_writes_raw_byte(self):
-        """set_brightness converts HA scale and writes to BLE_BRIGHTNESS_UUID."""
-        from custom_components.hass_dyson.const import BLE_BRIGHTNESS_UUID
+    async def test_set_brightness_writes_lumens_uint16(self):
+        """set_brightness writes lumens as uint16 LE to BLE_BRIGHTNESS_LUMENS_UUID."""
+        from custom_components.hass_dyson.ble_device import ha_to_raw_brightness_lumens
+        from custom_components.hass_dyson.const import BLE_BRIGHTNESS_LUMENS_UUID
 
         dev = self._make_device()
         client = MagicMock()
         client.is_connected = True
         client.write_gatt_char = AsyncMock()
-        client.read_gatt_char = AsyncMock(return_value=bytearray([75]))
+        # Simulate lamp echoing back the written lumens value as 2-byte LE
+        expected_lumens = ha_to_raw_brightness_lumens(191)
+        client.read_gatt_char = AsyncMock(
+            return_value=bytearray(expected_lumens.to_bytes(2, byteorder="little"))
+        )
         dev._client = client
         dev.state.authenticated = True
         dev.state.connected = True
 
-        await dev.set_brightness(191)  # ~75% raw
+        await dev.set_brightness(191)
         client.write_gatt_char.assert_any_call(
-            BLE_BRIGHTNESS_UUID, bytes([75]), response=False
+            BLE_BRIGHTNESS_LUMENS_UUID,
+            expected_lumens.to_bytes(2, byteorder="little"),
+            response=False,
         )
 
     @pytest.mark.asyncio

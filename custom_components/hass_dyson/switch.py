@@ -55,6 +55,17 @@ async def async_setup_entry(
     if CAPABILITY_ENVIRONMENTAL_DATA in device_capabilities:
         entities.append(DysonContinuousMonitoringSwitch(coordinator))
 
+    # Add Find+Follow switch for devices that report the 'soon' state key.
+    # No dedicated capability flag exists; presence of 'soon' in product-state is
+    # the sole gating criterion (same pattern as 'oton' for tilt oscillation).
+    ff_product_state: dict = {}
+    if coordinator.data:
+        raw_ps = coordinator.data.get("product-state", {})
+        if isinstance(raw_ps, dict):
+            ff_product_state = raw_ps
+    if "soon" in ff_product_state:
+        entities.append(DysonFindFollowSwitch(coordinator))
+
     async_add_entities(entities, True)
     return True
 
@@ -520,3 +531,95 @@ class DysonFirmwareAutoUpdateSwitch(DysonEntity, SwitchEntity):
             self.coordinator.firmware_version,
         )
         super()._handle_coordinator_update()
+
+
+class DysonFindFollowSwitch(DysonEntity, SwitchEntity):
+    """Switch for Find+Follow mode.
+
+    Find+Follow uses the device camera to identify and track people in the
+    room, directing airflow toward them.  The switch is detected at runtime
+    by the presence of the ``soon`` state key in the device's product-state.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the Find+Follow switch."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_find_follow"
+        self._attr_translation_key = "find_follow"
+        self._attr_icon = "mdi:account-eye"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.device:
+            product_state = self.coordinator.data.get("product-state", {})
+            soon = self.coordinator.device.get_state_value(product_state, "soon", "OFF")
+            # ON when actively tracking (ON) or scanning (SCAN);
+            # scanning always transitions to ON after the scan completes.
+            self._attr_is_on = soon in ("ON", "SCAN")
+        else:
+            self._attr_is_on = None
+        super()._handle_coordinator_update()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return Find+Follow state attributes for diagnostics and automations."""
+        if not self.coordinator.device:
+            return None
+
+        product_state = self.coordinator.data.get("product-state", {})
+        soon = self.coordinator.device.get_state_value(product_state, "soon", "OFF")
+        sost = self.coordinator.device.get_state_value(product_state, "sost", "OFF")
+
+        return {
+            "find_follow_active": soon in ("ON", "SCAN"),
+            "find_follow_command": soon,
+            "find_follow_engine_status": sost,
+        }
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable Find+Follow mode."""
+        if not self.coordinator.device:
+            return
+        try:
+            await self.coordinator.device.set_find_follow("ON")
+            _LOGGER.debug(
+                "Enabled Find+Follow for %s",
+                mask_serial(self.coordinator.serial_number),
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error enabling Find+Follow for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error enabling Find+Follow for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable Find+Follow mode."""
+        if not self.coordinator.device:
+            return
+        try:
+            await self.coordinator.device.set_find_follow("OFF")
+            _LOGGER.debug(
+                "Disabled Find+Follow for %s",
+                mask_serial(self.coordinator.serial_number),
+            )
+        except (ConnectionError, TimeoutError) as err:
+            _LOGGER.error(
+                "Communication error disabling Find+Follow for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error disabling Find+Follow for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
