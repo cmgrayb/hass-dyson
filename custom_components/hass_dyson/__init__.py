@@ -445,10 +445,13 @@ async def _setup_cloud_coordinator(hass: HomeAssistant, entry: ConfigEntry) -> N
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][f"{entry.entry_id}_cloud"] = cloud_coordinator
 
-        # Start the coordinator
-        await cloud_coordinator.async_config_entry_first_refresh()
+        # Start the first refresh in the background so startup is not blocked.
+        hass.async_create_background_task(
+            _start_cloud_coordinator_refresh(cloud_coordinator, entry),
+            f"dyson_cloud_first_refresh_{entry.entry_id}",
+        )
         _LOGGER.info(
-            "Cloud device polling coordinator started for account: %s",
+            "Cloud device polling coordinator scheduled for background startup: %s",
             entry.data.get("email"),
         )
     else:
@@ -499,8 +502,8 @@ async def _setup_individual_device_entry(
     coordinator = DysonDataUpdateCoordinator(hass, entry)
 
     try:
-        # Perform initial data fetch
-        await coordinator.async_config_entry_first_refresh()
+        # Perform essential setup only; non-critical initial refresh is deferred.
+        await coordinator._async_setup_device()
     except UnsupportedDeviceError as err:
         # Device doesn't support MQTT - schedule removal AFTER setup_lock is released.
         # Awaiting async_remove here would deadlock because async_setup_entry already
@@ -524,7 +527,10 @@ async def _setup_individual_device_entry(
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Check for firmware updates if this is a cloud device
-    await _check_firmware_updates(coordinator, entry)
+    hass.async_create_background_task(
+        _check_firmware_updates(coordinator, entry),
+        f"dyson_fw_check_{coordinator.serial_number}",
+    )
 
     # Set up device services for this coordinator
     await async_setup_device_services_for_coordinator(hass, coordinator)
@@ -532,10 +538,48 @@ async def _setup_individual_device_entry(
     # Set up platforms and services
     await _setup_platforms_and_services(hass, entry, coordinator)
 
+    # Run non-critical initial refresh in background to reduce setup blocking.
+    hass.async_create_background_task(
+        _run_initial_device_refresh(coordinator, entry),
+        f"dyson_initial_refresh_{coordinator.serial_number}",
+    )
+
     _LOGGER.info(
         "Successfully set up Dyson device '%s'", mask_serial(coordinator.serial_number)
     )
     return True
+
+
+async def _start_cloud_coordinator_refresh(
+    cloud_coordinator: DysonCloudAccountCoordinator, entry: ConfigEntry
+) -> None:
+    """Run cloud coordinator first refresh without blocking config entry setup."""
+    try:
+        await cloud_coordinator.async_config_entry_first_refresh()
+        _LOGGER.info(
+            "Cloud device polling coordinator started for account: %s",
+            entry.data.get("email"),
+        )
+    except Exception as err:
+        _LOGGER.warning(
+            "Background cloud coordinator startup failed for account %s: %s",
+            entry.data.get("email"),
+            err,
+        )
+
+
+async def _run_initial_device_refresh(
+    coordinator: DysonDataUpdateCoordinator, entry: ConfigEntry
+) -> None:
+    """Run non-critical initial refresh in background after entry setup."""
+    try:
+        await coordinator.async_refresh()
+    except Exception as err:
+        _LOGGER.debug(
+            "Background initial refresh failed for Dyson device '%s': %s",
+            entry.title,
+            err,
+        )
 
 
 async def _check_firmware_updates(

@@ -1784,6 +1784,27 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "Sticker discovery method temporarily disabled - use cloud discovery instead"
         )
 
+    async def _wait_for_initial_mqtt_data(
+        self, timeout: float, require_environmental: bool = False
+    ) -> None:
+        """Wait briefly for MQTT callbacks to populate initial state."""
+        if not self.device:
+            return
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            state_data = await self.device.get_state()
+            has_state = bool(state_data and state_data.get("product-state"))
+            has_environmental = bool(self.device.get_environmental_data())
+
+            if require_environmental:
+                if has_environmental:
+                    return
+            elif has_state or has_environmental:
+                return
+
+            await asyncio.sleep(0.1)
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data from the device - mainly for connectivity checks."""
         if not self.device:
@@ -1833,10 +1854,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     # Older devices (e.g. TP04) embed environmental data in the CURRENT-STATE
                     # message itself but do NOT send the separate environmental message.
                     await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
-
-                    # Wait for CURRENT-STATE (and ENVIRONMENTAL-CURRENT-SENSOR-DATA if sent automatically)
-                    # Typical timing: CURRENT-STATE at ~140ms, ENVIRONMENTAL-CURRENT-SENSOR-DATA at ~250ms
-                    await asyncio.sleep(0.5)
+                    await self._wait_for_initial_mqtt_data(timeout=0.9)
 
                     # Check whether _environmental_data was populated by an automatic
                     # ENVIRONMENTAL-CURRENT-SENSOR-DATA response.  If not, the device
@@ -1849,7 +1867,9 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             self.serial_number,
                         )
                         await self.device.send_command(MQTT_CMD_REQUEST_ENVIRONMENT)
-                        await asyncio.sleep(0.5)
+                        await self._wait_for_initial_mqtt_data(
+                            timeout=0.9, require_environmental=True
+                        )
 
                     _LOGGER.debug(
                         "Completed wait for initial state messages from %s",
