@@ -141,6 +141,7 @@ def mock_hass():
     hass.config_entries.async_entries_for_config_entry_id = MagicMock(return_value=[])
     return hass
 
+
 # 2. Mock Config Entry
 @pytest.fixture
 def mock_config_entry():
@@ -152,6 +153,7 @@ def mock_config_entry():
     }
     return config_entry
 
+
 # 3. Mock Coordinator (Method 1: Direct Mock)
 @pytest.fixture
 def mock_coordinator():
@@ -162,11 +164,14 @@ def mock_coordinator():
     coordinator.device.set_sleep_timer = AsyncMock()
     return coordinator
 
+
 # 4. Mock Coordinator (Method 2: Patched Initialization)
 @pytest.mark.asyncio
 async def test_coordinator_method(mock_hass, mock_config_entry):
     """Test coordinator method with patched initialization."""
-    with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+    with patch(
+        "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+    ):
         coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
 
         # Manually set required attributes normally set by parent __init__

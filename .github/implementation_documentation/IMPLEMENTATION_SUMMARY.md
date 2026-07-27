@@ -67,19 +67,19 @@ Enhanced integration initialization:
 # Creates discovery flows like Govee BLE integration
 self.hass.async_create_task(
     self.hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": "discovery"},
-        data=discovery_info
+        DOMAIN, context={"source": "discovery"}, data=discovery_info
     )
 )
 ```
 
 ### Configuration Schema:
 ```python
-vol.Schema({
-    vol.Required(CONF_POLL_FOR_DEVICES, default=True): bool,
-    vol.Required(CONF_AUTO_ADD_DEVICES, default=True): bool,
-})
+vol.Schema(
+    {
+        vol.Required(CONF_POLL_FOR_DEVICES, default=True): bool,
+        vol.Required(CONF_AUTO_ADD_DEVICES, default=True): bool,
+    }
+)
 ```
 
 ### Coordinator Integration:

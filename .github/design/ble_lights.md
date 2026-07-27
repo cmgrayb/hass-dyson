@@ -71,9 +71,11 @@ safety unless a larger MTU is confirmed.
 ### Fragment builder algorithm
 
 ```python
-def fragment_dyson_message(type_id: int, payload: bytes, capacity: int = 20) -> list[bytes]:
+def fragment_dyson_message(
+    type_id: int, payload: bytes, capacity: int = 20
+) -> list[bytes]:
     logical = bytes([type_id]) + payload
-    data_per_fragment = capacity - 1          # 1 byte reserved for header
+    data_per_fragment = capacity - 1  # 1 byte reserved for header
     total_fragments = max(1, math.ceil(len(logical) / data_per_fragment))
     fragments: list[bytes] = []
     for index in range(total_fragments):
@@ -185,10 +187,13 @@ import hashlib, hmac
 
 USER_AUTH_AES_INFO = b"USER_AUTH_AES\x00\x00\x00"
 
+
 def hkdf_derive_aes_key(ltk: bytes) -> bytes:
     """Derive 16-byte AES key from LTK.  Mirror of g20/b.d in the Android app."""
-    prk = hmac.new(b"", ltk, hashlib.sha256).digest()           # extract
-    block1 = hmac.new(prk, USER_AUTH_AES_INFO + b"\x01", hashlib.sha256).digest()  # expand
+    prk = hmac.new(b"", ltk, hashlib.sha256).digest()  # extract
+    block1 = hmac.new(
+        prk, USER_AUTH_AES_INFO + b"\x01", hashlib.sha256
+    ).digest()  # expand
     return block1[:16]
 ```
 
@@ -198,6 +203,7 @@ def hkdf_derive_aes_key(ltk: bytes) -> bytes:
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+
 
 def g20c_encrypt(enc_key: bytes, plaintext: bytes) -> bytes:
     """Produce IV(16) + AES-CBC(plaintext)(16) + HMAC-SHA256(key, ct)(32) = 64 bytes."""
@@ -212,6 +218,7 @@ def g20c_encrypt(enc_key: bytes, plaintext: bytes) -> bytes:
 
 ```python
 from uuid import UUID
+
 
 def build_reauth_payload_a(account_uuid: str, enc_key: bytes, nonce: bytes) -> bytes:
     """account_guid(16) + 0x00 0x00 + g20c_encrypt(nonce) = 82 bytes."""
@@ -265,6 +272,7 @@ def ha_to_raw_brightness(ha_brightness: int) -> int:
         return 1
     return max(1, min(100, round(ha_brightness * 100 / 255)))
 
+
 def raw_to_ha_brightness(raw: int) -> int:
     """Map lamp percent (0-100) to HA brightness (0-255)."""
     return max(0, min(255, round(raw * 255 / 100)))
@@ -276,11 +284,13 @@ The lamp stores color temperature as a **16-bit little-endian integer in Kelvin*
 range **2700 K – 6500 K**.  Home Assistant uses mired (reciprocal megakelvin).
 
 ```python
-BLE_MIN_KELVIN = 2700   # warmest = 370 mireds
-BLE_MAX_KELVIN = 6500   # coolest = ~154 mireds
+BLE_MIN_KELVIN = 2700  # warmest = 370 mireds
+BLE_MAX_KELVIN = 6500  # coolest = ~154 mireds
+
 
 def kelvin_to_mired(kelvin: int) -> int:
     return round(1_000_000 / kelvin)
+
 
 def mired_to_kelvin(mired: int) -> int:
     kelvin = round(1_000_000 / mired)

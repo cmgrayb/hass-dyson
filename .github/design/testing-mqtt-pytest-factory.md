@@ -85,14 +85,14 @@ def _make_device_mock_params(device_category: str) -> list[pytest.param]:
     """
     fixtures = DeviceFixture.discover_all(device_category)
     return [
-        pytest.param(fixture, id=fixture.metadata.product_type)
-        for fixture in fixtures
+        pytest.param(fixture, id=fixture.metadata.product_type) for fixture in fixtures
     ]
 
 
 # ---------------------------------------------------------------------------
 # ec device mock
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(
     params=_make_device_mock_params(DEVICE_CATEGORY_EC),
@@ -126,6 +126,7 @@ def ec_device_mock(request: pytest.FixtureRequest) -> DeviceMock:
 # robot device mock
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(
     params=_make_device_mock_params(DEVICE_CATEGORY_ROBOT),
     scope="function",
@@ -151,6 +152,7 @@ def robot_device_mock(request: pytest.FixtureRequest) -> DeviceMock:
 # ---------------------------------------------------------------------------
 # vacuum device mock
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(
     params=_make_device_mock_params(DEVICE_CATEGORY_VACUUM),
@@ -178,6 +180,7 @@ def vacuum_device_mock(request: pytest.FixtureRequest) -> DeviceMock:
 # flrc device mock
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(
     params=_make_device_mock_params(DEVICE_CATEGORY_FLRC),
     scope="function",
@@ -203,6 +206,7 @@ def flrc_device_mock(request: pytest.FixtureRequest) -> DeviceMock:
 # ---------------------------------------------------------------------------
 # Cross-category fixture
 # ---------------------------------------------------------------------------
+
 
 def _make_all_device_mock_params() -> list[pytest.param]:
     """Return params for all fixtures across all categories."""
@@ -357,7 +361,9 @@ from tests.device_mocks.device_mock import DeviceMock
 def test_humidity_target_only_on_humidifiers(ec_device_mock: DeviceMock) -> None:
     """Verify humidity target is only settable on devices with Humidifier capability."""
     if "Humidifier" not in ec_device_mock.capabilities:
-        pytest.skip(f"{ec_device_mock.product_type} does not have Humidifier capability")
+        pytest.skip(
+            f"{ec_device_mock.product_type} does not have Humidifier capability"
+        )
 
     ec_device_mock.handle_command("STATE-SET", {"humt": "0040"})
     assert ec_device_mock.get_state()["humt"] == "0040"
@@ -367,6 +373,7 @@ def test_humidity_target_only_on_humidifiers(ec_device_mock: DeviceMock) -> None
 
 ```python
 # tests/device_mocks/fixture_factory.py — add alongside existing fixtures
+
 
 @pytest.fixture(
     params=[
@@ -435,7 +442,9 @@ def test_all_ec_commands_covered(ec_device_mock: DeviceMock) -> None:
     This helps identify when const.py gains new state keys that need capturing.
     """
     from custom_components.hass_dyson.const import (
-        STATE_KEY_POWER, STATE_KEY_FAN_SPEED, STATE_KEY_NIGHT_MODE
+        STATE_KEY_POWER,
+        STATE_KEY_FAN_SPEED,
+        STATE_KEY_NIGHT_MODE,
     )
     from tests.device_mocks.device_mock import CommandNotFoundError
 
@@ -474,7 +483,11 @@ Provides DeviceFixture, DeviceMock, and pytest fixture factories
 for parametrized device type testing.
 """
 
-from .device_fixture import DeviceFixture, UnsupportedFixtureVersionError, UnsanitizedFixtureError
+from .device_fixture import (
+    DeviceFixture,
+    UnsupportedFixtureVersionError,
+    UnsanitizedFixtureError,
+)
 from .device_mock import DeviceMock, CommandNotFoundError
 
 __all__ = [

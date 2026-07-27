@@ -21,6 +21,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from custom_components.hass_dyson import async_setup_entry
 
+
 async def setup_dyson_integration(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """
     Set up the Dyson integration from a config entry.
@@ -42,7 +43,7 @@ cloud_config = {
     "password": "encrypted_password",
     "country": "US",
     "auto_add_devices": True,
-    "enable_polling": True
+    "enable_polling": True,
 }
 
 # Example config entry data for manual setup
@@ -53,7 +54,7 @@ manual_config = {
     "device_type": "ec",
     "mqtt_prefix": "438M",
     "hostname": "192.168.1.100",  # Optional
-    "capabilities": ["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"]
+    "capabilities": ["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"],
 }
 ```
 
@@ -68,9 +69,7 @@ from custom_components.hass_dyson.device import DysonDevice
 
 # Initialize device connection
 device = DysonDevice(
-    serial_number="VS6-EU-HJA1234A",
-    credential="device_password",
-    device_type="ec"
+    serial_number="VS6-EU-HJA1234A", credential="device_password", device_type="ec"
 )
 
 # Connect to device
@@ -166,6 +165,7 @@ def get_state_value(data: dict[str, Any], key: str, default: str = "OFF") -> str
         - Fault messages: already strings
     """
 
+
 # Example usage of get_state_value()
 state_data = device.state
 fan_speed = device.get_state_value(state_data, "fnsp", "0")  # Fan speed
@@ -201,14 +201,15 @@ def get_environmental_data() -> dict[str, Any]:
         internal attributes directly.
     """
 
+
 # Example usage of get_environmental_data()
 env_data = device.get_environmental_data()
 
 # Air quality measurements
 pm25 = env_data.get("pm25", 0)  # PM2.5 concentration
 pm10 = env_data.get("pm10", 0)  # PM10 concentration
-voc = env_data.get("va10", 0)   # Volatile organic compounds
-no2 = env_data.get("noxl", 0)   # Nitrogen dioxide
+voc = env_data.get("va10", 0)  # Volatile organic compounds
+no2 = env_data.get("noxl", 0)  # Nitrogen dioxide
 formaldehyde = env_data.get("hchr", 0)  # Formaldehyde
 
 # Environmental conditions
@@ -235,7 +236,7 @@ pm25_level = env_data.get("pm25", 0)
 
 # ✅ RECOMMENDED: Safe data retrieval with defaults
 temperature = env_data.get("tact", 0)  # Returns 0 if not available
-humidity = env_data.get("hact", 0)     # Returns 0 if not available
+humidity = env_data.get("hact", 0)  # Returns 0 if not available
 
 # ✅ RECOMMENDED: Type conversion with error handling
 try:
@@ -254,6 +255,7 @@ All Dyson entities inherit from `DysonEntity`, which provides common functionali
 
 ```python
 from custom_components.hass_dyson.entity import DysonEntity
+
 
 class CustomDysonEntity(DysonEntity):
     """Custom entity implementation example."""
@@ -278,6 +280,7 @@ class CustomDysonEntity(DysonEntity):
 
 ```python
 from custom_components.hass_dyson.fan import DysonFan
+
 
 # Fan entity with climate integration
 class DysonFanEntity(DysonFan):
@@ -305,6 +308,7 @@ class DysonFanEntity(DysonFan):
 
 ```python
 from custom_components.hass_dyson.sensor import DysonP25RSensor
+
 
 # Air quality sensor example
 class AirQualitySensor(DysonP25RSensor):
@@ -336,21 +340,18 @@ class AirQualitySensor(DysonP25RSensor):
 ```python
 from custom_components.hass_dyson.services import (
     async_register_device_services,
-    async_unregister_device_services
+    async_unregister_device_services,
 )
 
 # Register services for a device
 await async_register_device_services(
     hass=hass,
     serial_number="VS6-EU-HJA1234A",
-    capabilities=["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"]
+    capabilities=["AdvanceOscillationDay1", "Scheduling", "ExtendedAQ"],
 )
 
 # Unregister services when device is removed
-await async_unregister_device_services(
-    hass=hass,
-    serial_number="VS6-EU-HJA1234A"
-)
+await async_unregister_device_services(hass=hass, serial_number="VS6-EU-HJA1234A")
 ```
 
 ### Service Handler Implementation
@@ -364,52 +365,40 @@ from homeassistant.helpers.service import ServiceCall
 service_call = ServiceCall(
     domain="hass_dyson",
     service="set_sleep_timer",
-    data={
-        "device_id": "VS6-EU-HJA1234A",
-        "minutes": 60
-    }
+    data={"device_id": "VS6-EU-HJA1234A", "minutes": 60},
 )
 
 await async_set_sleep_timer(hass, service_call)
 
 # Service schema example
-SERVICE_SET_SLEEP_TIMER_SCHEMA = vol.Schema({
-    vol.Required("device_id"): str,  # Home Assistant device registry ID
-    vol.Required("minutes"): vol.All(
-        vol.Coerce(int), vol.Range(min=15, max=540)  # 15 minutes to 9 hours
-    )
-})
+SERVICE_SET_SLEEP_TIMER_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,  # Home Assistant device registry ID
+        vol.Required("minutes"): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=15, max=540),  # 15 minutes to 9 hours
+        ),
+    }
+)
 ```
 
 ### Available Services by Capability
 
 ```python
 # Basic services (all devices)
-services_basic = [
-    "set_fan_speed",
-    "set_oscillation",
-    "set_night_mode"
-]
+services_basic = ["set_fan_speed", "set_oscillation", "set_night_mode"]
 
 # Advanced oscillation services
 if "AdvanceOscillationDay1" in capabilities:
-    services_advanced = [
-        "set_oscillation_angle",
-        "set_continuous_monitoring"
-    ]
+    services_advanced = ["set_oscillation_angle", "set_continuous_monitoring"]
 
 # Scheduling services
 if "Scheduling" in capabilities:
-    services_scheduling = [
-        "set_sleep_timer"
-    ]
+    services_scheduling = ["set_sleep_timer"]
 
 # Heating services
 if "Heating" in capabilities:
-    services_heating = [
-        "set_target_temperature",
-        "set_fan_direction"
-    ]
+    services_heating = ["set_target_temperature", "set_fan_direction"]
 ```
 
 ## Data Coordination
@@ -480,14 +469,16 @@ except Exception as e:
 
 # Send MQTT command
 try:
-    await device.send_command({
-        "msg": "STATE-SET",
-        "data": {
-            "fspd": "0005",  # Fan speed 5
-            "oson": "ON",    # Oscillation on
-            "nmod": "ON"     # Night mode on
+    await device.send_command(
+        {
+            "msg": "STATE-SET",
+            "data": {
+                "fspd": "0005",  # Fan speed 5
+                "oson": "ON",  # Oscillation on
+                "nmod": "ON",  # Night mode on
+            },
         }
-    })
+    )
 except Exception as e:
     print(f"Command failed: {e}")
 ```
@@ -501,10 +492,10 @@ fan_command = {
     "time": "2025-01-01T12:00:00.000Z",
     "data": {
         "fspd": "0007",  # Fan speed (1-10, formatted as 4-digit string)
-        "fpwr": "ON",    # Fan power (ON/OFF)
-        "oson": "OFF",   # Oscillation (ON/OFF)
-        "nmod": "ON"     # Night mode (ON/OFF)
-    }
+        "fpwr": "ON",  # Fan power (ON/OFF)
+        "oson": "OFF",  # Oscillation (ON/OFF)
+        "nmod": "ON",  # Night mode (ON/OFF)
+    },
 }
 
 # Climate control message (heating models)
@@ -514,8 +505,8 @@ climate_command = {
     "data": {
         "hmod": "HEAT",  # Heat mode (HEAT/OFF)
         "hmax": "2950",  # Target temperature (Kelvin * 10)
-        "fdir": "ON"     # Fan direction (ON=front, OFF=back)
-    }
+        "fdir": "ON",  # Fan direction (ON=front, OFF=back)
+    },
 }
 ```
 
@@ -580,6 +571,7 @@ pm25 = env_data.get("pm25", 0)
 ```python
 from typing import Optional
 
+
 def get_device_temperature(coordinator) -> Optional[float]:
     """Get device temperature with proper error handling."""
     if not coordinator.device:
@@ -591,6 +583,7 @@ def get_device_temperature(coordinator) -> Optional[float]:
         return float(temp_raw) / 10  # Convert from °C * 10
     except (ValueError, TypeError, ZeroDivisionError):
         return None
+
 
 def get_device_fan_speed(coordinator) -> Optional[int]:
     """Get device fan speed with proper error handling."""
@@ -613,7 +606,7 @@ def get_device_fan_speed(coordinator) -> Optional[int]:
 from custom_components.hass_dyson.exceptions import (
     DysonConnectionError,
     DysonCommandError,
-    DysonAuthenticationError
+    DysonAuthenticationError,
 )
 
 # Connection error handling
@@ -645,10 +638,9 @@ except Exception as e:
 import asyncio
 from typing import Callable, Any
 
+
 async def retry_with_backoff(
-    func: Callable,
-    max_retries: int = 3,
-    backoff_factor: float = 1.0
+    func: Callable, max_retries: int = 3, backoff_factor: float = 1.0
 ) -> Any:
     """Retry function with exponential backoff."""
     for attempt in range(max_retries):
@@ -657,14 +649,13 @@ async def retry_with_backoff(
         except Exception as e:
             if attempt == max_retries - 1:
                 raise e
-            wait_time = backoff_factor * (2 ** attempt)
+            wait_time = backoff_factor * (2**attempt)
             await asyncio.sleep(wait_time)
+
 
 # Usage example
 result = await retry_with_backoff(
-    lambda: device.connect(),
-    max_retries=3,
-    backoff_factor=2.0
+    lambda: device.connect(), max_retries=3, backoff_factor=2.0
 )
 ```
 
@@ -687,7 +678,9 @@ try:
     await device.set_fan_speed(speed)
     _LOGGER.debug("Set fan speed to %s for device %s", speed, device.serial_number)
 except Exception as e:
-    _LOGGER.warning("Failed to set fan speed for device %s: %s", device.serial_number, e)
+    _LOGGER.warning(
+        "Failed to set fan speed for device %s: %s", device.serial_number, e
+    )
 
 # State logging
 _LOGGER.debug(
@@ -695,7 +688,7 @@ _LOGGER.debug(
     device.serial_number,
     device.temperature,
     device.pm25,
-    device.is_connected
+    device.is_connected,
 )
 ```
 
@@ -716,8 +709,8 @@ async def setup_complete_integration():
             "discovery_method": "cloud",
             "email": "user@example.com",
             "password": "password",
-            "country": "US"
-        }
+            "country": "US",
+        },
     )
 
     # 2. Set up integration
@@ -738,7 +731,9 @@ async def setup_complete_integration():
         state_data = coordinator.device.state
         print(f"PM2.5: {env_data.get('pm25', 0)} μg/m³")
         print(f"Temperature: {env_data.get('tact', 0) / 10}°C")
-        print(f"Fan speed: {coordinator.device.get_state_value(state_data, 'fnsp', '0')}")
+        print(
+            f"Fan speed: {coordinator.device.get_state_value(state_data, 'fnsp', '0')}"
+        )
 
     return True
 ```
@@ -751,26 +746,19 @@ automation_config = {
     "trigger": {
         "platform": "numeric_state",
         "entity_id": "sensor.dyson_pm25",
-        "above": 50
+        "above": 50,
     },
     "action": [
         {
             "service": "hass_dyson.set_sleep_timer",
-            "data": {
-                "device_id": "dyson_vs6_eu_hja1234a",
-                "minutes": 60
-            }
+            "data": {"device_id": "dyson_vs6_eu_hja1234a", "minutes": 60},
         },
         {
             "service": "fan.set_percentage",
-            "target": {
-                "entity_id": "fan.dyson_purifier"
-            },
-            "data": {
-                "percentage": 80
-            }
-        }
-    ]
+            "target": {"entity_id": "fan.dyson_purifier"},
+            "data": {"percentage": 80},
+        },
+    ],
 }
 ```
 

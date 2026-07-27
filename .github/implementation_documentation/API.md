@@ -65,22 +65,13 @@ DysonAltIntegration
 ### **Command Examples**
 ```python
 # Set fan speed to 5
-await coordinator.async_send_command({
-    "msg": "STATE-SET",
-    "data": {"fnsp": "0005"}
-})
+await coordinator.async_send_command({"msg": "STATE-SET", "data": {"fnsp": "0005"}})
 
 # Enable oscillation
-await coordinator.async_send_command({
-    "msg": "STATE-SET", 
-    "data": {"oson": "ON"}
-})
+await coordinator.async_send_command({"msg": "STATE-SET", "data": {"oson": "ON"}})
 
 # Set sleep timer to 30 minutes
-await coordinator.async_send_command({
-    "msg": "STATE-SET",
-    "data": {"sltm": "0030"}
-})
+await coordinator.async_send_command({"msg": "STATE-SET", "data": {"sltm": "0030"}})
 ```
 
 ## 🔧 Core Classes
@@ -131,23 +122,26 @@ class DysonDevice:
 ```python
 class DysonEntity(CoordinatorEntity):
     """Base class for all Dyson entities."""
-    
+
     def __init__(self, coordinator, device_name: str):
         """Initialize with coordinator reference."""
-        
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
-        
+
     def _handle_coordinator_update(self):
         """Handle data updates from coordinator."""
 
+
 class DysonFanEntity(DysonEntity, FanEntity):
     """Fan entity with speed control and modes."""
-    
+
+
 class DysonSensorEntity(DysonEntity, SensorEntity):
     """Sensor entity for air quality data."""
-    
+
+
 # ... other entity base classes
 ```
 
@@ -157,19 +151,19 @@ class DysonSensorEntity(DysonEntity, SensorEntity):
 ```python
 class DysonFan(DysonFanEntity):
     """Primary fan control entity."""
-    
+
     @property
     def is_on(self) -> bool:
         """Return if fan is on."""
         return self.coordinator.data.get("fmod") != "OFF"
-        
-    @property  
+
+    @property
     def percentage(self) -> int:
         """Return fan speed percentage (0-100)."""
-        
+
     async def async_turn_on(self, percentage=None, **kwargs):
         """Turn on fan with optional speed."""
-        
+
     async def async_turn_off(self, **kwargs):
         """Turn off fan."""
 ```
@@ -195,22 +189,21 @@ class DysonPM25Sensor(DysonSensorEntity):
 ```python
 class DysonFanSpeedNumber(DysonNumberEntity):
     """Fan speed numeric control (1-10)."""
-    
+
     @property
     def native_min_value(self) -> float:
         return 1.0
-        
-    @property 
+
+    @property
     def native_max_value(self) -> float:
         return 10.0
-        
+
     async def async_set_native_value(self, value: float):
         """Set fan speed."""
         speed_str = f"{int(value):04d}"
-        await self.coordinator.async_send_command({
-            "msg": "STATE-SET",
-            "data": {"fnsp": speed_str}
-        })
+        await self.coordinator.async_send_command(
+            {"msg": "STATE-SET", "data": {"fnsp": speed_str}}
+        )
 ```
 
 ### **Select Platform (`select.py`)**
@@ -237,33 +230,37 @@ class DysonAirQualityModeSelect(DysonSelectEntity):
 ```python
 class DysonAltConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle config flow for Dyson integration."""
-    
+
     async def async_step_user(self, user_input=None):
         """Handle initial setup method selection."""
-        
+
     async def async_step_cloud_discovery(self, user_input=None):
         """Handle cloud-based device discovery."""
-        
-    async def async_step_manual_setup(self, user_input=None): 
+
+    async def async_step_manual_setup(self, user_input=None):
         """Handle manual device setup with sticker info."""
-        
+
     async def async_validate_device_connection(self, device_config):
         """Test device connection before saving."""
 ```
 
 ### **Setup Schemas**
 ```python
-CLOUD_DISCOVERY_SCHEMA = vol.Schema({
-    vol.Required("email"): str,
-    vol.Required("password"): str,
-})
+CLOUD_DISCOVERY_SCHEMA = vol.Schema(
+    {
+        vol.Required("email"): str,
+        vol.Required("password"): str,
+    }
+)
 
-MANUAL_SETUP_SCHEMA = vol.Schema({
-    vol.Required("serial_number"): str,
-    vol.Required("credential"): str,
-    vol.Required("device_type"): vol.In(["438", "475", "527", "455", "469"]),
-    vol.Optional("hostname"): str,
-})
+MANUAL_SETUP_SCHEMA = vol.Schema(
+    {
+        vol.Required("serial_number"): str,
+        vol.Required("credential"): str,
+        vol.Required("device_type"): vol.In(["438", "475", "527", "455", "469"]),
+        vol.Optional("hostname"): str,
+    }
+)
 ```
 
 ## 📊 Data Structures
@@ -272,37 +269,32 @@ MANUAL_SETUP_SCHEMA = vol.Schema({
 ```python
 DEVICE_STATE = {
     # Fan control
-    "fmod": "FAN",        # Fan mode (OFF/FAN/AUTO)  
-    "fnsp": "0005",       # Fan speed (0001-0010)
-    "fnst": "FAN",        # Fan state
-    
+    "fmod": "FAN",  # Fan mode (OFF/FAN/AUTO)
+    "fnsp": "0005",  # Fan speed (0001-0010)
+    "fnst": "FAN",  # Fan state
     # Oscillation
-    "oson": "ON",         # Oscillation on/off
-    "osau": "BRZE",       # Oscillation angle (BRZE/0045-0350)
-    "ancp": "0180",       # Angle position
-    
+    "oson": "ON",  # Oscillation on/off
+    "osau": "BRZE",  # Oscillation angle (BRZE/0045-0350)
+    "ancp": "0180",  # Angle position
     # Auto mode & scheduling
-    "rhtm": "ON",         # Auto mode (rhythm)
-    "sltm": "STET",       # Sleep timer (STET/0001-0540)
-    "nmod": "OFF",        # Night mode
-    
+    "rhtm": "ON",  # Auto mode (rhythm)
+    "sltm": "STET",  # Sleep timer (STET/0001-0540)
+    "nmod": "OFF",  # Night mode
     # Air quality
-    "pm25": "0009",       # PM2.5 µg/m³
-    "pm10": "0012",       # PM10 µg/m³  
-    "vact": "0004",       # VOC
-    "pact": "0002",       # Particulate count
-    
+    "pm25": "0009",  # PM2.5 µg/m³
+    "pm10": "0012",  # PM10 µg/m³
+    "vact": "0004",  # VOC
+    "pact": "0002",  # Particulate count
     # Device status
-    "rssi": "-029",       # WiFi signal dBm
-    "hflr": "0072",       # HEPA filter life (percentage)
-    "cflr": "0085",       # Carbon filter life (percentage)
-    "ercd": "NONE",       # Error code
-    "wacd": "NONE",       # Warning code
-    
+    "rssi": "-029",  # WiFi signal dBm
+    "hflr": "0072",  # HEPA filter life (percentage)
+    "cflr": "0085",  # Carbon filter life (percentage)
+    "ercd": "NONE",  # Error code
+    "wacd": "NONE",  # Warning code
     # Heating (HP models)
-    "hmod": "HEAT",       # Heating mode
-    "hmax": "2980",       # Max heating (Kelvin)
-    "tilt": "OK",         # Tilt status
+    "hmod": "HEAT",  # Heating mode
+    "hmax": "2980",  # Max heating (Kelvin)
+    "tilt": "OK",  # Tilt status
 }
 ```
 
@@ -311,13 +303,16 @@ DEVICE_STATE = {
 DEVICE_CONFIG = {
     "serial_number": "MOCK-SERIAL-TEST123",
     "discovery_method": "sticker",  # or "cloud"
-    "hostname": "192.168.1.161",    # optional
-    "credential": "AAAABBBB",       # Device password
-    "device_type": "438",           # product type
-    "mqtt_prefix": "438M",          # auto-determined
-    "capabilities": [               # auto-detected
-        "Auto", "Oscillation", "Scheduling", "Fault"
-    ]
+    "hostname": "192.168.1.161",  # optional
+    "credential": "AAAABBBB",  # Device password
+    "device_type": "438",  # product type
+    "mqtt_prefix": "438M",  # auto-determined
+    "capabilities": [  # auto-detected
+        "Auto",
+        "Oscillation",
+        "Scheduling",
+        "Fault",
+    ],
 }
 ```
 
@@ -327,7 +322,7 @@ DEVICE_CONFIG = {
 ```python
 ENTITY_ICONS = {
     "pm25": "mdi:air-filter",
-    "pm10": "mdi:air-filter", 
+    "pm10": "mdi:air-filter",
     "filter_life": "mdi:air-filter-outline",
     "rssi": "mdi:wifi-strength-2",
     "connectivity": "mdi:wifi",
@@ -343,7 +338,7 @@ ENTITY_ICONS = {
 # For cumulative sensors
 STATE_CLASS_TOTAL_INCREASING = "total_increasing"
 
-# For measurement sensors  
+# For measurement sensors
 STATE_CLASS_MEASUREMENT = "measurement"
 
 # For state sensors
@@ -392,16 +387,13 @@ _LOGGER.error("Failed to send command: %s", error)
 ### **Common Debug Patterns**
 ```python
 # Log MQTT message details
-_LOGGER.debug("Received MQTT message: topic=%s, payload=%s", 
-              topic, payload)
+_LOGGER.debug("Received MQTT message: topic=%s, payload=%s", topic, payload)
 
 # Log state transitions
-_LOGGER.debug("Fan state changed: %s -> %s", 
-              old_state, new_state)
+_LOGGER.debug("Fan state changed: %s -> %s", old_state, new_state)
 
 # Log command sending
-_LOGGER.debug("Sending command to %s: %s", 
-              self.device.serial, command)
+_LOGGER.debug("Sending command to %s: %s", self.device.serial, command)
 ```
 
 ## 🧪 Testing Patterns
@@ -410,23 +402,23 @@ _LOGGER.debug("Sending command to %s: %s",
 ```python
 from unittest.mock import Mock, patch
 
-@patch('custom_components.hass_dyson.device.DysonDevice')
+
+@patch("custom_components.hass_dyson.device.DysonDevice")
 async def test_fan_speed_control(mock_device):
     """Test fan speed adjustment."""
     mock_device.current_state = {"fnsp": "0005"}
-    
+
     # Test entity creation
     coordinator = DysonCoordinator(hass, mock_device)
     fan = DysonFan(coordinator, "Test Fan")
-    
+
     # Test speed setting
     await fan.async_set_percentage(80)
-    
+
     # Verify command sent
-    mock_device.async_send_command.assert_called_with({
-        "msg": "STATE-SET",
-        "data": {"fnsp": "0008"}
-    })
+    mock_device.async_send_command.assert_called_with(
+        {"msg": "STATE-SET", "data": {"fnsp": "0008"}}
+    )
 ```
 
 ### **Integration Testing**
@@ -438,13 +430,13 @@ async def test_device_discovery():
         data={
             "serial_number": "MOCK-SERIAL-TEST123",
             "credential": "AAAABBBB",
-            "device_type": "438"
-        }
+            "device_type": "438",
+        },
     )
-    
+
     await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
-    
+
     # Verify entities created
     state = hass.states.get("fan.dyson_test_fan")
     assert state is not None
@@ -482,15 +474,16 @@ SENSORS = [
     DysonCustomSensor,  # Add here
 ]
 
+
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up sensors from config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    
+
     entities = []
     for sensor_class in SENSORS:
         if sensor_class.should_create(coordinator.device):
             entities.append(sensor_class(coordinator, entry.title))
-            
+
     async_add_entities(entities)
 ```
 
