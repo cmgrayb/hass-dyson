@@ -64,14 +64,18 @@ class UnsanitizedFixtureError(Exception):
 @dataclass
 class CommandResponse:
     """A single command response entry from the fixture."""
+
     status: str  # "responded" | "no_response" | "rejected"
-    delta: dict[str, str] = field(default_factory=dict)     # only when status=="responded"
-    response: dict[str, Any] = field(default_factory=dict)  # only when status=="rejected"
+    delta: dict[str, str] = field(default_factory=dict)  # only when status=="responded"
+    response: dict[str, Any] = field(
+        default_factory=dict
+    )  # only when status=="rejected"
 
 
 @dataclass
 class FaultCode:
     """A fault code entry from the fixture."""
+
     code: str
     description: str
     sample_payload: dict[str, Any] = field(default_factory=dict)
@@ -80,6 +84,7 @@ class FaultCode:
 @dataclass
 class DeviceFixtureMetadata:
     """Metadata section of a fixture file."""
+
     product_type: str
     mqtt_root_topic_level: str
     device_category: str
@@ -98,6 +103,7 @@ class DeviceFixture:
 
     Load via DeviceFixture.from_file(path) rather than constructing directly.
     """
+
     metadata: DeviceFixtureMetadata
     initial_state: dict[str, str]
     environmental_state: dict[str, str] | None
@@ -124,7 +130,9 @@ class DeviceFixture:
         ...
 
     @classmethod
-    def from_product_type(cls, product_type: str, device_category: str) -> DeviceFixture:
+    def from_product_type(
+        cls, product_type: str, device_category: str
+    ) -> DeviceFixture:
         """Load a fixture by product type and category using the standard path convention.
 
         Resolves to: tests/fixtures/devices/{device_category}/{product_type}.json
@@ -266,7 +274,11 @@ class DeviceMock:
         Returns:
             A copy of the environmental state dict, or None if not available.
         """
-        return copy.deepcopy(self._environmental_state) if self._environmental_state else None
+        return (
+            copy.deepcopy(self._environmental_state)
+            if self._environmental_state
+            else None
+        )
 
     def reset(self) -> None:
         """Restore the mock to its fixture initial_state.
@@ -446,6 +458,7 @@ class DeviceMock:
             assert entity.is_on == (device_mock.get_state()["fpwr"] == "ON")
         """
         from unittest.mock import MagicMock
+
         coordinator = MagicMock()
         coordinator.serial_number = self.serial_number
         coordinator.device = MagicMock()

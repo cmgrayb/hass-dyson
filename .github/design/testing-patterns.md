@@ -49,7 +49,9 @@ def mock_config_entry():
 @pytest.mark.asyncio
 async def test_coordinator_method(mock_hass, mock_config_entry):
     """Test coordinator method with patched initialization."""
-    with patch("custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"):
+    with patch(
+        "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+    ):
         coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
 
         # Manually set required attributes normally set by parent __init__

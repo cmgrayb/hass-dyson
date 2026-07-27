@@ -17,12 +17,14 @@ This document summarizes the entity filtering improvements implemented to ensure
 **Logic:**
 ```python
 if "extendedAQ".lower() in capabilities_str or "extended_aq" in capabilities_str:
-    entities.extend([
-        DysonPM25Sensor(coordinator),
-        DysonPM10Sensor(coordinator),
-        DysonHEPAFilterLifeSensor(coordinator),
-        DysonHEPAFilterTypeSensor(coordinator),
-    ])
+    entities.extend(
+        [
+            DysonPM25Sensor(coordinator),
+            DysonPM10Sensor(coordinator),
+            DysonHEPAFilterLifeSensor(coordinator),
+            DysonHEPAFilterTypeSensor(coordinator),
+        ]
+    )
 ```
 
 #### Heating Capability (Existing)
@@ -45,10 +47,12 @@ if "heating" in capabilities_str:
 **Logic:**
 ```python
 if any(cat in ["ec", "robot"] for cat in device_category):
-    entities.extend([
-        DysonWiFiSensor(coordinator),
-        DysonConnectionStatusSensor(coordinator),
-    ])
+    entities.extend(
+        [
+            DysonWiFiSensor(coordinator),
+            DysonConnectionStatusSensor(coordinator),
+        ]
+    )
 ```
 
 **Rationale:** Both sensors monitor WiFi connectivity, so they should only be created for WiFi-enabled device categories.
@@ -103,12 +107,14 @@ The filtering system is designed to easily accommodate future capabilities:
 ```python
 # Carbon filter support (when Formaldehyde capability identified)
 if "formaldehyde" in capabilities_str:
-    entities.extend([
-        DysonCarbonFilterLifeSensor(coordinator),
-        DysonCarbonFilterTypeSensor(coordinator),
-    ])
+    entities.extend(
+        [
+            DysonCarbonFilterLifeSensor(coordinator),
+            DysonCarbonFilterTypeSensor(coordinator),
+        ]
+    )
 
-# Humidity support (when Humidifier capability identified)  
+# Humidity support (when Humidifier capability identified)
 if "humidifier" in capabilities_str:
     entities.append(DysonHumiditySensor(coordinator))
 

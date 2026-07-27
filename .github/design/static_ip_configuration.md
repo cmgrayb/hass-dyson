@@ -76,12 +76,16 @@ The hostname field will be added to the connection type configuration step in tw
 
 #### Form Schema Example
 ```python
-vol.Schema({
-    vol.Required("connection_type", default="local_cloud_fallback"): vol.In(
-        _get_connection_type_options_detailed()
-    ),
-    vol.Optional(CONF_HOSTNAME, description="Leave blank for automatic discovery"): str,
-})
+vol.Schema(
+    {
+        vol.Required("connection_type", default="local_cloud_fallback"): vol.In(
+            _get_connection_type_options_detailed()
+        ),
+        vol.Optional(
+            CONF_HOSTNAME, description="Leave blank for automatic discovery"
+        ): str,
+    }
+)
 ```
 
 ### Connection Behavior
@@ -156,13 +160,18 @@ def _show_connection_type_form_with_hostname(
     """Show connection type selection form with hostname field."""
     return self.async_show_form(
         step_id=step_id,
-        data_schema=vol.Schema({
-            vol.Required("connection_type", default=current_connection_type): vol.In(
-                _get_connection_type_options_detailed()
-            ),
-            vol.Optional(CONF_HOSTNAME, default=current_hostname,
-                        description="Leave blank for automatic discovery"): str,
-        }),
+        data_schema=vol.Schema(
+            {
+                vol.Required(
+                    "connection_type", default=current_connection_type
+                ): vol.In(_get_connection_type_options_detailed()),
+                vol.Optional(
+                    CONF_HOSTNAME,
+                    default=current_hostname,
+                    description="Leave blank for automatic discovery",
+                ): str,
+            }
+        ),
         errors=errors or {},
         description_placeholders=description_placeholders or {},
     )
@@ -208,24 +217,20 @@ hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
 if hostname:
     # Use user-provided hostname/IP - skip mDNS discovery
     _LOGGER.info(
-        "Using configured hostname for device %s: %s",
-        self.serial_number,
-        hostname
+        "Using configured hostname for device %s: %s", self.serial_number, hostname
     )
 else:
     # Attempt mDNS discovery
     _LOGGER.debug(
         "No hostname configured, attempting mDNS discovery for device %s",
-        self.serial_number
+        self.serial_number,
     )
     hostname = await self._discover_via_mdns()
 
     if not hostname:
         # Fallback to serial.local
         hostname = f"{self.serial_number}.local"
-        _LOGGER.warning(
-            "mDNS discovery failed, using fallback: %s", hostname
-        )
+        _LOGGER.warning("mDNS discovery failed, using fallback: %s", hostname)
 ```
 
 #### Device Class Changes
