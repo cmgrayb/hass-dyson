@@ -210,14 +210,16 @@ async def set_find_follow(self, mode: str) -> None:
         ValueError: If *mode* is not one of the supported values.
     """
     if mode not in ("ON", "OFF", "SCAN"):
-        raise ValueError(f"Invalid Find+Follow mode '{mode}'. Must be ON, OFF, or SCAN.")
+        raise ValueError(
+            f"Invalid Find+Follow mode '{mode}'. Must be ON, OFF, or SCAN."
+        )
     await self.send_command("STATE-SET", {"soon": mode})
 ```
 
 ## `const.py` Constants
 
 ```python
-STATE_KEY_FIND_FOLLOW: Final = "soon"         # Find+Follow on/off/scan command key
+STATE_KEY_FIND_FOLLOW: Final = "soon"  # Find+Follow on/off/scan command key
 STATE_KEY_FIND_FOLLOW_STATUS: Final = "sost"  # Find+Follow engine status (read-only)
 ```
 
