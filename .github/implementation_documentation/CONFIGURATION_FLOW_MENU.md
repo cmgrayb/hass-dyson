@@ -117,7 +117,7 @@ Device Discovery
     "discovery_method": "manual",
     "connection_type": "local_only",
     "device_name": "Living Room Air Purifier",
-    "hostname": "192.168.1.100"  # Optional
+    "hostname": "192.168.1.100",  # Optional
 }
 ```
 

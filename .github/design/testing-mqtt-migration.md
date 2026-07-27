@@ -127,6 +127,7 @@ for planning purposes only.
 from unittest.mock import MagicMock
 import pytest
 
+
 def test_fan_auto_mode_enables_auto_flag():
     """Verify that setting AUTO speed sets the auto flag."""
     coordinator = MagicMock()
