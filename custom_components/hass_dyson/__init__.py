@@ -461,8 +461,8 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     """Set up a BLE-only Dyson light device config entry.
 
     Creates a :class:`.coordinator.DysonBLEDataUpdateCoordinator`, starts the
-    BLE connection lifecycle, and forwards setup to the ``light`` and
-    ``binary_sensor`` platforms.
+    BLE connection lifecycle, and forwards setup to the ``light``,
+    ``binary_sensor``, and (for daylight-capable devices) ``switch`` platforms.
 
     Args:
         hass: Home Assistant instance.
@@ -472,6 +472,8 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     Returns:
         True on successful setup.
     """
+    from .const import BLE_CAPABILITY_DAYLIGHT, BLE_CAPABILITY_PERSONAL_DAYLIGHT
+
     _LOGGER.info("Setting up BLE light device '%s'", entry.data.get(CONF_SERIAL_NUMBER))
     coordinator = DysonBLEDataUpdateCoordinator(hass, entry)
     await coordinator.async_setup()
@@ -479,12 +481,23 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {"ble_coordinator": coordinator, "is_ble": True}
 
-    await hass.config_entries.async_forward_entry_setups(
-        entry, ["light", "binary_sensor"]
+    # Add the daylight-mode switch only when the device's stored capabilities
+    # explicitly include Daylight or PersonalDaylight.  BLE-only lights that
+    # were discovered from a cloud account always carry capabilities; manual
+    # entries without stored capabilities do not get the switch.
+    caps = coordinator.capabilities
+    has_daylight = (
+        BLE_CAPABILITY_DAYLIGHT in caps or BLE_CAPABILITY_PERSONAL_DAYLIGHT in caps
     )
+    ble_platforms = ["light", "binary_sensor"]
+    if has_daylight:
+        ble_platforms.append("switch")
+
+    await hass.config_entries.async_forward_entry_setups(entry, ble_platforms)
     _LOGGER.info(
-        "BLE light device '%s' set up successfully",
+        "BLE light device '%s' set up successfully (platforms: %s)",
         mask_serial(coordinator.serial_number),
+        ble_platforms,
     )
     return True
 
@@ -795,8 +808,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # BLE light devices
     if isinstance(entry_data, dict) and entry_data.get("is_ble"):
         ble_coordinator: DysonBLEDataUpdateCoordinator = entry_data["ble_coordinator"]
+        from .const import BLE_CAPABILITY_DAYLIGHT, BLE_CAPABILITY_PERSONAL_DAYLIGHT
+
+        caps = ble_coordinator.capabilities
+        has_daylight = (
+            BLE_CAPABILITY_DAYLIGHT in caps or BLE_CAPABILITY_PERSONAL_DAYLIGHT in caps
+        )
+        ble_platforms = ["light", "binary_sensor"]
+        if has_daylight:
+            ble_platforms.append("switch")
         unload_ok = await hass.config_entries.async_unload_platforms(
-            entry, ["light", "binary_sensor"]
+            entry, ble_platforms
         )
         if unload_ok:
             await ble_coordinator.async_shutdown()

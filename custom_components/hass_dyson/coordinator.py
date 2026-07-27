@@ -3094,3 +3094,14 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def is_connected(self) -> bool:
         """Return True if the BLE device is connected and authenticated."""
         return self.ble_device is not None and self.ble_device.is_connected
+
+    @property
+    def capabilities(self) -> list[str]:
+        """Return the list of device capabilities for this BLE light.
+
+        Reads from the ``capabilities`` key stored in the config entry data
+        (populated when the device was discovered via a cloud account).  When
+        not stored, returns an empty list — callers should treat BLE lights
+        (CF06 / CD06 Lightcycle Morph) as daylight-capable by default.
+        """
+        return list(self._config_entry.data.get("capabilities", []))

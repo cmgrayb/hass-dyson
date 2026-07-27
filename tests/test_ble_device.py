@@ -420,6 +420,63 @@ class TestDysonBLEDevice:
             await dev.set_brightness(128)
 
     @pytest.mark.asyncio
+    async def test_set_daylight_mode_raises_when_not_connected(self):
+        """set_daylight_mode raises RuntimeError when device is not connected."""
+        dev = self._make_device()
+        with pytest.raises(RuntimeError):
+            await dev.set_daylight_mode(True)
+
+    @pytest.mark.asyncio
+    async def test_set_daylight_mode_enable_writes_enable_payload(self):
+        """set_daylight_mode(True) writes BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD to char 0021."""
+        from custom_components.hass_dyson.const import (
+            BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
+
+        dev = self._make_device()
+        client = MagicMock()
+        client.is_connected = True
+        client.write_gatt_char = AsyncMock()
+        dev._client = client
+        dev.state.authenticated = True
+        dev.state.connected = True
+
+        await dev.set_daylight_mode(True)
+
+        client.write_gatt_char.assert_awaited_once_with(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD,
+            response=False,
+        )
+        assert dev.state.daylight_mode is True
+
+    @pytest.mark.asyncio
+    async def test_set_daylight_mode_disable_writes_disable_payload(self):
+        """set_daylight_mode(False) writes BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD to char 0021."""
+        from custom_components.hass_dyson.const import (
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
+
+        dev = self._make_device()
+        client = MagicMock()
+        client.is_connected = True
+        client.write_gatt_char = AsyncMock()
+        dev._client = client
+        dev.state.authenticated = True
+        dev.state.connected = True
+
+        await dev.set_daylight_mode(False)
+
+        client.write_gatt_char.assert_awaited_once_with(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=False,
+        )
+        assert dev.state.daylight_mode is False
+
+    @pytest.mark.asyncio
     async def test_set_color_temp_kelvin_raises_when_not_connected(self):
         """set_color_temp_kelvin raises RuntimeError when device is not connected."""
         dev = self._make_device()
@@ -462,9 +519,15 @@ class TestDysonBLEDevice:
 
     @pytest.mark.asyncio
     async def test_set_brightness_writes_lumens_uint16(self):
-        """set_brightness writes lumens as uint16 LE to BLE_BRIGHTNESS_LUMENS_UUID."""
+        """set_brightness disables daylight mode then writes lumens as uint16 LE."""
+        from unittest.mock import call
+
         from custom_components.hass_dyson.ble_device import ha_to_raw_brightness_lumens
-        from custom_components.hass_dyson.const import BLE_BRIGHTNESS_LUMENS_UUID
+        from custom_components.hass_dyson.const import (
+            BLE_BRIGHTNESS_LUMENS_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
 
         dev = self._make_device()
         client = MagicMock()
@@ -480,16 +543,30 @@ class TestDysonBLEDevice:
         dev.state.connected = True
 
         await dev.set_brightness(191)
-        client.write_gatt_char.assert_any_call(
+
+        calls = client.write_gatt_char.call_args_list
+        # Daylight mode disable must come BEFORE brightness write
+        assert calls[0] == call(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=False,
+        ), f"Expected daylight-mode disable as first write, got: {calls[0]}"
+        assert calls[1] == call(
             BLE_BRIGHTNESS_LUMENS_UUID,
             expected_lumens.to_bytes(2, byteorder="little"),
             response=False,
-        )
+        ), f"Expected brightness write as second write, got: {calls[1]}"
 
     @pytest.mark.asyncio
     async def test_set_color_temp_kelvin_clamps_and_writes(self):
-        """set_color_temp_kelvin clamps to 2700-6500 and writes little-endian."""
-        from custom_components.hass_dyson.const import BLE_COLOR_TEMP_UUID
+        """set_color_temp_kelvin disables daylight mode then writes little-endian Kelvin."""
+        from unittest.mock import call
+
+        from custom_components.hass_dyson.const import (
+            BLE_COLOR_TEMP_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
 
         dev = self._make_device()
         client = MagicMock()
@@ -503,18 +580,28 @@ class TestDysonBLEDevice:
         dev.state.connected = True
 
         await dev.set_color_temp_kelvin(4000)
-        client.write_gatt_char.assert_any_call(
+
+        calls = client.write_gatt_char.call_args_list
+        # Daylight mode disable must come BEFORE colour-temp write
+        assert calls[0] == call(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=False,
+        ), f"Expected daylight-mode disable as first write, got: {calls[0]}"
+        assert calls[1] == call(
             BLE_COLOR_TEMP_UUID,
             (4000).to_bytes(2, byteorder="little"),
             response=False,
-        )
+        ), f"Expected colour-temp write as second write, got: {calls[1]}"
 
     @pytest.mark.asyncio
     async def test_set_color_temp_kelvin_clamps_below_min(self):
-        """Values below 2700 K are clamped to 2700 K."""
+        """Values below 2700 K are clamped to 2700 K; daylight mode disabled first."""
         from custom_components.hass_dyson.const import (
             BLE_COLOR_TEMP_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
             BLE_MIN_KELVIN,
+            BLE_WRITE_ATTR_CHAR_UUID,
         )
 
         dev = self._make_device()
@@ -527,6 +614,13 @@ class TestDysonBLEDevice:
         dev.state.connected = True
 
         await dev.set_color_temp_kelvin(1000)
+        # Daylight mode disable first
+        client.write_gatt_char.assert_any_call(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=False,
+        )
+        # Then clamped colour-temp write
         client.write_gatt_char.assert_any_call(
             BLE_COLOR_TEMP_UUID,
             BLE_MIN_KELVIN.to_bytes(2, byteorder="little"),

@@ -11,9 +11,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CAPABILITY_ENVIRONMENTAL_DATA, DOMAIN
-from .coordinator import DysonDataUpdateCoordinator
+from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
 from .device_utils import mask_serial
-from .entity import DysonEntity
+from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +24,16 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Dyson switch platform."""
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+
+    # BLE-only light devices (Lightcycle Morph CF06/CD06)
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        ble_coordinator: DysonBLEDataUpdateCoordinator = entry_data["ble_coordinator"]
+        async_add_entities([DysonDaylightModeSwitch(ble_coordinator)], True)
+        return True
+
+    # MQTT / cloud-connected devices
+    coordinator: DysonDataUpdateCoordinator = entry_data
 
     entities: list[SwitchEntity] = []
 
@@ -620,6 +629,84 @@ class DysonFindFollowSwitch(DysonEntity, SwitchEntity):
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error disabling Find+Follow for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+
+
+class DysonDaylightModeSwitch(DysonBLEEntity, SwitchEntity):
+    """Switch to enable/disable Dyson Lightcycle Morph daylight (auto) mode.
+
+    When **on**, the lamp controls its own brightness and colour temperature
+    automatically based on the time of day, ambient light, and the user's age
+    profile (Dyson Solarcycle algorithm).  Manual brightness and colour-
+    temperature changes from Home Assistant are ignored while this mode is
+    active.
+
+    When **off** (manual mode) the lamp accepts explicit brightness and colour-
+    temperature writes from Home Assistant.
+
+    This entity appears for BLE-only lights (CF06/CD06 Lightcycle Morph) that
+    carry the ``Daylight`` or ``PersonalDaylight`` capability.
+    """
+
+    coordinator: DysonBLEDataUpdateCoordinator
+
+    _attr_icon = "mdi:theme-light-dark"
+    _attr_translation_key = "daylight_mode"
+
+    def __init__(self, coordinator: DysonBLEDataUpdateCoordinator) -> None:
+        """Initialise the daylight mode switch.
+
+        Args:
+            coordinator: BLE coordinator for this device.
+        """
+        super().__init__(coordinator)
+        serial = coordinator.serial_number
+        self._attr_unique_id = f"{serial}_daylight_mode"
+        self._attr_name = "Daylight Mode"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True when daylight mode is active."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        val = data.get("daylight_mode")
+        if val is None:
+            return None
+        return bool(val)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable daylight (auto) mode on the lamp."""
+        dev = self.coordinator.ble_device
+        if dev is None:
+            _LOGGER.warning(
+                "No BLE device available for %s", self.coordinator.serial_number
+            )
+            return
+        try:
+            await dev.set_daylight_mode(enabled=True)
+        except RuntimeError as err:
+            _LOGGER.error(
+                "Failed to enable daylight mode for %s: %s",
+                self.coordinator.serial_number,
+                err,
+            )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable daylight mode (switch to manual control)."""
+        dev = self.coordinator.ble_device
+        if dev is None:
+            _LOGGER.warning(
+                "No BLE device available for %s", self.coordinator.serial_number
+            )
+            return
+        try:
+            await dev.set_daylight_mode(enabled=False)
+        except RuntimeError as err:
+            _LOGGER.error(
+                "Failed to disable daylight mode for %s: %s",
                 self.coordinator.serial_number,
                 err,
             )

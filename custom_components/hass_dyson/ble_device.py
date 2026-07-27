@@ -49,6 +49,8 @@ from .const import (
     BLE_CHAR_11006_UUID,
     BLE_CHAR_11007_UUID,
     BLE_COLOR_TEMP_UUID,
+    BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+    BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD,
     BLE_HKDF_INFO,
     BLE_MAX_KELVIN,
     BLE_MIN_KELVIN,
@@ -60,6 +62,7 @@ from .const import (
     BLE_MSG_TYPE_REAUTH_PAYLOAD_C,
     BLE_MSG_TYPE_REQUEST_PRODUCT_INFO,
     BLE_POWER_UUID,
+    BLE_WRITE_ATTR_CHAR_UUID,
     DOMAIN,
     EVENT_BLE_STATE_CHANGE,
 )
@@ -444,6 +447,7 @@ class BLELightState:
     brightness: int | None = None  # 0-255 HA scale
     color_temp_kelvin: int | None = None
     color_temp_mired: int | None = None
+    daylight_mode: bool | None = None  # None = unknown, True = auto, False = manual
     motion_detected: bool = False
     last_motion_at: float = 0.0
     char_11006_hex: str | None = None
@@ -1340,6 +1344,75 @@ class DysonBLEDevice:
             self.state.power = on
             self._fire_state_change()
 
+    async def _disable_daylight_mode(self) -> None:
+        """Write the Daylight-Mode-disable packet to the write-attribute characteristic.
+
+        The Lightcycle Morph (CF06) runs a daylight algorithm that silently
+        ignores BLE writes to chars 11009 (brightness) and 11001 (colour
+        temperature) when in auto/daylight mode.  Writing this packet to
+        characteristic 0021 (service 0020) switches the lamp to manual mode
+        so that subsequent brightness and colour-temperature writes are applied.
+
+        Packet format (source: q90.C30568o / q90.C30554a):
+          [0x13, 0x20] = DAYLIGHT_MODE attribute ID
+          [0x01, 0x00] = value length = 1 (uint16 LE)
+          [0x00]       = false → disable daylight mode
+        """
+        if self._client is None:
+            return
+        _LOGGER.debug(
+            "Disabling daylight mode on %s (char 0021, payload=%s)",
+            self.serial_number,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD.hex(),
+        )
+        await self._client.write_gatt_char(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=False,
+        )
+
+    async def set_daylight_mode(self, enabled: bool) -> None:
+        """Enable or disable the lamp’s daylight (auto) mode.
+
+        When daylight mode is **enabled** the lamp controls its own brightness
+        and colour temperature automatically based on the time of day, ambient
+        light, and user age profile.  Writes to characteristic 11009/11001 are
+        silently ignored in this mode.
+
+        When daylight mode is **disabled** (manual mode) the lamp accepts
+        explicit brightness and colour-temperature writes from Home Assistant.
+
+        Writes to service 0020, characteristic 0021 using the Dyson
+        write-attribute protocol (source: q90.C30568o, q90.C30554a).
+
+        Args:
+            enabled: ``True`` to enable daylight mode, ``False`` to disable.
+
+        Raises:
+            RuntimeError: If the lamp is not connected and authenticated.
+        """
+        if not self.is_connected or self._client is None:
+            raise RuntimeError(f"{self.serial_number} is not connected")
+        async with self._lock:
+            payload = (
+                BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD
+                if enabled
+                else BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD
+            )
+            _LOGGER.debug(
+                "Setting daylight mode %s on %s (char 0021, payload=%s)",
+                "ON" if enabled else "OFF",
+                self.serial_number,
+                payload.hex(),
+            )
+            await self._client.write_gatt_char(
+                BLE_WRITE_ATTR_CHAR_UUID,
+                payload,
+                response=False,
+            )
+            self.state.daylight_mode = enabled
+            self._fire_state_change()
+
     async def set_brightness(self, ha_brightness: int) -> None:
         """Set brightness.
 
@@ -1347,6 +1420,9 @@ class DysonBLEDevice:
         a uint16 little-endian lumens value (100–1000).  The Lightcycle Morph
         (CF06) is a daylight-capable device; the Android MyDyson app always
         targets 11009 for this product, ignoring 11000.
+
+        Daylight mode is disabled first (char 0021) so the lamp accepts the
+        manual brightness write rather than ignoring it.
 
         Args:
             ha_brightness: Home Assistant brightness value (0–255).
@@ -1357,6 +1433,7 @@ class DysonBLEDevice:
         if not self.is_connected or self._client is None:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
+            await self._disable_daylight_mode()
             raw = ha_to_raw_brightness_lumens(ha_brightness)
             payload = raw.to_bytes(2, byteorder="little")
             _LOGGER.debug(
@@ -1383,7 +1460,8 @@ class DysonBLEDevice:
         """Set color temperature in Kelvin.
 
         Writes to characteristic 11001 as a uint16 little-endian Kelvin value
-        (2700–6500 K).
+        (2700–6500 K).  Daylight mode is disabled first (char 0021) so the
+        lamp accepts the manual colour-temperature write.
 
         Args:
             kelvin: Color temperature in Kelvin (clamped to 2700–6500).
@@ -1394,6 +1472,7 @@ class DysonBLEDevice:
         if not self.is_connected or self._client is None:
             raise RuntimeError(f"{self.serial_number} is not connected")
         async with self._lock:
+            await self._disable_daylight_mode()
             kelvin_clamped = max(BLE_MIN_KELVIN, min(BLE_MAX_KELVIN, kelvin))
             payload = kelvin_clamped.to_bytes(2, byteorder="little")
             _LOGGER.debug(

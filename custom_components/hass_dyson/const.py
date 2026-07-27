@@ -696,6 +696,29 @@ BLE_MOTION_UUID: Final = "2dd11008-1c37-452d-8979-d1b4a787d0a4"
 BLE_CHAR_11004_UUID: Final = "2dd11004-1c37-452d-8979-d1b4a787d0a4"
 BLE_CHAR_10021_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 
+# Write-Attribute protocol (service 0020, characteristic 0021)
+# Used to configure lamp operating modes on Dyson Lightcycle Morph (CF06).
+# Protocol: write a 5-byte packet to characteristic 0021 —
+#   bytes 0-1 = attribute ID (little-endian)
+#   bytes 2-3 = length of value field (uint16 LE)
+#   bytes 4..  = value
+#
+# DAYLIGHT_MODE (attribute 0x2013 = {0x13, 0x20}):
+#   When enabled the lamp controls its own brightness/colour-temperature via its
+#   daylight algorithm and silently ignores BLE writes to char 11009/11001.
+#   Home Assistant must disable this mode before issuing manual brightness or
+#   colour-temperature commands (source: q90.C30554a / ga0.C15075x2).
+BLE_WRITE_ATTR_CHAR_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
+# Packet: DAYLIGHT_MODE attribute = false  →  lamp enters manual control mode
+BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD: Final = bytes([0x13, 0x20, 0x01, 0x00, 0x00])
+# Packet: DAYLIGHT_MODE attribute = true  →  lamp enters daylight/auto mode
+BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD: Final = bytes([0x13, 0x20, 0x01, 0x00, 0x01])
+
+# Dyson device capability strings for daylight-capable BLE lights (CF06/CD06).
+# Used to gate the daylight-mode switch entity.
+BLE_CAPABILITY_DAYLIGHT: Final = "Daylight"
+BLE_CAPABILITY_PERSONAL_DAYLIGHT: Final = "PersonalDaylight"
+
 # BLE message type constants (logical message type byte on char 11011)
 # Fresh pairing flow (requires physical button press — one-time operation)
 BLE_MSG_TYPE_AUTH_PAYLOAD_A: Final = 0x01  # → lamp: PayloadA (apiAuthCode)
