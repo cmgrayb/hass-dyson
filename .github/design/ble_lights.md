@@ -26,15 +26,27 @@ All characteristics belong to the primary Dyson BLE service:
 | Service | `2dd10010-1c37-452d-8979-d1b4a787d0a4` | — | — | Primary Dyson BLE service |
 | 11011 | `2dd10011-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | Framed msgs | Auth/messaging channel |
 | 13 (RSSI) | `2dd10013-1c37-452d-8979-d1b4a787d0a4` | notify | 1 byte signed | RSSI proximity probe |
-| 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % |
+| 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % (non-daylight devices) |
 | 11001 | `2dd11001-1c37-452d-8979-d1b4a787d0a4` | read/write | uint16 LE | Color temperature (Kelvin) |
 | 11005 | `2dd11005-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Power: `0x00`=off, `0x01`=on |
 | 11006 | `2dd11006-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime / scheduled-light flags |
 | 11007 | `2dd11007-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Ambient sensor (not fully decoded) |
 | 11008 | `2dd11008-1c37-452d-8979-d1b4a787d0a4` | notify | bytes | **Motion events** (non-zero = motion) |
-| 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime flags (not fully decoded) |
+| 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | uint16 LE | Brightness 100–1000 lm (CF06/CD06) |
 
-All control writes use **write-without-response** (`response=False` in bleak).
+Daylight-capable devices select 11009 from their persisted `Daylight` or
+`PersonalDaylight` capability and use acknowledged ATT Write Requests for
+brightness, colour-temperature, and daylight-mode writes. Explicitly
+non-daylight devices retain the original 11000 percentage characteristic;
+missing capability metadata defaults to daylight support for the currently
+supported CF06/CD06 models. Power continues to use write-without-response.
+
+Daylight mode is currently an optimistic setting. Attribute `0x2013` can be
+written through characteristic 10021, but no readable/notifiable representation
+of that attribute has yet been decoded. Manual brightness or colour-temperature
+interactions therefore reassert manual mode once per short interaction session,
+allowing a later interaction to recover if daylight mode was enabled with the
+physical lamp button.
 
 ---
 
@@ -304,31 +316,29 @@ HA entity attributes: `min_color_temp_kelvin = 2700`, `max_color_temp_kelvin = 6
 
 ## Write Operations
 
-Write type varies by characteristic:
-
-| Characteristic | response | Reason |
-|----------------|----------|--------|
-| 11005 (power) | `response=False` | Characteristic supports `WRITE_NO_RESPONSE`; both write types accepted by lamp |
-| **11009** (brightness) | **`response=True`** | Lamp only reliably processes ATT Write Request; `WRITE_COMMAND` is silently discarded |
-| 11001 (color temp) | **`response=True`** | Same — Android MyDyson app uses `WRITE_TYPE_DEFAULT` (write-with-response) |
-
-The Android MyDyson app sends all characteristic writes via
-`BluetoothGatt.writeCharacteristic()` without explicitly calling `setWriteType()`,
-which defaults to `WRITE_TYPE_DEFAULT` (ATT Write Request / write-with-response).
-Using `response=False` (ATT Write Command) for brightness and color temperature
-causes commands to be silently discarded by the lamp's GATT server.
+The Morph can silently discard unacknowledged brightness, colour-temperature,
+and daylight-mode commands:
 
 ```python
-# Power — write-without-response (supports WRITE_NO_RESPONSE property)
+# Power
 await client.write_gatt_char(BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False)
 
-# Brightness — uint16 LE lumens, write-WITH-response, characteristic 11009
-lumens = ha_to_raw_brightness_lumens(ha_brightness)  # 100–1000
+# Enter manual mode once per short interaction session.
 await client.write_gatt_char(
-    BLE_BRIGHTNESS_LUMENS_UUID, lumens.to_bytes(2, byteorder="little"), response=True
+    BLE_WRITE_ATTR_CHAR_UUID,
+    BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+    response=True,
+)
+await asyncio.sleep(0.2)
+
+# Brightness (100-1000 lm, uint16 little-endian)
+await client.write_gatt_char(
+    BLE_BRIGHTNESS_LUMENS_UUID,
+    lumens.to_bytes(2, byteorder="little"),
+    response=True,
 )
 
-# Color temperature — uint16 LE Kelvin, write-WITH-response
+# Color temperature (Kelvin, uint16 little-endian)
 await client.write_gatt_char(
     BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=True
 )
@@ -428,21 +438,12 @@ products, as they are generic over the device type.
 
 ## Known Limitations and Open Questions
 
-- **Daylight capability detection**: The integration currently hard-codes the
-  CF06 brightness path (characteristic 11009, lumens format) for all devices.
-  Non-daylight-capable devices that use characteristic 11000 are not currently
-  supported.  Support for both paths can be added by reading the device's
-  capability list from the Dyson cloud or from the product info BLE message (0x0B).
-- **Brightness scaling curve**: The Android MyDyson app presents a logarithmic
-  brightness slider to the user (perceived linearity), while the integration maps
-  HA brightness 0–255 linearly to lumens 100–1000.  The physical lamp behavior is
-  identical in both cases; only the slider progression differs.
 - **Fresh pairing**: Fresh pairing requires a one-time physical button press on the
   lamp.  The config flow guides users through the full handshake in the Home Assistant
   UI and stores the resulting LTK automatically.
 - **Char 11006/11007**: These characteristics are observed but not fully decoded.
-  Their purpose is logged as diagnostic attributes but not surfaced as HA entities.
-  11007 is confirmed as `MOVEMENT_SENSOR_UUID` in the Android source.
+  Their purpose is logged as diagnostic attributes but not surfaced as HA entities;
+  11009 is the decoded CF06/CD06 lumen control and state characteristic.
 - **RSSI gating**: The original bridge implements an RSSI threshold gate before
   fresh pairing.  The HA integration omits this (HA's bluetooth framework handles
   device proximity natively).

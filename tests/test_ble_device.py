@@ -346,7 +346,7 @@ class TestDysonBLEDevice:
     LTK_HEX = "deadbeefdeadbeefdeadbeefdeadbeef"
     ACCOUNT_UUID = "12345678-1234-1234-1234-123456789abc"
 
-    def _make_device(self, hass=None):
+    def _make_device(self, hass=None, *, daylight_capable=True):
         """Construct a DysonBLEDevice with a mock hass."""
         if hass is None:
             hass = MagicMock()
@@ -359,6 +359,7 @@ class TestDysonBLEDevice:
             mac_address=self.MAC,
             ltk_hex=self.LTK_HEX,
             account_uuid=self.ACCOUNT_UUID,
+            daylight_capable=daylight_capable,
         )
 
     def test_init_default_state(self):
@@ -392,6 +393,19 @@ class TestDysonBLEDevice:
         dev.state.authenticated = True
         assert dev.is_connected is True
 
+    def test_disconnect_invalidates_optimistic_daylight_state(self):
+        """Reconnects do not retain a daylight state that cannot be read back."""
+        dev = self._make_device()
+        dev.state.connected = True
+        dev.state.authenticated = True
+        dev.state.daylight_mode = False
+        dev._manual_mode_valid_until = 999.0
+
+        dev._on_bleak_disconnect(None)
+
+        assert dev.state.daylight_mode is None
+        assert dev._manual_mode_valid_until == 0.0
+
     def test_fire_state_change_calls_bus(self):
         """_fire_state_change fires EVENT_BLE_STATE_CHANGE on the event bus."""
         hass = MagicMock()
@@ -418,6 +432,49 @@ class TestDysonBLEDevice:
         dev = self._make_device()
         with pytest.raises(RuntimeError):
             await dev.set_brightness(128)
+
+    @pytest.mark.asyncio
+    async def test_set_daylight_mode_raises_when_not_connected(self):
+        """set_daylight_mode raises RuntimeError when disconnected."""
+        dev = self._make_device()
+        with pytest.raises(RuntimeError):
+            await dev.set_daylight_mode(True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("enabled", "payload_name"),
+        [
+            (True, "BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD"),
+            (False, "BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD"),
+        ],
+    )
+    async def test_set_daylight_mode_uses_acknowledged_write(
+        self, enabled, payload_name, monkeypatch
+    ):
+        """Daylight mode uses the write-attribute characteristic with a response."""
+        from custom_components.hass_dyson import const
+
+        dev = self._make_device()
+        client = MagicMock(is_connected=True)
+        client.write_gatt_char = AsyncMock()
+        dev._client = client
+        dev.state.authenticated = True
+        dev.state.connected = True
+        sleep = AsyncMock()
+        monkeypatch.setattr(asyncio, "sleep", sleep)
+
+        await dev.set_daylight_mode(enabled)
+
+        client.write_gatt_char.assert_awaited_once_with(
+            const.BLE_WRITE_ATTR_CHAR_UUID,
+            getattr(const, payload_name),
+            response=True,
+        )
+        assert dev.state.daylight_mode is enabled
+        if enabled:
+            sleep.assert_not_awaited()
+        else:
+            sleep.assert_awaited_once_with(0.2)
 
     @pytest.mark.asyncio
     async def test_set_color_temp_kelvin_raises_when_not_connected(self):
@@ -461,10 +518,19 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(BLE_POWER_UUID, b"\x00", response=False)
 
     @pytest.mark.asyncio
-    async def test_set_brightness_writes_lumens_uint16(self):
-        """set_brightness writes lumens as uint16 LE to BLE_BRIGHTNESS_LUMENS_UUID."""
+    async def test_set_brightness_writes_lumens_uint16(self, monkeypatch):
+        """Brightness enters manual mode, settles, then writes acknowledged lumens."""
+        from unittest.mock import call
+
         from custom_components.hass_dyson.ble_device import ha_to_raw_brightness_lumens
-        from custom_components.hass_dyson.const import BLE_BRIGHTNESS_LUMENS_UUID
+        from custom_components.hass_dyson.const import (
+            BLE_BRIGHTNESS_LUMENS_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
+
+        sleep = AsyncMock()
+        monkeypatch.setattr(asyncio, "sleep", sleep)
 
         dev = self._make_device()
         client = MagicMock()
@@ -480,16 +546,117 @@ class TestDysonBLEDevice:
         dev.state.connected = True
 
         await dev.set_brightness(191)
-        client.write_gatt_char.assert_any_call(
+        assert client.write_gatt_char.call_args_list == [
+            call(
+                BLE_WRITE_ATTR_CHAR_UUID,
+                BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+                response=True,
+            ),
+            call(
+                BLE_BRIGHTNESS_LUMENS_UUID,
+                expected_lumens.to_bytes(2, byteorder="little"),
+                response=True,
+            ),
+        ]
+        sleep.assert_awaited_once_with(0.2)
+        assert dev.state.daylight_mode is False
+
+    @pytest.mark.asyncio
+    async def test_manual_mode_skips_daylight_write_during_same_session(self):
+        """Consecutive slider events avoid another mode write and delay."""
+        from custom_components.hass_dyson.const import BLE_BRIGHTNESS_LUMENS_UUID
+
+        dev = self._make_device()
+        client = MagicMock(is_connected=True)
+        client.write_gatt_char = AsyncMock()
+        dev._client = client
+        dev.state.authenticated = True
+        dev.state.connected = True
+        dev.state.daylight_mode = False
+        dev._manual_mode_valid_until = asyncio.get_running_loop().time() + 1
+
+        await dev.set_brightness(128)
+
+        client.write_gatt_char.assert_awaited_once()
+        assert client.write_gatt_char.await_args.args[0] == BLE_BRIGHTNESS_LUMENS_UUID
+
+    @pytest.mark.asyncio
+    async def test_manual_mode_reasserts_after_session(self, monkeypatch):
+        """A later interaction reasserts manual mode despite optimistic state."""
+        from unittest.mock import call
+
+        from custom_components.hass_dyson.const import (
             BLE_BRIGHTNESS_LUMENS_UUID,
-            expected_lumens.to_bytes(2, byteorder="little"),
-            response=False,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
+
+        dev = self._make_device()
+        client = MagicMock(is_connected=True)
+        client.write_gatt_char = AsyncMock()
+        dev._client = client
+        dev.state.authenticated = True
+        dev.state.connected = True
+        dev.state.daylight_mode = False
+        dev._manual_mode_valid_until = 0.0
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
+        await dev.set_brightness(128)
+
+        assert client.write_gatt_char.call_args_list[0] == call(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=True,
+        )
+        assert client.write_gatt_char.call_args_list[1].args[0] == (
+            BLE_BRIGHTNESS_LUMENS_UUID
         )
 
     @pytest.mark.asyncio
-    async def test_set_color_temp_kelvin_clamps_and_writes(self):
-        """set_color_temp_kelvin clamps to 2700-6500 and writes little-endian."""
-        from custom_components.hass_dyson.const import BLE_COLOR_TEMP_UUID
+    async def test_non_daylight_brightness_uses_11000_percentage(self):
+        """Explicitly non-daylight devices retain the original 11000 protocol."""
+        from custom_components.hass_dyson.ble_device import ha_to_raw_brightness
+        from custom_components.hass_dyson.const import BLE_BRIGHTNESS_UUID
+
+        dev = self._make_device(daylight_capable=False)
+        client = MagicMock(is_connected=True)
+        client.write_gatt_char = AsyncMock()
+        dev._client = client
+        dev.state.authenticated = True
+        dev.state.connected = True
+
+        await dev.set_brightness(191)
+
+        expected_percent = ha_to_raw_brightness(191)
+        client.write_gatt_char.assert_awaited_once_with(
+            BLE_BRIGHTNESS_UUID,
+            bytes([expected_percent]),
+            response=False,
+        )
+        assert dev.state.brightness_raw == expected_percent
+
+    def test_non_daylight_brightness_notification_uses_percentage(self):
+        """11000 notifications decode their one-byte percentage payload."""
+        dev = self._make_device(daylight_capable=False)
+
+        dev._on_brightness_notification(None, bytearray([50]))
+
+        assert dev.state.brightness_raw == 50
+        assert dev.state.brightness == 128
+
+    @pytest.mark.asyncio
+    async def test_set_color_temp_kelvin_clamps_and_writes(self, monkeypatch):
+        """Color temperature enters manual mode before its acknowledged write."""
+        from unittest.mock import call
+
+        from custom_components.hass_dyson.const import (
+            BLE_COLOR_TEMP_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
+
+        sleep = AsyncMock()
+        monkeypatch.setattr(asyncio, "sleep", sleep)
 
         dev = self._make_device()
         client = MagicMock()
@@ -503,14 +670,22 @@ class TestDysonBLEDevice:
         dev.state.connected = True
 
         await dev.set_color_temp_kelvin(4000)
-        client.write_gatt_char.assert_any_call(
-            BLE_COLOR_TEMP_UUID,
-            (4000).to_bytes(2, byteorder="little"),
-            response=False,
-        )
+        assert client.write_gatt_char.call_args_list == [
+            call(
+                BLE_WRITE_ATTR_CHAR_UUID,
+                BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+                response=True,
+            ),
+            call(
+                BLE_COLOR_TEMP_UUID,
+                (4000).to_bytes(2, byteorder="little"),
+                response=True,
+            ),
+        ]
+        sleep.assert_awaited_once_with(0.2)
 
     @pytest.mark.asyncio
-    async def test_set_color_temp_kelvin_clamps_below_min(self):
+    async def test_set_color_temp_kelvin_clamps_below_min(self, monkeypatch):
         """Values below 2700 K are clamped to 2700 K."""
         from custom_components.hass_dyson.const import (
             BLE_COLOR_TEMP_UUID,
@@ -518,6 +693,7 @@ class TestDysonBLEDevice:
         )
 
         dev = self._make_device()
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
         client = MagicMock()
         client.is_connected = True
         client.write_gatt_char = AsyncMock()
@@ -530,7 +706,7 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(
             BLE_COLOR_TEMP_UUID,
             BLE_MIN_KELVIN.to_bytes(2, byteorder="little"),
-            response=False,
+            response=True,
         )
 
     def test_on_motion_notification_sets_motion_detected(self):
