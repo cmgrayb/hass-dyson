@@ -16,6 +16,7 @@ from custom_components.hass_dyson import (
     _create_device_entry,
     _create_discovery_flow,
     _get_platforms_for_device,
+    _setup_ble_device_entry,
     async_setup,
     async_setup_entry,
     async_unload_entry,
@@ -78,6 +79,35 @@ class TestInitModule:
         assert "discovery_method" in DEVICE_SCHEMA.schema
         assert "hostname" in DEVICE_SCHEMA.schema
         assert "credential" in DEVICE_SCHEMA.schema
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("capabilities", "expected_platforms"),
+        [
+            ([], ["light", "binary_sensor", "switch"]),
+            (["Daylight"], ["light", "binary_sensor", "switch"]),
+            (["UnrelatedCapability"], ["light", "binary_sensor"]),
+        ],
+    )
+    async def test_ble_platforms_follow_daylight_capabilities(
+        self, mock_hass, mock_config_entry, capabilities, expected_platforms
+    ):
+        """Legacy BLE entries without capabilities still expose daylight mode."""
+        coordinator = MagicMock()
+        coordinator.async_setup = AsyncMock()
+        coordinator.serial_number = "E5P-US-TCA0227A"
+        coordinator.capabilities = capabilities
+        mock_hass.config_entries.async_forward_entry_setups = AsyncMock()
+
+        with patch(
+            "custom_components.hass_dyson.DysonBLEDataUpdateCoordinator",
+            return_value=coordinator,
+        ):
+            assert await _setup_ble_device_entry(mock_hass, mock_config_entry) is True
+
+        mock_hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+            mock_config_entry, expected_platforms
+        )
         assert "capabilities" in DEVICE_SCHEMA.schema
 
     def test_platforms(self):

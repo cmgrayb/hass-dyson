@@ -481,13 +481,15 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {"ble_coordinator": coordinator, "is_ble": True}
 
-    # Add the daylight-mode switch only when the device's stored capabilities
-    # explicitly include Daylight or PersonalDaylight.  BLE-only lights that
-    # were discovered from a cloud account always carry capabilities; manual
-    # entries without stored capabilities do not get the switch.
+    # Cloud discovery does not always persist capabilities for BLE-only lights.
+    # The currently supported CF06/CD06 lights are daylight-capable, so follow
+    # DysonBLEDataUpdateCoordinator's contract and default missing capability
+    # metadata to daylight support.
     caps = coordinator.capabilities
     has_daylight = (
-        BLE_CAPABILITY_DAYLIGHT in caps or BLE_CAPABILITY_PERSONAL_DAYLIGHT in caps
+        not caps
+        or BLE_CAPABILITY_DAYLIGHT in caps
+        or BLE_CAPABILITY_PERSONAL_DAYLIGHT in caps
     )
     ble_platforms = ["light", "binary_sensor"]
     if has_daylight:
@@ -812,7 +814,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         caps = ble_coordinator.capabilities
         has_daylight = (
-            BLE_CAPABILITY_DAYLIGHT in caps or BLE_CAPABILITY_PERSONAL_DAYLIGHT in caps
+            not caps
+            or BLE_CAPABILITY_DAYLIGHT in caps
+            or BLE_CAPABILITY_PERSONAL_DAYLIGHT in caps
         )
         ble_platforms = ["light", "binary_sensor"]
         if has_daylight:

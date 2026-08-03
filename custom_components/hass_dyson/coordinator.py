@@ -2913,6 +2913,8 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         from .ble_device import DysonBLEDevice
         from .const import (
+            BLE_CAPABILITY_DAYLIGHT,
+            BLE_CAPABILITY_PERSONAL_DAYLIGHT,
             CONF_BLE_MAC,
             CONF_LTK,
             EVENT_BLE_STATE_CHANGE,
@@ -2954,6 +2956,11 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ltk_hex=ltk_hex,
             account_uuid=account_uuid,
             ble_proxy=ble_proxy,
+            daylight_capable=(
+                not self.capabilities
+                or BLE_CAPABILITY_DAYLIGHT in self.capabilities
+                or BLE_CAPABILITY_PERSONAL_DAYLIGHT in self.capabilities
+            ),
         )
 
         # Subscribe to BLE state change events
