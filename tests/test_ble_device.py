@@ -709,7 +709,7 @@ class TestDysonBLEDevice:
         client.write_gatt_char.assert_any_call(
             BLE_WRITE_ATTR_CHAR_UUID,
             BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
-            response=False,
+            response=True,
         )
         # Then clamped colour-temp write
         client.write_gatt_char.assert_any_call(
