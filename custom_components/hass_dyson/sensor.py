@@ -59,10 +59,9 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER,
     PERCENTAGE,
     EntityCategory,
+    UnitOfDensity,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -160,7 +159,7 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "p25r"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -263,7 +262,7 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_p10r"
         self._attr_translation_key = "p10r"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -453,7 +452,7 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "voc"
         self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -1147,59 +1146,41 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-            # Pure Cool Link (TP02) models use 'pact' for particulates
-            # Newer models use 'p25r'/'pm25' and 'p10r'/'pm10'
-            # These are mutually exclusive - prioritize pact for older models
+            # Pure Cool Link (TP02) models use 'pact' for particulates.
+            # Newer models use 'p25r'/'pm25' and 'p10r'/'pm10'.
             if "pact" in env_data:
                 _LOGGER.debug(
                     "Adding Particulates sensor for device %s - pact data detected (Pure Cool Link)",
                     device_serial,
                 )
                 entities.append(DysonParticulatesSensor(coordinator))
-            else:
-                # Only add PM2.5 and PM10 sensors if pact is NOT present
-                # Add PM2.5 sensor if PM2.5 data is present (p25r or pm25)
-                if "p25r" in env_data or "pm25" in env_data:
-                    _LOGGER.debug(
-                        "Adding PM2.5 sensor for device %s - PM2.5 data detected",
-                        device_serial,
-                    )
-                    entities.append(DysonPM25Sensor(coordinator))
-                else:
-                    _LOGGER.debug(
-                        "Skipping PM2.5 sensor for device %s - no PM2.5 data in environmental response",
-                        device_serial,
-                    )
-
-                # Add PM10 sensor if PM10 data is present (p10r or pm10)
+            elif "p25r" in env_data or "pm25" in env_data:
+                _LOGGER.debug(
+                    "Adding PM2.5 sensor for device %s - PM2.5 data detected",
+                    device_serial,
+                )
+                entities.append(DysonPM25Sensor(coordinator))
                 if "p10r" in env_data or "pm10" in env_data:
                     _LOGGER.debug(
                         "Adding PM10 sensor for device %s - PM10 data detected",
                         device_serial,
                     )
                     entities.append(DysonPM10Sensor(coordinator))
-                else:
-                    _LOGGER.debug(
-                        "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
-                        device_serial,
-                    )
+            else:
+                _LOGGER.debug(
+                    "Skipping PM2.5/PM10 sensors for device %s - no PM data in environmental response",
+                    device_serial,
+                )
 
-            # Add VOC Link sensor if vact data is present (Pure Cool Link TP02 models)
-            # Only add if va10 is not present (va10 takes priority as the newer format)
             if "vact" in env_data and "va10" not in env_data:
                 _LOGGER.debug(
                     "Adding VOC Link sensor for device %s - vact data detected (Pure Cool Link)",
                     device_serial,
                 )
                 entities.append(DysonVOCLinkSensor(coordinator))
-            elif "vact" in env_data and "va10" in env_data:
+            elif "vact" in env_data:
                 _LOGGER.debug(
                     "Skipping VOC Link sensor for device %s - va10 (newer format) takes priority over vact",
-                    device_serial,
-                )
-            else:
-                _LOGGER.debug(
-                    "Skipping VOC Link sensor for device %s - no vact data in environmental response",
                     device_serial,
                 )
         else:
@@ -1222,55 +1203,33 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-            # Add CO2 sensor if CO2 data is present
             if "co2r" in env_data:
                 _LOGGER.debug(
-                    "Adding CO2 sensor for device %s - CO2 data detected", device_serial
+                    "Adding CO2 sensor for device %s - CO2 data detected",
+                    device_serial,
                 )
                 entities.append(DysonCO2Sensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping CO2 sensor for device %s - no CO2 data in environmental response",
-                    device_serial,
-                )
 
-            # Add NO2 sensor if NO2 data is present
             if "noxl" in env_data:
                 _LOGGER.debug(
-                    "Adding NO2 sensor for device %s - NO2 data detected", device_serial
-                )
-                entities.append(DysonNO2Sensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping NO2 sensor for device %s - no NO2 data in environmental response",
+                    "Adding NO2 sensor for device %s - NO2 data detected",
                     device_serial,
                 )
+                entities.append(DysonNO2Sensor(coordinator))
 
-            # Add VOC sensor if VOC data is present (va10)
             if "va10" in env_data:
                 _LOGGER.debug(
                     "Adding VOC sensor for device %s - VOC data detected",
                     device_serial,
                 )
                 entities.append(DysonVOCSensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping VOC sensor for device %s - no VOC data in environmental response",
-                    device_serial,
-                )
 
-            # Add Formaldehyde sensor if HCHO data is present (hchr or hcho)
             if "hchr" in env_data or "hcho" in env_data:
                 _LOGGER.debug(
                     "Adding Formaldehyde sensor for device %s - HCHO data detected",
                     device_serial,
                 )
                 entities.append(DysonFormaldehydeSensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response",
-                    device_serial,
-                )
         else:
             _LOGGER.debug(
                 "Skipping advanced air quality sensors for device %s - no ExtendedAQ capability",
@@ -1666,7 +1625,7 @@ class DysonAirQualitySensor(DysonEntity, SensorEntity):
                 else SensorDeviceClass.PM10
             )
             self._attr_native_unit_of_measurement = (
-                CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+                UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
             )
 
     def _handle_coordinator_update(self) -> None:
@@ -1858,7 +1817,7 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "pm25"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -1982,7 +1941,7 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "pm10"
         self._attr_device_class = SensorDeviceClass.PM10
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -2127,7 +2086,7 @@ class DysonParticulatesSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "pact"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -2248,7 +2207,7 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "voc"
         self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -2360,7 +2319,7 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "no2"
         self._attr_device_class = SensorDeviceClass.NITROGEN_DIOXIDE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:molecule"
 
     def _handle_coordinator_update(self) -> None:
@@ -2454,7 +2413,7 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hcho"
         self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:molecule"
 
     def _handle_coordinator_update(self) -> None:

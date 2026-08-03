@@ -592,6 +592,12 @@ async def _setup_platforms_and_services(
     # Forward setup to platforms
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_setup)
 
+    # Push coordinator's already-populated data to all newly registered entity
+    # listeners. Without this, entities start in unknown state and wait for the
+    # next scheduled coordinator poll (60 s) or heartbeat to receive state.
+    if coordinator.data:
+        coordinator.async_set_updated_data(coordinator.data)
+
     _LOGGER.info("Set up platforms: %s", platforms_to_setup)
 
 

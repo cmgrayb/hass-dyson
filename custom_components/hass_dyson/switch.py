@@ -90,6 +90,13 @@ class DysonAutoModeSwitch(DysonEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_auto_mode"
         self._attr_translation_key = "auto_mode"
         self._attr_icon = "mdi:auto-mode"
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            self._attr_is_on = (
+                coordinator.device.get_state_value(product_state, "auto", "OFF") == "ON"
+            )
+        else:
+            self._attr_is_on = False
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -178,6 +185,13 @@ class DysonNightModeSwitch(DysonEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_night_mode"
         self._attr_translation_key = "night_mode"
         self._attr_icon = "mdi:weather-night"
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            self._attr_is_on = (
+                coordinator.device.get_state_value(product_state, "nmod", "OFF") == "ON"
+            )
+        else:
+            self._attr_is_on = False
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -269,6 +283,14 @@ class DysonHeatingSwitch(DysonEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_heating"
         self._attr_translation_key = "heating"
         self._attr_icon = "mdi:radiator"
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            self._attr_is_on = (
+                coordinator.device.get_state_value(product_state, "hmod", "OFF")
+                != "OFF"
+            )
+        else:
+            self._attr_is_on = False
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -384,6 +406,13 @@ class DysonContinuousMonitoringSwitch(DysonEntity, SwitchEntity):
         from homeassistant.const import EntityCategory
 
         self._attr_entity_category = EntityCategory.CONFIG
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            self._attr_is_on = (
+                coordinator.device.get_state_value(product_state, "rhtm", "OFF") == "ON"
+            )
+        else:
+            self._attr_is_on = False
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -558,6 +587,12 @@ class DysonFindFollowSwitch(DysonEntity, SwitchEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_find_follow"
         self._attr_translation_key = "find_follow"
         self._attr_icon = "mdi:account-eye"
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            soon = coordinator.device.get_state_value(product_state, "soon", "OFF")
+            self._attr_is_on = soon in ("ON", "SCAN")
+        else:
+            self._attr_is_on = False
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

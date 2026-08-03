@@ -114,6 +114,10 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         # (Angle Current Preset), which is a device/app preset identifier.
         self._saved_sweep_midpoint: int | None = None
         self._last_known_mode: str | None = None  # Track mode transitions
+        if coordinator.data and coordinator.device:
+            self._attr_current_option = self._detect_mode_from_angles()
+        else:
+            self._attr_current_option = None
 
     def _calculate_sweep_midpoint(self) -> int:
         """Calculate the midpoint of the current sweep range from osal/osau.
@@ -504,6 +508,10 @@ class DysonOscillationModeDay0Select(DysonEntity, SelectEntity):
         self._attr_options = ["Off", "15°", "40°", "70°"]
         # Fixed center angle for Day0 - middle of allowed range (142°-212°)
         self._center_angle = 177
+        if coordinator.data and coordinator.device:
+            self._attr_current_option = self._detect_mode_from_angles()
+        else:
+            self._attr_current_option = None
 
     def _detect_mode_from_angles(self) -> str:
         """Detect current oscillation mode from device ANCP value."""
@@ -675,6 +683,17 @@ class DysonHeatingModeSelect(DysonEntity, SelectEntity):
         self._attr_translation_key = "heating_mode"
         self._attr_icon = "mdi:radiator"
         self._attr_options = ["Off", "Heating", "Auto Heat"]
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            hmod = coordinator.device.get_state_value(product_state, "hmod", "OFF")
+            if hmod == "HEAT":
+                self._attr_current_option = "Heating"
+            elif hmod != "OFF":
+                self._attr_current_option = "Auto Heat"
+            else:
+                self._attr_current_option = "Off"
+        else:
+            self._attr_current_option = "Off"
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -895,7 +914,14 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
         self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         self._attr_options = list(ROBOT_POWER_OPTIONS_360_EYE.values())
-        self._attr_current_option = None
+        if coordinator.data and coordinator.device:
+            current_power = coordinator.data.get("product-state", {}).get("fPwr")
+            self._attr_current_option = (
+                ROBOT_POWER_OPTIONS_360_EYE.get(current_power)
+                or list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
+            )
+        else:
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_360_EYE.values())[0]
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -978,7 +1004,16 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
         self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         self._attr_options = list(ROBOT_POWER_OPTIONS_HEURIST.values())
-        self._attr_current_option = None
+        if coordinator.data and coordinator.device:
+            current_power = coordinator.data.get("product-state", {}).get("fPwr")
+            self._attr_current_option = (
+                ROBOT_POWER_OPTIONS_HEURIST.get(
+                    str(current_power) if current_power else ""
+                )
+                or list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+            )
+        else:
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1063,7 +1098,16 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
         self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         self._attr_options = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())
-        self._attr_current_option = None
+        if coordinator.data and coordinator.device:
+            current_power = coordinator.data.get("product-state", {}).get("fPwr")
+            self._attr_current_option = (
+                ROBOT_POWER_OPTIONS_VIS_NAV.get(
+                    str(current_power) if current_power else ""
+                )
+                or list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
+            )
+        else:
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())[0]
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1149,7 +1193,16 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
         self._attr_icon = "mdi:vacuum"
         # Default to Heurist-style options as a reasonable fallback
         self._attr_options = list(ROBOT_POWER_OPTIONS_HEURIST.values())
-        self._attr_current_option = None
+        if coordinator.data and coordinator.device:
+            current_power = coordinator.data.get("product-state", {}).get("fPwr")
+            self._attr_current_option = (
+                ROBOT_POWER_OPTIONS_HEURIST.get(
+                    str(current_power) if current_power else ""
+                )
+                or list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
+            )
+        else:
+            self._attr_current_option = list(ROBOT_POWER_OPTIONS_HEURIST.values())[0]
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -1248,6 +1301,10 @@ class DysonTiltOscillationModeSelect(DysonEntity, SelectEntity):
         self._attr_translation_key = "tilt_oscillation_mode"
         self._attr_icon = "mdi:angle-acute"
         self._attr_options = ["0°", "25°", "50°", "Breeze"]
+        if coordinator.data and coordinator.device:
+            self._attr_current_option = self._detect_tilt_mode()
+        else:
+            self._attr_current_option = "0°"
 
     def _detect_tilt_mode(self) -> str:
         """Detect the current tilt oscillation mode from device state.
