@@ -1189,3 +1189,147 @@ class TestSwitchDeviceNoneAndExceptionBranches:
 
         assert attrs is not None
         assert attrs["current_firmware_version"] == "2.0.0"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DysonDaylightModeSwitch (BLE light)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestDysonDaylightModeSwitch:
+    """Tests for the BLE daylight-mode switch entity."""
+
+    def _make_ble_coordinator(self, daylight_mode: bool | None = None):
+        """Return a minimal mock DysonBLEDataUpdateCoordinator."""
+        coordinator = MagicMock()
+        coordinator.serial_number = "E5V-EU-TAA0133A"
+        coordinator.last_update_success = True
+        coordinator.is_connected = True
+        coordinator.data = {"daylight_mode": daylight_mode}
+        coordinator.ble_device = MagicMock()
+        coordinator.ble_device.set_daylight_mode = AsyncMock()
+        return coordinator
+
+    def _make_switch(self, coordinator=None):
+        from custom_components.hass_dyson.switch import DysonDaylightModeSwitch
+
+        if coordinator is None:
+            coordinator = self._make_ble_coordinator()
+        sw = DysonDaylightModeSwitch(coordinator)
+        sw.hass = MagicMock()
+        sw.async_write_ha_state = MagicMock()
+        return sw
+
+    def test_unique_id_and_name(self):
+        """unique_id uses serial + suffix; name is 'Daylight Mode'."""
+        sw = self._make_switch()
+        assert sw._attr_unique_id == "E5V-EU-TAA0133A_daylight_mode"
+        assert sw._attr_name == "Daylight Mode"
+
+    def test_is_on_true(self):
+        """is_on returns True when daylight_mode is True."""
+        sw = self._make_switch(self._make_ble_coordinator(daylight_mode=True))
+        assert sw.is_on is True
+
+    def test_is_on_false(self):
+        """is_on returns False when daylight_mode is False."""
+        sw = self._make_switch(self._make_ble_coordinator(daylight_mode=False))
+        assert sw.is_on is False
+
+    def test_is_on_none_when_unknown(self):
+        """is_on returns None when daylight_mode is None."""
+        sw = self._make_switch(self._make_ble_coordinator(daylight_mode=None))
+        assert sw.is_on is None
+
+    def test_is_on_none_when_no_data(self):
+        """is_on returns None when coordinator.data is None."""
+        coordinator = self._make_ble_coordinator()
+        coordinator.data = None
+        sw = self._make_switch(coordinator)
+        assert sw.is_on is None
+
+    @pytest.mark.asyncio
+    async def test_turn_on_calls_set_daylight_mode_enabled(self):
+        """async_turn_on calls set_daylight_mode(enabled=True)."""
+        coordinator = self._make_ble_coordinator()
+        sw = self._make_switch(coordinator)
+        await sw.async_turn_on()
+        coordinator.ble_device.set_daylight_mode.assert_awaited_once_with(enabled=True)
+
+    @pytest.mark.asyncio
+    async def test_turn_off_calls_set_daylight_mode_disabled(self):
+        """async_turn_off calls set_daylight_mode(enabled=False)."""
+        coordinator = self._make_ble_coordinator()
+        sw = self._make_switch(coordinator)
+        await sw.async_turn_off()
+        coordinator.ble_device.set_daylight_mode.assert_awaited_once_with(enabled=False)
+
+    @pytest.mark.asyncio
+    async def test_turn_on_no_device_logs_warning(self, caplog):
+        """async_turn_on logs a warning when ble_device is None."""
+        import logging
+
+        coordinator = self._make_ble_coordinator()
+        coordinator.ble_device = None
+        sw = self._make_switch(coordinator)
+        with caplog.at_level(logging.WARNING):
+            await sw.async_turn_on()
+        assert "No BLE device available" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_turn_off_no_device_logs_warning(self, caplog):
+        """async_turn_off logs a warning when ble_device is None."""
+        import logging
+
+        coordinator = self._make_ble_coordinator()
+        coordinator.ble_device = None
+        sw = self._make_switch(coordinator)
+        with caplog.at_level(logging.WARNING):
+            await sw.async_turn_off()
+        assert "No BLE device available" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_turn_on_runtime_error_logged(self, caplog):
+        """RuntimeError from set_daylight_mode is caught and logged as error."""
+        import logging
+
+        coordinator = self._make_ble_coordinator()
+        coordinator.ble_device.set_daylight_mode = AsyncMock(
+            side_effect=RuntimeError("not connected")
+        )
+        sw = self._make_switch(coordinator)
+        with caplog.at_level(logging.ERROR):
+            await sw.async_turn_on()
+        assert "Failed to enable daylight mode" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_ble_creates_daylight_switch(self):
+        """async_setup_entry creates DysonDaylightModeSwitch for BLE entries."""
+        from unittest.mock import MagicMock
+
+        from custom_components.hass_dyson.switch import (
+            DysonDaylightModeSwitch,
+            async_setup_entry,
+        )
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "ble_entry_1"
+        ble_coordinator = self._make_ble_coordinator()
+
+        hass.data = {
+            DOMAIN: {
+                "ble_entry_1": {
+                    "is_ble": True,
+                    "ble_coordinator": ble_coordinator,
+                }
+            }
+        }
+        added: list = []
+        async_add_entities = MagicMock(side_effect=lambda e, *a: added.extend(e))
+
+        result = await async_setup_entry(hass, config_entry, async_add_entities)
+
+        assert result is True
+        assert len(added) == 1
+        assert isinstance(added[0], DysonDaylightModeSwitch)

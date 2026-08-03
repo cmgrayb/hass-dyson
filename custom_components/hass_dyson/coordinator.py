@@ -2913,6 +2913,8 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         from .ble_device import DysonBLEDevice
         from .const import (
+            BLE_CAPABILITY_DAYLIGHT,
+            BLE_CAPABILITY_PERSONAL_DAYLIGHT,
             CONF_BLE_MAC,
             CONF_LTK,
             EVENT_BLE_STATE_CHANGE,
@@ -2954,6 +2956,11 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ltk_hex=ltk_hex,
             account_uuid=account_uuid,
             ble_proxy=ble_proxy,
+            daylight_capable=(
+                not self.capabilities
+                or BLE_CAPABILITY_DAYLIGHT in self.capabilities
+                or BLE_CAPABILITY_PERSONAL_DAYLIGHT in self.capabilities
+            ),
         )
 
         # Subscribe to BLE state change events
@@ -3094,3 +3101,14 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def is_connected(self) -> bool:
         """Return True if the BLE device is connected and authenticated."""
         return self.ble_device is not None and self.ble_device.is_connected
+
+    @property
+    def capabilities(self) -> list[str]:
+        """Return the list of device capabilities for this BLE light.
+
+        Reads from the ``capabilities`` key stored in the config entry data
+        (populated when the device was discovered via a cloud account).  When
+        not stored, returns an empty list — callers should treat BLE lights
+        (CF06 / CD06 Lightcycle Morph) as daylight-capable by default.
+        """
+        return list(self._config_entry.data.get("capabilities", []))
