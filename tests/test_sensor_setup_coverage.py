@@ -352,7 +352,9 @@ class TestSensorSetupCapabilityPaths:
         coordinator.device_capabilities = ["EnvironmentalData"]
         coordinator.device_category = ["ec"]
         coordinator.serial_number = "TP02-002"
-        coordinator.data = {"environmental-data": {"p10r": "28", "tact": "2950"}}
+        coordinator.data = {
+            "environmental-data": {"p25r": "5", "p10r": "28", "tact": "2950"}
+        }
 
         hass.data = {DOMAIN: {config_entry.entry_id: coordinator}}
 
