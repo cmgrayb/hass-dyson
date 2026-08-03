@@ -1467,6 +1467,9 @@ class DysonBLEDevice:
         Daylight mode is disabled first (char 0021) so the lamp accepts the
         manual brightness write rather than ignoring it.
 
+        Daylight mode is disabled first (char 0021) so the lamp accepts the
+        manual brightness write rather than ignoring it.
+
         Args:
             ha_brightness: Home Assistant brightness value (0–255).
 

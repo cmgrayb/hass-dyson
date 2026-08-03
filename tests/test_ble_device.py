@@ -689,7 +689,9 @@ class TestDysonBLEDevice:
         """Values below 2700 K are clamped to 2700 K."""
         from custom_components.hass_dyson.const import (
             BLE_COLOR_TEMP_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
             BLE_MIN_KELVIN,
+            BLE_WRITE_ATTR_CHAR_UUID,
         )
 
         dev = self._make_device()
@@ -703,6 +705,13 @@ class TestDysonBLEDevice:
         dev.state.connected = True
 
         await dev.set_color_temp_kelvin(1000)
+        # Daylight mode disable first
+        client.write_gatt_char.assert_any_call(
+            BLE_WRITE_ATTR_CHAR_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            response=False,
+        )
+        # Then clamped colour-temp write
         client.write_gatt_char.assert_any_call(
             BLE_COLOR_TEMP_UUID,
             BLE_MIN_KELVIN.to_bytes(2, byteorder="little"),
