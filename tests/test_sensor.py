@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
     PERCENTAGE,
+    UnitOfDensity,
     UnitOfTemperature,
 )
 
@@ -145,7 +145,7 @@ class TestDysonPM25Sensor:
             sensor._attr_device_class = SensorDeviceClass.PM25
             sensor._attr_state_class = SensorStateClass.MEASUREMENT
             sensor._attr_native_unit_of_measurement = (
-                CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+                UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
             )
 
             # Assert
@@ -156,7 +156,7 @@ class TestDysonPM25Sensor:
             assert sensor._attr_device_class == SensorDeviceClass.PM25
         assert (
             sensor.native_unit_of_measurement
-            == CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+            == UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         )
 
     def test_pm25_sensor_state_from_environmental_data(self, pure_mock_coordinator):
@@ -222,7 +222,7 @@ class TestDysonPM10Sensor:
             sensor._attr_device_class = SensorDeviceClass.PM10
             sensor._attr_state_class = SensorStateClass.MEASUREMENT
             sensor._attr_native_unit_of_measurement = (
-                CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+                UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
             )
 
             # Assert
@@ -233,7 +233,7 @@ class TestDysonPM10Sensor:
             assert sensor._attr_device_class == SensorDeviceClass.PM10
         assert (
             sensor.native_unit_of_measurement
-            == CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+            == UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         )
 
     def test_pm10_sensor_state_calculation(
