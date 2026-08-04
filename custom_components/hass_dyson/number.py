@@ -76,6 +76,15 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
         self._attr_native_step = 15  # 15-minute increments
         self._attr_native_unit_of_measurement = "min"
         self._timer_polling_task: asyncio.Task | None = None
+        if coordinator.data and coordinator.device:
+            product_state = coordinator.data.get("product-state", {})
+            sltm = coordinator.device.get_state_value(product_state, "sltm", "OFF")
+            try:
+                self._attr_native_value = 0 if sltm == "OFF" else int(sltm)
+            except (ValueError, TypeError):
+                self._attr_native_value = 0
+        else:
+            self._attr_native_value = 0
 
     async def async_added_to_hass(self) -> None:
         """Entity added to hass."""

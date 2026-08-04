@@ -144,7 +144,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        coordinator.device.get_state_value = Mock(side_effect=["INVALID", "INVALID"])
+        coordinator.device.get_state_value = Mock(
+            side_effect=["INVALID", "INVALID", "INVALID", "INVALID", "INVALID"]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -157,7 +159,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
-        coordinator.device.get_state_value = Mock(side_effect=["", ""])
+        coordinator.device.get_state_value = Mock(side_effect=["", "", "", "", ""])
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -172,7 +174,7 @@ class TestOscillationModeSelectErrorHandling:
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         # oson is checked first, then ancp, then osal/osau
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "", "INVALID", "BAD"]
+            side_effect=["0090", "ON", "", "INVALID", "BAD"]
         )
         coordinator.data = {"product-state": {}}
 
@@ -188,13 +190,13 @@ class TestOscillationModeSelectErrorHandling:
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         # oson first, then ancp, then osal/osau; span of 20 → Custom
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "", "0100", "0120"]
+            side_effect=["0090", "ON", "", "0100", "0120"]
         )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
 
-        # Span of 20 doesn't match any preset (45°, 90°, 180°, 350°), returns "Custom"
+        # Span of 100 doesn't match any preset (45°, 90°, 180°, 350°), returns "Custom"
         mode = select._detect_mode_from_angles()
         assert mode == "Custom"
 
@@ -204,7 +206,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         # oson, osal, osau — osal=INVALID triggers ValueError
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "INVALID", "0350"])
+        coordinator.device.get_state_value = Mock(
+            side_effect=["ON", "INVALID", "ON", "ON", "INVALID", "0350"]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -223,7 +227,9 @@ class TestOscillationModeSelectErrorHandling:
         coordinator.device = Mock()
         coordinator.device_capabilities = ["AdvanceOscillationDay1"]
         # oson, osal, osau — empty strings cause int() to use fallback defaults
-        coordinator.device.get_state_value = Mock(side_effect=["ON", "", ""])
+        coordinator.device.get_state_value = Mock(
+            side_effect=["ON", "", "", "ON", "", ""]
+        )
         coordinator.data = {"product-state": {}}
 
         select = DysonOscillationModeSelect(coordinator)
@@ -305,7 +311,7 @@ class TestOscillationModeDay0SelectErrorHandling:
         coordinator = Mock()
         coordinator.device = Mock()
         coordinator.device.get_state_value = Mock(
-            side_effect=["ON", "INVALID", "INVALID"]
+            side_effect=["ON", "INVALID", "ON", "INVALID", "INVALID"]
         )
         coordinator.data = {"product-state": {}}
 

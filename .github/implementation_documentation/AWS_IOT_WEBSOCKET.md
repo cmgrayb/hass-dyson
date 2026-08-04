@@ -68,55 +68,55 @@ mqtt_config = device_data.get("connected_configuration", {}).get("mqtt", {})
 remote_broker_type = mqtt_config.get("remote_broker_type", "mqtt")
 
 if iot_credentials.get("endpoint") and iot_credentials.get("credentials"):
-    cloud_credential = json.dumps({
-        "endpoint": iot_credentials["endpoint"],
-        "client_id": iot_credentials["credentials"]["client_id"],
-        "token_value": iot_credentials["credentials"]["token_value"],
-        "token_signature": iot_credentials["credentials"]["token_signature"],
-        "remote_broker_type": remote_broker_type
-    })
+    cloud_credential = json.dumps(
+        {
+            "endpoint": iot_credentials["endpoint"],
+            "client_id": iot_credentials["credentials"]["client_id"],
+            "token_value": iot_credentials["credentials"]["token_value"],
+            "token_signature": iot_credentials["credentials"]["token_signature"],
+            "remote_broker_type": remote_broker_type,
+        }
+    )
 ```
 
 #### WebSocket Connection (device.py)
 
 ```python
-async def _attempt_aws_iot_websocket_connection(self, host: str, credential: str) -> bool:
+async def _attempt_aws_iot_websocket_connection(
+    self, host: str, credential: str
+) -> bool:
     """Attempt AWS IoT WebSocket MQTT connection."""
-    
+
     # Parse AWS IoT credentials
     cred_data = json.loads(credential)
     endpoint = cred_data["endpoint"]
     client_id = cred_data["client_id"]
     token_value = cred_data["token_value"]
     token_signature = cred_data["token_signature"]
-    
+
     # Create authentication parameters
-    auth_params = {
-        "token": token_value,
-        "signature": token_signature
-    }
-    
+    auth_params = {"token": token_value, "signature": token_signature}
+
     # Create MQTT client with WebSocket transport
     mqtt_client = mqtt.Client(
         client_id=f"dyson-ha-cloud-{self.serial_number}-{uuid.uuid4().hex[:8]}",
-        transport="websockets"
+        transport="websockets",
     )
-    
+
     # Set WebSocket options with custom authorization
-    mqtt_client.ws_set_options(
-        path=f"/mqtt?{urlencode(auth_params)}",
-        headers=None
-    )
-    
+    mqtt_client.ws_set_options(path=f"/mqtt?{urlencode(auth_params)}", headers=None)
+
     # Set up TLS context for WebSocket Secure (WSS)
     context = ssl.create_default_context()
     context.check_hostname = True
     context.verify_mode = ssl.CERT_REQUIRED
     mqtt_client.tls_set_context(context)
-    
+
     # Connect to AWS IoT endpoint on port 443
-    result = await self.hass.async_add_executor_job(mqtt_client.connect, endpoint, 443, 60)
-    
+    result = await self.hass.async_add_executor_job(
+        mqtt_client.connect, endpoint, 443, 60
+    )
+
     return result == mqtt.CONNACK_ACCEPTED
 ```
 

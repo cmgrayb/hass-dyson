@@ -523,6 +523,7 @@ class TestNumberEntityErrorHandling:
         """Test async_will_remove_from_hass method with active polling task."""
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -538,6 +539,7 @@ class TestNumberEntityErrorHandling:
         """Test _start_timer_polling_if_needed when already running."""
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -570,6 +572,7 @@ class TestNumberEntityErrorHandling:
         """Test _stop_timer_polling method."""
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -623,6 +626,7 @@ class TestNumberEntityErrorHandling:
             side_effect=ConnectionError("Connection failed")
         )
         mock_coordinator.device._request_current_state = AsyncMock()
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -638,6 +642,7 @@ class TestNumberEntityErrorHandling:
         mock_coordinator.device.set_sleep_timer = AsyncMock(
             side_effect=TimeoutError("Timeout")
         )
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -653,6 +658,7 @@ class TestNumberEntityErrorHandling:
         mock_coordinator.device.set_sleep_timer = AsyncMock(
             side_effect=ValueError("Invalid value")
         )
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -668,6 +674,7 @@ class TestNumberEntityErrorHandling:
         mock_coordinator.device.set_sleep_timer = AsyncMock(
             side_effect=RuntimeError("Unexpected error")
         )
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -678,6 +685,7 @@ class TestNumberEntityErrorHandling:
         """Test extra_state_attributes when no device."""
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.device = None
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -689,6 +697,7 @@ class TestNumberEntityErrorHandling:
         """Test _do_frequent_initial_polling error handling."""
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 
@@ -704,6 +713,7 @@ class TestNumberEntityErrorHandling:
         """Test _do_regular_polling error handling."""
         mock_coordinator = Mock(spec=DysonDataUpdateCoordinator)
         mock_coordinator.serial_number = "TEST-123"
+        mock_coordinator.data = None
 
         entity = DysonSleepTimerNumber(mock_coordinator)
 

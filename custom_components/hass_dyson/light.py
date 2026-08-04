@@ -14,6 +14,7 @@ No MQTT is required.  State is received from the event bus via
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -130,7 +131,13 @@ class DysonLightEntity(DysonBLEEntity, LightEntity):
             )
             return
 
-        await dev.set_power(on=True)
+        # Home Assistant calls async_turn_on for brightness and colour-temperature
+        # adjustments too.  Re-sending power-on for every slider movement starts
+        # another lamp transition which can overwrite the manual value that
+        # immediately follows it.
+        if dev.state.power is not True:
+            await dev.set_power(on=True)
+            await asyncio.sleep(0.25)
 
         if ATTR_BRIGHTNESS in kwargs:
             await dev.set_brightness(kwargs[ATTR_BRIGHTNESS])

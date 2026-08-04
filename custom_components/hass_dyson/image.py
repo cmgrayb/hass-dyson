@@ -3,7 +3,12 @@
 Currently provides:
  - DysonDustMapImage:   the dust-density heatmap for the most recent clean
                         (rendered as PNG with purple→white gradient over the
-                        floor plan), refreshed when a new cleanId appears.
+                        floor plan), re-rendered whenever the record's dust
+                        data or the persistent map changes. Dyson updates the
+                        clean record IN PLACE while a clean is running (same
+                        cleanId, growing dust blob) and re-versions the
+                        persistent map afterwards, so a cleanId comparison
+                        would freeze the first (usually mid-clean) render.
  - DysonFloorPlanImage: the persistent-map presentation image (the static
                         floor plan with zone boundaries and dock location).
 
@@ -33,10 +38,12 @@ Bitmap rendering ported from thoukydides/matterbridge-dyson-robot
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import logging
 import zlib
 from datetime import datetime, timezone
+from functools import partial
 
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
@@ -295,7 +302,11 @@ async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: st
         if client is None:
             return _persist_map_cache.get_stale(key)
         try:
-            pmap = await client.get_persistent_map(coordinator.serial_number, map_id)
+            pmap = await client.get_persistent_map(
+                coordinator.serial_number,
+                map_id,
+                api_version=await coordinator.async_discover_map_api_version(client),
+            )
         except (DysonAPIError, DysonAuthError) as err:
             _LOGGER.debug(
                 "Failed to fetch persistent map %s for %s: %s",
@@ -307,6 +318,23 @@ async def _fetch_persist_map(coordinator: DysonDataUpdateCoordinator, map_id: st
 
     _persist_map_cache.set(key, pmap)
     return pmap
+
+
+def _pmap_fingerprint(pmap) -> tuple | None:
+    """Content fingerprint of a persistent map for render-cache keys.
+
+    The robot re-versions the persistent map after cleans (new world offset,
+    dimensions and presentation bitmap). The model does not expose the map's
+    version number, so fingerprint the fields that change with it.
+    """
+    if not pmap:
+        return None
+    return (
+        pmap.offset_x,
+        pmap.offset_y,
+        pmap.display_orientation,
+        hashlib.sha1((pmap.presentation_map_data or "").encode()).hexdigest(),
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -764,7 +792,6 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
     """Dust-density heatmap of the most recent clean, rendered as PNG."""
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_content_type = "image/png"
 
     def __init__(
@@ -775,8 +802,13 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_dust_map"
         self._attr_name = "Dust Map"
         self._attr_icon = "mdi:map-search"
-        self._cached_clean_id: str | None = None
+        self._render_cache_key: tuple | None = None
         self._cached_png: bytes | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
 
     async def _build(self) -> bytes | None:
         cleans = await fetch_clean_maps(self.coordinator)
@@ -784,8 +816,6 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
             return None
         latest = cleans[0]
         clean_id = latest.clean_id
-        if clean_id and clean_id == self._cached_clean_id and self._cached_png:
-            return self._cached_png
 
         dust_map_model = getattr(latest, "dust_map", None)
         download_url = getattr(latest, "download_url", None)
@@ -805,6 +835,8 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         # map, regardless of whether a download_url is present.
         # -------------------------------------------------------------------
         if not dust_map_model and clean_id:
+            if self._render_cache_key == ("v2", clean_id) and self._cached_png:
+                return self._cached_png
             # Strategy 1: Map Visualizer API (works for Vis Nav, 404 for RB05).
             png = await _fetch_map_image(self.coordinator, clean_id)
             # Strategy 2: v2 clean-maps-data endpoint (logs response for diagnostics).
@@ -819,7 +851,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                     clean_id,
                 )
                 return None
-            self._cached_clean_id = clean_id
+            self._render_cache_key = ("v2", clean_id)
             self._cached_png = png
             self._attr_image_last_updated = datetime.now(timezone.utc)
             return png
@@ -829,6 +861,25 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         # -------------------------------------------------------------------
         if not dust_map_model:
             return None
+
+        # Fingerprint the render inputs before deciding whether the cached
+        # PNG is still valid. Dyson updates the clean record in place during
+        # a clean and re-versions the persistent map afterwards, so the
+        # cleanId alone cannot tell a mid-clean snapshot from the final map.
+        try:
+            dust_blob = dust_map_model.dust_data[0].get("data") or ""
+        except (AttributeError, IndexError, TypeError):
+            dust_blob = ""
+        dust_fp = hashlib.sha1(dust_blob.encode()).hexdigest() if dust_blob else None
+
+        pmap = None
+        pmap_id = latest.persistent_map_id
+        if pmap_id:
+            pmap = await _fetch_persist_map(self.coordinator, pmap_id)
+
+        render_key = ("v1", clean_id, dust_fp, pmap_id, _pmap_fingerprint(pmap))
+        if render_key == self._render_cache_key and self._cached_png:
+            return self._cached_png
 
         # Convert DustMapData to the dict shape expected by _render_dust_map_png.
         dust_map_dict = {
@@ -850,18 +901,15 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
 
         presentation_png: bytes | None = None
         rotation_deg = 0
-        pmap_id = latest.persistent_map_id
-        if pmap_id:
-            pmap = await _fetch_persist_map(self.coordinator, pmap_id)
-            if pmap and pmap.presentation_map_data:
+        if pmap:
+            if pmap.presentation_map_data:
                 try:
                     presentation_png = base64.b64decode(pmap.presentation_map_data)
                 except (ValueError, TypeError):
                     presentation_png = None
-            if pmap:
-                rotation_deg = pmap.display_orientation
-                if pmap.offset_x is not None and pmap.offset_y is not None:
-                    map_offset_mm = (pmap.offset_x, pmap.offset_y)
+            rotation_deg = pmap.display_orientation
+            if pmap.offset_x is not None and pmap.offset_y is not None:
+                map_offset_mm = (pmap.offset_x, pmap.offset_y)
 
         cleaned_fp_png: bytes | None = None
         if latest.cleaned_footprint and latest.cleaned_footprint.data:
@@ -870,17 +918,22 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
             except (ValueError, TypeError):
                 cleaned_fp_png = None
 
-        png = _render_dust_map_png(
-            dust_map_dict,
-            cleaned_fp_png,
-            presentation_png,
-            rotation_deg,
-            map_offset_mm=map_offset_mm,
-            clean_position_mm=clean_position_mm,
-            map_resolution_mm_per_px=resolution_mm_per_px,
+        # The renderer is pure-Python pixel loops over the full bitmap —
+        # run it in the executor so the event loop is not blocked.
+        png = await self.hass.async_add_executor_job(
+            partial(
+                _render_dust_map_png,
+                dust_map_dict,
+                cleaned_fp_png,
+                presentation_png,
+                rotation_deg,
+                map_offset_mm=map_offset_mm,
+                clean_position_mm=clean_position_mm,
+                map_resolution_mm_per_px=resolution_mm_per_px,
+            )
         )
         if png:
-            self._cached_clean_id = clean_id
+            self._render_cache_key = render_key
             self._cached_png = png
             self._attr_image_last_updated = datetime.now(timezone.utc)
         return png
@@ -903,7 +956,6 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_content_type = "image/png"
 
     def __init__(
@@ -914,8 +966,13 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_floor_plan"
         self._attr_name = "Floor Plan"
         self._attr_icon = "mdi:floor-plan"
-        self._cached_pmap_id: str | None = None
+        self._render_cache_key: tuple | None = None
         self._cached_png: bytes | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
 
     async def _build(self) -> bytes | None:
         cleans = await fetch_clean_maps(self.coordinator)
@@ -929,9 +986,6 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
                 self.coordinator.serial_number,
             )
             return None
-        if pmap_id == self._cached_pmap_id and self._cached_png:
-            return self._cached_png
-
         pmap = await _fetch_persist_map(self.coordinator, pmap_id)
         if not pmap:
             _LOGGER.warning(
@@ -952,6 +1006,9 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
                 self.coordinator.serial_number,
                 pmap_id,
             )
+            render_key = ("v2fp", pmap_id, cleans[0].clean_id)
+            if render_key == self._render_cache_key and self._cached_png:
+                return self._cached_png
             png = await _fetch_map_image(self.coordinator, pmap_id)
             if png is None:
                 _LOGGER.debug(
@@ -975,10 +1032,16 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
                         pmap_id,
                     )
                     return None
-            self._cached_pmap_id = pmap_id
+            self._render_cache_key = render_key
             self._cached_png = png
             self._attr_image_last_updated = datetime.now(timezone.utc)
             return png
+
+        # The map UUID never changes across map versions — fingerprint the
+        # map's content so post-clean re-versions replace the cached render.
+        render_key = ("v1fp", pmap_id, _pmap_fingerprint(pmap))
+        if render_key == self._render_cache_key and self._cached_png:
+            return self._cached_png
         try:
             png_in = base64.b64decode(pmap.presentation_map_data)
         except (ValueError, TypeError) as err:
@@ -989,9 +1052,11 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
             )
             return None
 
-        png = _render_presentation_png(png_in, pmap.display_orientation)
+        png = await self.hass.async_add_executor_job(
+            _render_presentation_png, png_in, pmap.display_orientation
+        )
         if png:
-            self._cached_pmap_id = pmap_id
+            self._render_cache_key = render_key
             self._cached_png = png
             self._attr_image_last_updated = datetime.now(timezone.utc)
         return png

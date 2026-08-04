@@ -21,6 +21,7 @@ def _make_entity(coordinator=None):
         coordinator.is_connected = True
         coordinator.last_update_success = True
         coordinator.ble_device = MagicMock()
+        coordinator.ble_device.state = MagicMock(power=False)
         coordinator.ble_device.set_power = AsyncMock()
         coordinator.ble_device.set_brightness = AsyncMock()
         coordinator.ble_device.set_color_temp_kelvin = AsyncMock()
@@ -114,6 +115,13 @@ class TestDysonLightEntityProperties:
 class TestDysonLightEntityCommands:
     """Command (service call) tests for DysonLightEntity."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_transition_sleep(self, monkeypatch):
+        """Avoid real transition delays in entity unit tests."""
+        sleep = AsyncMock()
+        monkeypatch.setattr("custom_components.hass_dyson.light.asyncio.sleep", sleep)
+        self.sleep = sleep
+
     @pytest.mark.asyncio
     async def test_turn_on_calls_set_power(self):
         """async_turn_on() calls set_power(True) on the BLE device."""
@@ -129,6 +137,20 @@ class TestDysonLightEntityCommands:
         entity = _make_entity()
         await entity.async_turn_on(**{ATTR_BRIGHTNESS: 128})
         entity.coordinator.ble_device.set_brightness.assert_awaited_once_with(128)
+
+    @pytest.mark.asyncio
+    async def test_adjustment_does_not_resend_power_when_already_on(self):
+        """An adjustment on an active lamp avoids a competing power transition."""
+        from homeassistant.components.light import ATTR_BRIGHTNESS
+
+        entity = _make_entity()
+        entity.coordinator.ble_device.state.power = True
+
+        await entity.async_turn_on(**{ATTR_BRIGHTNESS: 128})
+
+        entity.coordinator.ble_device.set_power.assert_not_awaited()
+        entity.coordinator.ble_device.set_brightness.assert_awaited_once_with(128)
+        self.sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_turn_on_with_color_temp_calls_set_color_temp_kelvin(self):

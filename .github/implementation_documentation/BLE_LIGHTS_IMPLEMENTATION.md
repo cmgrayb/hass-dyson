@@ -169,7 +169,12 @@ coord = MagicMock(spec=DysonBLEDataUpdateCoordinator)
 coord.serial_number = "CD06-GB-HAA0001A"
 coord.ble_device = device
 coord.is_connected = True
-coord.data = {"power": True, "brightness": 200, "color_temp_kelvin": 4000, "motion_detected": False}
+coord.data = {
+    "power": True,
+    "brightness": 200,
+    "color_temp_kelvin": 4000,
+    "motion_detected": False,
+}
 ```
 
 ### Running BLE-specific tests

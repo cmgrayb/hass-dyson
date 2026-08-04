@@ -26,15 +26,27 @@ All characteristics belong to the primary Dyson BLE service:
 | Service | `2dd10010-1c37-452d-8979-d1b4a787d0a4` | — | — | Primary Dyson BLE service |
 | 11011 | `2dd10011-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | Framed msgs | Auth/messaging channel |
 | 13 (RSSI) | `2dd10013-1c37-452d-8979-d1b4a787d0a4` | notify | 1 byte signed | RSSI proximity probe |
-| 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % |
+| 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % (non-daylight devices) |
 | 11001 | `2dd11001-1c37-452d-8979-d1b4a787d0a4` | read/write | uint16 LE | Color temperature (Kelvin) |
 | 11005 | `2dd11005-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Power: `0x00`=off, `0x01`=on |
 | 11006 | `2dd11006-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime / scheduled-light flags |
 | 11007 | `2dd11007-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Ambient sensor (not fully decoded) |
 | 11008 | `2dd11008-1c37-452d-8979-d1b4a787d0a4` | notify | bytes | **Motion events** (non-zero = motion) |
-| 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime flags (not fully decoded) |
+| 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | uint16 LE | Brightness 100–1000 lm (CF06/CD06) |
 
-All control writes use **write-without-response** (`response=False` in bleak).
+Daylight-capable devices select 11009 from their persisted `Daylight` or
+`PersonalDaylight` capability and use acknowledged ATT Write Requests for
+brightness, colour-temperature, and daylight-mode writes. Explicitly
+non-daylight devices retain the original 11000 percentage characteristic;
+missing capability metadata defaults to daylight support for the currently
+supported CF06/CD06 models. Power continues to use write-without-response.
+
+Daylight mode is currently an optimistic setting. Attribute `0x2013` can be
+written through characteristic 10021, but no readable/notifiable representation
+of that attribute has yet been decoded. Manual brightness or colour-temperature
+interactions therefore reassert manual mode once per short interaction session,
+allowing a later interaction to recover if daylight mode was enabled with the
+physical lamp button.
 
 ---
 
@@ -71,9 +83,11 @@ safety unless a larger MTU is confirmed.
 ### Fragment builder algorithm
 
 ```python
-def fragment_dyson_message(type_id: int, payload: bytes, capacity: int = 20) -> list[bytes]:
+def fragment_dyson_message(
+    type_id: int, payload: bytes, capacity: int = 20
+) -> list[bytes]:
     logical = bytes([type_id]) + payload
-    data_per_fragment = capacity - 1          # 1 byte reserved for header
+    data_per_fragment = capacity - 1  # 1 byte reserved for header
     total_fragments = max(1, math.ceil(len(logical) / data_per_fragment))
     fragments: list[bytes] = []
     for index in range(total_fragments):
@@ -185,10 +199,13 @@ import hashlib, hmac
 
 USER_AUTH_AES_INFO = b"USER_AUTH_AES\x00\x00\x00"
 
+
 def hkdf_derive_aes_key(ltk: bytes) -> bytes:
     """Derive 16-byte AES key from LTK.  Mirror of g20/b.d in the Android app."""
-    prk = hmac.new(b"", ltk, hashlib.sha256).digest()           # extract
-    block1 = hmac.new(prk, USER_AUTH_AES_INFO + b"\x01", hashlib.sha256).digest()  # expand
+    prk = hmac.new(b"", ltk, hashlib.sha256).digest()  # extract
+    block1 = hmac.new(
+        prk, USER_AUTH_AES_INFO + b"\x01", hashlib.sha256
+    ).digest()  # expand
     return block1[:16]
 ```
 
@@ -198,6 +215,7 @@ def hkdf_derive_aes_key(ltk: bytes) -> bytes:
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+
 
 def g20c_encrypt(enc_key: bytes, plaintext: bytes) -> bytes:
     """Produce IV(16) + AES-CBC(plaintext)(16) + HMAC-SHA256(key, ct)(32) = 64 bytes."""
@@ -212,6 +230,7 @@ def g20c_encrypt(enc_key: bytes, plaintext: bytes) -> bytes:
 
 ```python
 from uuid import UUID
+
 
 def build_reauth_payload_a(account_uuid: str, enc_key: bytes, nonce: bytes) -> bytes:
     """account_guid(16) + 0x00 0x00 + g20c_encrypt(nonce) = 82 bytes."""
@@ -265,6 +284,7 @@ def ha_to_raw_brightness(ha_brightness: int) -> int:
         return 1
     return max(1, min(100, round(ha_brightness * 100 / 255)))
 
+
 def raw_to_ha_brightness(raw: int) -> int:
     """Map lamp percent (0-100) to HA brightness (0-255)."""
     return max(0, min(255, round(raw * 255 / 100)))
@@ -276,11 +296,13 @@ The lamp stores color temperature as a **16-bit little-endian integer in Kelvin*
 range **2700 K – 6500 K**.  Home Assistant uses mired (reciprocal megakelvin).
 
 ```python
-BLE_MIN_KELVIN = 2700   # warmest = 370 mireds
-BLE_MAX_KELVIN = 6500   # coolest = ~154 mireds
+BLE_MIN_KELVIN = 2700  # warmest = 370 mireds
+BLE_MAX_KELVIN = 6500  # coolest = ~154 mireds
+
 
 def kelvin_to_mired(kelvin: int) -> int:
     return round(1_000_000 / kelvin)
+
 
 def mired_to_kelvin(mired: int) -> int:
     kelvin = round(1_000_000 / mired)
@@ -294,18 +316,31 @@ HA entity attributes: `min_color_temp_kelvin = 2700`, `max_color_temp_kelvin = 6
 
 ## Write Operations
 
-All characteristic writes use `response=False` (write-without-response):
+The Morph can silently discard unacknowledged brightness, colour-temperature,
+and daylight-mode commands:
 
 ```python
 # Power
 await client.write_gatt_char(BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False)
 
-# Brightness (0-100 raw)
-await client.write_gatt_char(BLE_BRIGHTNESS_UUID, bytes([raw_percent]), response=False)
+# Enter manual mode once per short interaction session.
+await client.write_gatt_char(
+    BLE_WRITE_ATTR_CHAR_UUID,
+    BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+    response=True,
+)
+await asyncio.sleep(0.2)
+
+# Brightness (100-1000 lm, uint16 little-endian)
+await client.write_gatt_char(
+    BLE_BRIGHTNESS_LUMENS_UUID,
+    lumens.to_bytes(2, byteorder="little"),
+    response=True,
+)
 
 # Color temperature (Kelvin, uint16 little-endian)
 await client.write_gatt_char(
-    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=False
+    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=True
 )
 ```
 
@@ -406,8 +441,9 @@ products, as they are generic over the device type.
 - **Fresh pairing**: Fresh pairing requires a one-time physical button press on the
   lamp.  The config flow guides users through the full handshake in the Home Assistant
   UI and stores the resulting LTK automatically.
-- **Char 11006/11007/11009**: These characteristics are observed but not fully decoded.
-  Their purpose is logged as diagnostic attributes but not surfaced as HA entities.
+- **Char 11006/11007**: These characteristics are observed but not fully decoded.
+  Their purpose is logged as diagnostic attributes but not surfaced as HA entities;
+  11009 is the decoded CF06/CD06 lumen control and state characteristic.
 - **RSSI gating**: The original bridge implements an RSSI threshold gate before
   fresh pairing.  The HA integration omits this (HA's bluetooth framework handles
   device proximity natively).

@@ -277,6 +277,14 @@
       },
       "firmware_auto_update": {
         "name": "Mise à jour automatique du firmware"
+      },
+      "find_follow": {
+        "name": "Suivi"
+      }
+    },
+    "button": {
+      "find_follow_scan": {
+        "name": "Scan Suivi"
       }
     },
     "select": {
