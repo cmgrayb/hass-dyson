@@ -26,15 +26,27 @@ All characteristics belong to the primary Dyson BLE service:
 | Service | `2dd10010-1c37-452d-8979-d1b4a787d0a4` | — | — | Primary Dyson BLE service |
 | 11011 | `2dd10011-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | Framed msgs | Auth/messaging channel |
 | 13 (RSSI) | `2dd10013-1c37-452d-8979-d1b4a787d0a4` | notify | 1 byte signed | RSSI proximity probe |
-| 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % |
+| 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % (non-daylight devices) |
 | 11001 | `2dd11001-1c37-452d-8979-d1b4a787d0a4` | read/write | uint16 LE | Color temperature (Kelvin) |
 | 11005 | `2dd11005-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Power: `0x00`=off, `0x01`=on |
 | 11006 | `2dd11006-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime / scheduled-light flags |
 | 11007 | `2dd11007-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Ambient sensor (not fully decoded) |
 | 11008 | `2dd11008-1c37-452d-8979-d1b4a787d0a4` | notify | bytes | **Motion events** (non-zero = motion) |
-| 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime flags (not fully decoded) |
+| 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | uint16 LE | Brightness 100–1000 lm (CF06/CD06) |
 
-All control writes use **write-without-response** (`response=False` in bleak).
+Daylight-capable devices select 11009 from their persisted `Daylight` or
+`PersonalDaylight` capability and use acknowledged ATT Write Requests for
+brightness, colour-temperature, and daylight-mode writes. Explicitly
+non-daylight devices retain the original 11000 percentage characteristic;
+missing capability metadata defaults to daylight support for the currently
+supported CF06/CD06 models. Power continues to use write-without-response.
+
+Daylight mode is currently an optimistic setting. Attribute `0x2013` can be
+written through characteristic 10021, but no readable/notifiable representation
+of that attribute has yet been decoded. Manual brightness or colour-temperature
+interactions therefore reassert manual mode once per short interaction session,
+allowing a later interaction to recover if daylight mode was enabled with the
+physical lamp button.
 
 ---
 
@@ -304,18 +316,31 @@ HA entity attributes: `min_color_temp_kelvin = 2700`, `max_color_temp_kelvin = 6
 
 ## Write Operations
 
-All characteristic writes use `response=False` (write-without-response):
+The Morph can silently discard unacknowledged brightness, colour-temperature,
+and daylight-mode commands:
 
 ```python
 # Power
 await client.write_gatt_char(BLE_POWER_UUID, b"\x01" if on else b"\x00", response=False)
 
-# Brightness (0-100 raw)
-await client.write_gatt_char(BLE_BRIGHTNESS_UUID, bytes([raw_percent]), response=False)
+# Enter manual mode once per short interaction session.
+await client.write_gatt_char(
+    BLE_WRITE_ATTR_CHAR_UUID,
+    BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+    response=True,
+)
+await asyncio.sleep(0.2)
+
+# Brightness (100-1000 lm, uint16 little-endian)
+await client.write_gatt_char(
+    BLE_BRIGHTNESS_LUMENS_UUID,
+    lumens.to_bytes(2, byteorder="little"),
+    response=True,
+)
 
 # Color temperature (Kelvin, uint16 little-endian)
 await client.write_gatt_char(
-    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=False
+    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=True
 )
 ```
 
@@ -416,8 +441,9 @@ products, as they are generic over the device type.
 - **Fresh pairing**: Fresh pairing requires a one-time physical button press on the
   lamp.  The config flow guides users through the full handshake in the Home Assistant
   UI and stores the resulting LTK automatically.
-- **Char 11006/11007/11009**: These characteristics are observed but not fully decoded.
-  Their purpose is logged as diagnostic attributes but not surfaced as HA entities.
+- **Char 11006/11007**: These characteristics are observed but not fully decoded.
+  Their purpose is logged as diagnostic attributes but not surfaced as HA entities;
+  11009 is the decoded CF06/CD06 lumen control and state characteristic.
 - **RSSI gating**: The original bridge implements an RSSI threshold gate before
   fresh pairing.  The HA integration omits this (HA's bluetooth framework handles
   device proximity natively).

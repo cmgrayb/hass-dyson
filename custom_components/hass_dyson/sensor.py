@@ -59,16 +59,17 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-    CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER,
     PERCENTAGE,
     EntityCategory,
+    UnitOfDensity,
     UnitOfTemperature,
     UnitOfTime,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     _PM_SENSOR_UNAVAILABLE_STATES,
@@ -80,7 +81,7 @@ from .const import (
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
-from .vacuum import fetch_clean_maps
+from .vacuum import _clean_maps_cache, fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "p25r"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -261,7 +262,7 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_p10r"
         self._attr_translation_key = "p10r"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -451,7 +452,7 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "voc"
         self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
     def _handle_coordinator_update(self) -> None:
@@ -1013,6 +1014,85 @@ class DysonDominantPollutantSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+# Delay (seconds) between the robot reporting endOfClean and invalidating
+# the clean-history caches. The cloud history entry was observed live within
+# ~2 minutes of endOfClean; the polling history sensors and the dust-map/
+# floor-plan images then pick it up on their next update instead of waiting
+# out the cache TTLs. The image-side caches must be dropped here as well —
+# the robot re-versions the persistent map (new offset/dimensions/bitmap)
+# after a clean, so a floor plan cached before the clean no longer matches
+# the coordinates in the fresh clean record.
+CLEAN_HISTORY_REFRESH_DELAY: float = 120.0
+
+
+def _register_end_of_clean_listener(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    coordinator: DysonDataUpdateCoordinator,
+) -> None:
+    """Invalidate the clean-history cache shortly after a clean ends.
+
+    Listens for ``endOfClean: true`` in the robot's STATE-CHANGE stream and
+    schedules a one-shot cache invalidation, so the Last Clean sensors and
+    dust-map/floor-plan images refresh minutes after docking rather than up
+    to 30 minutes later. Also the hook that lets the MQTT zone stitch reach
+    the fresh entry while the robot still retains the matching cleanId.
+    """
+    device = coordinator.device
+    if device is None:
+        return
+
+    refresh_unsub: CALLBACK_TYPE | None = None
+    listener_removed = False
+
+    async def _async_refresh_history(_now) -> None:
+        nonlocal refresh_unsub
+        refresh_unsub = None
+        from .image import _floor_plan_cache, _map_image_cache, _persist_map_cache
+        from .vacuum import _clean_maps_cache
+
+        serial = coordinator.serial_number
+        _clean_maps_cache.invalidate(serial)
+        prefix = f"{serial}:"
+        # expire (not invalidate): _fetch_persist_map falls back to get_stale
+        # on a failed refetch, so the pre-clean map must stay reachable.
+        _persist_map_cache.expire_prefix(prefix)
+        _floor_plan_cache.invalidate_prefix(prefix)
+        _map_image_cache.invalidate_prefix(prefix)
+        _recommended_cleans_cache.invalidate(serial)
+        _LOGGER.debug(
+            "Clean finished on %s: history and map-image caches invalidated",
+            serial,
+        )
+
+    def _schedule_refresh() -> None:
+        nonlocal refresh_unsub
+        if listener_removed:
+            return
+        if refresh_unsub is not None:
+            refresh_unsub()
+        refresh_unsub = async_call_later(
+            hass, CLEAN_HISTORY_REFRESH_DELAY, _async_refresh_history
+        )
+
+    def _on_device_message(topic: str, data: dict[str, Any]) -> None:
+        # Fires on paho's network thread — hop to the event loop.
+        if data.get("msg") != "STATE-CHANGE" or not data.get("endOfClean"):
+            return
+        hass.loop.call_soon_threadsafe(_schedule_refresh)
+
+    device.add_message_callback(_on_device_message)
+
+    def _remove_listener() -> None:
+        nonlocal listener_removed
+        listener_removed = True
+        device.remove_message_callback(_on_device_message)
+        if refresh_unsub is not None:
+            refresh_unsub()
+
+    config_entry.async_on_unload(_remove_listener)
+
+
 async def async_setup_entry(  # noqa: C901
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -1066,59 +1146,41 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-            # Pure Cool Link (TP02) models use 'pact' for particulates
-            # Newer models use 'p25r'/'pm25' and 'p10r'/'pm10'
-            # These are mutually exclusive - prioritize pact for older models
+            # Pure Cool Link (TP02) models use 'pact' for particulates.
+            # Newer models use 'p25r'/'pm25' and 'p10r'/'pm10'.
             if "pact" in env_data:
                 _LOGGER.debug(
                     "Adding Particulates sensor for device %s - pact data detected (Pure Cool Link)",
                     device_serial,
                 )
                 entities.append(DysonParticulatesSensor(coordinator))
-            else:
-                # Only add PM2.5 and PM10 sensors if pact is NOT present
-                # Add PM2.5 sensor if PM2.5 data is present (p25r or pm25)
-                if "p25r" in env_data or "pm25" in env_data:
-                    _LOGGER.debug(
-                        "Adding PM2.5 sensor for device %s - PM2.5 data detected",
-                        device_serial,
-                    )
-                    entities.append(DysonPM25Sensor(coordinator))
-                else:
-                    _LOGGER.debug(
-                        "Skipping PM2.5 sensor for device %s - no PM2.5 data in environmental response",
-                        device_serial,
-                    )
-
-                # Add PM10 sensor if PM10 data is present (p10r or pm10)
+            elif "p25r" in env_data or "pm25" in env_data:
+                _LOGGER.debug(
+                    "Adding PM2.5 sensor for device %s - PM2.5 data detected",
+                    device_serial,
+                )
+                entities.append(DysonPM25Sensor(coordinator))
                 if "p10r" in env_data or "pm10" in env_data:
                     _LOGGER.debug(
                         "Adding PM10 sensor for device %s - PM10 data detected",
                         device_serial,
                     )
                     entities.append(DysonPM10Sensor(coordinator))
-                else:
-                    _LOGGER.debug(
-                        "Skipping PM10 sensor for device %s - no PM10 data in environmental response",
-                        device_serial,
-                    )
+            else:
+                _LOGGER.debug(
+                    "Skipping PM2.5/PM10 sensors for device %s - no PM data in environmental response",
+                    device_serial,
+                )
 
-            # Add VOC Link sensor if vact data is present (Pure Cool Link TP02 models)
-            # Only add if va10 is not present (va10 takes priority as the newer format)
             if "vact" in env_data and "va10" not in env_data:
                 _LOGGER.debug(
                     "Adding VOC Link sensor for device %s - vact data detected (Pure Cool Link)",
                     device_serial,
                 )
                 entities.append(DysonVOCLinkSensor(coordinator))
-            elif "vact" in env_data and "va10" in env_data:
+            elif "vact" in env_data:
                 _LOGGER.debug(
                     "Skipping VOC Link sensor for device %s - va10 (newer format) takes priority over vact",
-                    device_serial,
-                )
-            else:
-                _LOGGER.debug(
-                    "Skipping VOC Link sensor for device %s - no vact data in environmental response",
                     device_serial,
                 )
         else:
@@ -1141,55 +1203,33 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
 
-            # Add CO2 sensor if CO2 data is present
             if "co2r" in env_data:
                 _LOGGER.debug(
-                    "Adding CO2 sensor for device %s - CO2 data detected", device_serial
+                    "Adding CO2 sensor for device %s - CO2 data detected",
+                    device_serial,
                 )
                 entities.append(DysonCO2Sensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping CO2 sensor for device %s - no CO2 data in environmental response",
-                    device_serial,
-                )
 
-            # Add NO2 sensor if NO2 data is present
             if "noxl" in env_data:
                 _LOGGER.debug(
-                    "Adding NO2 sensor for device %s - NO2 data detected", device_serial
-                )
-                entities.append(DysonNO2Sensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping NO2 sensor for device %s - no NO2 data in environmental response",
+                    "Adding NO2 sensor for device %s - NO2 data detected",
                     device_serial,
                 )
+                entities.append(DysonNO2Sensor(coordinator))
 
-            # Add VOC sensor if VOC data is present (va10)
             if "va10" in env_data:
                 _LOGGER.debug(
                     "Adding VOC sensor for device %s - VOC data detected",
                     device_serial,
                 )
                 entities.append(DysonVOCSensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping VOC sensor for device %s - no VOC data in environmental response",
-                    device_serial,
-                )
 
-            # Add Formaldehyde sensor if HCHO data is present (hchr or hcho)
             if "hchr" in env_data or "hcho" in env_data:
                 _LOGGER.debug(
                     "Adding Formaldehyde sensor for device %s - HCHO data detected",
                     device_serial,
                 )
                 entities.append(DysonFormaldehydeSensor(coordinator))
-            else:
-                _LOGGER.debug(
-                    "Skipping Formaldehyde sensor for device %s - no HCHO data in environmental response",
-                    device_serial,
-                )
         else:
             _LOGGER.debug(
                 "Skipping advanced air quality sensors for device %s - no ExtendedAQ capability",
@@ -1461,6 +1501,8 @@ async def async_setup_entry(  # noqa: C901
                 for i in range(5):
                     entities.append(DysonLastCleanSensor(coordinator, slot=i))
                 entities.append(DysonRecommendedCleanSensor(coordinator))
+                entities.append(DysonCurrentMapSensor(coordinator))
+                _register_end_of_clean_listener(hass, config_entry, coordinator)
 
         # Cloud-fetched purifier sensors (outdoor AQI, daily history,
         # MyDyson scheduled events). Only for ec-category devices (air
@@ -1583,7 +1625,7 @@ class DysonAirQualitySensor(DysonEntity, SensorEntity):
                 else SensorDeviceClass.PM10
             )
             self._attr_native_unit_of_measurement = (
-                CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+                UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
             )
 
     def _handle_coordinator_update(self) -> None:
@@ -1775,7 +1817,7 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "pm25"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -1899,7 +1941,7 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "pm10"
         self._attr_device_class = SensorDeviceClass.PM10
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -2044,7 +2086,7 @@ class DysonParticulatesSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "pact"
         self._attr_device_class = SensorDeviceClass.PM25
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -2165,7 +2207,7 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "voc"
         self._attr_device_class = SensorDeviceClass.VOLATILE_ORGANIC_COMPOUNDS
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:air-filter"
 
         _LOGGER.debug(
@@ -2277,7 +2319,7 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
         self._attr_translation_key = "no2"
         self._attr_device_class = SensorDeviceClass.NITROGEN_DIOXIDE
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:molecule"
 
     def _handle_coordinator_update(self) -> None:
@@ -2371,7 +2413,7 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_hcho"
         self._attr_translation_key = "hcho"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER
+        self._attr_native_unit_of_measurement = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
         self._attr_icon = "mdi:molecule"
 
     def _handle_coordinator_update(self) -> None:
@@ -3317,6 +3359,15 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
         # Cross-reference zone IDs with the persistent-map metadata cache
         # (populated by services.py) to resolve human-readable room names.
         zone_ids = _extract_zone_ids(clean)
+        zone_source = "cloud" if zone_ids else None
+        stitch_map_id: str | None = None
+        if not zone_ids:
+            # The cloud records MQTT-initiated zone cleans as plain "global"
+            # entries with no zone info — the robot's retained programme
+            # echo (matched by cleanId) is the only zone record for them.
+            zone_ids, stitch_map_id = self._stitch_zone_ids_from_mqtt(clean)
+            if zone_ids:
+                zone_source = "device_mqtt"
         zone_names: list[str] = []
         if zone_ids:
             try:
@@ -3328,10 +3379,18 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
                         self.coordinator.serial_number
                     )
                 if maps:
+                    # Zone ids restart from 1 on every map — resolve names
+                    # from the map the clean ran on, falling back to the
+                    # other maps only for ids it does not carry.
+                    # Stitched (MQTT) cleans carry no map on the cloud
+                    # record — the robot's retained map is that clean's map.
+                    clean_map_id = (
+                        getattr(clean, "persistent_map_id", None) or stitch_map_id
+                    )
                     id_to_name: dict[str, str] = {}
-                    for pmap in maps:
+                    for pmap in sorted(maps, key=lambda m: m.id != clean_map_id):
                         for z in pmap.zones:
-                            id_to_name[z.id] = z.name or z.id
+                            id_to_name.setdefault(z.id, z.name or z.id)
                     zone_names = [id_to_name.get(zid, zid) for zid in zone_ids]
             except Exception:  # noqa: BLE001 — names are a nice-to-have
                 zone_names = []
@@ -3343,6 +3402,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
             "area_m2": _extract_cleaned_area_m2(clean),
             "zone_ids": zone_ids,
             "zone_names": zone_names,
+            "zone_source": zone_source,
             "fault_count": _extract_fault_count(clean),
             "sequence_number": getattr(clean, "sequence_number", None),
             # v2 fields (None on v1 records)
@@ -3350,6 +3410,26 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
             "end_battery": getattr(clean, "end_battery", None),
             "is_spot_clean": getattr(clean, "is_spot_clean", None),
         }
+
+    def _stitch_zone_ids_from_mqtt(self, clean) -> tuple[list[str], str | None]:
+        """Zone ids (and their map) from the robot's MQTT echo, if it matches.
+
+        Only the robot's current/most recent session (matched on cleanId)
+        can be stitched — older history entries have no MQTT record.
+        """
+        device = self.coordinator.device
+        if device is None:
+            return [], None
+        device_clean_id = getattr(device, "robot_clean_id", None)
+        if not isinstance(device_clean_id, str) or device_clean_id != getattr(
+            clean, "clean_id", None
+        ):
+            return [], None
+        zones = getattr(device, "robot_last_clean_zones", None)
+        if not isinstance(zones, list) or not zones:
+            return [], None
+        map_id = getattr(device, "robot_current_map_id", None)
+        return list(zones), map_id if isinstance(map_id, str) else None
 
 
 # ============================================================================
@@ -3395,7 +3475,6 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
     """
 
     coordinator: DysonDataUpdateCoordinator
-    _attr_should_poll = True
     _attr_icon = "mdi:lightbulb-on-outline"
 
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
@@ -3403,12 +3482,18 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.serial_number}_recommended_clean"
         self._attr_name = "Recommended Clean"
 
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
+
     async def async_update(self) -> None:
         data = await _fetch_recommended_cleans(self.coordinator)
         # Cross-reference zone IDs with cached persistent-map names. Use the
         # stale-cache fallback so we still get friendly names even if the
         # main metadata TTL has expired since the last fetch.
         id_to_name: dict[str, str] = {}
+        names_by_map: dict[str, dict[str, str]] = {}
         try:
             from .services import _persistent_map_cache
 
@@ -3417,8 +3502,10 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
                 maps = _persistent_map_cache.get_stale(self.coordinator.serial_number)
             if maps:
                 for pmap in maps:
-                    for z in pmap.zones:
-                        id_to_name[z.id] = z.name or z.id
+                    per_map = {z.id: (z.name or z.id) for z in pmap.zones}
+                    names_by_map[pmap.id] = per_map
+                    for zid, zname in per_map.items():
+                        id_to_name.setdefault(zid, zname)
         except Exception:  # noqa: BLE001
             pass
 
@@ -3426,6 +3513,11 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
         # Each has .zone_predictions (list[ZonePrediction]) with .dust.total etc.
         predictions: list[dict] = []
         for rcm in data:
+            # Zone ids restart from 1 per map — resolve against this
+            # recommendation's own map when it is in the cache.
+            rcm_names = names_by_map.get(
+                getattr(rcm, "persistent_map_id", None), id_to_name
+            )
             for pred in rcm.zone_predictions:
                 zid = pred.zone_id
                 dust_breakdown = {
@@ -3439,7 +3531,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
                 predictions.append(
                     {
                         "zone_id": zid,
-                        "zone_name": id_to_name.get(zid, zid),
+                        "zone_name": rcm_names.get(zid, id_to_name.get(zid, zid)),
                         "total_dust_mg": round(pred.dust.total, 1),
                         "dust_breakdown_mg": dust_breakdown,
                     }
@@ -3455,6 +3547,158 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
             "top_zone_dust_mg": (predictions[0]["total_dust_mg"] if predictions else 0),
             "predictions": predictions,
         }
+
+
+class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
+    """Which persistent map a multi-map robot is currently using.
+
+    Source priority (exposed via the ``source`` attribute):
+      1. ``robot`` — the persistentMapId the robot itself announced over
+         MQTT (present in every clean's state stream, retained afterwards);
+      2. ``cloud`` — the isCurrentMap flag from persistent-map metadata
+         (set by v2/Spot+Clean devices; the Vis Nav v1 endpoint omits it);
+      3. ``restored`` — the last known value from before a restart;
+      4. ``last_visited`` — the map with the newest lastVisited timestamp
+         in the persistent-map metadata (v1 payloads include it);
+      5. ``clean_history`` — the map of the most recent cloud clean record.
+
+    During zone cleans the robot also streams per-zone progress, surfaced
+    as the ``zone_status`` attribute.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_current_map"
+        self._attr_name = "Current Map"
+        self._attr_icon = "mdi:map-marker-path"
+        self._restored_map_id: str | None = None
+        self._restored_name: str | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408);
+        # the explicit override keeps the cache-warming async_update polling.
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last and last.state not in ("unknown", "unavailable"):
+            self._restored_name = last.state
+            self._restored_map_id = last.attributes.get("map_id")
+
+    async def async_update(self) -> None:
+        """Warm the metadata and clean-history caches (both TTL-cached)."""
+        from .services import _fetch_persistent_map_metadata
+
+        try:
+            await _fetch_persistent_map_metadata(self.coordinator)
+        except HomeAssistantError:
+            pass
+        try:
+            await fetch_clean_maps(self.coordinator)
+        except HomeAssistantError:
+            pass
+
+    def _cached_maps(self) -> list:
+        from .services import _persistent_map_cache
+
+        serial = self.coordinator.serial_number
+        maps = _persistent_map_cache.get(serial)
+        if maps is None:
+            maps = _persistent_map_cache.get_stale(serial)
+        return maps or []
+
+    def _resolve(self) -> tuple[str | None, str | None, str | None]:
+        """Return (map_id, map_name, source) from the best available signal."""
+        from .services import _current_map
+
+        maps = self._cached_maps()
+        by_id = {m.id: m for m in maps}
+
+        device = self.coordinator.device
+        map_id = getattr(device, "robot_current_map_id", None) if device else None
+        if map_id:
+            pmap = by_id.get(map_id)
+            return map_id, (pmap.name if pmap else None), "robot"
+
+        cloud = _current_map(maps)
+        if cloud is not None:
+            return cloud.id, cloud.name, "cloud"
+
+        if self._restored_map_id or self._restored_name:
+            pmap = by_id.get(self._restored_map_id or "")
+            name = pmap.name if pmap else self._restored_name
+            return self._restored_map_id, name, "restored"
+
+        # Restricted to maps that carry lastVisited so find_current_map
+        # cannot raise; with no cloud flag set (the v1 norm) it returns
+        # the newest-visited map.
+        visited = [m for m in maps if m.last_visited]
+        if visited:
+            from libdyson_rest.models import find_current_map
+
+            pmap = find_current_map(visited)
+            return pmap.id, pmap.name, "last_visited"
+
+        serial = self.coordinator.serial_number
+        records = _clean_maps_cache.get(serial) or _clean_maps_cache.get_stale(serial)
+        for record in records or []:
+            record_map_id = getattr(record, "persistent_map_id", None)
+            if record_map_id:
+                pmap = by_id.get(record_map_id)
+                return record_map_id, (pmap.name if pmap else None), "clean_history"
+
+        return None, None, None
+
+    @property
+    def native_value(self) -> str | None:
+        map_id, name, _source = self._resolve()
+        if name is None and map_id is None:
+            return None
+        return str(name or map_id)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        from .services import _robot_session_active
+
+        map_id, _name, source = self._resolve()
+        attrs: dict[str, Any] = {"map_id": map_id, "source": source}
+
+        pmap = next((m for m in self._cached_maps() if m.id == map_id), None)
+        if pmap is not None:
+            attrs["zones"] = [str(z.name or z.id) for z in pmap.zones]
+
+        # Live progress is only meaningful while a clean is running — the
+        # robot retains the last values after docking. The session flag
+        # (rather than a state check) keeps it visible across transient
+        # mid-clean FAULT_* states.
+        device = self.coordinator.device
+        if device is None or not _robot_session_active(device):
+            return attrs
+        names = {z.id: str(z.name or z.id) for z in pmap.zones} if pmap else {}
+
+        zone_status = getattr(device, "robot_zone_status", None)
+        if zone_status:
+            attrs["zone_status"] = {
+                names.get(entry.get("zoneId"), entry.get("zoneId")): entry.get(
+                    "cleanStatus"
+                )
+                for entry in zone_status
+                if isinstance(entry, dict)
+            }
+
+        # The robot reports its zone on every state message — including
+        # whole-house cleans, where zoneStatus is absent.
+        zone_id = getattr(device, "robot_current_zone_id", None)
+        if isinstance(zone_id, str) and zone_id:
+            attrs["current_zone"] = names.get(zone_id, zone_id)
+        target_id = getattr(device, "robot_traverse_target_id", None)
+        if isinstance(target_id, str) and target_id:
+            attrs["traverse_target"] = names.get(target_id, target_id)
+        return attrs
 
 
 # ============================================================================

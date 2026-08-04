@@ -196,6 +196,7 @@ class TestSleepTimerPollingCoverage:
         coordinator = Mock(spec=DysonDataUpdateCoordinator)
         coordinator.serial_number = "TEST-TIMER-009"
         coordinator.device = Mock()
+        coordinator.data = None
 
         timer = DysonSleepTimerNumber(coordinator)
 

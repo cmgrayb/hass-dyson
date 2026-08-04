@@ -236,8 +236,8 @@ class TestWaterHardnessSelect:
     """Test DysonWaterHardnessSelect entity."""
 
     def test_handle_update_soft(self, mock_coordinator):
-        """Test coordinator update with Soft (2025) water hardness."""
-        mock_coordinator.device.get_state_value = Mock(return_value="2025")
+        """Test coordinator update with Soft (0675) water hardness."""
+        mock_coordinator.device.get_state_value = Mock(return_value="0675")
 
         entity = DysonWaterHardnessSelect(mock_coordinator)
         entity.async_write_ha_state = MagicMock()
@@ -264,8 +264,8 @@ class TestWaterHardnessSelect:
         assert entity._attr_current_option == "Medium"
 
     def test_handle_update_hard(self, mock_coordinator):
-        """Test coordinator update with Hard (0675) water hardness."""
-        mock_coordinator.device.get_state_value = Mock(return_value="0675")
+        """Test coordinator update with Hard (2025) water hardness."""
+        mock_coordinator.device.get_state_value = Mock(return_value="2025")
 
         entity = DysonWaterHardnessSelect(mock_coordinator)
         entity.async_write_ha_state = MagicMock()

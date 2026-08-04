@@ -262,12 +262,12 @@ def extract_capabilities_from_device_info(device_info: Any) -> list[str]:
     # To do: replace product_type.startswith("PH") with a function which determines
     # Humidifier capability from device state.
     if product_type:
-        # PH model (Purifier/Humidifier) should have virtual Humidifier capability
-        if product_type.startswith("PH"):
+        # PH and 358-series models (Purifier/Humidifier) should have virtual Humidifier capability
+        if product_type.startswith("PH") or product_type.startswith("358"):
             if "Humidifier" not in capabilities:
                 capabilities.append("Humidifier")
                 _LOGGER.debug(
-                    "Added virtual Humidifier capability for PH model %s",
+                    "Added virtual Humidifier capability for model %s",
                     product_type,
                 )
 

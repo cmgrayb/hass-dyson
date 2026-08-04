@@ -286,6 +286,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # BLE pairing state
         self._ble_mac: str | None = None
         self._ble_serial: str | None = None
+        self._ble_capabilities: list[str] = []
         self._ble_found_devices: list[tuple[str, str]] = []  # (mac, name)
 
     def _device_is_supported(self, device) -> bool:
@@ -983,6 +984,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_LTK: ltk,
                         "account_uuid": account_uuid,
                     }
+                    if self._ble_capabilities:
+                        config_data["capabilities"] = self._ble_capabilities
                     if user_input.get(CONF_BLE_PROXY):
                         config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
                     return self.async_create_entry(title=device_name, data=config_data)
@@ -1210,6 +1213,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_LTK: ltk_hex,
                     "account_uuid": account_uuid,
                 }
+                if self._ble_capabilities:
+                    config_data["capabilities"] = self._ble_capabilities
                 if user_input.get(CONF_BLE_PROXY):
                     config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
                 return self.async_create_entry(title=device_name, data=config_data)
@@ -1797,6 +1802,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 device_serial,
             )
             self._ble_serial = device_serial
+            self._ble_capabilities = discovery_info.get("capabilities", [])
             return await self.async_step_ble_configure()
 
         # Get better display name for device type
