@@ -16,12 +16,14 @@ Overall target: Reach 75% total coverage
 from unittest.mock import Mock, patch
 
 import pytest
+from homeassistant.const import EntityCategory
 
 from custom_components.hass_dyson.sensor import (
     DysonCarbonFilterLifeSensor,
     DysonConnectionStatusSensor,
     DysonFormaldehydeSensor,
     DysonHEPAFilterLifeSensor,
+    DysonIpAddressSensor,
     DysonNO2Sensor,
     DysonPM10Sensor,
     DysonPM25Sensor,
@@ -697,3 +699,60 @@ class TestConnectionStatusSensorErrorHandling:
             sensor._handle_coordinator_update()
 
         # Should handle gracefully
+
+
+class TestIpAddressSensorErrorHandling:
+    """Test error handling and basic behavior of DysonIpAddressSensor."""
+
+    def test_unique_id_and_diagnostic_category(self):
+        """Sensor should be a diagnostic entity with a stable unique id."""
+        coordinator = Mock()
+        coordinator.serial_number = "TEST-IP-000"
+        coordinator.device = None
+
+        sensor = DysonIpAddressSensor(coordinator)
+
+        assert sensor._attr_unique_id == "TEST-IP-000_ip_address"
+        assert sensor._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+    def test_native_value_no_device(self):
+        """Test when coordinator has no device instance."""
+        coordinator = Mock()
+        coordinator.serial_number = "TEST-IP-001"
+        coordinator.device = None
+
+        sensor = DysonIpAddressSensor(coordinator)
+
+        assert sensor.native_value is None
+
+    def test_native_value_with_ip_host(self):
+        """Test retrieval of the resolved IP address used for the local connection."""
+        coordinator = Mock()
+        coordinator.serial_number = "TEST-IP-002"
+        coordinator.device = Mock()
+        coordinator.device.host = "192.168.1.42"
+
+        sensor = DysonIpAddressSensor(coordinator)
+
+        assert sensor.native_value == "192.168.1.42"
+
+    def test_native_value_with_hostname_fallback(self):
+        """Test retrieval when the device is addressed via mDNS hostname."""
+        coordinator = Mock()
+        coordinator.serial_number = "TEST-IP-003"
+        coordinator.device = Mock()
+        coordinator.device.host = "TEST-IP-003.local"
+
+        sensor = DysonIpAddressSensor(coordinator)
+
+        assert sensor.native_value == "TEST-IP-003.local"
+
+    def test_native_value_device_no_host_attr(self):
+        """Test graceful handling when device has no host attribute."""
+        coordinator = Mock()
+        coordinator.serial_number = "TEST-IP-004"
+        coordinator.device = Mock(spec=[])  # No attributes, incl. host
+
+        sensor = DysonIpAddressSensor(coordinator)
+
+        assert sensor.native_value is None
