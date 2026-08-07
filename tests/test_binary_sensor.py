@@ -1031,6 +1031,4 @@ class TestDysonRobotBatteryChargingSensor:
             pure_mock_hass, pure_mock_config_entry, mock_add_entities
         )
         entities = mock_add_entities.call_args[0][0]
-        assert not any(
-            isinstance(e, DysonRobotBatteryChargingSensor) for e in entities
-        )
+        assert not any(isinstance(e, DysonRobotBatteryChargingSensor) for e in entities)
