@@ -18,6 +18,7 @@
 
 - **Connectivity** - Online/offline status
 - **Filter Replacement** - Alert when any filter needs changing
+- **Charging** - Battery charging status (vacuum models)
 - **Individual Fault Sensors** - Dedicated sensors for each fault type:
   - **Air Quality Sensor Fault** - AQS malfunction detection
   - **Filter Fault** - General filter issues
