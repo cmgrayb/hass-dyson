@@ -507,6 +507,7 @@ class TestSensorSetupCategoryPaths:
         sensor_types = [type(entity).__name__ for entity in entities]
         assert "DysonWiFiSensor" in sensor_types
         assert "DysonConnectionStatusSensor" in sensor_types
+        assert "DysonIpAddressSensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_setup_wifi_sensors_for_robot_category(self):
@@ -533,6 +534,7 @@ class TestSensorSetupCategoryPaths:
         sensor_types = [type(entity).__name__ for entity in entities]
         assert "DysonWiFiSensor" in sensor_types
         assert "DysonConnectionStatusSensor" in sensor_types
+        assert "DysonIpAddressSensor" in sensor_types
 
     @pytest.mark.asyncio
     async def test_setup_no_wifi_sensors_for_other_categories(self):
@@ -559,6 +561,7 @@ class TestSensorSetupCategoryPaths:
         sensor_types = [type(entity).__name__ for entity in entities]
         assert "DysonWiFiSensor" not in sensor_types
         assert "DysonConnectionStatusSensor" not in sensor_types
+        assert "DysonIpAddressSensor" not in sensor_types
 
     @pytest.mark.asyncio
     async def test_setup_robot_category_battery_log(self):

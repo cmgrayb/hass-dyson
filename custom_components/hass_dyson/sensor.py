@@ -25,6 +25,7 @@ Device Status Sensors:
     - Filter Life: HEPA and Carbon filter remaining life (0-100%)
     - Device Status: Overall device operational status
     - Connection Status: Local/Cloud/Disconnected
+    - IP Address: Host (IP address or hostname) used for the local connection
 
 Key Features:
     - Real-time data updates via MQTT streaming
@@ -1245,6 +1246,7 @@ async def async_setup_entry(  # noqa: C901
                 [
                     DysonWiFiSensor(coordinator),
                     DysonConnectionStatusSensor(coordinator),
+                    DysonIpAddressSensor(coordinator),
                 ]
             )
         else:
@@ -2901,6 +2903,49 @@ class DysonConnectionStatusSensor(DysonEntity, SensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         # Connection status is updated directly from the device
+        super()._handle_coordinator_update()
+
+
+class DysonIpAddressSensor(DysonEntity, SensorEntity):
+    """Representation of a Dyson device's local network IP address/hostname.
+
+    Exposes the host currently used for the local MQTT connection, i.e. the
+    same value resolved by :meth:`DysonDataUpdateCoordinator._get_device_host`
+    (user-configured static IP/hostname, hostname reported by the cloud API,
+    or the ``{serial}.local`` mDNS fallback). This is a diagnostic entity
+    intended to help users confirm/troubleshoot local connectivity without
+    digging through logs.
+
+    Note:
+        Dyson devices do not expose their WiFi network MAC address via the
+        cloud API, local MQTT protocol, or mDNS service records used by this
+        integration, so no corresponding MAC address entity is provided. See
+        the device registry's ``connections`` field, which is Home
+        Assistant's canonical place for a MAC address, for context on why we
+        did not fabricate one there either.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the IP address sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_ip_address"
+        self._attr_translation_key = "ip_address"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:ip-network"
+        self._attr_device_class = None
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the IP address/hostname used for the local connection."""
+        if self.coordinator.device:
+            return getattr(self.coordinator.device, "host", None)
+        return None
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # IP address is read directly from the device on each access
         super()._handle_coordinator_update()
 
 

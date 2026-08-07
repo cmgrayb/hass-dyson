@@ -219,6 +219,9 @@
       "connection_status": {
         "name": "Connection Status"
       },
+      "ip_address": {
+        "name": "IP Address"
+      },
       "filter_life": {
         "name": "{filter_type} Filter Life"
       },
