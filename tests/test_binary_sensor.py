@@ -895,3 +895,140 @@ class TestDysonRobotFaultSensor:
         )
         entities = mock_add_entities.call_args[0][0]
         assert not any(isinstance(e, DysonRobotFaultSensor) for e in entities)
+
+
+class TestDysonRobotBatteryChargingSensor:
+    """Robot charging sensor (derived from the raw robot_state)."""
+
+    def _sensor(self, pure_mock_coordinator):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonRobotBatteryChargingSensor,
+        )
+
+        sensor = DysonRobotBatteryChargingSensor(pure_mock_coordinator)
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_init(self, pure_mock_coordinator):
+        sensor = self._sensor(pure_mock_coordinator)
+        assert sensor._attr_unique_id.endswith("_robot_battery_charging")
+        assert sensor._attr_translation_key == "robot_battery_charging"
+        from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+        from homeassistant.const import EntityCategory
+
+        assert sensor._attr_device_class == BinarySensorDeviceClass.BATTERY_CHARGING
+        assert sensor._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+    @pytest.mark.parametrize(
+        "robot_state",
+        [
+            "INACTIVE_CHARGING",
+            "FULL_CLEAN_CHARGING",
+            "MAPPING_CHARGING",
+            "FAULT_ON_DOCK_CHARGING",
+        ],
+    )
+    def test_charging_states_are_on(self, pure_mock_coordinator, robot_state):
+        """Every state that draws charge is on, whatever the vacuum activity."""
+        pure_mock_coordinator.device.robot_state = robot_state
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is True
+
+    @pytest.mark.parametrize(
+        "robot_state",
+        [
+            "INACTIVE_CHARGED",
+            "INACTIVE_DISCHARGING",
+            "FAULT_ON_DOCK_CHARGED",
+            "FULL_CLEAN_NEEDS_CHARGE",
+            "MAPPING_NEEDS_CHARGE",
+            "FULL_CLEAN_RUNNING",
+            "MACHINE_OFF",
+        ],
+    )
+    def test_non_charging_states_are_off(self, pure_mock_coordinator, robot_state):
+        """Charged, discharging and heading-to-dock are off, not unknown."""
+        pure_mock_coordinator.device.robot_state = robot_state
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is False
+
+    def test_charging_cannot_be_derived_from_vacuum_activity(self):
+        """At least one charging state maps to a non-docked activity.
+
+        This is why the sensor reads robot_state directly instead of keying off
+        the vacuum entity: charging and activity are not interchangeable.
+        """
+        from homeassistant.components.vacuum import VacuumActivity
+
+        from custom_components.hass_dyson.const import (
+            ROBOT_STATE_TO_HA_STATE,
+            ROBOT_STATES_CHARGING,
+        )
+
+        assert any(
+            ROBOT_STATE_TO_HA_STATE[state] is not VacuumActivity.DOCKED
+            for state in ROBOT_STATES_CHARGING
+        )
+
+    def test_unknown_until_state_reported(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_state = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    def test_empty_state_is_unknown(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_state = ""
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    def test_no_device_is_unknown(self, pure_mock_coordinator):
+        pure_mock_coordinator.device = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_setup_creates_charging_sensor_for_robot(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonRobotBatteryChargingSensor,
+        )
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_ROBOT]
+        pure_mock_coordinator.device_capabilities = []
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+        entities = mock_add_entities.call_args[0][0]
+        charging = [
+            e for e in entities if isinstance(e, DysonRobotBatteryChargingSensor)
+        ]
+        assert len(charging) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_creates_none_for_ec_device(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonRobotBatteryChargingSensor,
+        )
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
+        pure_mock_coordinator.device_capabilities = []
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+        entities = mock_add_entities.call_args[0][0]
+        assert not any(isinstance(e, DysonRobotBatteryChargingSensor) for e in entities)

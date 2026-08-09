@@ -22,6 +22,7 @@ from .const import (
     DOMAIN,
     FAULT_TRANSLATIONS,
     ROBOT_FAULT_SUBSYSTEMS,
+    ROBOT_STATES_CHARGING,
 )
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
 from .device_utils import mask_serial
@@ -182,6 +183,8 @@ async def async_setup_entry(
             len(ROBOT_FAULT_SUBSYSTEMS),
             coordinator.serial_number,
         )
+        entities.append(DysonRobotBatteryChargingSensor(coordinator))
+        _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
 
     async_add_entities(entities, True)
     return True
@@ -523,6 +526,53 @@ class DysonRobotFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[mi
                             attributes[key] = detail[key]
                     break
         self._attr_extra_state_attributes = attributes
+        super()._handle_coordinator_update()
+
+
+class DysonRobotBatteryChargingSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Charging state for robot vacuums.
+
+    Pairs with ``DysonRobotBatterySensor`` to complete the migration off the
+    removed vacuum BATTERY feature: that one reports level, this one reports
+    charging. Derived from ``DysonDevice.robot_state`` rather than the vacuum's
+    activity, because charging is orthogonal to it — FULL_CLEAN_CHARGING maps to
+    RETURNING and FAULT_ON_DOCK_CHARGING to ERROR, yet both are charging.
+
+    Attributes:
+        _attr_device_class: :attr:`BinarySensorDeviceClass.BATTERY_CHARGING`,
+            which also supplies the dynamic icon — no explicit ``_attr_icon``.
+
+    Availability:
+        Robot category devices only. Unknown until the robot's first
+        CURRENT-STATE after a restart — ``_handle_state_change`` does not merge
+        the top-level ``state``/``newstate`` keys, so STATE-CHANGE traffic never
+        refreshes ``robot_state``; only the REQUEST-CURRENT-STATE heartbeat does.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the robot charging sensor.
+
+        Args:
+            coordinator: DysonDataUpdateCoordinator providing device access
+        """
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_battery_charging"
+        self._attr_translation_key = "robot_battery_charging"
+        self._attr_device_class = BinarySensorDeviceClass.BATTERY_CHARGING
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        robot_state = getattr(device, "robot_state", None) if device else None
+        if not robot_state:
+            # Not reported until the robot's first state message — unknown,
+            # not "not charging".
+            self._attr_is_on = None
+        else:
+            self._attr_is_on = robot_state in ROBOT_STATES_CHARGING
         super()._handle_coordinator_update()
 
 

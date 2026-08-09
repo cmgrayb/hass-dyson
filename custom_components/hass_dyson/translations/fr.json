@@ -327,6 +327,9 @@
     "binary_sensor": {
       "filter_replacement": {
         "name": "Remplacement du filtre"
+      },
+      "robot_battery_charging": {
+        "name": "En charge"
       }
     },
     "update": {

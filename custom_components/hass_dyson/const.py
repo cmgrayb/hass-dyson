@@ -627,6 +627,17 @@ ROBOT_STATE_TO_HA_STATE: Final = {
     ROBOT_STATE_FAULT_RUNNING_DIAGNOSTIC: VacuumActivity.ERROR,
 }
 
+# Charging is orthogonal to the activity mapping above — a mid-clean recharge
+# maps to RETURNING and an on-dock fault to ERROR, yet both draw charge.
+ROBOT_STATES_CHARGING: Final = frozenset(
+    {
+        ROBOT_STATE_INACTIVE_CHARGING,
+        ROBOT_STATE_FULL_CLEAN_CHARGING,
+        ROBOT_STATE_MAPPING_CHARGING,
+        ROBOT_STATE_FAULT_ON_DOCK_CHARGING,
+    }
+)
+
 # Capability-based fault code filtering
 # These faults only appear if the device has specific capabilities
 CAPABILITY_FAULT_CODES: Final = {
