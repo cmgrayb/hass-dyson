@@ -592,14 +592,16 @@ ROBOT_STATE_TO_HA_STATE: Final = {
     # Paused states
     ROBOT_STATE_FULL_CLEAN_PAUSED: VacuumActivity.PAUSED,
     ROBOT_STATE_MAPPING_PAUSED: VacuumActivity.PAUSED,
-    # Docked states
+    # Docked states — the robot is ON the dock. The *_CHARGING pair are
+    # mid-cycle recharges; .github/design/vacuums.md groups all five under
+    # "Dock and Charging States".
     ROBOT_STATE_INACTIVE_CHARGED: VacuumActivity.DOCKED,
     ROBOT_STATE_INACTIVE_CHARGING: VacuumActivity.DOCKED,
     ROBOT_STATE_INACTIVE_DISCHARGING: VacuumActivity.DOCKED,
-    # Returning states
+    ROBOT_STATE_FULL_CLEAN_CHARGING: VacuumActivity.DOCKED,
+    ROBOT_STATE_MAPPING_CHARGING: VacuumActivity.DOCKED,
+    # Returning states — en route to the dock, not on it yet
     ROBOT_STATE_FULL_CLEAN_FINISHED: VacuumActivity.RETURNING,
-    ROBOT_STATE_FULL_CLEAN_CHARGING: VacuumActivity.RETURNING,
-    ROBOT_STATE_MAPPING_CHARGING: VacuumActivity.RETURNING,
     ROBOT_STATE_FULL_CLEAN_ABORTED: VacuumActivity.RETURNING,
     ROBOT_STATE_FULL_CLEAN_NEEDS_CHARGE: VacuumActivity.RETURNING,
     ROBOT_STATE_MAPPING_NEEDS_CHARGE: VacuumActivity.RETURNING,

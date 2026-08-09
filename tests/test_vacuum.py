@@ -164,6 +164,9 @@ class TestDysonVacuumEntity:
             ("FULL_CLEAN_RUNNING", VacuumActivity.CLEANING),
             ("FULL_CLEAN_PAUSED", VacuumActivity.PAUSED),
             ("INACTIVE_CHARGED", VacuumActivity.DOCKED),
+            # Mid-cycle recharges: the robot is on the dock, not en route
+            ("FULL_CLEAN_CHARGING", VacuumActivity.DOCKED),
+            ("MAPPING_CHARGING", VacuumActivity.DOCKED),
             ("MAPPING_RUNNING", VacuumActivity.IDLE),
             ("FAULT_CRITICAL", VacuumActivity.ERROR),
             # States from the community-verified enum (matterbridge
