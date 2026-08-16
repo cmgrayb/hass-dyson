@@ -770,3 +770,22 @@ BLE_MAX_KELVIN: Final = 6500  # coolest (≈ 154 mired)
 CONF_BLE_MAC: Final = "ble_mac"  # BLE MAC address (e.g. AA:BB:CC:DD:EE:FF)
 CONF_LTK: Final = "ltk"  # Long Term Key hex string (obtained via cloud pairing)
 CONF_BLE_PROXY: Final = "ble_proxy"  # Optional: pinned Bluetooth proxy host
+
+# Dyson reports and accepts temperatures as Kelvin x 10, e.g. "2890" = 289.0 K.
+ZERO_CELSIUS_IN_KELVIN: Final = 273.15
+
+
+def decikelvin_to_celsius(decikelvin: float) -> float:
+    """Convert a Dyson Kelvin x 10 temperature to degrees Celsius."""
+    return decikelvin / 10 - ZERO_CELSIUS_IN_KELVIN
+
+
+def celsius_to_decikelvin(celsius: float) -> int:
+    """Convert degrees Celsius to the Dyson Kelvin x 10 representation.
+
+    Rounds to the nearest step the device can hold. A whole number of degrees
+    Celsius never lands exactly on a tenth of a Kelvin (16 C is 2891.5), so the
+    value has to be rounded either way; truncating would always bias the stored
+    setpoint downwards.
+    """
+    return round((celsius + ZERO_CELSIUS_IN_KELVIN) * 10)

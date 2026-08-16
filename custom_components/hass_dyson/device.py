@@ -52,6 +52,7 @@ from .const import (
     FAULT_TRANSLATIONS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
     ROBOT_FAULT_SUBSYSTEMS,
+    celsius_to_decikelvin,
 )
 from .device_utils import mask_serial, mask_token
 
@@ -3558,7 +3559,7 @@ class DysonDevice:
             raise ValueError("Target temperature must be between 1°C and 37°C")
 
         # Convert Celsius to Kelvin × 10 format for device
-        temp_value = int(temp_kelvin * 10)
+        temp_value = celsius_to_decikelvin(temperature)
         temp_str = f"{temp_value:04d}"
 
         await self.send_command(
