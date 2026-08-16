@@ -133,7 +133,7 @@ class TestDysonReconnectButton:
         # Assert
         assert button.coordinator == mock_coordinator
         assert button._attr_unique_id == "TEST-SERIAL-123_reconnect"
-        assert button._attr_name == "Reconnect"
+        assert button._attr_translation_key == "reconnect"
         assert button._attr_icon == "mdi:wifi-sync"
         assert button._attr_entity_category == EntityCategory.DIAGNOSTIC
 
@@ -282,7 +282,7 @@ class TestButtonPlatformIntegration:
 
         # Verify button properties work as expected
         assert button.unique_id == "TEST-SERIAL-123_reconnect"
-        assert button.name == "Reconnect"
+        assert button._attr_translation_key == "reconnect"
         assert button.icon == "mdi:wifi-sync"
         assert button.entity_category == EntityCategory.DIAGNOSTIC
 
@@ -320,9 +320,9 @@ class TestButtonPlatformIntegration:
 
         # Assert
         assert button1.unique_id == "DEVICE-001_reconnect"
-        assert button1.name == "Reconnect"
+        assert button1._attr_translation_key == "reconnect"
         assert button2.unique_id == "DEVICE-002_reconnect"
-        assert button2.name == "Reconnect"
+        assert button2._attr_translation_key == "reconnect"
 
     @pytest.mark.asyncio
     async def test_button_press_integration_with_coordinator(self, mock_coordinator):
@@ -1105,7 +1105,7 @@ class TestDysonRefreshZonesButton:
     def test_init_sets_name_and_icon(self, mock_robot_coordinator):
         """Name and icon are set correctly."""
         btn = DysonRefreshZonesButton(mock_robot_coordinator)
-        assert btn._attr_name == "Refresh Zone List"
+        assert btn._attr_translation_key == "refresh_zone_list"
         assert btn._attr_icon == "mdi:refresh"
 
     def test_init_entity_category_diagnostic(self, mock_robot_coordinator):

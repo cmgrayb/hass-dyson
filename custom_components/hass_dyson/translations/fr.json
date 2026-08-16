@@ -260,6 +260,21 @@
       },
       "cleaning_time_remaining": {
         "name": "Temps de nettoyage restant"
+      },
+      "recommended_clean": {
+        "name": "Nettoyage recommandé"
+      },
+      "current_map": {
+        "name": "Carte actuelle"
+      },
+      "outdoor_aqi": {
+        "name": "Indice de qualité de l'air extérieur"
+      },
+      "indoor_aqi_15_min": {
+        "name": "Indice de qualité de l'air intérieur (15 min)"
+      },
+      "scheduled_events": {
+        "name": "Événements programmés"
       }
     },
     "switch": {
@@ -283,11 +298,20 @@
       },
       "find_follow": {
         "name": "Suivi"
+      },
+      "daylight_mode": {
+        "name": "Mode lumière du jour"
       }
     },
     "button": {
       "find_follow_scan": {
         "name": "Scan Suivi"
+      },
+      "reconnect": {
+        "name": "Reconnexion"
+      },
+      "refresh_zone_list": {
+        "name": "Actualiser la liste des zones"
       }
     },
     "select": {
@@ -305,6 +329,18 @@
       },
       "water_hardness": {
         "name": "Dureté de l'eau"
+      },
+      "robot_power_360_eye": {
+        "name": "Niveau de puissance"
+      },
+      "robot_power_heurist": {
+        "name": "Niveau de puissance"
+      },
+      "robot_power_vis_nav": {
+        "name": "Niveau de puissance"
+      },
+      "robot_power_generic": {
+        "name": "Niveau de puissance"
       }
     },
     "number": {
@@ -330,6 +366,9 @@
       },
       "robot_battery_charging": {
         "name": "En charge"
+      },
+      "motion": {
+        "name": "Mouvement"
       }
     },
     "update": {
@@ -359,11 +398,29 @@
           "preset_mode": {
             "state": {
               "auto": "Auto",
-              "manual": "Manual",
-              "heat": "Heat"
+              "manual": "Manuel",
+              "heat": "Chauffage"
             }
           }
         }
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "Programmation"
+      }
+    },
+    "image": {
+      "dust_map": {
+        "name": "Carte des poussières"
+      },
+      "floor_plan": {
+        "name": "Plan du logement"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Lampe"
       }
     }
   },

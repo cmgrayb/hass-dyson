@@ -260,6 +260,21 @@
       },
       "cleaning_time_remaining": {
         "name": "Cleaning time remaining"
+      },
+      "recommended_clean": {
+        "name": "Recommended Clean"
+      },
+      "current_map": {
+        "name": "Current Map"
+      },
+      "outdoor_aqi": {
+        "name": "Outdoor AQI"
+      },
+      "indoor_aqi_15_min": {
+        "name": "Indoor AQI (15-min)"
+      },
+      "scheduled_events": {
+        "name": "Scheduled Events"
       }
     },
     "switch": {
@@ -283,11 +298,20 @@
       },
       "find_follow": {
         "name": "Find+Follow"
+      },
+      "daylight_mode": {
+        "name": "Daylight Mode"
       }
     },
     "button": {
       "find_follow_scan": {
         "name": "Find+Follow Scan"
+      },
+      "reconnect": {
+        "name": "Reconnect"
+      },
+      "refresh_zone_list": {
+        "name": "Refresh Zone List"
       }
     },
     "select": {
@@ -305,6 +329,18 @@
       },
       "water_hardness": {
         "name": "Water Hardness"
+      },
+      "robot_power_360_eye": {
+        "name": "Power Level"
+      },
+      "robot_power_heurist": {
+        "name": "Power Level"
+      },
+      "robot_power_vis_nav": {
+        "name": "Power Level"
+      },
+      "robot_power_generic": {
+        "name": "Power Level"
       }
     },
     "number": {
@@ -330,6 +366,9 @@
       },
       "robot_battery_charging": {
         "name": "Charging"
+      },
+      "motion": {
+        "name": "Motion"
       }
     },
     "update": {
@@ -364,6 +403,24 @@
             }
           }
         }
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "Schedule"
+      }
+    },
+    "image": {
+      "dust_map": {
+        "name": "Dust Map"
+      },
+      "floor_plan": {
+        "name": "Floor Plan"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Light"
       }
     }
   },

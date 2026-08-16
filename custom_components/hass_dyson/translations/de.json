@@ -260,6 +260,21 @@
       },
       "cleaning_time_remaining": {
         "name": "Verbleibende Reinigungszeit"
+      },
+      "recommended_clean": {
+        "name": "Empfohlene Reinigung"
+      },
+      "current_map": {
+        "name": "Aktuelle Karte"
+      },
+      "outdoor_aqi": {
+        "name": "Außen-Luftqualitätsindex"
+      },
+      "indoor_aqi_15_min": {
+        "name": "Innen-Luftqualitätsindex (15 Min.)"
+      },
+      "scheduled_events": {
+        "name": "Geplante Ereignisse"
       }
     },
     "switch": {
@@ -283,11 +298,20 @@
       },
       "find_follow": {
         "name": "Verfolgen"
+      },
+      "daylight_mode": {
+        "name": "Tageslichtmodus"
       }
     },
     "button": {
       "find_follow_scan": {
         "name": "Verfolgen Scan"
+      },
+      "reconnect": {
+        "name": "Neu verbinden"
+      },
+      "refresh_zone_list": {
+        "name": "Zonenliste aktualisieren"
       }
     },
     "select": {
@@ -305,6 +329,18 @@
       },
       "water_hardness": {
         "name": "Wasserhärte"
+      },
+      "robot_power_360_eye": {
+        "name": "Leistungsstufe"
+      },
+      "robot_power_heurist": {
+        "name": "Leistungsstufe"
+      },
+      "robot_power_vis_nav": {
+        "name": "Leistungsstufe"
+      },
+      "robot_power_generic": {
+        "name": "Leistungsstufe"
       }
     },
     "number": {
@@ -330,6 +366,9 @@
       },
       "robot_battery_charging": {
         "name": "Lädt"
+      },
+      "motion": {
+        "name": "Bewegung"
       }
     },
     "update": {
@@ -364,6 +403,24 @@
             }
           }
         }
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "Zeitplan"
+      }
+    },
+    "image": {
+      "dust_map": {
+        "name": "Staubkarte"
+      },
+      "floor_plan": {
+        "name": "Grundriss"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Licht"
       }
     }
   },

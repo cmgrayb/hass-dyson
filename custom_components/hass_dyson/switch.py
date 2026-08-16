@@ -699,7 +699,6 @@ class DysonDaylightModeSwitch(DysonBLEEntity, SwitchEntity):
         super().__init__(coordinator)
         serial = coordinator.serial_number
         self._attr_unique_id = f"{serial}_daylight_mode"
-        self._attr_name = "Daylight Mode"
 
     @property
     def is_on(self) -> bool | None:

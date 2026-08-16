@@ -67,7 +67,7 @@ class TestDysonReconnectButton:
         assert (
             button._attr_unique_id == f"{pure_mock_coordinator.serial_number}_reconnect"
         )
-        assert button._attr_name == "Reconnect"
+        assert button._attr_translation_key == "reconnect"
         assert button._attr_icon == "mdi:wifi-sync"
         assert button._attr_entity_category == EntityCategory.DIAGNOSTIC
 
@@ -127,7 +127,7 @@ class TestDysonReconnectButton:
         # Assert
         assert button.entity_category == EntityCategory.DIAGNOSTIC
         assert button.unique_id == f"{pure_mock_coordinator.serial_number}_reconnect"
-        assert button.name == "Reconnect"
+        assert button._attr_translation_key == "reconnect"
         assert button.icon == "mdi:wifi-sync"
 
     def test_button_inherits_from_coordinator_entity(self, pure_mock_coordinator):
