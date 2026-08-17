@@ -53,8 +53,8 @@ from .const import (
     LEGACY_FILTER_LIFE_MAX_HOURS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
     ROBOT_FAULT_SUBSYSTEMS,
-    celsius_to_decikelvin,
     STATE_KEY_LEGACY_FILTER_LIFE,
+    celsius_to_decikelvin,
 )
 from .device_utils import mask_serial, mask_token
 
