@@ -85,7 +85,7 @@ class DysonLightEntity(DysonBLEEntity, LightEntity):
         super().__init__(coordinator)
         serial = coordinator.serial_number
         self._attr_unique_id = f"{serial}_light"
-        self._attr_name = "Light"
+        self._attr_translation_key = "light"
 
     # ── State properties ──────────────────────────────────────────────────────
 

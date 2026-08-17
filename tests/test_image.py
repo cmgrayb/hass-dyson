@@ -1333,7 +1333,7 @@ class TestDysonDustMapImage:
     def test_init_sets_name_and_icon(self, mock_coordinator):
         """__init__ sets name and icon."""
         entity = self._make_entity(mock_coordinator)
-        assert entity._attr_name == "Dust Map"
+        assert entity._attr_translation_key == "dust_map"
         assert entity._attr_icon == "mdi:map-search"
 
     def test_init_content_type_and_poll(self, mock_coordinator):
@@ -1820,7 +1820,7 @@ class TestDysonFloorPlanImage:
     def test_init_sets_name_and_icon(self, mock_coordinator):
         """__init__ sets name and icon."""
         entity = self._make_entity(mock_coordinator)
-        assert entity._attr_name == "Floor Plan"
+        assert entity._attr_translation_key == "floor_plan"
         assert entity._attr_icon == "mdi:floor-plan"
 
     def test_init_content_type_and_poll(self, mock_coordinator):

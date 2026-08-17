@@ -303,7 +303,7 @@ class DysonReconnectButton(DysonEntity, ButtonEntity):
         """Initialize the reconnect button."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_reconnect"
-        self._attr_name = "Reconnect"
+        self._attr_translation_key = "reconnect"
         self._attr_icon = "mdi:wifi-sync"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -512,7 +512,7 @@ class DysonRefreshZonesButton(DysonEntity, ButtonEntity):
         super().__init__(coordinator)
         self._discover_zone_buttons = discover_zone_buttons
         self._attr_unique_id = f"{coordinator.serial_number}_refresh_zones"
-        self._attr_name = "Refresh Zone List"
+        self._attr_translation_key = "refresh_zone_list"
         self._attr_icon = "mdi:refresh"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 

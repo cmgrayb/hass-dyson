@@ -199,7 +199,6 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         """Initialize the filter replacement sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_filter_replacement"
-        self._attr_name = "Filter Replacement"
         self._attr_translation_key = "filter_replacement"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
@@ -655,7 +654,7 @@ class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: igno
         """
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_motion"
-        self._attr_name = "Motion"
+        self._attr_translation_key = "motion"
 
     @property
     def is_on(self) -> bool | None:

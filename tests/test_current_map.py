@@ -302,7 +302,7 @@ class TestCurrentMapSensor:
     def test_unique_id_and_name(self):
         sensor = self._sensor()
         assert sensor._attr_unique_id == f"{SERIAL}_current_map"
-        assert sensor._attr_name == "Current Map"
+        assert sensor._attr_translation_key == "current_map"
 
     def test_should_poll_is_effective(self):
         """_attr_should_poll is inert on CoordinatorEntity subclasses (#408)."""

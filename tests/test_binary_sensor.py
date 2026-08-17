@@ -192,7 +192,7 @@ class TestDysonFilterReplacementSensor:
         # Assert
         assert sensor.coordinator == pure_mock_coordinator
         assert sensor._attr_unique_id.endswith("_filter_replacement")
-        assert sensor._attr_name == "Filter Replacement"
+        assert sensor._attr_translation_key == "filter_replacement"
         assert sensor._attr_translation_key == "filter_replacement"
         assert sensor._attr_icon == "mdi:air-filter"
 

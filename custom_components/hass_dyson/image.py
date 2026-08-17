@@ -800,7 +800,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         ImageEntity.__init__(self, hass)
         DysonEntity.__init__(self, coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_dust_map"
-        self._attr_name = "Dust Map"
+        self._attr_translation_key = "dust_map"
         self._attr_icon = "mdi:map-search"
         self._render_cache_key: tuple | None = None
         self._cached_png: bytes | None = None
@@ -964,7 +964,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         ImageEntity.__init__(self, hass)
         DysonEntity.__init__(self, coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_floor_plan"
-        self._attr_name = "Floor Plan"
+        self._attr_translation_key = "floor_plan"
         self._attr_icon = "mdi:floor-plan"
         self._render_cache_key: tuple | None = None
         self._cached_png: bytes | None = None

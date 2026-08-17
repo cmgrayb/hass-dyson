@@ -1224,7 +1224,7 @@ class TestDysonDaylightModeSwitch:
         """unique_id uses serial + suffix; name is 'Daylight Mode'."""
         sw = self._make_switch()
         assert sw._attr_unique_id == "E5V-EU-TAA0133A_daylight_mode"
-        assert sw._attr_name == "Daylight Mode"
+        assert sw._attr_translation_key == "daylight_mode"
 
     def test_is_on_true(self):
         """is_on returns True when daylight_mode is True."""

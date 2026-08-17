@@ -911,7 +911,6 @@ class DysonRobotPower360EyeSelect(DysonEntity, SelectEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_robot_power_360_eye"
         self._attr_translation_key = "robot_power_360_eye"
-        self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         self._attr_options = list(ROBOT_POWER_OPTIONS_360_EYE.values())
         if coordinator.data and coordinator.device:
@@ -1001,7 +1000,6 @@ class DysonRobotPowerHeuristSelect(DysonEntity, SelectEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_robot_power_heurist"
         self._attr_translation_key = "robot_power_heurist"
-        self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         self._attr_options = list(ROBOT_POWER_OPTIONS_HEURIST.values())
         if coordinator.data and coordinator.device:
@@ -1095,7 +1093,6 @@ class DysonRobotPowerVisNavSelect(DysonEntity, SelectEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_robot_power_vis_nav"
         self._attr_translation_key = "robot_power_vis_nav"
-        self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         self._attr_options = list(ROBOT_POWER_OPTIONS_VIS_NAV.values())
         if coordinator.data and coordinator.device:
@@ -1189,7 +1186,6 @@ class DysonRobotPowerGenericSelect(DysonEntity, SelectEntity):
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_robot_power_generic"
         self._attr_translation_key = "robot_power_generic"
-        self._attr_name = "Power Level"
         self._attr_icon = "mdi:vacuum"
         # Default to Heurist-style options as a reasonable fallback
         self._attr_options = list(ROBOT_POWER_OPTIONS_HEURIST.values())
