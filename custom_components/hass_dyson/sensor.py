@@ -2756,11 +2756,13 @@ class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
 
         # Get HEPA filter type from device data
         device_data = self.coordinator.data.get("product-state", {})
-        filter_type = device_data.get("hflt", "NONE")
+        filter_type = device_data.get("hflt")
 
-        # Convert "NONE" to "Not Installed", otherwise return the actual type
+        # Only an explicit NONE value means no filter is installed.
         if filter_type == "NONE":
             self._attr_native_value = "Not Installed"
+        elif filter_type is None:
+            self._attr_native_value = None
         else:
             self._attr_native_value = filter_type
 
