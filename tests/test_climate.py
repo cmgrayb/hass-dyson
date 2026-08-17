@@ -356,7 +356,7 @@ class TestDysonClimateEntity:
         # Set target temperature from product state
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "hmax": "3000",  # 26.85°C in 0.1K (300.0K)
+                "hmax": "3000",  # 300.0K, snapped to the 1 degree step -> 27°C
             }.get(key, default)
         )
 
@@ -368,7 +368,7 @@ class TestDysonClimateEntity:
         assert entity._attr_target_temperature is not None
         # 298.0K = 24.85°C, rounded to 1 decimal = 24.9°C
         assert entity._attr_current_temperature == 24.9
-        assert abs(entity._attr_target_temperature - 26.85) < 0.01
+        assert entity._attr_target_temperature == 27.0
 
     def test_update_temperatures_invalid_values(self, mock_coordinator):
         """Test temperature update with invalid device values."""
@@ -851,7 +851,7 @@ class TestClimateIntegration:
         # Set up product state with target temperature
         mock_coordinator.device.get_state_value.side_effect = (
             lambda state, key, default: {
-                "hmax": "3000",  # 26.85°C target (300.0K - 273.15)
+                "hmax": "3000",  # 300.0K, snapped to the 1 degree step -> 27°C
                 "fpwr": "ON",
                 "hmod": "HEAT",
             }.get(key, default)
@@ -866,7 +866,7 @@ class TestClimateIntegration:
         assert entity._attr_current_temperature is not None
         assert entity._attr_current_temperature == 21.9  # Rounded to 1 decimal
         assert entity._attr_target_temperature is not None
-        assert abs(entity._attr_target_temperature - 26.85) < 0.01
+        assert entity._attr_target_temperature == 27.0
 
         # Verify that the temperature is suitable for display on thermostat card
         assert isinstance(entity._attr_current_temperature, float)

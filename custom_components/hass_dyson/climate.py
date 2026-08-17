@@ -18,7 +18,7 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, celsius_to_decikelvin, decikelvin_to_celsius
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -140,7 +140,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 # Only set temperature if we have a valid reading
                 if temp_kelvin > 0:
                     self._attr_current_temperature = round(
-                        temp_kelvin - 273.15, 1
+                        decikelvin_to_celsius(float(current_temp)), 1
                     )  # Convert to Celsius
                 else:
                     self._attr_current_temperature = None
@@ -157,7 +157,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             temp_kelvin = int(target_temp) / 10
             # Only set target temperature if we have a valid reading
             if target_temp != "0000" and temp_kelvin > 0:
-                self._attr_target_temperature = temp_kelvin - 273.15
+                # Snap to the 1 degree step this entity advertises, otherwise the
+                # setpoint reads back a fraction of a degree off what was set.
+                self._attr_target_temperature = float(
+                    round(decikelvin_to_celsius(int(target_temp)))
+                )
             else:
                 self._attr_target_temperature = 20  # Default to 20°C
         except (ValueError, TypeError):
@@ -665,7 +669,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         # Target temperature in Kelvin for device commands
         if target_temp is not None:
-            temp_kelvin: int = int((target_temp + 273.15) * 10)
+            temp_kelvin: int = celsius_to_decikelvin(target_temp)
             kelvin_str: str = f"{temp_kelvin:04d}"
             attributes["target_temperature_kelvin"] = kelvin_str  # type: ignore[assignment]
 
