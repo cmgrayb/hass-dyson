@@ -199,7 +199,6 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
         """Initialize the filter replacement sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_filter_replacement"
-        self._attr_name = "Filter Replacement"
         self._attr_translation_key = "filter_replacement"
         self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         self._attr_icon = "mdi:air-filter"
@@ -228,22 +227,35 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                         device_serial,
                     )
 
-                # Safely check HEPA filter
-                hepa_filter_type = (
-                    device_data.get("hflt", "NONE") if device_data else "NONE"
+                # Legacy devices provide filf without a filter type field. An
+                # explicit NONE remains authoritative when a type is present.
+                hepa_filter_type = device_data.get("hflt")
+                has_legacy_filter_life = "filf" in device_data
+                has_hepa_filter = hepa_filter_type not in (None, "NONE") or (
+                    hepa_filter_type is None and has_legacy_filter_life
                 )
-                if hepa_filter_type != "NONE":  # HEPA filter is installed
+                # Unavailable is only for a legitimately reported-but-unknown
+                # life (None); a malformed type or read error is a distinct
+                # defensive case and keeps the prior "no replacement" default.
+                has_unavailable_filter_life = False
+                if has_hepa_filter:
                     try:
                         hepa_life = getattr(
                             self.coordinator.device, "hepa_filter_life", None
                         )
-                        if hepa_life is not None and isinstance(hepa_life, int | float):
+                        if isinstance(hepa_life, int | float):
                             filters_to_check.append(hepa_life)
                             _LOGGER.debug(
                                 "HEPA filter life for device %s: %s%%",
                                 device_serial,
                                 hepa_life,
                             )
+                        elif hepa_life is None:
+                            _LOGGER.debug(
+                                "HEPA filter life unavailable for device %s",
+                                device_serial,
+                            )
+                            has_unavailable_filter_life = True
                         else:
                             _LOGGER.warning(
                                 "Invalid HEPA filter life data for device %s: %s",
@@ -269,6 +281,11 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
                         device_serial,
                         filters_to_check,
                         self._attr_is_on,
+                    )
+                elif has_unavailable_filter_life:
+                    self._attr_is_on = None
+                    _LOGGER.debug(
+                        "Filter life is unavailable for device %s", device_serial
                     )
                 else:
                     self._attr_is_on = False
@@ -637,7 +654,7 @@ class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: igno
         """
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_motion"
-        self._attr_name = "Motion"
+        self._attr_translation_key = "motion"
 
     @property
     def is_on(self) -> bool | None:

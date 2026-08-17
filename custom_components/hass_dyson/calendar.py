@@ -280,7 +280,7 @@ class DysonScheduleCalendar(DysonEntity, CalendarEntity):
         """Initialise the calendar entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_schedule_calendar"
-        self._attr_name = "Schedule"
+        self._attr_translation_key = "schedule"
         self._schedule_data: Any = None
 
     async def async_added_to_hass(self) -> None:

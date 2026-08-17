@@ -50,9 +50,11 @@ from .const import (
     DEVICE_CATEGORY_ROBOT,
     DOMAIN,
     FAULT_TRANSLATIONS,
+    LEGACY_FILTER_LIFE_MAX_HOURS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
     ROBOT_FAULT_SUBSYSTEMS,
     celsius_to_decikelvin,
+    STATE_KEY_LEGACY_FILTER_LIFE,
 )
 from .device_utils import mask_serial, mask_token
 
@@ -2656,8 +2658,8 @@ class DysonDevice:
         return self._faults_data.get("product-warnings", {}).get("fltr", "Unknown")
 
     @property
-    def hepa_filter_life(self) -> int:
-        """Return HEPA filter life percentage."""
+    def hepa_filter_life(self) -> int | None:
+        """Return HEPA filter life percentage, or None when telemetry is unavailable."""
         try:
             product_state = self._state_data.get("product-state", {})
 
@@ -2685,22 +2687,37 @@ class DysonDevice:
                     except (ValueError, TypeError):
                         _LOGGER.warning("  Failed to convert fflr value: %s", fflr)
 
-            # Fall back to standard hflr field
-            hflr = product_state.get("hflr", "0000")
+            # Prefer the standard percentage field when it is available.
+            hflr = product_state.get("hflr")
             _LOGGER.debug("  Raw hflr value: %s (type: %s)", hflr, type(hflr))
 
             if hflr == "INV":  # Invalid/no filter installed
                 _LOGGER.debug("  HEPA filter marked as INV (invalid/no filter)")
-                return 0
+                return None
 
-            result = int(hflr)
-            _LOGGER.debug("  Converted hflr to int: %s", result)
+            if hflr is not None:
+                result = int(hflr)
+                _LOGGER.debug("  Converted hflr to int: %s", result)
+                return result
+
+            legacy_filter_life = product_state.get(STATE_KEY_LEGACY_FILTER_LIFE)
+            if legacy_filter_life is None:
+                return None
+
+            legacy_hours = int(legacy_filter_life)
+            clamped_hours = min(max(legacy_hours, 0), LEGACY_FILTER_LIFE_MAX_HOURS)
+            result = clamped_hours * 100 // LEGACY_FILTER_LIFE_MAX_HOURS
+            _LOGGER.debug(
+                "  Converted legacy filf value %s hours to %s%%",
+                legacy_filter_life,
+                result,
+            )
             return result
         except (ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Failed to parse HEPA filter life for %s: %s", self._log_serial, e
             )
-            return 0
+            return None
 
     @property
     def carbon_filter_life(self) -> int | None:
@@ -3187,7 +3204,17 @@ class DysonDevice:
             await self.send_command("STATE-SET", {"fpwr": fpwr_value})
 
     async def reset_hepa_filter_life(self) -> None:
-        """Reset HEPA filter life to 100%."""
+        """Reset HEPA filter life using the device's reported protocol."""
+        product_state = self._state_data.get("product-state", {})
+        has_percentage_filter_life = "hflr" in product_state or "fflr" in product_state
+
+        if (
+            not has_percentage_filter_life
+            and STATE_KEY_LEGACY_FILTER_LIFE in product_state
+        ):
+            await self.send_command("STATE-SET", {"rstf": "RSTF"})
+            return
+
         await self.send_command("STATE-SET", {"hflr": "0100"})
 
     async def reset_carbon_filter_life(self) -> None:

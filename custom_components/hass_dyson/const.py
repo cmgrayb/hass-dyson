@@ -227,6 +227,7 @@ STATE_KEY_HEPA_FILTER_LIFE: Final = "hflr"  # HEPA filter life
 STATE_KEY_CARBON_FILTER_LIFE: Final = "cflr"  # Carbon filter life
 STATE_KEY_HEPA_FILTER_TYPE: Final = "hflt"  # HEPA filter type
 STATE_KEY_CARBON_FILTER_TYPE: Final = "cflt"  # Carbon filter type
+STATE_KEY_LEGACY_FILTER_LIFE: Final = "filf"  # Legacy filter life in hours
 STATE_KEY_SLEEP_TIMER: Final = "sltm"  # Sleep timer
 STATE_KEY_CONTINUOUS_MONITORING: Final = "rhtm"  # Continuous monitoring
 
@@ -278,6 +279,9 @@ STATE_KEY_FIND_FOLLOW_STATUS: Final = "sost"  # Find+Follow engine status (read-
 FILTER_TYPE_GCOM: Final = "GCOM"  # Genuine Combi Filter
 FILTER_TYPE_NONE: Final = "NONE"  # No filter installed
 FILTER_VALUE_INVALID: Final = "INV"  # Invalid/no filter
+
+# Filter protocol limits
+LEGACY_FILTER_LIFE_MAX_HOURS: Final = 4300
 
 # Connection status values
 CONNECTION_STATUS_LOCAL: Final = "Local"

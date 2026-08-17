@@ -2756,11 +2756,13 @@ class DysonHEPAFilterTypeSensor(DysonEntity, SensorEntity):
 
         # Get HEPA filter type from device data
         device_data = self.coordinator.data.get("product-state", {})
-        filter_type = device_data.get("hflt", "NONE")
+        filter_type = device_data.get("hflt")
 
-        # Convert "NONE" to "Not Installed", otherwise return the actual type
+        # Only an explicit NONE value means no filter is installed.
         if filter_type == "NONE":
             self._attr_native_value = "Not Installed"
+        elif filter_type is None:
+            self._attr_native_value = None
         else:
             self._attr_native_value = filter_type
 
@@ -3525,7 +3527,7 @@ class DysonRecommendedCleanSensor(DysonEntity, SensorEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_recommended_clean"
-        self._attr_name = "Recommended Clean"
+        self._attr_translation_key = "recommended_clean"
 
     @property
     def should_poll(self) -> bool:
@@ -3616,7 +3618,7 @@ class DysonCurrentMapSensor(DysonEntity, RestoreEntity, SensorEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_current_map"
-        self._attr_name = "Current Map"
+        self._attr_translation_key = "current_map"
         self._attr_icon = "mdi:map-marker-path"
         self._restored_map_id: str | None = None
         self._restored_name: str | None = None
@@ -3810,7 +3812,7 @@ class DysonOutdoorAQISensor(DysonEntity, SensorEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_outdoor_aqi"
-        self._attr_name = "Outdoor AQI"
+        self._attr_translation_key = "outdoor_aqi"
 
     async def async_added_to_hass(self) -> None:
         """Register periodic cloud refresh when entity is added to Home Assistant."""
@@ -3883,7 +3885,7 @@ class DysonDailyAirQualitySensor(DysonEntity, SensorEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_daily_aqi"
-        self._attr_name = "Indoor AQI (15-min)"
+        self._attr_translation_key = "indoor_aqi_15_min"
 
     async def async_added_to_hass(self) -> None:
         """Register periodic cloud refresh when entity is added to Home Assistant."""
@@ -3957,7 +3959,7 @@ class DysonScheduledEventsSensor(DysonEntity, SensorEntity):
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.serial_number}_scheduled_events"
-        self._attr_name = "Scheduled Events"
+        self._attr_translation_key = "scheduled_events"
 
     async def async_added_to_hass(self) -> None:
         """Register periodic cloud refresh when entity is added to Home Assistant."""

@@ -72,7 +72,7 @@ class TestFilterReplacementSensorErrorHandling:
         assert sensor.is_on is False
 
     def test_handle_coordinator_update_none_hepa_life(self, mock_coordinator):
-        """Test _handle_coordinator_update with None HEPA filter life."""
+        """Test missing life for a reported filter is unknown."""
         sensor = DysonFilterReplacementSensor(mock_coordinator)
         mock_coordinator.data = {"product-state": {"hflt": "COMB"}}
         mock_coordinator.device.hepa_filter_life = None
@@ -80,7 +80,7 @@ class TestFilterReplacementSensorErrorHandling:
         with patch.object(sensor, "async_write_ha_state"):
             sensor._handle_coordinator_update()
 
-        assert sensor.is_on is False
+        assert sensor.is_on is None
 
     def test_handle_coordinator_update_exception_getting_hepa_life(
         self, mock_coordinator

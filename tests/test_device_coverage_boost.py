@@ -534,6 +534,32 @@ class TestFilterLifeCalculations:
         result = mock_device_basic.hepa_filter_life
         assert result == 100
 
+    @pytest.mark.parametrize(
+        ("legacy_hours", "expected_percentage"),
+        [("0000", 0), ("4299", 99), ("4300", 100)],
+    )
+    def test_hepa_filter_life_from_legacy_hours(
+        self, mock_device_basic, legacy_hours, expected_percentage
+    ):
+        """Test legacy filf hours convert to a truncated percentage."""
+        mock_device_basic._state_data = {"product-state": {"filf": legacy_hours}}
+
+        assert mock_device_basic.hepa_filter_life == expected_percentage
+
+    def test_hepa_filter_life_prefers_standard_percentage(self, mock_device_basic):
+        """Test hflr takes precedence over the legacy filf value."""
+        mock_device_basic._state_data = {
+            "product-state": {"hflr": "42", "filf": "4300"}
+        }
+
+        assert mock_device_basic.hepa_filter_life == 42
+
+    def test_hepa_filter_life_missing_is_unknown(self, mock_device_basic):
+        """Test missing filter telemetry does not appear as zero percent."""
+        mock_device_basic._state_data = {"product-state": {}}
+
+        assert mock_device_basic.hepa_filter_life is None
+
     def test_carbon_filter_life_calculation(self, mock_device_basic):
         """Test carbon filter life percentage calculation."""
         mock_device_basic._state_data = {"product-state": {"cflr": "70"}}
@@ -571,13 +597,45 @@ class TestFilterLifeCalculations:
 
     @pytest.mark.asyncio
     async def test_reset_hepa_filter_life(self, mock_device_basic):
-        """Test resetting HEPA filter life."""
+        """Test resetting a percentage-based HEPA filter life."""
         mock_device_basic._connected = True
         mock_device_basic.send_command = AsyncMock()
 
         await mock_device_basic.reset_hepa_filter_life()
 
-        mock_device_basic.send_command.assert_called_once()
+        mock_device_basic.send_command.assert_awaited_once_with(
+            "STATE-SET", {"hflr": "0100"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_reset_hepa_filter_life_uses_legacy_command(self, mock_device_basic):
+        """Test resetting a filf-based HEPA filter life."""
+        mock_device_basic._connected = True
+        mock_device_basic._state_data = {"product-state": {"filf": "4299"}}
+        mock_device_basic.send_command = AsyncMock()
+
+        await mock_device_basic.reset_hepa_filter_life()
+
+        mock_device_basic.send_command.assert_awaited_once_with(
+            "STATE-SET", {"rstf": "RSTF"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_reset_hepa_filter_life_prefers_percentage_protocol(
+        self, mock_device_basic
+    ):
+        """Test percentage telemetry retains the percentage reset command."""
+        mock_device_basic._connected = True
+        mock_device_basic._state_data = {
+            "product-state": {"hflr": "42", "filf": "4300"}
+        }
+        mock_device_basic.send_command = AsyncMock()
+
+        await mock_device_basic.reset_hepa_filter_life()
+
+        mock_device_basic.send_command.assert_awaited_once_with(
+            "STATE-SET", {"hflr": "0100"}
+        )
 
     @pytest.mark.asyncio
     async def test_reset_carbon_filter_life(self, mock_device_basic):
