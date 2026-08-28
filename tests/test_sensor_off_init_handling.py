@@ -216,6 +216,20 @@ class TestSensorINITHandling:
         # Assert - Should be None, not raise ValueError
         assert sensor._attr_native_value is None
 
+    def test_co2_sensor_handles_none(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Test CO2 sensor handles NONE value when no data is available."""
+        # Arrange
+        pure_mock_coordinator.data = {"environmental-data": {"co2r": "NONE"}}
+        sensor = pure_mock_sensor_entity(DysonCO2Sensor, pure_mock_coordinator)
+
+        # Act
+        sensor._handle_coordinator_update()
+
+        # Assert - Should be None, not raise ValueError
+        assert sensor._attr_native_value is None
+
     def test_pm25_sensor_handles_init(
         self, pure_mock_coordinator, pure_mock_sensor_entity
     ):

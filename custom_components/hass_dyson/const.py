@@ -196,6 +196,13 @@ _PM_SENSOR_UNAVAILABLE_STATES: Final = {
     "NONE": "not reporting data",
 }
 
+_CO2_UNAVAILABLE_STATES: Final = {
+    "OFF": "inactive",
+    "INIT": "initializing",
+    "FAIL": "reporting a sensor fault",
+    "NONE": "not reporting data",
+}
+
 # MQTT topics
 MQTT_TOPIC_COMMAND: Final = "command"
 MQTT_TOPIC_STATUS_CURRENT: Final = "status/current"

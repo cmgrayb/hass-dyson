@@ -73,6 +73,7 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    _CO2_UNAVAILABLE_STATES,
     _PM_SENSOR_UNAVAILABLE_STATES,
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
@@ -378,11 +379,11 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
             co2_raw = env_data.get("co2r")
 
             if co2_raw is not None:
-                # Handle "OFF" when continuous monitoring is disabled or "INIT" when initializing
-                if co2_raw in ("OFF", "INIT"):
+                # Handle non-numeric states (OFF, INIT, FAIL, NONE)
+                if co2_raw in _CO2_UNAVAILABLE_STATES:
                     _LOGGER.debug(
                         "CO2 sensor %s for device %s",
-                        "inactive" if co2_raw == "OFF" else "initializing",
+                        _CO2_UNAVAILABLE_STATES[co2_raw],
                         device_serial,
                     )
                     new_value = None
