@@ -152,8 +152,6 @@ class TestDysonVacuumEntity:
             | VacuumEntityFeature.STATE
         )
         assert entity._attr_supported_features == expected_features
-        # Verify BATTERY feature is not present
-        assert not (entity._attr_supported_features & VacuumEntityFeature.BATTERY)
 
     def test_state_mapping(self, mock_coordinator_robot):
         """Test robot state to HA state mapping."""
