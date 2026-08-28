@@ -124,10 +124,10 @@ Monitor nitrogen dioxide levels from vehicle emissions, gas appliances, and outd
 #### Technical Specifications
 
 1. Entity ID: `sensor.{device_name}_no2`
-2. Unit: ppb (parts per billion)
+2. Unit: μg/m³ (micrograms per cubic meter)
 3. Device Class: Nitrogen Dioxide
 4. State Class: Measurement
-5. Range: 0-1000 ppb
+5. Range: 0-1000 μg/m³
 6. Icon: mdi:molecule
 7. Availability: Devices with ExtendedAQ capability (when NO2 data present)
 8. Update Frequency: Real-time with device data updates
@@ -658,7 +658,7 @@ Device responds on `status/current` topic with:
 | PM25 | `PM25` | Integer (µg/m³) | Direct value |
 | P10R | `p10r` | Integer (µg/m³) | Direct value |
 | CO2 | `co2` | Integer (ppm) | Direct value |
-| NO2 | `no2` | Integer (ppb) | Direct value |
+| NO2 | `no2` | Integer (μg/m³) | Direct value |
 | HCHO | `hcho` | Integer (ppb) | Direct value |
 | Temperature | `tact` | Kelvin × 10 | `(value / 10) - 273.15` |
 | Humidity | `hact` | Percentage | Direct value |
@@ -673,7 +673,7 @@ All sensors include comprehensive validation to ensure data integrity and reliab
    - PM2.5/PM10: 0-999 µg/m³
    - PM25/P10R: 0-999 µg/m³
    - CO2: 0-5000 ppm
-   - NO2: 0-1000 ppb
+   - NO2: 0-1000 μg/m³
    - HCHO: 0-1000 ppb
 
 2. **Environmental Sensors**: Include unit conversion and decimal precision handling

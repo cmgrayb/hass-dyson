@@ -190,7 +190,7 @@ def get_environmental_data() -> dict[str, Any]:
         - pm25: PM2.5 particle concentration (μg/m³)
         - pm10: PM10 particle concentration (μg/m³)
         - va10: Volatile organic compounds (VOC index)
-        - noxl: Nitrogen dioxide levels (ppb)
+        - noxl: Nitrogen dioxide levels (μg/m³)
         - hchr: Formaldehyde concentration (μg/m³)
         - hact: Humidity percentage (%)
         - tact: Temperature readings (°C * 10)
