@@ -3783,13 +3783,9 @@ def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
         from homeassistant.helpers import device_registry as dr
 
         dev_reg = dr.async_get(coordinator.hass)
-        for d in dev_reg.devices.values():
-            if any(
-                idn[0] == DOMAIN and idn[1] == coordinator.serial_number
-                for idn in d.identifiers
-            ):
-                if d.model and str(d.model).lower() not in ("unknown", ""):
-                    return d.model
+        d = dev_reg.async_get_device_by_identifier((DOMAIN, coordinator.serial_number))
+        if d and d.model and str(d.model).lower() not in ("unknown", ""):
+            return d.model
     except Exception:  # noqa: BLE001
         pass
     return None
