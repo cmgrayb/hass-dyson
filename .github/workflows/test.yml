@@ -38,7 +38,7 @@ jobs:
           python-version: "3.14"
 
       - name: Cache pip dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pip
@@ -55,7 +55,7 @@ jobs:
           pip install -e .
 
       - name: Cache pytest
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             .pytest_cache
@@ -143,7 +143,7 @@ jobs:
           python-version: "3.14"
 
       - name: Cache pip dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pip
@@ -168,7 +168,7 @@ jobs:
           python -m ruff check . --output-format=github
 
       - name: Cache mypy
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .mypy_cache
           key: ${{ runner.os }}-mypy-3.14-${{ github.sha }}
