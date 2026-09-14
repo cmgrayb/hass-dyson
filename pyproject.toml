@@ -46,7 +46,7 @@ dev = [
     "pytest-mock==3.15.1",
     "pytest-xdist==3.8.0",
     "responses==0.26.3",
-    "ruff==0.16.5",
+    "ruff==0.16.6",
     "types-cryptography==3.3.23.2",
 ]
 
