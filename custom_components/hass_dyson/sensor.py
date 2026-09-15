@@ -1101,6 +1101,14 @@ async def async_setup_entry(  # noqa: C901
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Dyson sensor platform."""
+    from .entry_routing import async_route_ble_platform
+
+    routed = await async_route_ble_platform(
+        hass, config_entry, async_add_entities, "sensor"
+    )
+    if routed is not None:
+        return routed
+
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities: list[SensorEntity] = []

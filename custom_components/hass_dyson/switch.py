@@ -24,6 +24,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Dyson switch platform."""
+    from .entry_routing import async_route_ble_platform
+
+    routed = await async_route_ble_platform(
+        hass, config_entry, async_add_entities, "switch"
+    )
+    if routed is not None:
+        return routed
+
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
 
     # BLE-only light devices (Lightcycle Morph CF06/CD06)

@@ -29,6 +29,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Dyson select platform."""
+    from .entry_routing import async_route_ble_platform
+
+    if (
+        await async_route_ble_platform(hass, config_entry, async_add_entities, "select")
+        is not None
+    ):
+        return None
+
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities: list[SelectEntity] = []
