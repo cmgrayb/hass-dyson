@@ -12,3 +12,4 @@ lacking in some way.
 - ✅ **438 Series** - Pure Cool Air Purifiers (verified with real device)
 - ✅ **475 Series** - Hot+Cool models (mocked and community assisted testing)
 - ✅ **527 Series** - Humidifier/Purifier models (mocked and community assisted testing)
+- ✅ **692B / SV53-AF (V16 Piston Animal)** - BLE-only floor-cleaning vacuum (verified with real device — see [FLOORCARE_BLE.md](FLOORCARE_BLE.md))
