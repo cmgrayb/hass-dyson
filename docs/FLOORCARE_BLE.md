@@ -147,6 +147,39 @@ bluetooth_proxy:
 # (plus your usual wifi/api/ota/logger bits)
 ```
 
+### Bonding — why a fresh proxy sees nothing
+
+The vacuum serves its own characteristics **only over an encrypted link**.
+Read one without a bond and it answers ATT error `0x05`, *insufficient
+authentication*; the standard GAP service stays readable, so service
+discovery and the GATT table look completely healthy.
+
+The integration therefore pairs on every connection before it touches a
+Dyson characteristic.  Pairing is a no-op once a bond exists, and an ESPHome
+proxy keeps its bond in NVS, so the cost is one-time per proxy.
+
+This is worth understanding because the failure is **silent**.  Every Dyson
+characteristic is *write-without-response* plus *notify* — the BLE spec never
+acknowledges a Write Command — so an unbonded machine drops every frame with
+no way to say so.  What you see is a connection that establishes normally,
+`start_notify` that succeeds, and then the product-info request and the
+PayloadB handshake both timing out with nothing in either direction.
+
+If your logs show that pattern, check bonding first.  With debug logging on
+(`custom_components.hass_dyson: debug`) the link probe reports it directly:
+
+```
+Link probe: GAP device name (00002a00-…) = 506973746f6e20416e696d616c
+Link probe: Dyson auth-service status (2dd10013-…) failed:
+  Bluetooth GATT Error handle=17 error=5 description=Insufficient authentication
+```
+
+GAP readable but the Dyson characteristic rejected is exactly this condition.
+
+> A local adapter that has bonded once keeps the keys, which makes this easy
+> to miss during development: direct connections keep working with no
+> explicit pairing step long after the bond was established.
+
 ---
 
 ## Setup
@@ -273,6 +306,7 @@ speed, dust illumination and UI language are selects only.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Nothing connects | Proxy passive, or vacuum asleep/out of range | `active: true`, move closer, power the device on |
+| Connects, then product info **and** PayloadB both time out | No bond — the machine drops every write unencrypted, silently | See [Bonding](#bonding--why-a-fresh-proxy-sees-nothing); confirm with the link probe |
 | Auth immediately fails | Wrong LTK / stale pairing | Refetch LTK from the cloud account |
 | Entities unknown after connect | Attribute sweep didn't finish (out-of-range bursts) | Reload the integration; check the debug log for unanswered reads |
 | Power button ignored after setup | Old version without INACTIVE teardown | Update; the teardown runs on every clean unload |
