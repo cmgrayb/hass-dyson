@@ -27,6 +27,7 @@ from custom_components.hass_dyson.ble_vacuum import (
 )
 from custom_components.hass_dyson.config_flow import DysonConfigFlow
 from custom_components.hass_dyson.const import (
+    BLE_AUTH_CHAR_UUID,
     BLE_DEVICE_KIND_LIGHT,
     BLE_DEVICE_KIND_VACUUM,
     BLE_VACUUM_ATTR_BATTERY_LEVEL,
@@ -34,6 +35,7 @@ from custom_components.hass_dyson.const import (
     BLE_VACUUM_ATTR_CLEANING_SESSION_ACTIVE,
     BLE_VACUUM_ATTR_POWER_MODE,
     BLE_VACUUM_ATTRIBUTES,
+    BLE_WRITE_ATTR_CHAR_UUID,
     CONF_BLE_DEVICE_KIND,
     CONF_BLE_MAC,
     CONF_LTK,
@@ -541,6 +543,46 @@ class _FakeClient:
 
     async def write_gatt_char(self, char, fragment, response=False):
         self.writes.append((char, fragment))
+
+
+def _client_with_chars(*uuids):
+    """A bleak stand-in whose service table resolves only ``uuids``."""
+    client = _FakeClient()
+    known = {u.lower() for u in uuids}
+    client.services = MagicMock()
+    client.services.get_characteristic = MagicMock(
+        side_effect=lambda u: MagicMock() if u.lower() in known else None
+    )
+    return client
+
+
+class TestAuthCharacteristicGuard:
+    """Fail fast when the peer is not a Dyson, but only when we are sure.
+
+    Without this the handshake burns three 30 s timeouts before giving up, and
+    the log never says why.  The guard must stay conservative: an unknown
+    service table is not evidence of absence.
+    """
+
+    def test_absent_auth_char_is_detected(self):
+        client = _client_with_chars(BLE_WRITE_ATTR_CHAR_UUID)
+        assert DysonBleVacuumDevice._auth_char_is_absent(client) is True
+
+    def test_present_auth_char_passes(self):
+        client = _client_with_chars(BLE_AUTH_CHAR_UUID, BLE_WRITE_ATTR_CHAR_UUID)
+        assert DysonBleVacuumDevice._auth_char_is_absent(client) is False
+
+    def test_no_service_table_is_unknown_not_absent(self):
+        client = _FakeClient()
+        client.services = None
+        assert DysonBleVacuumDevice._auth_char_is_absent(client) is False
+
+    def test_backend_raising_on_lookup_is_unknown_not_absent(self):
+        """Never fail a connection on something we could not determine."""
+        client = _FakeClient()
+        client.services = MagicMock()
+        client.services.get_characteristic = MagicMock(side_effect=RuntimeError("boom"))
+        assert DysonBleVacuumDevice._auth_char_is_absent(client) is False
 
 
 class TestBonding:

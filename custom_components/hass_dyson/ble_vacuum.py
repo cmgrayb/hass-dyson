@@ -53,6 +53,7 @@ from .const import (
     BLE_ATTR_READ_INTERVAL,
     BLE_ATTR_SUBSCRIBE_INTERVAL,
     BLE_AUTH_CHAR_UUID,
+    BLE_GAP_DEVICE_NAME_CHAR_UUID,
     BLE_MSG_TYPE_APP_ACTIVE_STATUS,
     BLE_MSG_TYPE_CONNECTION_ESTABLISHED,
     BLE_MSG_TYPE_PRODUCT_INFO,
@@ -70,6 +71,7 @@ from .const import (
     BLE_PAIR_TIMEOUT,
     BLE_PUSH_STATUS_ACTIVE,
     BLE_PUSH_STATUS_INACTIVE,
+    BLE_RSSI_CHAR_UUID,
     BLE_VACUUM_ATTR_BATTERY_LEVEL,
     BLE_VACUUM_ATTR_CLEANING_SESSION_ACTIVE,
     BLE_VACUUM_ATTRIBUTES,
@@ -528,6 +530,43 @@ class DysonBleVacuumDevice:
             f"message type 0x{type_id:02X}",
         )
 
+    @staticmethod
+    def _auth_char_is_absent(client: Any) -> bool:
+        """Whether the peer demonstrably does not expose the Dyson service.
+
+        Only ``True`` when the service table resolved and the characteristic
+        genuinely is not in it.  A backend that exposes no table, or raises on
+        lookup, is *unknown* rather than absent — never fail a connection on
+        the strength of something we could not determine.
+        """
+        services = getattr(client, "services", None)
+        if services is None:
+            return False
+        try:
+            return services.get_characteristic(BLE_AUTH_CHAR_UUID) is None
+        except Exception:  # noqa: BLE001 - bleak backends vary
+            return False
+
+    def _log_gatt_table(self, client: Any) -> None:
+        """Record what the peer actually exposes, for connection triage.
+
+        The service table is the first thing that differs between a direct
+        adapter and a proxied connection, and a stale service cache shows up
+        here as a missing or empty Dyson service.
+        """
+        services = getattr(client, "services", None)
+        if services is None:
+            _LOGGER.debug("No GATT service table available for %s", self.mac_address)
+            return
+        for service in services:
+            for char in service.characteristics:
+                _LOGGER.debug(
+                    "GATT %s char %s [%s]",
+                    service.uuid,
+                    char.uuid,
+                    ",".join(char.properties),
+                )
+
     async def _ensure_bonded(self, client: Any) -> None:
         """Bond with the machine before touching its characteristics.
 
@@ -578,13 +617,55 @@ class DysonBleVacuumDevice:
         # readable, which the handshake exercises immediately after.
         _LOGGER.debug("Pairing with %s returned %r", self.mac_address, paired)
 
+    async def _probe_link(self, client: Any) -> None:
+        """Read a characteristic to prove the ATT layer works both ways.
+
+        Every Dyson characteristic is write-without-response plus notify, so
+        nothing in the protocol is acknowledged: a frame the transport quietly
+        drops and a frame the machine ignores produce exactly the same silence,
+        and notifications are the only return path.  A read is a genuine
+        request/response exchange, so it separates "the link is dead" from
+        "the link is fine but notifications are not arriving" — the difference
+        between a transport bug and a protocol one.
+
+        Debug-gated and best-effort: never let triage break a connection.
+        """
+        if not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        for uuid, what in (
+            (BLE_GAP_DEVICE_NAME_CHAR_UUID, "GAP device name"),
+            (BLE_RSSI_CHAR_UUID, "Dyson RSSI probe"),
+        ):
+            try:
+                value = await asyncio.wait_for(client.read_gatt_char(uuid), timeout=10)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("Link probe: reading %s (%s) failed: %s", what, uuid, exc)
+                continue
+            _LOGGER.debug(
+                "Link probe: %s (%s) = %s", what, uuid, bytes(value).hex() or "empty"
+            )
+
     async def _send_message(
         self, char_uuid: str, type_id: int, payload: bytes = b""
     ) -> None:
-        """Fragment and write a logical message to the given characteristic."""
+        """Fragment and write a logical message to the given characteristic.
+
+        Both Dyson characteristics are write-without-response only, so nothing
+        here is ever acknowledged — the spec returns no error for a Write
+        Command.  A frame the machine rejects (see :meth:`_ensure_bonded`) is
+        indistinguishable from one it accepted, which is why the TX log below
+        exists: it is the only record that we sent anything at all.
+        """
         if self._client is None:
             raise RuntimeError("BLE client not connected")
         fragments = fragment_dyson_message(type_id, payload)
+        _LOGGER.debug(
+            "TX msg 0x%02X to %s: %d byte(s) in %d frame(s)",
+            type_id,
+            char_uuid,
+            len(payload),
+            len(fragments),
+        )
         for fragment in fragments:
             await self._client.write_gatt_char(char_uuid, fragment, response=False)
 
@@ -1099,7 +1180,18 @@ class DysonBleVacuumDevice:
         if self._client is None or not getattr(self._client, "is_connected", False):
             self._client = await self._get_bleak_client()
 
+        self._log_gatt_table(self._client)
         await self._ensure_bonded(self._client)
+        await self._probe_link(self._client)
+        if self._auth_char_is_absent(self._client):
+            # Better to say so than to sit through three handshake timeouts:
+            # the link is up but this is not a Dyson GATT table, which usually
+            # means a stale service cache or a wrong MAC.
+            raise RuntimeError(
+                f"Auth characteristic {BLE_AUTH_CHAR_UUID} is not present on "
+                f"{self.mac_address} — the connected peer does not expose the "
+                "Dyson service"
+            )
 
         await self._client.start_notify(BLE_AUTH_CHAR_UUID, self._on_auth_notification)
         _LOGGER.debug(
