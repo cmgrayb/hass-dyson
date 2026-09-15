@@ -2989,20 +2989,34 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def async_shutdown(self) -> None:
-        """Shut down the BLE coordinator cleanly on config entry unload."""
+        """Shut down the BLE coordinator cleanly on config entry unload.
+
+        Awaiting a task we have just cancelled raises ``CancelledError`` by
+        design, so it is consumed.  Cleanup runs in ``finally`` so it happens
+        on every exit path.
+        """
         self._stop_event.set()
-        if self._ble_task is not None and not self._ble_task.done():
-            self._ble_task.cancel()
-            try:
-                await self._ble_task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-            self._ble_task = None
-        if self._unsub_event is not None:
-            self._unsub_event()
-            self._unsub_event = None
-        if self.ble_device is not None:
-            await self.ble_device.disconnect()
+        task, self._ble_task = self._ble_task, None
+        try:
+            if task is not None and not task.done():
+                task.cancel()
+                await task
+        except asyncio.CancelledError:
+            # Expected: this is the cancellation we just requested.
+            pass
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "BLE lifecycle task for %s ended with %s: %s",
+                mask_serial(self.serial_number),
+                type(exc).__name__,
+                exc,
+            )
+        finally:
+            if self._unsub_event is not None:
+                self._unsub_event()
+                self._unsub_event = None
+            if self.ble_device is not None:
+                await self.ble_device.disconnect()
 
     async def _ble_lifecycle_task(self) -> None:
         """Long-lived asyncio task managing BLE connect/reconnect loop.
