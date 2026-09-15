@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .ble_device import DysonBLEDevice
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
 from homeassistant.helpers import instance_id as ha_instance_id
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -3126,3 +3126,281 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         (CF06 / CD06 Lightcycle Morph) as daylight-capable by default.
         """
         return list(self._config_entry.data.get("capabilities", []))
+
+
+class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Coordinator for Dyson BLE-only floor-cleaning vacuums (e.g. V16).
+
+    Manages the BLE connection lifecycle via a dedicated background task and
+    propagates state changes received on the Home Assistant event bus
+    (``EVENT_BLE_STATE_CHANGE``, fired by :class:`.ble_vacuum.DysonBleVacuumDevice`)
+    to all subscribed entities.
+
+    No MQTT is involved.  Device state lives in the ``attributes`` dict of the
+    underlying transport plus derived session-tracking fields.
+    """
+
+    def __init__(self, hass: HomeAssistant, config_entry) -> None:  # type: ignore
+        """Initialise the BLE vacuum coordinator."""
+        self.serial_number: str = config_entry.data[CONF_SERIAL_NUMBER]
+        self.ble_device: Any | None = None  # DysonBleVacuumDevice at runtime
+        self._config_entry = config_entry
+        self._unsub_event: Any | None = None
+        self._ble_task: asyncio.Task[None] | None = None
+        self._stop_event = asyncio.Event()
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_ble_vacuum_{self.serial_number}",
+            update_interval=None,  # Push-only; no polling interval
+        )
+
+    async def async_setup(self) -> None:
+        """Set up the coordinator: subscribe events and start BLE task."""
+        import uuid as _uuid
+
+        from .ble_vacuum import DysonBleVacuumDevice
+        from .const import (
+            CONF_BLE_MAC,
+            CONF_BLE_PROXY,
+            CONF_LTK,
+        )
+
+        # Resolve the Dyson account UUID for auth payload A (same rules the
+        # light coordinator applies — entry data first, then parent entry).
+        account_uuid = self._config_entry.data.get("account_uuid", "")
+        if not account_uuid:
+            parent_entry_id = self._config_entry.data.get("parent_entry_id")
+            if parent_entry_id:
+                parent_entry = self.hass.config_entries.async_get_entry(parent_entry_id)
+                if parent_entry:
+                    account_uuid = parent_entry.data.get("account_uuid", "")
+        if not account_uuid:
+            _LOGGER.warning(
+                "No Dyson account UUID found for BLE vacuum %s. "
+                "BLE authentication will likely fail. "
+                "Please delete this device and re-add it after re-authenticating your Dyson cloud account.",
+                self.serial_number,
+            )
+            account_uuid = str(_uuid.UUID(int=0))
+
+        mac = self._config_entry.data.get(CONF_BLE_MAC, "")
+        ltk_hex = self._config_entry.data.get(CONF_LTK, "")
+        ble_proxy = self._config_entry.data.get(CONF_BLE_PROXY)
+        self.ble_device = DysonBleVacuumDevice(
+            hass=self.hass,
+            serial_number=self.serial_number,
+            mac_address=mac,
+            ltk_hex=ltk_hex,
+            account_uuid=account_uuid,
+            ble_proxy=ble_proxy,
+            state_callback=self._handle_state_update,
+        )
+
+        # The device calls us back directly.  It still fires
+        # EVENT_BLE_STATE_CHANGE for user automations (documented), but the
+        # coordinator no longer subscribes to it: doing so meant every BLE
+        # coordinator woke for every other BLE device's update just to discard
+        # it on a serial-number check.
+
+        _LOGGER.info(
+            "BLE vacuum coordinator setup complete for %s "
+            "(MAC: %s, LTK configured: %s, requested proxy: %s) — starting connection task. "
+            "Note: proxy pinning is stored for future use; connections currently go through "
+            "the default HA Bluetooth route.",
+            self.serial_number,
+            mac,
+            bool(ltk_hex),
+            ble_proxy or "none",
+        )
+
+        self._stop_event.clear()
+        self._ble_task = self.hass.async_create_background_task(
+            self._ble_lifecycle_task(),
+            name=f"dyson-ble-vacuum-{self.serial_number}",
+        )
+
+    async def async_shutdown(self) -> None:
+        """Shut down the coordinator cleanly on config entry unload.
+
+        Awaiting a task we have just cancelled raises ``CancelledError`` by
+        design; that is the expected result, not a failure, so it is consumed
+        here.  Letting it propagate skipped the BLE teardown below and aborted
+        ``async_unload_entry`` before it could drop the entry data.  Cleanup
+        runs in ``finally`` so it happens on every exit path.
+        """
+        self._stop_event.set()
+        task, self._ble_task = self._ble_task, None
+        try:
+            if task is not None and not task.done():
+                task.cancel()
+                await task
+        except asyncio.CancelledError:
+            # Expected: this is the cancellation we just requested.
+            pass
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "BLE vacuum lifecycle task for %s ended with %s: %s",
+                mask_serial(self.serial_number),
+                type(exc).__name__,
+                exc,
+            )
+        finally:
+            if self._unsub_event is not None:
+                self._unsub_event()
+                self._unsub_event = None
+            if self.ble_device is not None:
+                await self.ble_device.disconnect()
+
+    async def _ble_lifecycle_task(self) -> None:
+        """Long-lived task managing the connect/reconnect loop."""
+        from .const import BLE_VACUUM_KEEPALIVE_INTERVAL, BLE_VACUUM_RECONNECT_DELAYS
+
+        _LOGGER.info(
+            "BLE vacuum lifecycle task started for %s", mask_serial(self.serial_number)
+        )
+        attempt = 0
+        while not self._stop_event.is_set():
+            if self.ble_device is None:
+                _LOGGER.warning(
+                    "BLE vacuum lifecycle: ble_device is None for %s, waiting...",
+                    mask_serial(self.serial_number),
+                )
+                await asyncio.sleep(5)
+                continue
+
+            try:
+                _LOGGER.info(
+                    "BLE vacuum lifecycle: connecting to %s (attempt %d)",
+                    mask_serial(self.serial_number),
+                    attempt + 1,
+                )
+                await self.ble_device.connect_and_authenticate()
+                attempt = 0
+                # Product info only arrives after authentication, long after
+                # the entities (and therefore the device registry entry) were
+                # created — push it into the registry now.
+                self._update_device_registry()
+                while not self._stop_event.is_set() and self.ble_device.is_connected:
+                    await asyncio.sleep(BLE_VACUUM_KEEPALIVE_INTERVAL)
+                    if self.ble_device.is_connected:
+                        await self.ble_device.poll_state()
+                _LOGGER.info(
+                    "BLE vacuum lifecycle: %s left keepalive loop (connected: %s)",
+                    mask_serial(self.serial_number),
+                    self.ble_device.is_connected,
+                )
+            except asyncio.CancelledError:
+                _LOGGER.debug(
+                    "BLE vacuum lifecycle task cancelled for %s",
+                    mask_serial(self.serial_number),
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning(
+                    "BLE vacuum lifecycle: connection error for %s (%s: %s)",
+                    mask_serial(self.serial_number),
+                    type(exc).__name__,
+                    exc,
+                )
+                # Ensure the device is actually disconnected before the next
+                # attempt so assemblers, queues and subscribed-attribute state
+                # cannot carry over from a half-failed session.
+                if self.ble_device is not None:
+                    try:
+                        await self.ble_device.disconnect()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            if self._stop_event.is_set():
+                return
+
+            delay_index = min(attempt, len(BLE_VACUUM_RECONNECT_DELAYS) - 1)
+            delay = BLE_VACUUM_RECONNECT_DELAYS[delay_index]
+            _LOGGER.info(
+                "BLE vacuum %s disconnected; reconnecting in %ds (attempt %d)",
+                mask_serial(self.serial_number),
+                delay,
+                attempt + 1,
+            )
+            attempt += 1
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+
+    def _update_device_registry(self) -> None:
+        """Write firmware / hardware details into the HA device registry.
+
+        ``DeviceInfo`` is evaluated once, when entities are first added — which
+        happens before the background BLE session has authenticated and parsed
+        Product Info.  Without this the device page shows no firmware or
+        hardware version for the life of the entry.
+        """
+        if self.ble_device is None:
+            return
+        state = self.ble_device.state
+        updates: dict[str, Any] = {}
+        if self.ble_device.firmware_version:
+            updates["sw_version"] = self.ble_device.firmware_version
+        if state.hardware_module:
+            updates["model_id"] = state.hardware_module
+            updates["hw_version"] = (
+                f"{state.hardware_module}/{state.hardware_variant}"
+                if state.hardware_variant
+                else state.hardware_module
+            )
+        if not updates:
+            return
+        try:
+            from homeassistant.helpers import device_registry as dr
+
+            registry = dr.async_get(self.hass)
+            # async_get_device() is deprecated (identifiers are only unique
+            # within a config entry) and is removed in HA 2027.8.
+            device = registry.async_get_device_by_identifier(
+                (DOMAIN, self.serial_number), self._config_entry.entry_id
+            )
+            if device is None:
+                return
+            registry.async_update_device(device.id, **updates)
+            _LOGGER.debug(
+                "Updated device registry for %s: %s",
+                mask_serial(self.serial_number),
+                updates,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not update device registry for %s: %s",
+                mask_serial(self.serial_number),
+                exc,
+            )
+
+    @callback
+    def _handle_state_update(self, payload: dict[str, Any]) -> None:
+        """Receive a state snapshot straight from the BLE device.
+
+        Called by :class:`.ble_vacuum.DysonBleVacuumDevice` rather than routed
+        through the event bus, so there is no cross-device filtering and the
+        payload is not re-parsed from an ``Event``.
+        """
+        state_dict = {k: v for k, v in payload.items() if k != "serial_number"}
+        self.async_set_updated_data(state_dict)
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Return current data (no-op; data is pushed by the device)."""
+        return self.data or {}
+
+    @property
+    def is_connected(self) -> bool:
+        """Return True if connected and authenticated."""
+        return self.ble_device is not None and self.ble_device.is_connected
+
+    @property
+    def firmware_version(self) -> str | None:
+        """Return firmware version when known."""
+        if self.ble_device is None:
+            return None
+        return self.ble_device.firmware_version
