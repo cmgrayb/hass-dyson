@@ -67,6 +67,7 @@ from .const import (
     BLE_MSG_TYPE_REQUEST_PRODUCT_INFO,
     BLE_MSG_TYPE_WRITE_ATTRIBUTE_REQUEST,
     BLE_MSG_TYPE_WRITE_ATTRIBUTE_RESPONSE,
+    BLE_PAIR_TIMEOUT,
     BLE_PUSH_STATUS_ACTIVE,
     BLE_PUSH_STATUS_INACTIVE,
     BLE_VACUUM_ATTR_BATTERY_LEVEL,
@@ -526,6 +527,56 @@ class DysonBleVacuumDevice:
             timeout,
             f"message type 0x{type_id:02X}",
         )
+
+    async def _ensure_bonded(self, client: Any) -> None:
+        """Bond with the machine before touching its characteristics.
+
+        Every Dyson characteristic sits behind ATT error 0x05 (*insufficient
+        authentication*): the vacuum will only serve them over an encrypted
+        link.  A local adapter that has bonded once keeps the keys, so direct
+        connections appear to need no explicit step — but a Bluetooth proxy
+        starts with no bond, and the rejection is invisible there, because the
+        protocol only ever uses write-without-response and the spec never
+        acknowledges a Write Command.  Writes simply vanish and every reply
+        times out while the link itself looks healthy.
+
+        ESPHome proxies implement pairing and keep the bond in NVS, so this is
+        a one-time cost per proxy.  Best-effort: a backend that cannot pair
+        (or a device already bonded) should not block the connection.
+        """
+        try:
+            paired = await asyncio.wait_for(client.pair(), timeout=BLE_PAIR_TIMEOUT)
+        except TimeoutError:
+            _LOGGER.warning(
+                "Pairing with BLE vacuum %s (%s) timed out after %ss — "
+                "continuing, but the handshake will fail if no bond exists",
+                mask_serial(self.serial_number),
+                self.mac_address,
+                BLE_PAIR_TIMEOUT,
+            )
+            return
+        except NotImplementedError:
+            _LOGGER.debug(
+                "Bluetooth backend for %s does not implement pairing — "
+                "continuing unbonded",
+                self.mac_address,
+            )
+            return
+        except Exception as exc:  # noqa: BLE001 - backends raise freely here
+            _LOGGER.warning(
+                "Pairing with BLE vacuum %s (%s) failed: %s — the machine only "
+                "serves its characteristics over a bonded link, so the "
+                "handshake will most likely time out",
+                mask_serial(self.serial_number),
+                self.mac_address,
+                exc,
+            )
+            return
+        # Not a success signal: an ESPHome proxy returns False here even when
+        # the bond was established and the link is encrypted afterwards.  The
+        # authoritative check is whether a Dyson characteristic becomes
+        # readable, which the handshake exercises immediately after.
+        _LOGGER.debug("Pairing with %s returned %r", self.mac_address, paired)
 
     async def _send_message(
         self, char_uuid: str, type_id: int, payload: bytes = b""
@@ -1047,6 +1098,8 @@ class DysonBleVacuumDevice:
 
         if self._client is None or not getattr(self._client, "is_connected", False):
             self._client = await self._get_bleak_client()
+
+        await self._ensure_bonded(self._client)
 
         await self._client.start_notify(BLE_AUTH_CHAR_UUID, self._on_auth_notification)
         _LOGGER.debug(

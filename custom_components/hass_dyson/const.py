@@ -691,6 +691,10 @@ BLE_AUTH_CHAR_UUID: Final = "2dd10011-1c37-452d-8979-d1b4a787d0a4"
 # RSSI proximity probe — 1-byte signed notify (used during fresh pairing only)
 BLE_RSSI_CHAR_UUID: Final = "2dd10013-1c37-452d-8979-d1b4a787d0a4"
 
+# Bonding must not stall a connection indefinitely; the lifecycle task can
+# then never retry.  Generous enough for SMP over a proxy hop.
+BLE_PAIR_TIMEOUT: Final = 20
+
 # Light control characteristics
 #
 # NOTE: The Lightcycle Morph (CF06 / CD06) is a daylight-capable device.

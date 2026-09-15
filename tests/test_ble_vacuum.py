@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import time
@@ -540,6 +541,51 @@ class _FakeClient:
 
     async def write_gatt_char(self, char, fragment, response=False):
         self.writes.append((char, fragment))
+
+
+class TestBonding:
+    """The machine serves its characteristics only over a bonded link.
+
+    Reading any Dyson characteristic unbonded returns ATT error 0x05,
+    "insufficient authentication".  A local adapter that bonded once keeps the
+    keys, so this is invisible on a direct connection — but a Bluetooth proxy
+    starts with no bond, and since the protocol is entirely
+    write-without-response (never acknowledged by the spec), the rejection is
+    silent: writes vanish and every handshake times out.
+    """
+
+    async def test_pairing_is_attempted_on_connect(self, device):
+        client = MagicMock()
+        client.pair = AsyncMock(return_value=True)
+        await device._ensure_bonded(client)
+        client.pair.assert_awaited_once()
+
+    async def test_backend_without_pairing_does_not_block(self, device):
+        """A backend that cannot pair must not break an already-bonded link."""
+        client = MagicMock()
+        client.pair = AsyncMock(side_effect=NotImplementedError)
+        await device._ensure_bonded(client)  # must not raise
+
+    async def test_pairing_failure_is_reported_but_not_fatal(self, device):
+        """Surface it loudly, then let the handshake produce the real error."""
+        client = MagicMock()
+        client.pair = AsyncMock(side_effect=RuntimeError("bonding rejected"))
+        await device._ensure_bonded(client)  # must not raise
+
+    async def test_pairing_cannot_hang_the_connection(self, device):
+        """A backend that never returns must not strand the lifecycle task.
+
+        ``pair()`` sits on the critical path of every connect, so an unbounded
+        await would leave the coordinator blocked forever with no retry.
+        """
+
+        async def never_returns():
+            await asyncio.sleep(3600)
+
+        client = MagicMock()
+        client.pair = MagicMock(side_effect=lambda: never_returns())
+        with patch("custom_components.hass_dyson.ble_vacuum.BLE_PAIR_TIMEOUT", 0.01):
+            await asyncio.wait_for(device._ensure_bonded(client), timeout=5)
 
 
 class TestWriteAttribute:
