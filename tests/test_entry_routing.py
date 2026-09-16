@@ -200,6 +200,56 @@ class TestTranslationsNotClobbered:
         ):
             assert key in selects
 
+    def test_state_translation_keys_are_valid_slugs(self):
+        """hassfest rejects a state key that is not ``[a-z0-9-_]+``.
+
+        The UI-language select originally used display names ("English",
+        "Simplified Chinese") as both option values and translation keys, which
+        fails validation. It went unnoticed because CI on the pull request sat
+        at ``action_required`` — a first-time contributor gate — so hassfest
+        had never actually run against it.
+        """
+        import json
+        import pathlib
+        import re
+
+        import custom_components.hass_dyson as pkg
+
+        table = json.loads(
+            (pathlib.Path(pkg.__file__).parent / "translations" / "en.json").read_text(
+                encoding="utf-8"
+            )
+        )["entity"]
+        slug = re.compile(r"^[a-z0-9][a-z0-9_-]*[a-z0-9]$|^[a-z0-9]$")
+        bad = [
+            f"{platform}.{entity}.state.{key}"
+            for platform, entities in table.items()
+            for entity, body in entities.items()
+            for key in (body.get("state") or {})
+            if not slug.match(key)
+        ]
+        assert not bad, f"invalid state translation keys: {bad}"
+
+    def test_ble_vacuum_enum_values_are_valid_slugs(self):
+        """Entity states come from the attribute registry, so slugify there.
+
+        A label added to one of these enums as a display name would reach the
+        entity as its state and break hassfest again, one release later.
+        """
+        import re
+
+        from custom_components.hass_dyson.const import BLE_VACUUM_ATTRIBUTES
+
+        slug = re.compile(r"^[a-z0-9][a-z0-9_-]*[a-z0-9]$|^[a-z0-9]$")
+        bad = [
+            f"{name}={value!r}"
+            for _attr, (name, decoder) in BLE_VACUUM_ATTRIBUTES.items()
+            if isinstance(decoder, dict)
+            for value in decoder.values()
+            if isinstance(value, str) and not slug.match(value)
+        ]
+        assert not bad, f"enum values that cannot be entity states: {bad}"
+
     def test_every_ble_vacuum_entity_has_a_name(self):
         """Each translation_key used by the BLE modules must resolve."""
         import glob

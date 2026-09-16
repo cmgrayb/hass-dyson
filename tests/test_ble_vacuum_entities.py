@@ -46,7 +46,7 @@ FULL_DATA = {
         "battery_level": 95,
         "actively_charging": False,
         "charger_present": False,
-        "ui_language": "Czech",
+        "ui_language": "czech",
         "battery_care_current": False,
         "battery_care_setting": False,
         "battery_authenticity": "dyson",
@@ -444,9 +444,9 @@ class TestUiLanguageSelect:
 
     def test_options_and_current(self):
         sel = sel_mod.DysonBleVacuumUiLanguageSelect(fake_coordinator(FULL_DATA))
-        assert sel.current_option == "Czech"
-        assert "English" in sel.options
-        assert "Czech" in sel.options
+        assert sel.current_option == "czech"
+        assert "english" in sel.options
+        assert "czech" in sel.options
         assert len(sel.options) == 30
 
     @pytest.mark.asyncio
@@ -456,7 +456,7 @@ class TestUiLanguageSelect:
         c = fake_coordinator(FULL_DATA)
         c.ble_device = MagicMock()
         c.ble_device.write_attribute = AsyncMock(return_value=True)
-        await sel_mod.DysonBleVacuumUiLanguageSelect(c).async_select_option("Czech")
+        await sel_mod.DysonBleVacuumUiLanguageSelect(c).async_select_option("czech")
         # Czech is wire value 12 per BleProductUILanguage
         c.ble_device.write_attribute.assert_awaited_once_with(
             BLE_VACUUM_ATTR_UI_LANGUAGE, bytes((12,))
@@ -652,7 +652,7 @@ class TestLanguageOptionOrdering:
         c = fake_coordinator(FULL_DATA)
         c.ble_device = MagicMock()
         c.ble_device.write_attribute = AsyncMock(return_value=True)
-        await sel_mod.DysonBleVacuumUiLanguageSelect(c).async_select_option("Czech")
+        await sel_mod.DysonBleVacuumUiLanguageSelect(c).async_select_option("czech")
         c.ble_device.write_attribute.assert_awaited_once_with(
             BLE_VACUUM_ATTR_UI_LANGUAGE, bytes((12,))
         )
