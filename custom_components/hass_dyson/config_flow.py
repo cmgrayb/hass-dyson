@@ -18,9 +18,12 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
+    BLE_DEVICE_KIND_LIGHT,
+    BLE_DEVICE_KIND_VACUUM,
     BLE_LTK_FALLBACK_CODE,
     BLE_SERVICE_UUID,
     CONF_AUTO_ADD_DEVICES,
+    CONF_BLE_DEVICE_KIND,
     CONF_BLE_MAC,
     CONF_BLE_PROXY,
     CONF_COUNTRY,
@@ -34,6 +37,8 @@ from .const import (
     CONF_SERIAL_NUMBER,
     DEFAULT_AUTO_ADD_DEVICES,
     DEFAULT_POLL_FOR_DEVICES,
+    DEVICE_CATEGORY_FLRC,
+    DEVICE_CATEGORY_LIGHT,
     DISCOVERY_CLOUD,
     DOMAIN,
     MDNS_SERVICE_DYSON,
@@ -71,6 +76,7 @@ def _get_setup_method_options() -> dict[str, str]:
         "cloud_account": "Dyson Cloud Account (Recommended)",
         "manual_device": "Manual Device Setup",
         "ble_light": "Dyson BLE Light (e.g. Lightcycle Morph)",
+        "ble_vacuum": "Dyson BLE Vacuum (e.g. V16 floor-care vacuums)",
     }
 
 
@@ -288,6 +294,34 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._ble_serial: str | None = None
         self._ble_capabilities: list[str] = []
         self._ble_found_devices: list[tuple[str, str]] = []  # (mac, name)
+        # Which BLE device family the current flow serves: "light" (default)
+        # or "vacuum" (floor-cleaners like the V16 Piston Animal).  Stored in
+        # the created config entry so entry setup can route accordingly.
+        self._ble_kind: str = BLE_DEVICE_KIND_LIGHT
+
+    @staticmethod
+    def _normalize_discovery_categories(discovery_info: Any) -> set[str]:
+        """Normalize the device-category field(s) of a discovery payload.
+
+        Cloud discovery sends either ``device_category`` (possibly a list,
+        as reported by the Dyson account API) or a scalar ``category``;
+        values may be strings or enum-like objects.  Returns a lowercase set.
+        """
+        raw = discovery_info.get("device_category")
+        if raw is None:
+            raw = discovery_info.get("category")
+        if raw is None:
+            return set()
+        if isinstance(raw, (list, tuple, set, frozenset)):
+            items = list(raw)
+        else:
+            items = [raw]
+        result: set[str] = set()
+        for item in items:
+            value = getattr(item, "value", item)
+            if isinstance(value, str) and value:
+                result.add(value.lower())
+        return result
 
     def _device_is_supported(self, device) -> bool:
         """Check if a device is supported by this integration.
@@ -467,6 +501,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 elif setup_method == "manual_device":
                     return await self.async_step_manual_device()
                 elif setup_method == "ble_light":
+                    self._ble_kind = BLE_DEVICE_KIND_LIGHT
+                    return await self.async_step_ble_discover()
+                elif setup_method == "ble_vacuum":
+                    self._ble_kind = BLE_DEVICE_KIND_VACUUM
                     return await self.async_step_ble_discover()
                 else:
                     _LOGGER.error("Invalid setup method selected: %s", setup_method)
@@ -983,6 +1021,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_BLE_MAC: mac,
                         CONF_LTK: ltk,
                         "account_uuid": account_uuid,
+                        CONF_BLE_DEVICE_KIND: self._ble_kind,
                     }
                     if self._ble_capabilities:
                         config_data["capabilities"] = self._ble_capabilities
@@ -1212,6 +1251,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_BLE_MAC: mac,
                     CONF_LTK: ltk_hex,
                     "account_uuid": account_uuid,
+                    CONF_BLE_DEVICE_KIND: self._ble_kind,
                 }
                 if self._ble_capabilities:
                     config_data["capabilities"] = self._ble_capabilities
@@ -1796,11 +1836,34 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # BLE-only (lecOnly) devices cannot be set up via the MQTT discovery path.
         # Redirect to the BLE configure step so the user gets the correct pairing
         # flow (MAC address entry + automatic LTK fetch) with serial pre-filled.
+        # The BLE device family (light vs floor-care vacuum) is routed by the
+        # device's declared category — previously every lecOnly device was sent
+        # to the BLE Light flow, which is wrong for vacuums (issue #434).
         if discovery_info.get("connection_category") == "lecOnly":
-            _LOGGER.info(
-                "Device %s is BLE-only (lecOnly) — redirecting discovery to BLE configure flow",
-                device_serial,
-            )
+            categories = self._normalize_discovery_categories(discovery_info)
+            if DEVICE_CATEGORY_FLRC in categories:
+                _LOGGER.info(
+                    "Device %s is a BLE-only floor-cleaner (lecOnly + flrc) — "
+                    "redirecting discovery to the BLE vacuum configure flow",
+                    device_serial,
+                )
+                self._ble_kind = BLE_DEVICE_KIND_VACUUM
+            elif DEVICE_CATEGORY_LIGHT in categories:
+                _LOGGER.info(
+                    "Device %s is a BLE-only light (lecOnly + light) — "
+                    "redirecting discovery to the BLE light configure flow",
+                    device_serial,
+                )
+                self._ble_kind = BLE_DEVICE_KIND_LIGHT
+            else:
+                _LOGGER.warning(
+                    "Device %s is BLE-only (lecOnly) with unsupported category "
+                    "%r — only 'light' and 'flrc' devices are currently supported; "
+                    "falling back to the BLE light configure flow",
+                    device_serial,
+                    categories,
+                )
+                self._ble_kind = BLE_DEVICE_KIND_LIGHT
             self._ble_serial = device_serial
             self._ble_capabilities = discovery_info.get("capabilities", [])
             return await self.async_step_ble_configure()

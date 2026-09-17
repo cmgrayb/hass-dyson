@@ -504,6 +504,68 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     return True
 
 
+async def _setup_ble_vacuum_device_entry(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:
+    """Set up a BLE-only Dyson floor-cleaning vacuum config entry.
+
+    Creates a :class:`.coordinator.DysonBLEVacuumDataUpdateCoordinator`,
+    starts the BLE attribute-session lifecycle, and forwards setup to the
+    ``sensor`` and ``binary_sensor`` platforms.
+
+    Args:
+        hass: Home Assistant instance.
+        entry: Config entry with ``CONF_BLE_MAC``, ``CONF_LTK``,
+            ``CONF_SERIAL_NUMBER`` and ``ble_device_kind == "vacuum"``.
+
+    Returns:
+        True on successful setup.
+    """
+    from .coordinator import DysonBLEVacuumDataUpdateCoordinator
+
+    _LOGGER.info(
+        "Setting up BLE vacuum device '%s'", entry.data.get(CONF_SERIAL_NUMBER)
+    )
+    coordinator = DysonBLEVacuumDataUpdateCoordinator(hass, entry)
+    await coordinator.async_setup()
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {
+        "ble_vacuum_coordinator": coordinator,
+        "is_ble_vacuum": True,
+    }
+
+    from .entry_routing import BLE_PLATFORMS, DEVICE_KIND_BLE_VACUUM
+
+    ble_platforms = BLE_PLATFORMS[DEVICE_KIND_BLE_VACUUM]
+    set_up_platforms: list[str] = []
+    failed_platforms: list[str] = []
+    for platform in ble_platforms:
+        try:
+            await hass.config_entries.async_forward_entry_setups(entry, [platform])
+            set_up_platforms.append(platform)
+        except Exception as exc:  # noqa: BLE001
+            failed_platforms.append(platform)
+            _LOGGER.warning(
+                "BLE vacuum device '%s': platform %s failed to set up: %s: %s",
+                mask_serial(coordinator.serial_number),
+                platform,
+                type(exc).__name__,
+                exc,
+            )
+    _LOGGER.info(
+        "BLE vacuum device '%s' set up successfully (platforms: %s)%s",
+        mask_serial(coordinator.serial_number),
+        set_up_platforms,
+        f" — failed platforms: {failed_platforms}" if failed_platforms else "",
+    )
+    if not set_up_platforms:
+        raise ConfigEntryNotReady(
+            f"BLE vacuum device {entry.title}: all platforms failed to set up"
+        )
+    return True
+
+
 async def _setup_individual_device_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> bool:
@@ -691,7 +753,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:  #
         if "devices" in entry.data and entry.data.get("devices"):
             return await _setup_account_level_entry(hass, entry)
         elif CONF_BLE_MAC in entry.data:
-            # BLE-only light device (e.g. Lightcycle Morph CD06)
+            # BLE-only device — route by device family recorded at configure
+            # time (light stack for lamps, attribute-protocol stack for
+            # floor-care vacuums; default to light for legacy entries that
+            # carry no device-kind marker).
+            from .const import BLE_DEVICE_KIND_VACUUM, CONF_BLE_DEVICE_KIND
+
+            if entry.data.get(CONF_BLE_DEVICE_KIND) == BLE_DEVICE_KIND_VACUUM:
+                return await _setup_ble_vacuum_device_entry(hass, entry)
             return await _setup_ble_device_entry(hass, entry)
         else:
             # Handle individual device config entries
@@ -812,6 +881,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return True
 
     entry_data = hass.data[DOMAIN][entry.entry_id]
+
+    # BLE vacuum devices
+    if isinstance(entry_data, dict) and entry_data.get("is_ble_vacuum"):
+        from .entry_routing import BLE_PLATFORMS, DEVICE_KIND_BLE_VACUUM
+
+        ble_vacuum_coordinator = entry_data["ble_vacuum_coordinator"]
+        ble_platforms = BLE_PLATFORMS[DEVICE_KIND_BLE_VACUUM]
+        unload_ok = await hass.config_entries.async_unload_platforms(
+            entry, ble_platforms
+        )
+        if unload_ok:
+            await ble_vacuum_coordinator.async_shutdown()
+            hass.data[DOMAIN].pop(entry.entry_id)
+            _LOGGER.info(
+                "Successfully unloaded Dyson BLE vacuum device '%s'", entry.title
+            )
+        return unload_ok
 
     # BLE light devices
     if isinstance(entry_data, dict) and entry_data.get("is_ble"):

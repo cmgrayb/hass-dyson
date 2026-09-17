@@ -1488,3 +1488,84 @@ class TestCoordinatorMQTTClientId:
         for _ in range(5):
             result = hashlib.sha256(f"{ha_uuid}{serial}".encode()).hexdigest()[:23]
             assert result == expected
+
+
+class TestBleCoordinatorShutdownCleanup:
+    """Cancelling our own lifecycle task must not skip teardown.
+
+    Awaiting a task we just cancelled raises CancelledError by design.  Letting
+    that propagate out of async_shutdown skipped the BLE disconnect (no push
+    unsubscribe, no AppActiveStatus INACTIVE) and aborted async_unload_entry
+    before it could drop the entry data.
+    """
+
+    @staticmethod
+    def _coordinator(cls):
+        import asyncio as _asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            entry = MagicMock()
+            entry.data = {"serial_number": "7RD-EU-TEST0000X"}
+            coord = cls(MagicMock(), entry)
+        coord._stop_event = _asyncio.Event()
+        coord._unsub_event = MagicMock()
+        coord.ble_device = MagicMock()
+        coord.ble_device.disconnect = AsyncMock()
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_vacuum_shutdown_disconnects_after_cancelling(self):
+        import asyncio as _asyncio
+
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEVacuumDataUpdateCoordinator,
+        )
+
+        coord = self._coordinator(DysonBLEVacuumDataUpdateCoordinator)
+
+        async def _never_ends():
+            await _asyncio.sleep(3600)
+
+        coord._ble_task = _asyncio.ensure_future(_never_ends())
+        await _asyncio.sleep(0)
+
+        await coord.async_shutdown()  # must not raise CancelledError
+
+        coord.ble_device.disconnect.assert_awaited_once()
+        assert coord._unsub_event is None
+        assert coord._ble_task is None
+
+    @pytest.mark.asyncio
+    async def test_light_shutdown_disconnects_after_cancelling(self):
+        import asyncio as _asyncio
+
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEDataUpdateCoordinator,
+        )
+
+        coord = self._coordinator(DysonBLEDataUpdateCoordinator)
+
+        async def _never_ends():
+            await _asyncio.sleep(3600)
+
+        coord._ble_task = _asyncio.ensure_future(_never_ends())
+        await _asyncio.sleep(0)
+
+        await coord.async_shutdown()
+
+        coord.ble_device.disconnect.assert_awaited_once()
+        assert coord._unsub_event is None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_is_safe_with_no_task(self):
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEVacuumDataUpdateCoordinator,
+        )
+
+        coord = self._coordinator(DysonBLEVacuumDataUpdateCoordinator)
+        coord._ble_task = None
+        await coord.async_shutdown()
+        coord.ble_device.disconnect.assert_awaited_once()

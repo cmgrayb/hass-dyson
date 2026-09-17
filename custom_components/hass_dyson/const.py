@@ -691,6 +691,16 @@ BLE_AUTH_CHAR_UUID: Final = "2dd10011-1c37-452d-8979-d1b4a787d0a4"
 # RSSI proximity probe — 1-byte signed notify (used during fresh pairing only)
 BLE_RSSI_CHAR_UUID: Final = "2dd10013-1c37-452d-8979-d1b4a787d0a4"
 
+# Standard GAP device name — readable on every peripheral.  Used only as a
+# link probe: the Dyson protocol is entirely write-without-response plus
+# notify, so an acknowledged read is the one way to prove the ATT layer is
+# alive in both directions.
+BLE_GAP_DEVICE_NAME_CHAR_UUID: Final = "00002a00-0000-1000-8000-00805f9b34fb"
+
+# Bonding must not stall a connection indefinitely; the lifecycle task can
+# then never retry.  Generous enough for SMP over a proxy hop.
+BLE_PAIR_TIMEOUT: Final = 20
+
 # Light control characteristics
 #
 # NOTE: The Lightcycle Morph (CF06 / CD06) is a daylight-capable device.
@@ -784,6 +794,188 @@ CONF_BLE_PROXY: Final = "ble_proxy"  # Optional: pinned Bluetooth proxy host
 
 # Dyson reports and accepts temperatures as Kelvin x 10, e.g. "2890" = 289.0 K.
 ZERO_CELSIUS_IN_KELVIN: Final = 273.15
+
+# ── BLE Floor-cleaner (floorcare / LEC vacuum, e.g. V16 Piston Animal) ──────
+# Device kind marker stored in BLE config entries so entry setup can route
+# vacuum entries to the attribute-protocol stack instead of the light stack.
+CONF_BLE_DEVICE_KIND: Final = "ble_device_kind"
+BLE_DEVICE_KIND_LIGHT: Final = "light"
+BLE_DEVICE_KIND_VACUUM: Final = "vacuum"
+
+# Messaging-channel message types (service 0020, characteristic 0021).
+# Attribute protocol: read / write / push-subscribe / push / subscribe-ack.
+BLE_MSG_TYPE_READ_ATTRIBUTE_REQUEST: Final = 0x90
+BLE_MSG_TYPE_READ_ATTRIBUTE_RESPONSE: Final = 0x91
+BLE_MSG_TYPE_WRITE_ATTRIBUTE_REQUEST: Final = 0x93
+# Write-status response from the machine: attrId(2) + writeStatus(1).
+BLE_MSG_TYPE_WRITE_ATTRIBUTE_RESPONSE: Final = 0x94
+BLE_MSG_TYPE_PUSH_ATTRIBUTE_REQUEST: Final = 0x96
+BLE_MSG_TYPE_PUSH_ATTRIBUTE: Final = 0x97
+BLE_MSG_TYPE_PUSH_ATTRIBUTE_ACK: Final = 0x98
+BLE_MSG_TYPE_APP_ACTIVE_STATUS: Final = 0x30
+
+# AppActiveStatus payload values — the app sends these to tell the machine
+# whether a foreground client is attached.  Always send ACTIVE on connect and
+# INACTIVE before disconnecting, or the machine can ignore its own buttons
+# for several seconds after the session.
+BLE_APP_STATUS_FOREGROUND_ACTIVE: Final = 0x00
+BLE_APP_STATUS_INACTIVE: Final = 0x01
+BLE_PUSH_STATUS_ACTIVE: Final = 0x00
+BLE_PUSH_STATUS_INACTIVE: Final = 0x01
+
+# Pacing — the vacuum's BLE stack reboots when flooded with back-to-back
+# writes (~10 s of ignored button presses).  These intervals/limits are
+# deliberately inside the envelope the MyDyson app itself uses.
+BLE_ATTR_READ_INTERVAL: Final = 0.5
+BLE_ATTR_SUBSCRIBE_INTERVAL: Final = 0.4
+BLE_ATTR_ACK_TIMEOUT: Final = 2.0
+BLE_ATTR_MAX_CONSECUTIVE_ERRORS: Final = 2
+
+# Connection lifecycle pacing for the vacuum coordinator.
+BLE_VACUUM_KEEPALIVE_INTERVAL: Final = 20.0
+BLE_VACUUM_RECONNECT_DELAYS: Final = [5, 15, 30, 60]
+
+# Attribute registry for cat6 connected floorcare (V16 et al.).
+# attr id bytes (wire order) -> (state key, human label, decoder hint)
+# decoder hint is either "int", "bool", "raw", or a dict mapping value->label.
+# Wire value -> option slug.  These are entity *states*, so they have to match
+# Home Assistant's `[a-z0-9-_]+` rule for translation keys (hassfest enforces
+# it); the display names live in translations/en.json under the same slugs.
+_BLE_LANG_OPTIONS: Final = {
+    0: "english",
+    1: "korean",
+    2: "spanish",
+    3: "french",
+    4: "japanese",
+    5: "simplified_chinese",
+    6: "traditional_chinese",
+    7: "german",
+    8: "italian",
+    9: "dutch",
+    10: "russian",
+    11: "arabic",
+    12: "czech",
+    13: "danish",
+    14: "greek",
+    15: "finnish",
+    16: "hebrew",
+    17: "croatian",
+    18: "hungarian",
+    19: "lithuanian",
+    20: "norwegian",
+    21: "polish",
+    22: "portuguese",
+    23: "slovenian",
+    24: "swedish",
+    25: "thai",
+    26: "turkish",
+    27: "spanish_us",
+    28: "french_canada",
+    29: "portuguese_brazil",
+}
+
+BLE_VACUUM_ATTR_POWER_MODE: Final = bytes((0x00, 0x40))
+BLE_VACUUM_ATTR_BLOCKAGE: Final = bytes((0x00, 0x42))
+BLE_VACUUM_ATTR_BATTERY_TEMPERATURE: Final = bytes((0x05, 0x42))
+BLE_VACUUM_ATTR_FILTER_PRESENT: Final = bytes((0x01, 0x42))
+BLE_VACUUM_ATTR_FILTER_WASH: Final = bytes((0x02, 0x42))
+BLE_VACUUM_ATTR_SYSTEM_ERROR: Final = bytes((0x09, 0x42))
+BLE_VACUUM_ATTR_CHARGE_REQUIRED: Final = bytes((0x0A, 0x42))
+BLE_VACUUM_ATTR_BATTERY_LEVEL: Final = bytes((0x02, 0x40))
+BLE_VACUUM_ATTR_ACTIVELY_CHARGING: Final = bytes((0x03, 0x40))
+BLE_VACUUM_ATTR_CHARGER_PRESENT: Final = bytes((0x04, 0x40))
+BLE_VACUUM_ATTR_UI_LANGUAGE: Final = bytes((0x02, 0x41))
+BLE_VACUUM_ATTR_BATTERY_CARE_CURRENT: Final = bytes((0x08, 0x41))
+BLE_VACUUM_ATTR_BATTERY_CARE_SETTING: Final = bytes((0x13, 0x40))
+BLE_VACUUM_ATTR_BATTERY_AUTHENTICITY: Final = bytes((0x07, 0x42))
+BLE_VACUUM_ATTR_TASK_DETECTION: Final = bytes((0x07, 0x41))
+BLE_VACUUM_ATTR_DUST_ILLUMINATION: Final = bytes((0x0A, 0x40))
+BLE_VACUUM_ATTR_BRUSH_BAR_SPEED: Final = bytes((0x0B, 0x40))
+BLE_VACUUM_ATTR_BRUSH_BAR_TYPE: Final = bytes((0x0C, 0x40))
+BLE_VACUUM_ATTR_CLEANING_SESSION_ACTIVE: Final = bytes((0x07, 0x40))
+# 0x0243 is a 32-bit little-endian capability bitmask, not a scalar state.
+# The MyDyson app (iq/b.java) widens the payload to 4 bytes LE and mask-tests
+# it against iq.c {AUTO = 0b111, NOT_AUTO = fallback}, reducing the whole
+# attribute to the boolean it calls "dustIlluminationAutoState": whether the
+# AUTO dust-illumination option is available with the currently attached head.
+BLE_VACUUM_ATTR_DUST_ILLUMINATION_AUTO: Final = bytes((0x02, 0x43))
+BLE_VACUUM_LDI_AUTO_MASK: Final = 0b111
+
+BLE_VACUUM_POWER_MODES: Final = {0: "eco", 1: "med", 2: "auto", 3: "boost"}
+BLE_VACUUM_BLOCKAGE_STATES: Final = {
+    0: "not_blocked",
+    1: "inlet_blocked",
+    2: "inlet_blocked_and_error",
+    3: "outlet_blocked_and_error",
+}
+BLE_VACUUM_BATTERY_TEMPERATURES: Final = {0: "ok", 1: "cold", 2: "hot"}
+BLE_VACUUM_FILTER_PRESENT_STATES: Final = {
+    0: "filter_present",
+    1: "filter_not_present",
+    2: "unknown",
+}
+BLE_VACUUM_FILTER_WASH_STATES: Final = {0: "filter_ok", 1: "filter_needs_cleaning"}
+BLE_VACUUM_CHARGE_REQUIRED_STATES: Final = {
+    0: "no_charge_required",
+    1: "place_on_charge",
+}
+BLE_VACUUM_LANGUAGES: Final = _BLE_LANG_OPTIONS
+BLE_VACUUM_BATTERY_AUTHENTICITY_STATES: Final = {0: "dyson", 1: "non_dyson"}
+BLE_VACUUM_DUST_ILLUMINATION_MODES: Final = {0: "off", 1: "on", 2: "auto"}
+# Wire values per the MyDyson app's BrushBarSpeed enum. "fixed" is only a
+# sentinel for "head has no variable speed", never a live value on the wire.
+BLE_VACUUM_BRUSH_BAR_SPEEDS: Final = {0: "low", 1: "high", 2: "auto"}
+# Wire values per the MyDyson app's brush-bar-type enum; "none attached" is
+# sent as 0xFF (i.e. -1).
+BLE_VACUUM_BRUSH_BAR_TYPES: Final = {
+    1: "erp_768",
+    2: "row_768",
+    255: "none_attached",
+}
+BLE_VACUUM_SESSION_STATES: Final = {0: "inactive", 1: "active"}
+
+# Full read/subscribe list for the floorcare attribute manager.
+# attr_id -> (state key, {value: label} | "int" | "bool")
+BLE_VACUUM_ATTRIBUTES: Final = {
+    BLE_VACUUM_ATTR_POWER_MODE: ("power_mode", BLE_VACUUM_POWER_MODES),
+    BLE_VACUUM_ATTR_BLOCKAGE: ("blockage", BLE_VACUUM_BLOCKAGE_STATES),
+    BLE_VACUUM_ATTR_BATTERY_TEMPERATURE: (
+        "battery_temperature",
+        BLE_VACUUM_BATTERY_TEMPERATURES,
+    ),
+    BLE_VACUUM_ATTR_FILTER_PRESENT: (
+        "filter_present",
+        BLE_VACUUM_FILTER_PRESENT_STATES,
+    ),
+    BLE_VACUUM_ATTR_FILTER_WASH: ("filter_wash", BLE_VACUUM_FILTER_WASH_STATES),
+    BLE_VACUUM_ATTR_SYSTEM_ERROR: ("system_error", "bool"),
+    BLE_VACUUM_ATTR_CHARGE_REQUIRED: (
+        "charge_required",
+        BLE_VACUUM_CHARGE_REQUIRED_STATES,
+    ),
+    BLE_VACUUM_ATTR_BATTERY_LEVEL: ("battery_level", "int"),
+    BLE_VACUUM_ATTR_ACTIVELY_CHARGING: ("actively_charging", "bool"),
+    BLE_VACUUM_ATTR_CHARGER_PRESENT: ("charger_present", "bool"),
+    BLE_VACUUM_ATTR_UI_LANGUAGE: ("ui_language", BLE_VACUUM_LANGUAGES),
+    BLE_VACUUM_ATTR_BATTERY_CARE_CURRENT: ("battery_care_current", "bool"),
+    BLE_VACUUM_ATTR_BATTERY_CARE_SETTING: ("battery_care_setting", "bool"),
+    BLE_VACUUM_ATTR_BATTERY_AUTHENTICITY: (
+        "battery_authenticity",
+        BLE_VACUUM_BATTERY_AUTHENTICITY_STATES,
+    ),
+    BLE_VACUUM_ATTR_TASK_DETECTION: ("task_detection", "bool"),
+    BLE_VACUUM_ATTR_DUST_ILLUMINATION: (
+        "dust_illumination",
+        BLE_VACUUM_DUST_ILLUMINATION_MODES,
+    ),
+    BLE_VACUUM_ATTR_BRUSH_BAR_SPEED: ("brush_bar_speed", BLE_VACUUM_BRUSH_BAR_SPEEDS),
+    BLE_VACUUM_ATTR_BRUSH_BAR_TYPE: ("brush_bar_type", BLE_VACUUM_BRUSH_BAR_TYPES),
+    BLE_VACUUM_ATTR_CLEANING_SESSION_ACTIVE: (
+        "session_active",
+        BLE_VACUUM_SESSION_STATES,
+    ),
+    BLE_VACUUM_ATTR_DUST_ILLUMINATION_AUTO: ("dust_illumination_auto", "ldi_auto"),
+}
 
 
 def decikelvin_to_celsius(decikelvin: float) -> float:
