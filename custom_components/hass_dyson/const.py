@@ -885,7 +885,6 @@ BLE_VACUUM_ATTR_BATTERY_LEVEL: Final = bytes((0x02, 0x40))
 BLE_VACUUM_ATTR_ACTIVELY_CHARGING: Final = bytes((0x03, 0x40))
 BLE_VACUUM_ATTR_CHARGER_PRESENT: Final = bytes((0x04, 0x40))
 BLE_VACUUM_ATTR_UI_LANGUAGE: Final = bytes((0x02, 0x41))
-BLE_VACUUM_ATTR_BATTERY_CARE_CURRENT: Final = bytes((0x13, 0x40))
 BLE_VACUUM_ATTR_BATTERY_CARE_SETTING: Final = bytes((0x08, 0x41))
 BLE_VACUUM_ATTR_BATTERY_AUTHENTICITY: Final = bytes((0x07, 0x42))
 BLE_VACUUM_ATTR_TASK_DETECTION: Final = bytes((0x07, 0x41))
@@ -957,7 +956,6 @@ BLE_VACUUM_ATTRIBUTES: Final = {
     BLE_VACUUM_ATTR_ACTIVELY_CHARGING: ("actively_charging", "bool"),
     BLE_VACUUM_ATTR_CHARGER_PRESENT: ("charger_present", "bool"),
     BLE_VACUUM_ATTR_UI_LANGUAGE: ("ui_language", BLE_VACUUM_LANGUAGES),
-    BLE_VACUUM_ATTR_BATTERY_CARE_CURRENT: ("battery_care_current", "bool"),
     BLE_VACUUM_ATTR_BATTERY_CARE_SETTING: ("battery_care_setting", "bool"),
     BLE_VACUUM_ATTR_BATTERY_AUTHENTICITY: (
         "battery_authenticity",

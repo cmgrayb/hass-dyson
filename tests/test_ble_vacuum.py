@@ -146,7 +146,6 @@ class TestAttributeRegistry:
             "battery_level",
             "actively_charging",
             "charger_present",
-            "battery_care_current",
             "battery_care_setting",
             "battery_authenticity",
             "task_detection",
@@ -1634,9 +1633,9 @@ class TestWriteAcceptanceSemantics:
 class TestWriteRejection:
     """An explicit non-zero 0x94 status is the machine saying no.
 
-    Observed on a V16: battery care (0x1340) answers 134001 — status 1 — even
-    when writing the value it already holds.  Checking the current value before
-    the status would report that rejection as success.
+    A rejection can arrive even when writing the value the attribute already
+    holds, so checking the current value before the status would report that
+    rejection as success.
     """
 
     @staticmethod
@@ -1662,7 +1661,7 @@ class TestWriteRejection:
 
         attr = BLE_VACUUM_ATTR_BATTERY_CARE_SETTING
         device.state.attributes_raw[attr.hex()] = "00"  # already the target
-        self._device_with_response(device, "134001")  # status 1 = rejected
+        self._device_with_response(device, "084101")  # status 1 = rejected
         assert await device.write_attribute(attr, b"\x00") is False
 
     @pytest.mark.asyncio
@@ -1675,7 +1674,7 @@ class TestWriteRejection:
 
         attr = BLE_VACUUM_ATTR_BATTERY_CARE_SETTING
         device.state.attributes_raw[attr.hex()] = "00"
-        self._device_with_response(device, "134001")
+        self._device_with_response(device, "084101")
         with caplog.at_level(logging.WARNING):
             await device.write_attribute(attr, b"\x00")
         assert "rejected" in caplog.text

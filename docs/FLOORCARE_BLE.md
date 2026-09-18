@@ -27,7 +27,7 @@ fetch the pairing LTK.
 | Platform | Entities |
 |---|---|
 | sensor | Battery level (%), power mode (eco/med/auto/boost), brush-bar type, battery temperature |
-| binary_sensor | Actively charging, charger present (dock), blockage, filter missing, filter needs washing, system error, charge required, cleaning session active, non-genuine battery, battery care active, dust-illumination auto available (diagnostic) |
+| binary_sensor | Actively charging, charger present (dock), blockage, filter missing, filter needs washing, system error, charge required, cleaning session active, non-genuine battery, dust-illumination auto available (diagnostic) |
 | select | **Brush Bar Speed** (low/high/auto), **Dust Illumination Mode** (off/on/auto), **Machine UI Language** |
 | switch | **Task Detection**, **Battery Care** |
 | update | **Firmware** — reports installed vs pending; installing over BLE is not supported |
@@ -260,7 +260,8 @@ Two notes on things that look like duplicates but are not:
 - Battery care has **two** attributes.  `0x0841` (app enum `vq.a`, MQTT key
   `bcms`) is the setting and the one `lq/a` writes; `0x1340` (`vq.f`, `bcmp`)
   is read-only and feeds the app's battery-management tile.  Writing `0x0841`
-  produces a push on both, about 100 ms apart.
+  produces a push on both, about 100 ms apart — `0x1340` only ever mirrors the
+  setting, so it is not read, subscribed or exposed.
 - Power mode (`0x0040`) has no write request in the app and remains a sensor.
 
 Conversely, no writable attribute also gets a read-only mirror — brush-bar
