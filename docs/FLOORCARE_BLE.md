@@ -219,7 +219,7 @@ The writable set is not guesswork: it is exactly the `k50.i`
 | `mq/a` BrushBarSpeed | `0x0B40` | **Brush Bar Speed** (select — low/high/auto) |
 | `mq/b` illuminationMode | `0x0A40` | **Dust Illumination Mode** (select — off/on/auto) |
 | `mq/c` taskDetectMode | `0x0741` | **Task Detection** (switch) |
-| `lq/a` batteryCareMode | `0x1340` | **Battery Care** (switch, config category) |
+| `lq/a` batteryCareMode | `0x0841` | **Battery Care** (switch, config category) |
 | `lq/b` ProductUILanguage$Ble | `0x0241` | **Machine UI Language** (select, config category) |
 
 ### Verified on hardware: status 0 means accepted, not applied
@@ -233,20 +233,7 @@ writes on a V16 (firmware 2.13.2):
 | dust illumination `0x0A40` → 0 | `0a4000` | 0 | **stayed** `1` |
 | brush bar speed `0x0B40` → low | `0b4000` | 0 | **stayed** `auto` |
 | UI language `0x0241` → English | `024100` | 0 | changed to `English` |
-| battery care `0x1340` → 1 | `134001` | **1** | stayed `0` (rejected) |
-
-Battery care is the one rejection observed so far, and it looks like a
-**precondition, not a limitation**.  Battery care caps charging at around 75%;
-both attempts were made with the battery at 100% (on the dock, not actively
-charging), so there was nothing the machine could do with the request — it
-cannot discharge to meet the cap.  The app does build a BLE write for this
-attribute (`vq/d.java` constructs `lq/a`), guarded only by a connection check,
-so the write path is real.
-
-This has **not** been tested with the battery below the care threshold, which
-is the case that would confirm it.  The switch is exposed on that basis; a
-rejection surfaces as a warning in the log and the entity keeps its previous
-value.
+| battery care `0x0841` → 1 | `084100` | 0 | changed to `1` |
 
 Three things this establishes:
 
@@ -257,22 +244,23 @@ Three things this establishes:
    followed.  `write_attribute()` returns True for "the machine accepted the
    command"; the attribute push remains the only authority on what the value
    actually became.
-2. **Status 1 is a rejection.**  Battery care refused the write outright.
-   Whether that is conditional (the machine was on charge at 100%) or the
-   attribute is simply not writable in this state is not yet known.
-3. **An explicit status is authoritative over the current value.**  Battery
-   care returns `134001` even when writing the value it already holds, so a
-   rejected no-op write must not be reported as success — the status is
-   checked before any value comparison.
+2. **Status 1 is a rejection.**  The machine returns it when it refuses the
+   request outright — writing a read-only attribute, for instance.  The entity
+   keeps its previous value and the rejection is logged as a warning.
+3. **An explicit status is authoritative over the current value.**  A rejected
+   write must not be reported as success just because the attribute already
+   holds the requested value, so the status is checked before any value
+   comparison.
 
 Writes are logged at debug level with the raw status byte; rejections are
 warnings, and an accepted-but-unapplied write is logged at debug.
 
 Two notes on things that look like duplicates but are not:
 
-- Battery care has **two** attributes.  `0x1340` is the user setting (writable,
-  the switch above); `0x0841` is the machine's live "care cycle running right
-  now" state, which is read-only and stays a binary sensor.
+- Battery care has **two** attributes.  `0x0841` (app enum `vq.a`, MQTT key
+  `bcms`) is the setting and the one `lq/a` writes; `0x1340` (`vq.f`, `bcmp`)
+  is read-only and feeds the app's battery-management tile.  Writing `0x0841`
+  produces a push on both, about 100 ms apart.
 - Power mode (`0x0040`) has no write request in the app and remains a sensor.
 
 Conversely, no writable attribute also gets a read-only mirror — brush-bar
