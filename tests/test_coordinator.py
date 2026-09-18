@@ -1569,3 +1569,169 @@ class TestBleCoordinatorShutdownCleanup:
         coord._ble_task = None
         await coord.async_shutdown()
         coord.ble_device.disconnect.assert_awaited_once()
+
+
+class TestBleCoordinatorCloudFirmwarePersistence:
+    """Cloud firmware must survive the next BLE push.
+
+    A BLE payload carries only BLE state, so publishing it verbatim replaced
+    coordinator.data and dropped the cloud fields.  Pushes arrive every few
+    seconds while the cloud is re-checked every 12 hours, so the update entity
+    fell back to unknown almost immediately and stayed there for half a day.
+    """
+
+    @staticmethod
+    def _coordinator():
+        from unittest.mock import MagicMock, patch
+
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEVacuumDataUpdateCoordinator,
+        )
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            entry = MagicMock()
+            entry.data = {"serial_number": "7RD-EU-TEST0000X"}
+            coord = DysonBLEVacuumDataUpdateCoordinator(MagicMock(), entry)
+        coord.data = {}
+        published = {}
+
+        def _capture(new):
+            published.clear()
+            published.update(new)
+            coord.data = dict(new)
+
+        coord.async_set_updated_data = _capture
+        return coord, published
+
+    def test_ble_push_keeps_the_published_cloud_fields(self):
+        coord, published = self._coordinator()
+        coord._cloud_firmware = {
+            "cloud_firmware_version": "SVC0PS.50.02.013.0002",
+            "cloud_new_version_available": True,
+            "cloud_pending_version": "2.14.0",
+        }
+        coord._publish_cloud_firmware()
+        assert published["cloud_pending_version"] == "2.14.0"
+
+        # A routine battery push: BLE state only, no cloud keys.
+        coord._handle_state_update(
+            {"serial_number": "7RD-EU-TEST0000X", "attributes": {"battery_level": 42}}
+        )
+        assert published["attributes"] == {"battery_level": 42}
+        assert published["cloud_pending_version"] == "2.14.0"
+        assert published["cloud_new_version_available"] is True
+
+    def test_ble_push_without_cloud_data_is_unchanged(self):
+        coord, published = self._coordinator()
+        coord._cloud_firmware = {}
+        coord._handle_state_update(
+            {"serial_number": "7RD-EU-TEST0000X", "attributes": {"battery_level": 42}}
+        )
+        assert published == {"attributes": {"battery_level": 42}}
+
+
+class TestBleCoordinatorCloudFirmwareExpiry:
+    """A cloud answer must not outlive the account that produced it.
+
+    The result is cached and, since it is merged into every BLE push, it would
+    otherwise be republished forever — still reporting "up to date" days after
+    the lookup stopped working or the account was deleted.  Withdrawing it lets
+    latest_version fall back to the BLE staged build, or to unknown.
+    """
+
+    @staticmethod
+    def _coordinator():
+        from unittest.mock import MagicMock, patch
+
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEVacuumDataUpdateCoordinator,
+        )
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            entry = MagicMock()
+            entry.data = {"serial_number": "7RD-EU-TEST0000X"}
+            coord = DysonBLEVacuumDataUpdateCoordinator(MagicMock(), entry)
+        coord.data = {}
+
+        def _capture(new):
+            coord.data = dict(new)
+
+        coord.async_set_updated_data = _capture
+        return coord
+
+    ANSWER = {
+        "cloud_firmware_version": "SVC0PS.50.02.013.0002",
+        "cloud_new_version_available": False,
+        "cloud_pending_version": None,
+        "cloud_auto_update_enabled": True,
+    }
+
+    @pytest.mark.asyncio
+    async def test_account_removal_withdraws_the_cached_answer(self):
+        from unittest.mock import MagicMock
+
+        coord = self._coordinator()
+        coord._cloud_firmware = dict(self.ANSWER)
+        coord._publish_cloud_firmware()
+        assert (
+            coord.data["cloud_firmware_version"]
+            == self.ANSWER["cloud_firmware_version"]
+        )
+
+        # The account is deleted: no candidates remain.
+        coord.hass = MagicMock()
+        coord._candidate_account_entries = MagicMock(return_value=[])
+        await coord._async_maybe_refresh_cloud_firmware(force=True)
+        coord._publish_cloud_firmware()
+
+        assert coord._cloud_firmware == {}
+        for key in self.ANSWER:
+            assert key not in coord.data, f"{key} outlived its account"
+
+    @pytest.mark.asyncio
+    async def test_failed_lookup_withdraws_the_cached_answer(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        coord = self._coordinator()
+        coord._cloud_firmware = dict(self.ANSWER)
+        coord._publish_cloud_firmware()
+        assert "cloud_firmware_version" in coord.data
+
+        # Account still configured, but the lookup no longer answers.
+        coord.hass = MagicMock()
+        coord._candidate_account_entries = MagicMock(return_value=[MagicMock()])
+        coord._async_fetch_cloud_firmware = AsyncMock(return_value=None)
+        await coord._async_maybe_refresh_cloud_firmware(force=True)
+        coord._publish_cloud_firmware()
+
+        assert coord._cloud_firmware == {}
+        assert "cloud_firmware_version" not in coord.data
+
+    @pytest.mark.asyncio
+    async def test_withdrawal_keeps_unrelated_ble_state(self):
+        from unittest.mock import MagicMock
+
+        coord = self._coordinator()
+        coord.data = {"attributes": {"battery_level": 42}}
+        coord._cloud_firmware = dict(self.ANSWER)
+        coord._publish_cloud_firmware()
+
+        coord.hass = MagicMock()
+        coord._candidate_account_entries = MagicMock(return_value=[])
+        await coord._async_maybe_refresh_cloud_firmware(force=True)
+        coord._publish_cloud_firmware()
+
+        assert coord.data == {"attributes": {"battery_level": 42}}
+
+    def test_withdrawal_is_a_no_op_when_nothing_was_published(self):
+        coord = self._coordinator()
+        coord.data = {"attributes": {"battery_level": 42}}
+        published = []
+        coord.async_set_updated_data = lambda new: published.append(new)
+        coord._cloud_firmware = {}
+        coord._publish_cloud_firmware()
+        assert published == []
