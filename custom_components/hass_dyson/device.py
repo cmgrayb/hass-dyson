@@ -44,6 +44,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    ROBOT_FAULT_ACTION_LOG_ONLY,
     CONNECTION_STATUS_CLOUD,
     CONNECTION_STATUS_DISCONNECTED,
     CONNECTION_STATUS_LOCAL,
@@ -3065,6 +3066,27 @@ class DysonDevice:
         if not isinstance(value, list):
             value = self._state_data.get("activeFaults")
         return value if isinstance(value, list) else None
+
+    @property
+    def robot_action_required_faults(self) -> list[dict] | None:
+        """Return active faults that need the user to do something.
+
+        Spot+Scrub reports status in the same list as genuine problems and
+        marks the difference with ``nextActionRequired``. Anything other
+        than LOG_ONLY stopped the robot or will.
+
+        Returns:
+            Matching fault entries, [] when healthy, None when not reported
+        """
+        faults = self.robot_active_faults
+        if faults is None:
+            return None
+        return [
+            entry
+            for entry in faults
+            if isinstance(entry, dict)
+            and entry.get("nextActionRequired") != ROBOT_FAULT_ACTION_LOG_ONLY
+        ]
 
     @property
     def robot_last_clean_zones(self) -> list[str]:

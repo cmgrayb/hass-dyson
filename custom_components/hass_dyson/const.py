@@ -540,6 +540,27 @@ ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
 # Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
 # dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
 # product-state CURRENT-FAULTS codes the generic fault sensors read.
+# Numeric fault codes reported by the Spot+Scrub (RB05) in
+# CURRENT-STATE.activeFaults. Names are Dyson's own, from
+# support.dyson.com.au -> Spot+Scrub AI -> Troubleshooting -> Faults.
+# Only codes seen in real captures are listed; anything else is surfaced
+# raw rather than guessed at. Several are status rather than malfunction
+# (the robot keeps cleaning), so read nextActionRequired, not membership.
+ROBOT_NUMERIC_FAULT_NAMES: Final = {
+    "501": "Wheels lifted",
+    "509": "Drop sensor obstructed",
+    "518": "Battery is low",
+    "581": "Dock's clean water tank empty",
+    "630": "Wet roller stuck",
+    "2103": "Dock busy",
+    "2108": "Discovery in progress",
+    "2110": "Cleaning resumed",
+}
+
+# nextActionRequired value meaning "record it, nothing is wrong".
+ROBOT_FAULT_ACTION_LOG_ONLY: Final = "LOG_ONLY"
+
+
 ROBOT_FAULT_SUBSYSTEMS: Final = {
     "AIRWAYS": ("Airways", "mdi:weather-windy"),
     "BATTERY": ("Battery", "mdi:battery-alert"),
