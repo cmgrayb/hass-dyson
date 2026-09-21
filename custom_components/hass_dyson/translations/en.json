@@ -341,6 +341,15 @@
       },
       "robot_power_generic": {
         "name": "Power Level"
+      },
+      "spot_scrub_cleaning_mode": {
+        "name": "Cleaning mode (all rooms)",
+        "state": {
+          "vacuum_only": "Vacuum only",
+          "vacuum_and_mop": "Vacuum and mop",
+          "mop_only": "Mop only",
+          "vacuum_then_mop": "Vacuum then mop"
+        }
       }
     },
     "number": {
@@ -532,6 +541,17 @@
           "description": "Remove sensitive information for safe public posting."
         }
       }
+    }
+  },
+  "exceptions": {
+    "spot_scrub_invalid_mode": {
+      "message": "This cleaning mode is not supported."
+    },
+    "spot_scrub_not_idle": {
+      "message": "Wait until Spot+Scrub is docked or idle before changing its cleaning mode."
+    },
+    "spot_scrub_request_failed": {
+      "message": "Unable to confirm the cleaning mode. Check the robot connection and room settings in MyDyson, then try again."
     }
   }
 }
