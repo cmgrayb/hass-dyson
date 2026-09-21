@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.hass_dyson import binary_sensor as binary_sensor_platform
+from custom_components.hass_dyson import sensor as sensor_platform
 from custom_components.hass_dyson.binary_sensor import (
     DysonRobotActionRequiredSensor,
 )
@@ -134,3 +136,59 @@ def test_problem_sensor_unknown_without_a_device(coordinator):
     sensor._handle_coordinator_update()
 
     assert sensor.is_on is None
+
+
+def _setup_coordinator(prefix):
+    """Coordinator shaped for a robot platform setup run."""
+    coordinator = MagicMock()
+    coordinator.serial_number = "TEST-SERIAL"
+    coordinator.device.mqtt_prefix = prefix
+    coordinator.device_capabilities = []
+    coordinator.device_category = ["robot"]
+    coordinator.config_entry.data = {}
+    coordinator.data = {}
+    return coordinator
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["RB05", "277"])
+async def test_only_spot_scrub_gets_the_fault_sensor(prefix):
+    """Other robots keep using the per-subsystem sensors."""
+    coordinator = _setup_coordinator(prefix)
+    entry = MagicMock(entry_id="test")
+    hass = MagicMock(data={"hass_dyson": {"test": coordinator}})
+    add = MagicMock()
+
+    await sensor_platform.async_setup_entry(hass, entry, add)
+
+    added = add.call_args.args[0]
+    expected = 1 if prefix == "RB05" else 0
+    assert sum(isinstance(e, DysonRobotActiveFaultSensor) for e in added) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["RB05", "277"])
+async def test_only_spot_scrub_gets_the_problem_sensor(prefix):
+    """The problem sensor is gated the same way."""
+    coordinator = _setup_coordinator(prefix)
+    entry = MagicMock(entry_id="test")
+    hass = MagicMock(data={"hass_dyson": {"test": coordinator}})
+    add = MagicMock()
+
+    await binary_sensor_platform.async_setup_entry(hass, entry, add)
+
+    added = add.call_args.args[0]
+    expected = 1 if prefix == "RB05" else 0
+    assert (
+        sum(isinstance(e, DysonRobotActionRequiredSensor) for e in added) == expected
+    )
+
+
+def test_fault_sensor_unreported_without_a_device(coordinator):
+    """A disconnected coordinator leaves the fault sensor empty."""
+    coordinator.device = None
+    sensor = DysonRobotActiveFaultSensor(coordinator)
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value is None
