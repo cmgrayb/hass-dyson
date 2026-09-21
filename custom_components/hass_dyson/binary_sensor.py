@@ -496,9 +496,7 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
             return "Unknown"
 
 
-class DysonRobotActionRequiredSensor(  # type: ignore[misc]
-    DysonEntity, BinarySensorEntity
-):
+class DysonRobotActionRequiredSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
     """On when a Spot+Scrub fault needs the user to intervene.
 
     activeFaults carries status and real problems together; only
