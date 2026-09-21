@@ -179,9 +179,7 @@ async def test_only_spot_scrub_gets_the_problem_sensor(prefix):
 
     added = add.call_args.args[0]
     expected = 1 if prefix == "RB05" else 0
-    assert (
-        sum(isinstance(e, DysonRobotActionRequiredSensor) for e in added) == expected
-    )
+    assert sum(isinstance(e, DysonRobotActionRequiredSensor) for e in added) == expected
 
 
 def test_fault_sensor_unreported_without_a_device(coordinator):
