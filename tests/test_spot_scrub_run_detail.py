@@ -8,6 +8,7 @@ from custom_components.hass_dyson.device import DysonDevice
 from custom_components.hass_dyson.sensor import (
     DysonRobotCleanActionSensor,
     DysonRobotCleanDurationSensor,
+    async_setup_entry,
 )
 
 
@@ -115,3 +116,44 @@ def test_unique_ids_are_distinct(sensor_coordinator):
 
     assert duration.unique_id == "TEST-SERIAL_robot_clean_duration"
     assert action.unique_id == "TEST-SERIAL_robot_clean_action"
+
+
+def test_action_survives_an_unexpected_state_shape(device):
+    """A payload that raises on lookup reports nothing rather than propagating."""
+    broken = MagicMock()
+    broken.get.side_effect = TypeError("unexpected state shape")
+    device._state_data = broken
+
+    assert device.robot_full_clean_action is None
+
+
+def test_duration_survives_an_unexpected_state_shape(device):
+    """Same guard on the duration property."""
+    broken = MagicMock()
+    broken.get.side_effect = TypeError("unexpected state shape")
+    device._state_data = broken
+
+    assert device.robot_clean_duration is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["RB05", "277", "527K"])
+async def test_only_spot_scrub_gets_run_detail_sensors(prefix):
+    """Vis Nav and the older robots do not report these fields."""
+    coordinator = MagicMock()
+    coordinator.serial_number = "TEST-SERIAL"
+    coordinator.device.mqtt_prefix = prefix
+    coordinator.device_capabilities = []
+    coordinator.device_category = ["robot"]
+    coordinator.data = {}
+    coordinator.config_entry.data = {}
+    entry = MagicMock(entry_id="test")
+    hass = MagicMock(data={"hass_dyson": {"test": coordinator}})
+    add = MagicMock()
+
+    await async_setup_entry(hass, entry, add)
+
+    added = add.call_args.args[0]
+    expected = 1 if prefix == "RB05" else 0
+    assert sum(isinstance(e, DysonRobotCleanDurationSensor) for e in added) == expected
+    assert sum(isinstance(e, DysonRobotCleanActionSensor) for e in added) == expected
