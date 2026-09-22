@@ -80,14 +80,18 @@ def test_action_absent_or_empty(device, state):
     assert device.robot_full_clean_action is None
 
 
-def test_sensors_expose_device_values(sensor_coordinator, device):
+def test_sensors_expose_device_values(
+    pure_mock_sensor_entity, sensor_coordinator, device
+):
     """Both sensors pass the device value straight through."""
     device._state_data = {
         "cleanDuration": 6240,
         "fullCleanAction": "VACUUMING_AND_MOPPING",
     }
-    duration = DysonRobotCleanDurationSensor(sensor_coordinator)
-    action = DysonRobotCleanActionSensor(sensor_coordinator)
+    duration = pure_mock_sensor_entity(
+        DysonRobotCleanDurationSensor, sensor_coordinator
+    )
+    action = pure_mock_sensor_entity(DysonRobotCleanActionSensor, sensor_coordinator)
 
     duration._handle_coordinator_update()
     action._handle_coordinator_update()
@@ -96,11 +100,13 @@ def test_sensors_expose_device_values(sensor_coordinator, device):
     assert action.native_value == "VACUUMING_AND_MOPPING"
 
 
-def test_sensors_without_a_device(sensor_coordinator):
+def test_sensors_without_a_device(pure_mock_sensor_entity, sensor_coordinator):
     """A disconnected coordinator leaves both sensors empty, not erroring."""
     sensor_coordinator.device = None
-    duration = DysonRobotCleanDurationSensor(sensor_coordinator)
-    action = DysonRobotCleanActionSensor(sensor_coordinator)
+    duration = pure_mock_sensor_entity(
+        DysonRobotCleanDurationSensor, sensor_coordinator
+    )
+    action = pure_mock_sensor_entity(DysonRobotCleanActionSensor, sensor_coordinator)
 
     duration._handle_coordinator_update()
     action._handle_coordinator_update()
@@ -109,10 +115,12 @@ def test_sensors_without_a_device(sensor_coordinator):
     assert action.native_value is None
 
 
-def test_unique_ids_are_distinct(sensor_coordinator):
+def test_unique_ids_are_distinct(pure_mock_sensor_entity, sensor_coordinator):
     """Entity registry keys must not collide."""
-    duration = DysonRobotCleanDurationSensor(sensor_coordinator)
-    action = DysonRobotCleanActionSensor(sensor_coordinator)
+    duration = pure_mock_sensor_entity(
+        DysonRobotCleanDurationSensor, sensor_coordinator
+    )
+    action = pure_mock_sensor_entity(DysonRobotCleanActionSensor, sensor_coordinator)
 
     assert duration.unique_id == "TEST-SERIAL_robot_clean_duration"
     assert action.unique_id == "TEST-SERIAL_robot_clean_action"
