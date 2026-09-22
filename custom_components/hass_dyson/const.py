@@ -537,9 +537,6 @@ ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
 # payload is only {msg, time} — re-fetch the cloud metadata to see what.
 ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
 
-# Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
-# dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
-# product-state CURRENT-FAULTS codes the generic fault sensors read.
 # Numeric fault codes reported by the Spot+Scrub (RB05) in
 # CURRENT-STATE.activeFaults. Names are Dyson's own, from
 # support.dyson.com.au -> Spot+Scrub AI -> Troubleshooting -> Faults.
@@ -560,7 +557,9 @@ ROBOT_NUMERIC_FAULT_NAMES: Final = {
 # nextActionRequired value meaning "record it, nothing is wrong".
 ROBOT_FAULT_ACTION_LOG_ONLY: Final = "LOG_ONLY"
 
-
+# Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
+# dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
+# product-state CURRENT-FAULTS codes the generic fault sensors read.
 ROBOT_FAULT_SUBSYSTEMS: Final = {
     "AIRWAYS": ("Airways", "mdi:weather-windy"),
     "BATTERY": ("Battery", "mdi:battery-alert"),
