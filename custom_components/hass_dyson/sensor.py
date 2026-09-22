@@ -3327,27 +3327,31 @@ class DysonRobotActiveFaultSensor(DysonEntity, SensorEntity):
             super()._handle_coordinator_update()
             return
 
-        codes = [
-            str(entry.get("faultCode"))
+        entries = [
+            entry
             for entry in faults
             if isinstance(entry, dict) and entry.get("faultCode") is not None
         ]
-        if not codes:
+        if not entries:
             self._attr_native_value = "none"
             self._attr_extra_state_attributes = {"fault_codes": []}
             super()._handle_coordinator_update()
             return
 
-        actions = [
-            entry.get("nextActionRequired")
-            for entry in faults
-            if isinstance(entry, dict) and entry.get("nextActionRequired")
+        # Status shares the list with real problems, so report the one the
+        # user has to act on. robot_action_required_faults owns that test.
+        blocking = [
+            entry
+            for entry in (getattr(device, "robot_action_required_faults", None) or [])
+            if isinstance(entry, dict) and entry.get("faultCode") is not None
         ]
-        self._attr_native_value = ROBOT_NUMERIC_FAULT_NAMES.get(codes[0], codes[0])
+        chosen = blocking[0] if blocking else entries[0]
+        code = str(chosen["faultCode"])
+        self._attr_native_value = ROBOT_NUMERIC_FAULT_NAMES.get(code, code)
         self._attr_extra_state_attributes = {
-            "fault_code": codes[0],
-            "fault_codes": codes,
-            "next_action_required": actions[0] if actions else None,
+            "fault_code": code,
+            "fault_codes": [str(entry["faultCode"]) for entry in entries],
+            "next_action_required": chosen.get("nextActionRequired"),
         }
         super()._handle_coordinator_update()
 

@@ -88,6 +88,34 @@ def test_unknown_code_is_shown_raw(pure_mock_sensor_entity, coordinator, device)
     assert sensor.native_value == "2102"
 
 
+def test_actionable_fault_wins_over_a_status_code(
+    pure_mock_sensor_entity, coordinator, device
+):
+    """Listing order must not hide the fault the user has to clear."""
+    device._state_data = {"activeFaults": [STATUS_FAULT, BLOCKING_FAULT]}
+    sensor = pure_mock_sensor_entity(DysonRobotActiveFaultSensor, coordinator)
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value == "Dock's clean water tank empty"
+    assert sensor.extra_state_attributes["fault_code"] == "581"
+    assert sensor.extra_state_attributes["next_action_required"] == "USER_CONTINUE"
+    assert sensor.extra_state_attributes["fault_codes"] == ["2105", "581"]
+
+
+def test_reported_code_and_action_come_from_one_entry(
+    pure_mock_sensor_entity, coordinator, device
+):
+    """An entry with no nextActionRequired must not borrow another's."""
+    device._state_data = {"activeFaults": [{"faultCode": "2105"}, BLOCKING_FAULT]}
+    sensor = pure_mock_sensor_entity(DysonRobotActiveFaultSensor, coordinator)
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.extra_state_attributes["fault_code"] == "2105"
+    assert sensor.extra_state_attributes["next_action_required"] is None
+
+
 def test_no_faults_reads_none_string(pure_mock_sensor_entity, coordinator, device):
     """A healthy robot reads 'none', distinct from unknown."""
     device._state_data = {"activeFaults": []}
