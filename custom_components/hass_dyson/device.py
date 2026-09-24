@@ -2917,6 +2917,48 @@ class DysonDevice:
             return None
 
     @property
+    def robot_clean_duration(self) -> int | None:
+        """Return elapsed cleaning time for the current or last run.
+
+        Returns:
+            Seconds of cleaning, or None if the device does not report it
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            duration = product_state.get("cleanDuration")
+
+            if duration is None:
+                duration = self._state_data.get("cleanDuration")
+            if duration is None:
+                return None
+            return int(duration)
+        except (KeyError, TypeError, ValueError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean duration for %s: %s", self._log_serial, e
+            )
+            return None
+
+    @property
+    def robot_full_clean_action(self) -> str | None:
+        """Return what the robot is doing on this run (Spot+Scrub only).
+
+        Returns:
+            Action such as VACUUMING_AND_MOPPING, or None if not reported
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            action = product_state.get("fullCleanAction")
+
+            if not action:
+                action = self._state_data.get("fullCleanAction")
+            return action or None
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean action for %s: %s", self._log_serial, e
+            )
+            return None
+
+    @property
     def robot_clean_id(self) -> str | None:
         """Return robot vacuum current cleaning session ID.
 
