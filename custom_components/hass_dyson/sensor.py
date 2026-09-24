@@ -79,6 +79,7 @@ from .const import (
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
     DOMAIN,
+    ROBOT_NUMERIC_FAULT_NAMES,
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
@@ -1510,6 +1511,7 @@ async def async_setup_entry(  # noqa: C901
             if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
                 entities.append(DysonRobotCleanDurationSensor(coordinator))
                 entities.append(DysonRobotCleanActionSensor(coordinator))
+                entities.append(DysonRobotActiveFaultSensor(coordinator))
             # Cloud-fetched cleaning history + Dyson's recommended-next-room
             # sensor. Both gated on cloud auth.
             if coordinator.config_entry.data.get("auth_token"):
@@ -3300,6 +3302,65 @@ class DysonRobotCleanActionSensor(DysonEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         device = self.coordinator.device
         self._attr_native_value = device.robot_full_clean_action if device else None
+        super()._handle_coordinator_update()
+
+
+class DysonRobotActiveFaultSensor(DysonEntity, SensorEntity):
+    """Fault the Spot+Scrub is currently reporting.
+
+    RB05 sends flat numeric codes in activeFaults instead of the
+    per-subsystem dict, so none of it reaches the subsystem sensors.
+    Unknown codes are shown raw.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the active fault sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_active_fault"
+        self._attr_translation_key = "robot_active_fault"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:alert-circle-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        faults = getattr(device, "robot_active_faults", None) if device else None
+
+        if faults is None:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            super()._handle_coordinator_update()
+            return
+
+        entries = [
+            entry
+            for entry in faults
+            if isinstance(entry, dict) and entry.get("faultCode") is not None
+        ]
+        if not entries:
+            self._attr_native_value = "none"
+            self._attr_extra_state_attributes = {"fault_codes": []}
+            super()._handle_coordinator_update()
+            return
+
+        # Status shares the list with real problems, so report the one the
+        # user has to act on. robot_action_required_faults owns that test.
+        blocking = [
+            entry
+            for entry in (getattr(device, "robot_action_required_faults", None) or [])
+            if isinstance(entry, dict) and entry.get("faultCode") is not None
+        ]
+        chosen = blocking[0] if blocking else entries[0]
+        code = str(chosen["faultCode"])
+        self._attr_native_value = ROBOT_NUMERIC_FAULT_NAMES.get(code, code)
+        self._attr_extra_state_attributes = {
+            "fault_code": code,
+            "fault_codes": [str(entry["faultCode"]) for entry in entries],
+            "next_action_required": chosen.get("nextActionRequired"),
+        }
         super()._handle_coordinator_update()
 
 

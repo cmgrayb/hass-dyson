@@ -537,6 +537,81 @@ ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
 # payload is only {msg, time} — re-fetch the cloud metadata to see what.
 ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
 
+# Numeric fault codes the Spot+Scrub (RB05) reports in
+# CURRENT-STATE.activeFaults. Names are Dyson's own, transcribed from the
+# per-group pages under support.dyson.com.au -> Spot+Scrub Ai ->
+# Troubleshooting -> Faults; the codes are on those sub-pages, not the
+# index. Dyson gives several codes the same name. Codes it does not publish
+# surface raw. Membership is not a fault signal - read nextActionRequired.
+ROBOT_NUMERIC_FAULT_NAMES: Final = {
+    "500": "LiDAR sensor obstructed",
+    "501": "Wheels lifted",
+    "502": "Battery is low",
+    "503": "Robot's bin not detected",
+    "504": "Gyroscopic sensor error",
+    "507": "Unable to determine position",
+    "508": "Unable to climb slope",
+    "509": "Drop sensor obstructed",
+    "510": "Collision sensor obstructed",
+    "511": "Unable to return to dock",
+    "513": "Robot stuck",
+    "514": "Robot stuck",
+    "516": "Battery temperature high",
+    "518": "Battery is low",
+    "521": "Dock's clean water tank not detected",
+    "522": "Wet roller not detected",
+    "560": "Side sweeper stuck",
+    "561": "Camera obstructed",
+    "562": "Wall follow sensor obstructed",
+    "563": "Robot's bin not detected",
+    "566": "Robot's dirty water tank not detected",
+    "567": "Brush bar error",
+    "568": "Left wheel stuck",
+    "569": "Right wheel stuck",
+    "570": "Brush bar error",
+    "572": "Robot stuck",
+    "581": "Dock's clean water tank empty",
+    "582": "Dock's dirty water tank full",
+    "583": "Dock's clean water tank not detected",
+    "584": "Dock's dirty water tank not detected",
+    "586": "Robot's dirty water tank full",
+    "587": "Communication failure",
+    "591": "Dock's bin full",
+    "592": "Dock's filter error",
+    "594": "Unable to empty robot's bin",
+    "595": "Communication failure",
+    "596": "Unable to empty robot's bin",
+    "597": "Unable to empty robot's bin",
+    "611": "Mapping failed",
+    "612": "Mapping failed",
+    "620": "Dock's cleaning solution empty",
+    "627": "Something went wrong",
+    "629": "Wet roller not detected",
+    "630": "Wet roller stuck",
+    "634": "Unable to return to dock",
+    "636": "Robot stuck",
+    "637": "Dock's clean water tank not detected",
+    "639": "Wet roller not detected",
+    "645": "Wet roller not detected",
+    "646": "Wet roller error",
+    "650": "Robot's dirty water tank not detected",
+    "2000": "Dock's bin full",
+    "2003": "Unable to start scheduled clean",
+    "2007": "Mapping failed",
+    "2012": "Unable to reach area",
+    "2119": "Unable to start scheduled clean",
+    "2123": "Dock's clean water pump error",
+    "2124": "Dock's dirty water pump error",
+    "2125": "Robot not charging",
+    "2126": "Robot not charging",
+    "2131": "Battery temperature too low",
+    "2132": "Battery temperature too high",
+    "2133": "Battery temperature too low",
+}
+
+# nextActionRequired value meaning "record it, nothing is wrong".
+ROBOT_FAULT_ACTION_LOG_ONLY: Final = "LOG_ONLY"
+
 # Robot fault subsystems, as keyed in the STATE-CHANGE top-level ``faults``
 # dict ({SUBSYSTEM: {active, description-when-active}}). Distinct from the
 # product-state CURRENT-FAULTS codes the generic fault sensors read.

@@ -183,6 +183,9 @@
   },
   "entity": {
     "sensor": {
+      "robot_active_fault": {
+        "name": "Active fault"
+      },
       "robot_clean_duration": {
         "name": "Clean duration"
       },
@@ -461,6 +464,9 @@
       }
     },
     "binary_sensor": {
+      "robot_action_required": {
+        "name": "Action required"
+      },
       "filter_replacement": {
         "name": "Filter Replacement"
       },
