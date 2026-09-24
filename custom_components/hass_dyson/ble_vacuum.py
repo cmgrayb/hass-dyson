@@ -1129,9 +1129,9 @@ class DysonBleVacuumDevice:
                 if status is not None:
                     # An explicit non-zero status is the machine saying no, and
                     # it is authoritative.  Checking the current value first
-                    # would report success for a rejected no-op write (observed
-                    # on a V16: battery care returns 134001 even when writing
-                    # the value it already holds).
+                    # would report success for a rejected no-op write, since a
+                    # rejection can arrive for a value the attribute already
+                    # holds.
                     _LOGGER.warning(
                         "Write of attribute %s=%s rejected by %s (write status %d)",
                         attr_id.hex(),

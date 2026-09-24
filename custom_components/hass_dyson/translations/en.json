@@ -482,9 +482,6 @@
       "ble_vacuum_battery_authenticity": {
         "name": "Non-Genuine Battery"
       },
-      "ble_vacuum_battery_care_current": {
-        "name": "Battery Care Active"
-      },
       "ble_vacuum_dust_illumination_auto": {
         "name": "Dust Illumination Auto Available"
       }

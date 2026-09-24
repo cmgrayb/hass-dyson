@@ -44,10 +44,6 @@ async def async_setup_entry(
         DysonBleVacuumChargeRequiredSensor(coordinator),
         DysonBleVacuumSessionActiveSensor(coordinator),
         DysonBleVacuumBatteryAuthenticitySensor(coordinator),
-        # Battery care *current* (0x0841) is the machine's live state and is
-        # read-only.  The user setting (0x1340) and task detection (0x0741)
-        # are writable and live on the switch platform instead.
-        DysonBleVacuumBatteryCareCurrentSensor(coordinator),
         DysonBleVacuumDustIlluminationAutoSensor(coordinator),
     ]
     async_add_entities(entities)
@@ -289,28 +285,6 @@ class DysonBleVacuumBatteryAuthenticitySensor(DysonBleVacuumBinarySensorBase):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose genuineness as a readable attribute."""
         return {"battery_authenticity": self._attr_value("battery_authenticity")}
-
-
-class DysonBleVacuumBatteryCareCurrentSensor(DysonBleVacuumBinarySensorBase):
-    """Battery-care mode active right now."""
-
-    _attr_translation_key = "ble_vacuum_battery_care_current"
-
-    def __init__(self, coordinator: DysonBLEVacuumDataUpdateCoordinator) -> None:
-        """Initialise the sensor."""
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_ble_battery_care_current"
-
-    @property
-    def is_on(self) -> bool | None:
-        """Return True while a battery-care cycle is active."""
-        value = self._attr_value("battery_care_current")
-        return bool(value) if value is not None else None
-
-    @property
-    def icon(self) -> str:
-        """Battery-heart icon reflecting state."""
-        return "mdi:battery-heart" if self.is_on else "mdi:battery-heart-outline"
 
 
 class DysonBleVacuumDustIlluminationAutoSensor(DysonBleVacuumBinarySensorBase):

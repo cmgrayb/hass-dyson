@@ -2,12 +2,8 @@
 
 The two boolean settings the MyDyson app writes over BLE for this device
 family — task detection (0x0741, app ``mq/c``) and battery care mode
-(0x1340, app ``lq/a``).  Both are ``k50.i`` WriteAttributeRequest subclasses
+(0x0841, app ``lq/a``).  Both are ``k50.i`` WriteAttributeRequest subclasses
 in the app's floorcare module, so reads AND writes are supported via 0x93.
-
-Battery care has two separate attributes: 0x1340 is the user *setting*
-(writable, this module) while 0x0841 is the machine's live *current* state
-(read-only, exposed as a binary sensor).  They are not duplicates.
 """
 
 from __future__ import annotations
@@ -132,11 +128,7 @@ class DysonBleVacuumTaskDetectionSwitch(_BleVacuumSwitchBase):
 
 
 class DysonBleVacuumBatteryCareSwitch(_BleVacuumSwitchBase):
-    """Battery care mode switch (BLE attribute 0x1340).
-
-    The user-facing setting.  Whether a care cycle is running right now is a
-    separate read-only attribute (0x0841) exposed as a binary sensor.
-    """
+    """Battery care mode switch (BLE attribute 0x0841)."""
 
     _attr_id = BLE_VACUUM_ATTR_BATTERY_CARE_SETTING
     _state_key = "battery_care_setting"

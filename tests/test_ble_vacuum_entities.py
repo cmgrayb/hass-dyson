@@ -47,7 +47,6 @@ FULL_DATA = {
         "actively_charging": False,
         "charger_present": False,
         "ui_language": "czech",
-        "battery_care_current": False,
         "battery_care_setting": False,
         "battery_authenticity": "dyson",
         "task_detection": False,
@@ -176,14 +175,6 @@ class TestVacuumBinarySensors:
                 "battery_authenticity",
                 "non_dyson",
                 "dyson",
-                True,
-                False,
-            ),
-            (
-                "DysonBleVacuumBatteryCareCurrentSensor",
-                "battery_care_current",
-                True,
-                False,
                 True,
                 False,
             ),
@@ -391,29 +382,27 @@ class TestCoverageEdges:
 
         for mod in (sen_mod, bs_mod, sel_mod, sw_mod, upd_mod):
             asyncio.run(run(mod))
-        # 4 sensors + 11 binary sensors + 3 selects + 2 switches + 1 update
-        assert len(added) == 21, [type(e).__name__ for e in added]
+        # 4 sensors + 10 binary sensors + 3 selects + 2 switches + 1 update
+        assert len(added) == 20, [type(e).__name__ for e in added]
 
 
 class TestBatteryCareSwitch:
-    """Battery care setting (0x1340) is writable over BLE — app class lq/a."""
+    """Battery care setting (0x0841) is writable over BLE — app class lq/a."""
 
-    def test_reads_setting_not_current(self):
-        c = fake_coordinator(
-            {
-                "attributes": {
-                    "battery_care_setting": True,
-                    "battery_care_current": False,
-                }
-            }
-        )
+    def test_reads_the_setting_attribute(self):
+        c = fake_coordinator({"attributes": {"battery_care_setting": True}})
         sw = sw_mod.DysonBleVacuumBatteryCareSwitch(c)
         assert sw.is_on is True
         assert sw.icon == "mdi:shield-check"
 
-    def test_current_stays_a_readonly_binary_sensor(self):
-        """0x0841 is the machine's live state and must not become a switch."""
-        assert hasattr(bs_mod, "DysonBleVacuumBatteryCareCurrentSensor")
+    def test_current_gets_no_entity_of_its_own(self):
+        """0x1340 only mirrors the setting, so it is not exposed.
+
+        The switch already reports device-confirmed state — is_on reads the
+        pushed attribute rather than an optimistic local value — so a second
+        entity for 0x1340 would duplicate it roughly 100 ms late.
+        """
+        assert not hasattr(bs_mod, "DysonBleVacuumBatteryCareCurrentSensor")
         assert not hasattr(bs_mod, "DysonBleVacuumBatteryCareSettingSensor")
 
     @pytest.mark.asyncio
