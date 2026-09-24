@@ -71,6 +71,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
+          set -o pipefail
           python -m pytest tests/ \
             --cov=custom_components.hass_dyson \
             --cov-report=xml \
@@ -89,6 +90,7 @@ jobs:
           python -m coverage report --show-missing > coverage.txt 2>&1 || true
 
       - name: Upload coverage reports
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v5
         with:
           name: coverage-reports-${{ github.run_number }}
@@ -102,6 +104,7 @@ jobs:
           retention-days: 30
 
       - name: Upload coverage reports to Codecov
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

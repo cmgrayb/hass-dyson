@@ -2036,6 +2036,63 @@ class DysonDevice:
 
         return self._connected
 
+    async def send_jdm_command(
+        self, method: str, params: dict[str, Any], timeout: float = 15
+    ) -> dict[str, Any]:
+        """Send an RB05 request and await its matching acknowledgement.
+
+        Device message callbacks originate on Paho's thread. Resolve futures on
+        the HA loop, ignoring echoed commands, unrelated and late replies.
+        """
+        if self.mqtt_prefix != "RB05":
+            raise ValueError("JDM commands are only supported for RB05")
+        if not self._connected or not self._mqtt_client:
+            raise RuntimeError("Spot+Scrub is disconnected")
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        request_id = str(uuid.uuid4().int & 0xFFFFFFFF)
+        topic = f"{self.mqtt_prefix}/{self.serial_number}"
+
+        def complete(data: dict[str, Any]) -> None:
+            if not future.done():
+                future.set_result(data)
+
+        def receive(message_topic: str, data: dict[str, Any]) -> None:
+            if (
+                message_topic == f"{topic}/status/jdm"
+                and str(data.get("msgId")) == request_id
+                and data.get("method") == method
+                and "code" in data
+            ):
+                loop.call_soon_threadsafe(complete, data)
+
+        self.add_message_callback(receive)
+        try:
+            payload = json.dumps(
+                {
+                    "msgId": request_id,
+                    "version": "1.0.1",
+                    "method": method,
+                    "params": params,
+                }
+            )
+            result = await self.hass.async_add_executor_job(
+                self._mqtt_client.publish, f"{topic}/command/jdm", payload
+            )
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                raise RuntimeError("Unable to publish Spot+Scrub request")
+            response = await asyncio.wait_for(future, timeout)
+            data = response.get("data", {})
+            if (
+                response["code"] != 0
+                or not isinstance(data, dict)
+                or data.get("result", 0) != 0
+            ):
+                raise RuntimeError("Spot+Scrub rejected the request")
+            return data
+        finally:
+            self.remove_message_callback(receive)
+
     async def send_command(
         self, command: str, data: dict[str, Any] | None = None
     ) -> None:
@@ -2856,6 +2913,48 @@ class DysonDevice:
         except (KeyError, TypeError) as e:
             _LOGGER.debug(
                 "Failed to get robot clean type for %s: %s", self._log_serial, e
+            )
+            return None
+
+    @property
+    def robot_clean_duration(self) -> int | None:
+        """Return elapsed cleaning time for the current or last run.
+
+        Returns:
+            Seconds of cleaning, or None if the device does not report it
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            duration = product_state.get("cleanDuration")
+
+            if duration is None:
+                duration = self._state_data.get("cleanDuration")
+            if duration is None:
+                return None
+            return int(duration)
+        except (KeyError, TypeError, ValueError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean duration for %s: %s", self._log_serial, e
+            )
+            return None
+
+    @property
+    def robot_full_clean_action(self) -> str | None:
+        """Return what the robot is doing on this run (Spot+Scrub only).
+
+        Returns:
+            Action such as VACUUMING_AND_MOPPING, or None if not reported
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            action = product_state.get("fullCleanAction")
+
+            if not action:
+                action = self._state_data.get("fullCleanAction")
+            return action or None
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean action for %s: %s", self._log_serial, e
             )
             return None
 

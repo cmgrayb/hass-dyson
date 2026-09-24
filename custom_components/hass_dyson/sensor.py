@@ -1506,6 +1506,10 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
             entities.append(DysonRobotBatterySensor(coordinator))
+            # Spot+Scrub reports run detail the other robots do not send.
+            if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+                entities.append(DysonRobotCleanDurationSensor(coordinator))
+                entities.append(DysonRobotCleanActionSensor(coordinator))
             # Cloud-fetched cleaning history + Dyson's recommended-next-room
             # sensor. Both gated on cloud auth.
             if coordinator.config_entry.data.get("auth_token"):
@@ -3237,6 +3241,65 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
             )
             self._attr_native_value = None
 
+        super()._handle_coordinator_update()
+
+
+# ============================================================================
+# Spot+Scrub run detail (RB05)
+# ============================================================================
+# cleanDuration and fullCleanAction ride every CURRENT-STATE message but were
+# not surfaced. Both are Spot+Scrub-only fields.
+
+
+class DysonRobotCleanDurationSensor(DysonEntity, SensorEntity):
+    """Elapsed cleaning time for the current or most recent run.
+
+    Mirrors the timer MyDyson shows beneath the cleaning status. The value
+    is retained after a run finishes until the next one starts.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the clean duration sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_clean_duration"
+        self._attr_translation_key = "robot_clean_duration"
+        self._attr_device_class = SensorDeviceClass.DURATION
+        self._attr_native_unit_of_measurement = UnitOfTime.SECONDS
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:timer-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        self._attr_native_value = device.robot_clean_duration if device else None
+        super()._handle_coordinator_update()
+
+
+class DysonRobotCleanActionSensor(DysonEntity, SensorEntity):
+    """What the robot is doing on this run, e.g. VACUUMING_AND_MOPPING.
+
+    Reported raw. Dyson adds values per firmware, so no mapping is applied
+    that would turn an unknown action into a wrong label.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the clean action sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_clean_action"
+        self._attr_translation_key = "robot_clean_action"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:spray-bottle"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        self._attr_native_value = device.robot_full_clean_action if device else None
         super()._handle_coordinator_update()
 
 

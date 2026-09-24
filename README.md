@@ -25,6 +25,8 @@
 
 A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, lights, and robotic vacuums featuring real-time MQTT communication, BLE proxy compatibility, and complete platform coverage.
 
+Spot+Scrub (RB05) supports [four cleaning modes](docs/spot-scrub-cleaning-modes.md), including simultaneous vacuuming and mopping.
+
 ## Current Features
 
 ### All Supported Devices
