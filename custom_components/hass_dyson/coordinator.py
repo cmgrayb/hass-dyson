@@ -26,7 +26,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from .ble_device import DysonBLEDevice
@@ -3128,6 +3128,18 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return list(self._config_entry.data.get("capabilities", []))
 
 
+# The keys _publish_cloud_firmware adds to coordinator data.  Named once so a
+# withdrawal removes exactly what a publish added.
+_CLOUD_FIRMWARE_KEYS: Final = frozenset(
+    {
+        "cloud_firmware_version",
+        "cloud_new_version_available",
+        "cloud_pending_version",
+        "cloud_auto_update_enabled",
+    }
+)
+
+
 class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for Dyson BLE-only floor-cleaning vacuums (e.g. V16).
 
@@ -3148,6 +3160,9 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
         self._unsub_event: Any | None = None
         self._ble_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+        self._cloud_firmware: dict[str, Any] = {}
+        self._cloud_firmware_checked_at: float = 0.0
+        self._unsub_cloud_firmware: Any | None = None
 
         super().__init__(
             hass,
@@ -3221,6 +3236,28 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             name=f"dyson-ble-vacuum-{self.serial_number}",
         )
 
+        # The cloud firmware check is plain HTTP and has nothing to do with
+        # Bluetooth, so it runs on its own timer.  Hanging it off a successful
+        # BLE connect would mean a stable link never re-checks (it sits in the
+        # keepalive loop for days) and an unreachable vacuum never checks at
+        # all — even though neither case prevents talking to the account.
+        from homeassistant.helpers.event import async_track_time_interval
+
+        from .const import BLE_VACUUM_CLOUD_FIRMWARE_INTERVAL
+
+        if self._unsub_cloud_firmware is not None:
+            self._unsub_cloud_firmware()
+        self._unsub_cloud_firmware = async_track_time_interval(
+            self.hass,
+            self._async_cloud_firmware_tick,
+            timedelta(seconds=BLE_VACUUM_CLOUD_FIRMWARE_INTERVAL),
+        )
+        # Don't make the first answer wait for the first interval.  This must
+        # go through the tick, not the refresh directly: the refresh only fills
+        # _cloud_firmware, and entities would never see the result unless a BLE
+        # push happened to arrive afterwards.
+        self.hass.async_create_task(self._async_cloud_firmware_tick(None))
+
     async def async_shutdown(self) -> None:
         """Shut down the coordinator cleanly on config entry unload.
 
@@ -3250,6 +3287,9 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             if self._unsub_event is not None:
                 self._unsub_event()
                 self._unsub_event = None
+            if self._unsub_cloud_firmware is not None:
+                self._unsub_cloud_firmware()
+                self._unsub_cloud_firmware = None
             if self.ble_device is not None:
                 await self.ble_device.disconnect()
 
@@ -3331,6 +3371,200 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             except asyncio.TimeoutError:
                 pass
 
+    def _candidate_account_entries(self) -> list[Any]:
+        """Return cloud accounts to try, most likely owner first.
+
+        Picking one account and giving up is wrong once a user has more than
+        one: querying an unrelated account just returns "device not found", and
+        the vacuum's real owner is never asked.  When the device entry records
+        which account it belongs to we return only that one; otherwise we
+        return every account so the caller can search them.
+        """
+        accounts = [
+            e
+            for e in self.hass.config_entries.async_entries(DOMAIN)
+            if e.data.get("auth_token")
+        ]
+        if not accounts:
+            return []
+
+        account_uuid = self._config_entry.data.get("account_uuid")
+        if account_uuid:
+            for entry in accounts:
+                if entry.data.get("account_uuid") == account_uuid:
+                    return [entry]
+
+        parent_entry_id = self._config_entry.data.get("parent_entry_id")
+        if parent_entry_id:
+            for entry in accounts:
+                if entry.entry_id == parent_entry_id:
+                    return [entry]
+
+        if len(accounts) > 1:
+            _LOGGER.debug(
+                "%s is not associated with a specific Dyson account; trying %d "
+                "configured account(s) in order",
+                mask_serial(self.serial_number),
+                len(accounts),
+            )
+        return accounts
+
+    async def _async_cloud_firmware_tick(self, _now: Any = None) -> None:
+        """Timer callback: refresh cloud firmware status and push to entities."""
+        await self._async_maybe_refresh_cloud_firmware(force=True)
+        self._publish_cloud_firmware()
+
+    def _publish_cloud_firmware(self) -> None:
+        """Push cloud firmware status to entities if they do not already have it.
+
+        Compares against the *published* coordinator data rather than the
+        previous ``_cloud_firmware``: an unchanged cloud answer that entities
+        have never received still needs publishing, which is exactly the case
+        when the first fetch lands while the vacuum is out of BLE range.
+        """
+        published = self.data if isinstance(self.data, dict) else {}
+        if self._cloud_firmware:
+            if all(published.get(k) == v for k, v in self._cloud_firmware.items()):
+                return
+            merged = dict(published)
+            merged.update(self._cloud_firmware)
+        else:
+            if not any(k in published for k in _CLOUD_FIRMWARE_KEYS):
+                return
+            merged = {
+                k: v for k, v in published.items() if k not in _CLOUD_FIRMWARE_KEYS
+            }
+        self.async_set_updated_data(merged)
+
+    async def _async_maybe_refresh_cloud_firmware(self, force: bool = False) -> None:
+        """Ask the Dyson cloud whether newer firmware exists, at most twice a day.
+
+        A ``lecOnly`` vacuum has no internet, so it cannot know whether a newer
+        build has been released — it only knows whether the phone app has staged
+        one on it.  The account API does know: ``Firmware.new_version_available``
+        plus ``get_pending_release()``.  Verified to be populated for BLE-only
+        devices (``connected_configuration`` is present with ``mqtt=None``).
+
+        Failures are non-fatal: without an account, or on any API error, the
+        update entity simply keeps reporting *unknown* rather than guessing.
+        """
+        from .const import BLE_VACUUM_CLOUD_FIRMWARE_INTERVAL
+
+        now = self.hass.loop.time()
+        if (
+            not force
+            and self._cloud_firmware
+            and now - self._cloud_firmware_checked_at
+            < BLE_VACUUM_CLOUD_FIRMWARE_INTERVAL
+        ):
+            return
+
+        entries = self._candidate_account_entries()
+        if not entries:
+            _LOGGER.debug(
+                "No Dyson cloud account configured; firmware status for %s stays "
+                "unknown (the machine itself cannot tell us)",
+                mask_serial(self.serial_number),
+            )
+            self._cloud_firmware = {}
+            return
+
+        for entry in entries:
+            info = await self._async_fetch_cloud_firmware(entry)
+            if info is None:
+                continue
+            self._cloud_firmware = info
+            self._cloud_firmware_checked_at = now
+            _LOGGER.info(
+                "Cloud firmware status for %s: installed %s, newer available: %s",
+                mask_serial(self.serial_number),
+                info["cloud_firmware_version"],
+                info["cloud_new_version_available"],
+            )
+            return
+        _LOGGER.debug(
+            "%s was not found on any configured Dyson account; firmware status "
+            "stays unknown",
+            mask_serial(self.serial_number),
+        )
+        self._cloud_firmware = {}
+
+    async def _async_fetch_cloud_firmware(self, entry: Any) -> dict[str, Any] | None:
+        """Read firmware status for this vacuum from one cloud account.
+
+        Returns:
+            The firmware info dict, or ``None`` when this account does not know
+            the device (so the caller can try the next one) or the lookup fails.
+        """
+        client = None
+        try:
+            client = AsyncDysonClient(
+                email=entry.data.get("email"),
+                auth_token=entry.data.get("auth_token"),
+                country=entry.data.get(CONF_COUNTRY, "US"),
+                culture=entry.data.get(CONF_CULTURE, "en-US"),
+            )
+            devices = await client.get_devices()
+            record = next(
+                (
+                    d
+                    for d in devices
+                    if getattr(d, "serial_number", None) == self.serial_number
+                ),
+                None,
+            )
+            if record is None:
+                _LOGGER.debug(
+                    "%s not present on this Dyson account; trying the next one",
+                    mask_serial(self.serial_number),
+                )
+                return None
+            config = getattr(record, "connected_configuration", None)
+            firmware = getattr(config, "firmware", None) if config else None
+            if firmware is None:
+                _LOGGER.debug(
+                    "Cloud record for %s carries no firmware block",
+                    mask_serial(self.serial_number),
+                )
+                return None
+
+            info: dict[str, Any] = {
+                "cloud_firmware_version": getattr(firmware, "version", None),
+                "cloud_new_version_available": bool(
+                    getattr(firmware, "new_version_available", False)
+                ),
+                "cloud_auto_update_enabled": bool(
+                    getattr(firmware, "auto_update_enabled", False)
+                ),
+                "cloud_pending_version": None,
+            }
+            try:
+                pending = await client.get_pending_release(self.serial_number)
+                if pending is not None:
+                    info["cloud_pending_version"] = getattr(pending, "version", None)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Pending-release lookup failed for %s: %s",
+                    mask_serial(self.serial_number),
+                    exc,
+                )
+            return info
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug(
+                "Could not read cloud firmware status for %s: %s",
+                mask_serial(self.serial_number),
+                exc,
+            )
+            return None
+        finally:
+            if client is not None:
+                close = getattr(client, "close", None)
+                if close is not None:
+                    try:
+                        await close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
     def _update_device_registry(self) -> None:
         """Write firmware / hardware details into the HA device registry.
 
@@ -3387,6 +3621,13 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
         payload is not re-parsed from an ``Event``.
         """
         state_dict = {k: v for k, v in payload.items() if k != "serial_number"}
+        # A BLE push carries only BLE state, so publishing it verbatim would
+        # drop the cloud firmware fields merged in by _publish_cloud_firmware.
+        # Pushes arrive every few seconds and the cloud is re-checked every 12
+        # hours, so without this the cloud answer is visible for an instant and
+        # then gone for half a day.
+        if self._cloud_firmware:
+            state_dict.update(self._cloud_firmware)
         self.async_set_updated_data(state_dict)
 
     async def _async_update_data(self) -> dict[str, Any]:

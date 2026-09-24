@@ -835,6 +835,12 @@ BLE_ATTR_MAX_CONSECUTIVE_ERRORS: Final = 2
 BLE_VACUUM_KEEPALIVE_INTERVAL: Final = 20.0
 BLE_VACUUM_RECONNECT_DELAYS: Final = [5, 15, 30, 60]
 
+# How often the BLE vacuum coordinator asks the Dyson cloud whether newer
+# firmware exists.  The machine itself has no internet and cannot answer this,
+# but firmware releases are rare, so once every 12 hours is plenty and keeps
+# the load off Dyson's API.
+BLE_VACUUM_CLOUD_FIRMWARE_INTERVAL: Final = 12 * 60 * 60.0
+
 # Attribute registry for cat6 connected floorcare (V16 et al.).
 # attr id bytes (wire order) -> (state key, human label, decoder hint)
 # decoder hint is either "int", "bool", "raw", or a dict mapping value->label.

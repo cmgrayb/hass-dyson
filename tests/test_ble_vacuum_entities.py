@@ -645,3 +645,97 @@ class TestLanguageOptionOrdering:
         c.ble_device.write_attribute.assert_awaited_once_with(
             BLE_VACUUM_ATTR_UI_LANGUAGE, bytes((12,))
         )
+
+
+class TestCloudBackedFirmwareStatus:
+    """The cloud is the only thing that knows whether newer firmware exists.
+
+    A lecOnly vacuum has no internet; it only knows whether the phone app has
+    staged a build on it.  Verified against a real account that
+    connected_configuration.firmware is populated for BLE-only devices.
+    """
+
+    @staticmethod
+    def _entity(data):
+        from custom_components.hass_dyson import ble_vacuum_update as upd_mod
+
+        return upd_mod.DysonBleVacuumFirmwareUpdate(fake_coordinator(data))
+
+    INSTALLED = "SVC0PS.50.02.013.0002"
+
+    def test_installed_prefers_the_dyson_format(self):
+        ent = self._entity(
+            {"dyson_firmware_version": self.INSTALLED, "firmware_version": "2.13.2"}
+        )
+        assert ent.installed_version == self.INSTALLED
+
+    def test_installed_falls_back_to_short_form(self):
+        ent = self._entity({"firmware_version": "2.13.2"})
+        assert ent.installed_version == "2.13.2"
+
+    def test_cloud_says_current_so_latest_equals_installed(self):
+        """The real observed case: new_version_available False."""
+        ent = self._entity(
+            {
+                "dyson_firmware_version": self.INSTALLED,
+                "cloud_firmware_version": self.INSTALLED,
+                "cloud_new_version_available": False,
+            }
+        )
+        assert ent.latest_version == self.INSTALLED
+        assert ent.state == "off"  # up to date
+
+    def test_cloud_reports_a_newer_build(self):
+        ent = self._entity(
+            {
+                "dyson_firmware_version": self.INSTALLED,
+                "cloud_firmware_version": self.INSTALLED,
+                "cloud_new_version_available": True,
+                "cloud_pending_version": "SVC0PS.50.02.014.0001",
+            }
+        )
+        assert ent.latest_version == "SVC0PS.50.02.014.0001"
+        assert ent.state == "on"  # update available
+
+    def test_newer_available_but_unnamed_still_flags_an_update(self):
+        ent = self._entity(
+            {
+                "dyson_firmware_version": self.INSTALLED,
+                "cloud_firmware_version": self.INSTALLED,
+                "cloud_new_version_available": True,
+                "cloud_pending_version": None,
+            }
+        )
+        assert ent.latest_version != ent.installed_version
+        assert ent.state == "on"
+
+    def test_without_cloud_a_staged_build_is_used(self):
+        ent = self._entity(
+            {
+                "dyson_firmware_version": self.INSTALLED,
+                "pending_firmware_version": "2.14.0",
+            }
+        )
+        assert ent.latest_version == "2.14.0"
+
+    def test_no_cloud_and_nothing_staged_is_unknown(self):
+        """Never claim "up to date" without evidence."""
+        ent = self._entity({"dyson_firmware_version": self.INSTALLED})
+        assert ent.latest_version is None
+        assert ent.state is None
+
+    def test_diagnostics_expose_both_sources(self):
+        ent = self._entity(
+            {
+                "dyson_firmware_version": self.INSTALLED,
+                "cloud_firmware_version": self.INSTALLED,
+                "cloud_auto_update_enabled": True,
+                "pending_firmware_version": None,
+                "recovery_firmware_version": "2.12.11",
+                "ota_status": 12,
+            }
+        )
+        attrs = ent.extra_state_attributes
+        assert attrs["cloud_firmware_version"] == self.INSTALLED
+        assert attrs["cloud_auto_update_enabled"] is True
+        assert attrs["recovery_firmware_version"] == "2.12.11"

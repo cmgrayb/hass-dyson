@@ -16,9 +16,13 @@ app downloads firmware from the cloud and transfers it to the machine over BLE
 is staged on the machine", not "this is the newest release".
 
 An all-zero ``pending_fw`` therefore means "nothing staged", which is *not*
-the same as "up to date" — the machine simply has no idea.  ``latest_version``
-returns ``None`` in that case, and Home Assistant renders the entity as
-unknown rather than asserting something we cannot know.
+the same as "up to date" — the machine simply has no idea.
+
+The Dyson cloud *does* know: ``Firmware.new_version_available`` is populated
+even for ``lecOnly`` devices (their ``connected_configuration`` is present with
+``mqtt=None``).  The coordinator refreshes that periodically and the entity
+prefers it.  Without a configured account the entity reports *unknown* rather
+than asserting the firmware is current on no evidence.
 """
 
 from __future__ import annotations
@@ -109,13 +113,28 @@ class DysonBleVacuumFirmwareUpdate(CoordinatorEntity, UpdateEntity):
 
     @property
     def latest_version(self) -> str | None:
-        """Return the staged firmware, or None when nothing is staged.
+        """Return the newest firmware available, or None when unknowable.
 
-        Deliberately not falling back to ``installed_version``: that would make
-        Home Assistant report "up to date", which this device cannot possibly
-        know — it has no internet access, and only learns about a build once
-        the phone app has pushed one to it over BLE.
+        Three sources, in order of authority:
+
+        1. The Dyson cloud, which is the only thing that actually knows whether
+           a newer build exists — the vacuum has no internet.  When it says
+           nothing newer is available, the installed version *is* the latest.
+        2. A build the phone app has staged on the machine over BLE
+           (``pending_fw`` of 0x26), which implies one exists.
+        3. Nothing — report ``None`` so Home Assistant shows *unknown* rather
+           than claiming the firmware is current on no evidence.
         """
+        if self._value("cloud_firmware_version") is not None:
+            if self._value("cloud_new_version_available"):
+                pending = self._value("cloud_pending_version")
+                if isinstance(pending, str) and pending:
+                    return pending
+                # Newer build exists but the cloud did not name it; anything
+                # unequal to installed makes HA show "update available".
+                return "unknown (newer available)"
+            return self.installed_version
+
         staged = self._value("pending_firmware_version")
         if isinstance(staged, str) and staged:
             return staged
@@ -128,6 +147,8 @@ class DysonBleVacuumFirmwareUpdate(CoordinatorEntity, UpdateEntity):
             "recovery_firmware_version": self._value("recovery_firmware_version"),
             "ota_status": self._value("ota_status"),
             "staged_firmware_version": self._value("pending_firmware_version"),
+            "cloud_firmware_version": self._value("cloud_firmware_version"),
+            "cloud_auto_update_enabled": self._value("cloud_auto_update_enabled"),
         }
 
     @callback
