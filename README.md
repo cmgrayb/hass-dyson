@@ -60,6 +60,16 @@ Spot+Scrub (RB05) supports [four cleaning modes](docs/spot-scrub-cleaning-modes.
 - **Active BLE Proxy connections** - Lights may be added as their own hub and connect through Bluetooth Proxies
   - For more information, please see [esphome Bluetooth Proxy](https://esphome.io/components/bluetooth_proxy/)
 
+### BLE Floor-cleaning Vacuums (e.g. V16 Piston Animal)
+
+- **Battery & charging** - Level %, actively charging, charger/dock presence, battery temperature, charge-required alert
+- **Health & maintenance** - Blockage, filter missing/washing, system error, non-genuine battery detection
+- **Cleaning** - Power mode, brush-bar type, session-active state
+- **Settings** - Brush-bar speed, dust-illumination mode and machine UI language selects; task-detection and battery-care switches (the five settings the MyDyson app writes over BLE; everything else is read-only)
+- **Firmware** - Installed version, and a staged update when the app has pushed one (read-only; installs go through the MyDyson app)
+- **BLE-only** - no Wi-Fi, no MQTT, no cloud required after the one-time LTK pairing fetch
+  - Details and setup: [docs/FLOORCARE_BLE.md](docs/FLOORCARE_BLE.md)
+
 <!-- ## Planned Features
 
 Planned features are features we cannot currently complete due to lack of access to device of that type.

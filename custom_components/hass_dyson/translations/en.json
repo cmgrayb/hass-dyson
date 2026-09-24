@@ -284,9 +284,40 @@
       },
       "scheduled_events": {
         "name": "Scheduled Events"
+      },
+      "ble_vacuum_battery_level": {
+        "name": "Battery Level"
+      },
+      "ble_vacuum_power_mode": {
+        "name": "Power Mode",
+        "state": {
+          "eco": "Eco",
+          "med": "Medium",
+          "auto": "Auto",
+          "boost": "Boost"
+        }
+      },
+      "ble_vacuum_brush_bar_type": {
+        "name": "Brush Bar Type",
+        "state": {
+          "erp_768": "Standard head (ERP 768)",
+          "row_768": "Wide head (ROW 768)",
+          "none_attached": "None attached"
+        }
+      },
+      "ble_vacuum_battery_temperature": {
+        "name": "Battery Temperature",
+        "state": {
+          "ok": "OK",
+          "cold": "Cold",
+          "hot": "Hot"
+        }
       }
     },
     "switch": {
+      "ble_vacuum_task_detection_switch": {
+        "name": "Task Detection"
+      },
       "auto_mode": {
         "name": "Auto Mode"
       },
@@ -310,6 +341,9 @@
       },
       "daylight_mode": {
         "name": "Daylight Mode"
+      },
+      "ble_vacuum_battery_care_switch": {
+        "name": "Battery Care"
       }
     },
     "button": {
@@ -351,6 +385,57 @@
       "robot_power_generic": {
         "name": "Power Level"
       },
+      "ble_vacuum_brush_bar_speed_select": {
+        "name": "Brush Bar Speed",
+        "state": {
+          "low": "Low",
+          "high": "High",
+          "auto": "Auto"
+        }
+      },
+      "ble_vacuum_dust_illumination_select": {
+        "name": "Dust Illumination Mode",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "auto": "Auto"
+        }
+      },
+      "ble_vacuum_ui_language_select": {
+        "name": "Machine UI Language",
+        "state": {
+          "english": "English",
+          "korean": "Korean",
+          "spanish": "Spanish",
+          "french": "French",
+          "japanese": "Japanese",
+          "simplified_chinese": "Simplified Chinese",
+          "traditional_chinese": "Traditional Chinese",
+          "german": "German",
+          "italian": "Italian",
+          "dutch": "Dutch",
+          "russian": "Russian",
+          "arabic": "Arabic",
+          "czech": "Czech",
+          "danish": "Danish",
+          "greek": "Greek",
+          "finnish": "Finnish",
+          "hebrew": "Hebrew",
+          "croatian": "Croatian",
+          "hungarian": "Hungarian",
+          "lithuanian": "Lithuanian",
+          "norwegian": "Norwegian",
+          "polish": "Polish",
+          "portuguese": "Portuguese",
+          "slovenian": "Slovenian",
+          "swedish": "Swedish",
+          "thai": "Thai",
+          "turkish": "Turkish",
+          "spanish_us": "Spanish (US)",
+          "french_canada": "French (Canada)",
+          "portuguese_brazil": "Portuguese (Brazil)"
+        }
+      },
       "spot_scrub_cleaning_mode": {
         "name": "Cleaning mode (all rooms)",
         "state": {
@@ -390,11 +475,44 @@
       },
       "motion": {
         "name": "Motion"
+      },
+      "ble_vacuum_actively_charging": {
+        "name": "Actively Charging"
+      },
+      "ble_vacuum_charger_present": {
+        "name": "Charger Present"
+      },
+      "ble_vacuum_blockage": {
+        "name": "Blockage"
+      },
+      "ble_vacuum_filter_present": {
+        "name": "Filter Missing"
+      },
+      "ble_vacuum_filter_wash": {
+        "name": "Filter Needs Washing"
+      },
+      "ble_vacuum_system_error": {
+        "name": "System Error"
+      },
+      "ble_vacuum_charge_required": {
+        "name": "Charge Required"
+      },
+      "ble_vacuum_session_active": {
+        "name": "Cleaning Session Active"
+      },
+      "ble_vacuum_battery_authenticity": {
+        "name": "Non-Genuine Battery"
+      },
+      "ble_vacuum_dust_illumination_auto": {
+        "name": "Dust Illumination Auto Available"
       }
     },
     "update": {
       "firmware_update": {
         "name": "Firmware Update"
+      },
+      "ble_vacuum_firmware": {
+        "name": "Firmware"
       }
     },
     "climate": {
