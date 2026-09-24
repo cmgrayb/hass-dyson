@@ -431,6 +431,7 @@
           "spanish_us": "Spanish (US)",
           "french_canada": "French (Canada)",
           "portuguese_brazil": "Portuguese (Brazil)"
+        }
       },
       "spot_scrub_cleaning_mode": {
         "name": "Cleaning mode (all rooms)",
@@ -439,6 +440,7 @@
           "vacuum_and_mop": "Vacuum and mop",
           "mop_only": "Mop only",
           "vacuum_then_mop": "Vacuum then mop"
+        }
       }
     },
     "number": {
