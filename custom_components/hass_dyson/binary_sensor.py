@@ -184,6 +184,9 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
         entities.append(DysonRobotBatteryChargingSensor(coordinator))
+        # RB05 reports flat numeric codes the subsystem sensors cannot read.
+        if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+            entities.append(DysonRobotActionRequiredSensor(coordinator))
         _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
 
     async_add_entities(entities, True)
@@ -491,6 +494,47 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
             return "Maintenance"
         else:
             return "Unknown"
+
+
+class DysonRobotActionRequiredSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """On when a Spot+Scrub fault needs the user to intervene.
+
+    activeFaults carries status and real problems together; only
+    nextActionRequired separates them.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the action-required sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_action_required"
+        self._attr_translation_key = "robot_action_required"
+        self._attr_icon = "mdi:robot-vacuum-alert"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        blocking = (
+            getattr(device, "robot_action_required_faults", None) if device else None
+        )
+        if blocking is None:
+            self._attr_is_on = None
+            self._attr_extra_state_attributes = {}
+            super()._handle_coordinator_update()
+            return
+
+        self._attr_is_on = bool(blocking)
+        self._attr_extra_state_attributes = {
+            "fault_codes": [
+                str(entry.get("faultCode"))
+                for entry in blocking
+                if entry.get("faultCode") is not None
+            ]
+        }
+        super()._handle_coordinator_update()
 
 
 class DysonRobotFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
