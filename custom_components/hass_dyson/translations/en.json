@@ -183,6 +183,12 @@
   },
   "entity": {
     "sensor": {
+      "robot_clean_duration": {
+        "name": "Clean duration"
+      },
+      "robot_clean_action": {
+        "name": "Clean action"
+      },
       "temperature": {
         "name": "Temperature"
       },
