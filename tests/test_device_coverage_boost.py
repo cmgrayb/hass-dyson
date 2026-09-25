@@ -673,6 +673,54 @@ class TestRobotVacuumState:
         mock_device_basic._state_data = {}
         assert mock_device_basic.robot_battery_level is None
 
+    def test_robot_consumables_valid(self, mock_device_basic):
+        """Test robot consumables life percentages from the sample payload."""
+        mock_device_basic._state_data = {
+            "consumables": [
+                {"type": "brushBar", "usage": 14},
+                {"type": "mopRoller", "usage": 54},
+                {"type": "sideBrushes", "usage": 28},
+                {"type": "robotFilter", "usage": 28},
+                {"type": "dockFilter", "usage": 0},
+                {"type": "ioniserCartridge", "usage": -1},
+                {"type": "cleaningSolution", "needsRefill": False},
+            ]
+        }
+        assert mock_device_basic.robot_consumables == {
+            "brushBar": 86,
+            "mopRoller": 46,
+            "sideBrushes": 72,
+            "robotFilter": 72,
+            "dockFilter": 100,
+            "ioniserCartridge": None,
+        }
+
+    def test_robot_consumables_missing(self, mock_device_basic):
+        """Test robot consumables returns empty dict when not reported."""
+        mock_device_basic._state_data = {}
+        assert mock_device_basic.robot_consumables == {}
+
+    def test_robot_cleaning_solution_needs_refill_true(self, mock_device_basic):
+        """Test cleaning solution refill flag when true."""
+        mock_device_basic._state_data = {
+            "consumables": [{"type": "cleaningSolution", "needsRefill": True}]
+        }
+        assert mock_device_basic.robot_cleaning_solution_needs_refill is True
+
+    def test_robot_cleaning_solution_needs_refill_false(self, mock_device_basic):
+        """Test cleaning solution refill flag when false."""
+        mock_device_basic._state_data = {
+            "consumables": [{"type": "cleaningSolution", "needsRefill": False}]
+        }
+        assert mock_device_basic.robot_cleaning_solution_needs_refill is False
+
+    def test_robot_cleaning_solution_needs_refill_missing(self, mock_device_basic):
+        """Test cleaning solution refill flag returns None when not reported."""
+        mock_device_basic._state_data = {
+            "consumables": [{"type": "brushBar", "usage": 5}]
+        }
+        assert mock_device_basic.robot_cleaning_solution_needs_refill is None
+
     def test_robot_global_position_valid(self, mock_device_basic):
         """Test robot global position with valid data."""
         mock_device_basic._state_data = {

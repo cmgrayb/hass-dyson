@@ -124,6 +124,114 @@ class TestSensorPlatformSetup:
         sensor_types = [type(entity).__name__ for entity in entities]
         assert "DysonRobotBatterySensor" in sensor_types
 
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_creates_consumable_sensors_for_robot(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        """Test consumable life sensors are created per-type for robot devices."""
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        mock_add_entities = MagicMock()
+
+        pure_mock_coordinator.device_category = ["robot"]
+        pure_mock_coordinator.data["consumables"] = [
+            {"type": "brushBar", "usage": 14},
+            {"type": "mopRoller", "usage": 54},
+            {"type": "cleaningSolution", "needsRefill": False},
+        ]
+
+        result = await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        assert result is True
+        entities = mock_add_entities.call_args[0][0]
+        from custom_components.hass_dyson.sensor import DysonConsumableLifeSensor
+
+        consumable_sensors = [
+            e for e in entities if isinstance(e, DysonConsumableLifeSensor)
+        ]
+        consumable_types = {s.consumable_type for s in consumable_sensors}
+        # Only "usage"-based entries become sensors; cleaningSolution is excluded.
+        assert consumable_types == {"brushBar", "mopRoller"}
+
+    @pytest.mark.asyncio
+    async def test_async_setup_entry_skips_consumable_sensors_for_non_robot(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        """Test consumable life sensors are not created for non-robot devices."""
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        mock_add_entities = MagicMock()
+
+        pure_mock_coordinator.device_category = ["ec"]
+        pure_mock_coordinator.data["consumables"] = [
+            {"type": "brushBar", "usage": 14},
+        ]
+
+        result = await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        assert result is True
+        entities = mock_add_entities.call_args[0][0]
+        from custom_components.hass_dyson.sensor import DysonConsumableLifeSensor
+
+        assert not any(isinstance(e, DysonConsumableLifeSensor) for e in entities)
+
+
+class TestDysonConsumableLifeSensor:
+    """Test DysonConsumableLifeSensor using pure pytest."""
+
+    def test_consumable_life_sensor_init(self, pure_mock_coordinator):
+        """Test consumable life sensor initialization."""
+        from custom_components.hass_dyson.sensor import DysonConsumableLifeSensor
+
+        sensor = DysonConsumableLifeSensor(pure_mock_coordinator, "brushBar")
+
+        assert sensor.consumable_type == "brushBar"
+        assert (
+            sensor._attr_unique_id
+            == f"{pure_mock_coordinator.serial_number}_brushBar_life"
+        )
+        assert sensor._attr_translation_placeholders == {"consumable_type": "Brush Bar"}
+        assert sensor._attr_native_unit_of_measurement == PERCENTAGE
+
+    def test_consumable_life_sensor_update(self, pure_mock_coordinator, pure_mock_hass):
+        """Test consumable life sensor reads from device.robot_consumables."""
+        from custom_components.hass_dyson.sensor import DysonConsumableLifeSensor
+
+        pure_mock_coordinator.device.robot_consumables = {
+            "brushBar": 86,
+            "ioniserCartridge": None,
+        }
+
+        sensor = DysonConsumableLifeSensor(pure_mock_coordinator, "brushBar")
+        sensor.hass = pure_mock_hass
+
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value == 86
+
+    def test_consumable_life_sensor_not_applicable(
+        self, pure_mock_coordinator, pure_mock_hass
+    ):
+        """Test consumable life sensor is None when the item is not applicable."""
+        from custom_components.hass_dyson.sensor import DysonConsumableLifeSensor
+
+        pure_mock_coordinator.device.robot_consumables = {"ioniserCartridge": None}
+
+        sensor = DysonConsumableLifeSensor(pure_mock_coordinator, "ioniserCartridge")
+        sensor.hass = pure_mock_hass
+
+        with patch.object(sensor, "async_write_ha_state"):
+            sensor._handle_coordinator_update()
+
+        assert sensor._attr_native_value is None
+
 
 class TestDysonPM25Sensor:
     """Test DysonPM25Sensor using pure pytest."""

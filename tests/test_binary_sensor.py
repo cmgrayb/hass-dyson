@@ -1032,3 +1032,89 @@ class TestDysonRobotBatteryChargingSensor:
         )
         entities = mock_add_entities.call_args[0][0]
         assert not any(isinstance(e, DysonRobotBatteryChargingSensor) for e in entities)
+
+
+class TestDysonCleaningSolutionSensor:
+    """Test DysonCleaningSolutionSensor using pure pytest."""
+
+    def _sensor(self, coordinator):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonCleaningSolutionSensor,
+        )
+
+        sensor = DysonCleaningSolutionSensor(coordinator)
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_init(self, pure_mock_coordinator):
+        from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+
+        sensor = self._sensor(pure_mock_coordinator)
+        assert (
+            sensor._attr_unique_id
+            == f"{pure_mock_coordinator.serial_number}_cleaning_solution"
+        )
+        assert sensor._attr_device_class == BinarySensorDeviceClass.PROBLEM
+
+    def test_is_on_when_needs_refill(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_cleaning_solution_needs_refill = True
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is True
+
+    def test_is_off_when_full(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.robot_cleaning_solution_needs_refill = False
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is False
+
+    def test_no_device_is_unknown(self, pure_mock_coordinator):
+        pure_mock_coordinator.device = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_setup_creates_sensor_when_reported(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonCleaningSolutionSensor,
+        )
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_ROBOT]
+        pure_mock_coordinator.device_capabilities = []
+        pure_mock_coordinator.data["consumables"] = [
+            {"type": "cleaningSolution", "needsRefill": False}
+        ]
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+        entities = mock_add_entities.call_args[0][0]
+        matches = [e for e in entities if isinstance(e, DysonCleaningSolutionSensor)]
+        assert len(matches) == 1
+
+    @pytest.mark.asyncio
+    async def test_setup_skips_sensor_when_not_reported(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonCleaningSolutionSensor,
+        )
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_ROBOT]
+        pure_mock_coordinator.device_capabilities = []
+        pure_mock_coordinator.data["consumables"] = [{"type": "brushBar", "usage": 14}]
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+        entities = mock_add_entities.call_args[0][0]
+        assert not any(isinstance(e, DysonCleaningSolutionSensor) for e in entities)

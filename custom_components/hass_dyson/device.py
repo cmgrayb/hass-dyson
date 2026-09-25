@@ -3105,6 +3105,51 @@ class DysonDevice:
         )
         return [str(z) for z in zones if z]
 
+    @property
+    def robot_consumables(self) -> dict[str, int | None]:
+        """Return remaining life percent per robot consumable type.
+
+        CURRENT-STATE carries a top-level ``consumables`` list of
+        ``{"type": str, "usage": int}`` entries; the app displays
+        ``100 - usage`` as remaining life. A ``usage`` of -1 means the
+        consumable is not applicable/installed, reported as None. Entries
+        without a numeric ``usage`` (e.g. ``cleaningSolution``, which uses
+        ``needsRefill`` instead) are excluded here.
+        """
+        consumables = self._state_data.get("consumables")
+        if not isinstance(consumables, list):
+            return {}
+
+        result: dict[str, int | None] = {}
+        for entry in consumables:
+            if not isinstance(entry, dict):
+                continue
+            consumable_type = entry.get("type")
+            usage = entry.get("usage")
+            if not isinstance(consumable_type, str) or not isinstance(usage, int):
+                continue
+            result[consumable_type] = (
+                max(0, min(100, 100 - usage)) if usage >= 0 else None
+            )
+        return result
+
+    @property
+    def robot_cleaning_solution_needs_refill(self) -> bool | None:
+        """Return whether the robot's cleaning solution needs a refill.
+
+        Sourced from the ``cleaningSolution`` entry in the top-level
+        ``consumables`` list, which reports ``needsRefill`` instead of a
+        ``usage`` percentage. None if the entry is not reported.
+        """
+        consumables = self._state_data.get("consumables")
+        if not isinstance(consumables, list):
+            return None
+        for entry in consumables:
+            if isinstance(entry, dict) and entry.get("type") == "cleaningSolution":
+                needs_refill = entry.get("needsRefill")
+                return needs_refill if isinstance(needs_refill, bool) else None
+        return None
+
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""
         from datetime import UTC, datetime
