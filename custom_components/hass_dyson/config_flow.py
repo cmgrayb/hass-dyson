@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -197,21 +197,57 @@ async def _discover_device_via_mdns(
         def _find_device():
             """Synchronous mDNS discovery function."""
             try:
-                # Look for Dyson services
-                services = zeroconf_instance.get_service_info(
-                    MDNS_SERVICE_DYSON, f"{serial_number}.{MDNS_SERVICE_DYSON}"
+                from zeroconf import (
+                    AddressResolver,
+                    IPVersion,
+                    ServiceBrowser,
+                    ServiceListener,
                 )
-                if services and services.addresses:
-                    # Return the first available IP address
-                    return socket.inet_ntoa(services.addresses[0])
 
-                # Also try the common pattern {serial}.local
+                # Devices announce "<product_type>_<serial>.<service>" (e.g. "527_XXX-AU-YYY"),
+                # so browse the service type and match on the serial suffix. Only record names
+                # in the callback (it runs on zeroconf's thread); look them up from here.
+                names: list[str] = []
+
+                class _Listener(ServiceListener):
+                    def add_service(self, zc, type_, name):
+                        if name.split(".")[0].endswith(serial_number):
+                            names.append(name)
+
+                    def update_service(self, zc, type_, name):
+                        pass
+
+                    def remove_service(self, zc, type_, name):
+                        pass
+
+                browser = ServiceBrowser(
+                    zeroconf_instance, MDNS_SERVICE_DYSON, _Listener()
+                )
                 try:
-                    hostname = f"{serial_number}.local"
-                    ip = socket.gethostbyname(hostname)
-                    return ip
-                except socket.gaierror:
-                    pass
+                    # Budget: half the timeout for browsing, a third for the hostname
+                    # fallback below, so both fit inside the caller's wait_for().
+                    deadline = time.monotonic() + max(0.5, timeout / 2)
+                    while not names and time.monotonic() < deadline:
+                        time.sleep(0.25)
+                    for name in names:
+                        services = zeroconf_instance.get_service_info(
+                            MDNS_SERVICE_DYSON, name
+                        )
+                        if services:
+                            addrs = services.parsed_addresses(IPVersion.V4Only)
+                            if addrs:
+                                return addrs[0]
+                finally:
+                    browser.cancel()
+
+                # Fall back to the hostname, resolved through HA's mDNS listener rather than the
+                # OS resolver: Dyson devices answer with IP TTL 16 (RFC 6762 requires 255) and
+                # systemd-resolved drops such replies.
+                resolver = AddressResolver(f"{serial_number}.local.")
+                if resolver.request(zeroconf_instance, int(timeout * 1000 / 3)):
+                    addrs = resolver.ip_addresses_by_version(IPVersion.V4Only)
+                    if addrs:
+                        return str(addrs[0])
 
             except Exception as e:
                 _LOGGER.debug(

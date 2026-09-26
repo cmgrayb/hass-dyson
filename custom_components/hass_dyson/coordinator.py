@@ -1593,6 +1593,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Create and connect to cloud device."""
         device_host = self._get_device_host(device_info)
+        if device_host.endswith(".local"):
+            device_host = await self._async_resolve_local_host(device_host)
         mqtt_prefix = self._get_mqtt_prefix(device_info)
         connection_type = self._get_effective_connection_type()
 
@@ -2334,6 +2336,31 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 err,
             )
             # Don't raise - capability refinement is optional
+
+    async def _async_resolve_local_host(self, hostname: str) -> str:
+        """Resolve a .local hostname through Home Assistant's mDNS listener.
+
+        The OS resolver cannot be relied on: Dyson devices answer mDNS with IP TTL 16
+        (RFC 6762 requires 255) and systemd-resolved silently drops such replies.
+        Returns the hostname unchanged if nothing answers, so behaviour is otherwise as before.
+        """
+        try:
+            from homeassistant.components import zeroconf as ha_zeroconf
+            from zeroconf import AddressResolver, IPVersion
+
+            aiozc = await ha_zeroconf.async_get_async_instance(self.hass)
+            resolver = AddressResolver(hostname.rstrip(".") + ".")
+            if await resolver.async_request(aiozc.zeroconf, 3000):
+                addrs = resolver.ip_addresses_by_version(IPVersion.V4Only)
+                if addrs:
+                    _LOGGER.info("Resolved %s via mDNS to %s", hostname, addrs[0])
+                    return str(addrs[0])
+            _LOGGER.debug(
+                "mDNS resolution of %s found nothing; keeping hostname", hostname
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("mDNS resolution of %s failed: %s", hostname, err)
+        return hostname
 
     def _get_device_host(self, device_info: Any) -> str:
         """Get device host/IP address from device info or config.
