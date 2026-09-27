@@ -309,7 +309,7 @@ MQTT_ON: Final = "ON"
 MQTT_OFF: Final = "OFF"
 
 # mDNS service types
-MDNS_SERVICE_DYSON: Final = "_dyson._mqtt._tcp.local."
+MDNS_SERVICE_DYSON: Final = "_dyson_mqtt._tcp.local."
 MDNS_SERVICE_360EYE: Final = "_360eye._mqtt._tcp.local."
 
 # Home Assistant platforms supported by this integration
