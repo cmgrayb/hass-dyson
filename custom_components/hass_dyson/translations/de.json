@@ -225,6 +225,9 @@
       "filter_life": {
         "name": "{filter_type}-Filter Lebensdauer"
       },
+      "consumable_life": {
+        "name": "{consumable_type} Lebensdauer"
+      },
       "hepa_filter_life": {
         "name": "HEPA-Filter Lebensdauer"
       },
@@ -361,11 +364,17 @@
       }
     },
     "binary_sensor": {
+      "robot_action_required": {
+        "name": "Aktion erforderlich"
+      },
       "filter_replacement": {
         "name": "Filterwechsel"
       },
       "robot_battery_charging": {
         "name": "Lädt"
+      },
+      "cleaning_solution_refill_needed": {
+        "name": "Reinigungslösung"
       },
       "motion": {
         "name": "Bewegung"

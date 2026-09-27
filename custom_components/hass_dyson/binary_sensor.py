@@ -197,6 +197,19 @@ async def async_setup_entry(
             entities.append(DysonRobotActionRequiredSensor(coordinator))
         _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
 
+        # Cleaning solution refill sensor — only for models that report it
+        # (hot-water-mop robots); the consumables entry is absent otherwise.
+        robot_state_data = coordinator.data or {}
+        consumables = robot_state_data.get("consumables")
+        if isinstance(consumables, list) and any(
+            isinstance(entry, dict) and entry.get("type") == "cleaningSolution"
+            for entry in consumables
+        ):
+            entities.append(DysonCleaningSolutionSensor(coordinator))
+            _LOGGER.debug(
+                "Adding cleaning solution sensor for %s", coordinator.serial_number
+            )
+
     async_add_entities(entities, True)
     return True
 
@@ -595,6 +608,31 @@ class DysonRobotFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[mi
                             attributes[key] = detail[key]
                     break
         self._attr_extra_state_attributes = attributes
+        super()._handle_coordinator_update()
+
+
+class DysonCleaningSolutionSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Cleaning solution refill status for hot-water-mop robot vacuums."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the cleaning solution sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_cleaning_solution"
+        self._attr_translation_key = "cleaning_solution_refill_needed"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:water-alert"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        self._attr_is_on = (
+            getattr(device, "robot_cleaning_solution_needs_refill", None)
+            if device
+            else None
+        )
         super()._handle_coordinator_update()
 
 

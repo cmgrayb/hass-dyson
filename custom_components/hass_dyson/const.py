@@ -84,6 +84,17 @@ AVAILABLE_DEVICE_CATEGORIES: Final = {
     DEVICE_CATEGORY_LIGHT: "Light (BLE-only desk/floor lamps, e.g. Lightcycle Morph)",
 }
 
+# Display names for robot vacuum "consumables" list entries (CURRENT-STATE).
+# Unrecognized types fall back to a titleized version of the raw key.
+CONSUMABLE_TYPE_NAMES: Final = {
+    "brushBar": "Brush Bar",
+    "mopRoller": "Mop Roller",
+    "sideBrushes": "Side Brushes",
+    "robotFilter": "Robot Filter",
+    "dockFilter": "Dock Filter",
+    "ioniserCartridge": "Ioniser Cartridge",
+}
+
 # Device capabilities
 CAPABILITY_ADVANCE_OSCILLATION_DAY0: Final = "AdvanceOscillationDay0"
 CAPABILITY_ADVANCE_OSCILLATION: Final = "AdvanceOscillationDay1"

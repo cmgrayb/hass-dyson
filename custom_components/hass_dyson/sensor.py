@@ -78,6 +78,7 @@ from .const import (
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
+    CONSUMABLE_TYPE_NAMES,
     DOMAIN,
     ROBOT_NUMERIC_FAULT_NAMES,
 )
@@ -1265,6 +1266,27 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
                 device_category,
             )
+
+        # Add per-consumable life sensors for robot vacuums, data-driven from
+        # whatever "consumables" entries the device actually reports (models
+        # vary, e.g. dry-only robots have no mopRoller/cleaningSolution).
+        if "robot" in device_category:
+            robot_state_data = coordinator.data or {}
+            consumables = robot_state_data.get("consumables")
+            if isinstance(consumables, list):
+                for consumable in consumables:
+                    if not isinstance(consumable, dict):
+                        continue
+                    consumable_type = consumable.get("type")
+                    if isinstance(consumable_type, str) and "usage" in consumable:
+                        entities.append(
+                            DysonConsumableLifeSensor(coordinator, consumable_type)
+                        )
+                        _LOGGER.debug(
+                            "Adding consumable life sensor '%s' for device %s",
+                            consumable_type,
+                            mask_serial(device_serial),
+                        )
 
         # Add HEPA filter sensors for devices with EnvironmentalData or ExtendedAQ capability
         # These capabilities indicate the device has air filtration with PM monitoring
@@ -2725,6 +2747,46 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+class DysonConsumableLifeSensor(DysonEntity, SensorEntity):
+    """Remaining life percentage sensor for a robot vacuum consumable."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    _ICONS = {
+        "brushBar": "mdi:broom",
+        "mopRoller": "mdi:water",
+        "sideBrushes": "mdi:broom",
+        "robotFilter": "mdi:air-filter",
+        "dockFilter": "mdi:air-filter",
+        "ioniserCartridge": "mdi:air-purifier",
+    }
+
+    def __init__(
+        self, coordinator: DysonDataUpdateCoordinator, consumable_type: str
+    ) -> None:
+        """Initialize the consumable life sensor."""
+        super().__init__(coordinator)
+
+        self.consumable_type = consumable_type
+        self._attr_unique_id = f"{coordinator.serial_number}_{consumable_type}_life"
+        self._attr_translation_key = "consumable_life"
+        self._attr_translation_placeholders = {
+            "consumable_type": CONSUMABLE_TYPE_NAMES.get(
+                consumable_type, consumable_type.title()
+            )
+        }
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = self._ICONS.get(consumable_type, "mdi:recycle")
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        consumables = getattr(self.coordinator.device, "robot_consumables", None) or {}
+        self._attr_native_value = consumables.get(self.consumable_type)
+        super()._handle_coordinator_update()
+
+
 class DysonFilterStatusSensor(DysonEntity, SensorEntity):
     """Filter status sensor for Dyson devices."""
 
@@ -3916,7 +3978,9 @@ def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
         from homeassistant.helpers import device_registry as dr
 
         dev_reg = dr.async_get(coordinator.hass)
-        d = dev_reg.async_get_device_by_identifier((DOMAIN, coordinator.serial_number))
+        d = dev_reg.async_get_device_by_identifier(
+            (DOMAIN, coordinator.serial_number), coordinator.config_entry.entry_id
+        )
         if d and d.model and str(d.model).lower() not in ("unknown", ""):
             return d.model
     except Exception:  # noqa: BLE001

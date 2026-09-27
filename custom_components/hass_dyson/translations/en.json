@@ -234,6 +234,9 @@
       "filter_life": {
         "name": "{filter_type} Filter Life"
       },
+      "consumable_life": {
+        "name": "{consumable_type} Life"
+      },
       "hepa_filter_life": {
         "name": "HEPA Filter Life"
       },
@@ -472,6 +475,9 @@
       },
       "robot_battery_charging": {
         "name": "Charging"
+      },
+      "cleaning_solution_refill_needed": {
+        "name": "Cleaning Solution"
       },
       "motion": {
         "name": "Motion"
