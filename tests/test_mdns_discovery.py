@@ -24,6 +24,9 @@ def _fake_browser_class(announced_names):
         def __init__(self, zc, type_, listener):
             for name in announced_names:
                 listener.add_service(zc, type_, name)
+            # zeroconf also delivers updates/removals; the listener must accept them quietly
+            listener.update_service(zc, type_, f"438_OTHER000000.{type_}")
+            listener.remove_service(zc, type_, f"438_OTHER000000.{type_}")
 
         def cancel(self):
             pass
