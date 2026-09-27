@@ -208,6 +208,14 @@ class DysonDevice:
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: list[Callable[[str, dict[str, Any]], None]] = []
 
+        # Recently-commanded product-state values, so a stale/racing device
+        # reply (e.g. a heartbeat CURRENT-STATE in flight before the command
+        # was applied) can't snap a just-changed value back to its old state.
+        self._pending_state_values: dict[str, tuple[Any, float]] = {}
+        self._pending_state_ttl = (
+            10.0  # seconds a pending value guards against contradiction
+        )
+
         # Power control capability detection
         self._fpwr_message_count = 0  # Track messages containing fpwr
         self._fmod_message_count = 0  # Track messages containing fmod
@@ -1570,6 +1578,41 @@ class DysonDevice:
         # Notify callbacks
         self._notify_callbacks(topic, data)
 
+    def _apply_pending_state_guard(
+        self, product_state: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Drop incoming values that contradict a just-sent, unconfirmed command.
+
+        Returns a copy of ``product_state`` with any still-pending, contradicted
+        keys removed. Matching values clear their pending entry; expired entries
+        (older than ``_pending_state_ttl``) are dropped and no longer guarded.
+        """
+        # Bare test doubles built via object.__new__() skip __init__, so fall back safely.
+        pending = getattr(self, "_pending_state_values", None)
+        if not pending:
+            return product_state
+
+        now = time.time()
+        filtered = dict(product_state)
+        for key, (expected, sent_at) in list(pending.items()):
+            if now - sent_at > getattr(self, "_pending_state_ttl", 10.0):
+                del pending[key]
+                continue
+            if key not in filtered:
+                continue
+            if filtered[key] == expected:
+                del pending[key]
+            else:
+                _LOGGER.debug(
+                    "Ignoring stale %s=%s for %s; pending command expects %s",
+                    key,
+                    filtered[key],
+                    self._log_serial,
+                    expected,
+                )
+                del filtered[key]
+        return filtered
+
     def _handle_current_state(self, data: dict[str, Any], topic: str) -> None:
         """Handle current state message."""
         _LOGGER.debug("Received current state data for %s: %s", self._log_serial, data)
@@ -1586,8 +1629,16 @@ class DysonDevice:
                 if value is not None:
                     _LOGGER.debug("Filter field %s: %s", field, value)
 
-        # For CURRENT-STATE messages, values are already strings - store directly
-        self._state_data.update(data)
+        # For CURRENT-STATE messages, values are already strings - merge
+        # per-key rather than replacing the whole payload, so a partial or
+        # racing snapshot can't wipe out unrelated keys changed elsewhere.
+        guarded_product_state = self._apply_pending_state_guard(product_state)
+        if guarded_product_state or "product-state" in data:
+            self._state_data.setdefault("product-state", {}).update(
+                guarded_product_state
+            )
+        other_data = {k: v for k, v in data.items() if k != "product-state"}
+        self._state_data.update(other_data)
         _LOGGER.debug("Updated device state for %s", self._log_serial)
 
         self._reconcile_robot_faults(data.get("activeFaults"))
@@ -1781,6 +1832,18 @@ class DysonDevice:
             else:
                 # Already a string or other type, keep as-is
                 normalized_product_state[key] = value
+
+        # STATE-CHANGE is an authoritative device-initiated transition (unlike
+        # a CURRENT-STATE poll reply, which can be stale/in-flight), so it
+        # always applies. If a command is still pending for one of these keys,
+        # update the guarded expectation rather than clearing it outright -
+        # a later stale CURRENT-STATE reply could otherwise still revert it
+        # before the guard's TTL elapses.
+        for key, value in normalized_product_state.items():
+            pending = getattr(self, "_pending_state_values", None)
+            if pending and key in pending:
+                _, sent_at = pending[key]
+                pending[key] = (value, sent_at)
 
         if "product-state" not in self._state_data:
             self._state_data["product-state"] = {}
@@ -2187,6 +2250,11 @@ class DysonDevice:
                 # STATE-SET commands need data wrapped in a "data" field
                 if command == "STATE-SET":
                     command_msg["data"] = data
+                    now = time.time()
+                    pending = getattr(self, "_pending_state_values", None)
+                    if pending is not None:
+                        for key, value in data.items():
+                            pending[key] = (value, now)
                 else:
                     command_msg.update(data)
 
