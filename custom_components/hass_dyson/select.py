@@ -19,6 +19,7 @@ from .const import (
 )
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
+from .spot_scrub_select import DysonSpotScrubCleaningModeSelect
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,9 +30,20 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Dyson select platform."""
+    from .entry_routing import async_route_ble_platform
+
+    if (
+        await async_route_ble_platform(hass, config_entry, async_add_entities, "select")
+        is not None
+    ):
+        return None
+
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities: list[SelectEntity] = []
+
+    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+        entities.append(DysonSpotScrubCleaningModeSelect(coordinator))
 
     # Add additional selects based on capabilities
     device_capabilities = coordinator.device_capabilities

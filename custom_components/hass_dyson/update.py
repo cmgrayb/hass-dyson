@@ -30,8 +30,17 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Dyson update entities."""
+    from .entry_routing import async_route_ble_platform
+
+    if (
+        await async_route_ble_platform(hass, config_entry, async_add_entities, "update")
+        is not None
+    ):
+        return
+
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
-    # Firmware updates require MQTT/cloud — not applicable for BLE-only devices
+
+    # Firmware updates require MQTT/cloud — not applicable for BLE-only lights
     if isinstance(entry_data, dict) and entry_data.get("is_ble"):
         return
     coordinator: DysonDataUpdateCoordinator = entry_data
