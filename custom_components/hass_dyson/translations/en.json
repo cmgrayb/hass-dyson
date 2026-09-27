@@ -124,8 +124,7 @@
       "no_device_data": "Required device information is missing. Unable to complete setup.",
       "reauth_successful": "Re-authentication was successful. Your credentials have been updated.",
       "reauth_failed": "Re-authentication failed unexpectedly. Please try again.",
-      "no_matching_device": "No configured Dyson device matches this DHCP discovery.",
-      "not_dyson_hostname": "DHCP discovery hostname is not a recognized Dyson device format."
+      "no_matching_device": "No configured Dyson device matches this DHCP discovery."
     }
   },
   "options": {

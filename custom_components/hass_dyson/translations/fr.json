@@ -124,8 +124,7 @@
       "no_device_data": "Les informations requises de l'appareil sont manquantes. Impossible de terminer la configuration.",
       "reauth_successful": "La ré-authentification a réussi. Vos identifiants ont été mis à jour.",
       "reauth_failed": "La ré-authentification a échoué de manière inattendue. Veuillez réessayer.",
-      "no_matching_device": "Aucun appareil Dyson configuré ne correspond à cette découverte DHCP.",
-      "not_dyson_hostname": "Le nom d'hôte DHCP ne correspond à aucun format d'appareil Dyson reconnu."
+      "no_matching_device": "Aucun appareil Dyson configuré ne correspond à cette découverte DHCP."
     }
   },
   "options": {

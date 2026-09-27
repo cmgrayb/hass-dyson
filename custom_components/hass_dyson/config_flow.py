@@ -479,29 +479,14 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"email": self._email or ""},
         )
 
-    async def async_step_dhcp(
-        self, discovery_info: DhcpServiceInfo
-    ) -> ConfigFlowResult:
-        """Enrich an existing device's registry connections from DHCP discovery.
-
-        Home Assistant invokes this whenever it observes DHCP traffic from a
-        MAC matching one of the Dyson OUI matchers in manifest.json. Dyson
-        devices broadcast a DHCP hostname of the form
-        ``{product_type}_{serial}``, so the serial is extracted and matched
-        against already-configured entries. This step never creates a new
-        config entry — it only records the MAC in the device registry and
-        the IP for use by ``DysonDataUpdateCoordinator._get_device_host`` and
-        then aborts. When the learned IP changes and no static
-        ``CONF_HOSTNAME`` override is configured, the entry is reloaded so
-        the new host takes effect immediately instead of waiting for the
-        next natural reconnect.
-        """
-        hostname = discovery_info.hostname
-        if "_" not in hostname:
-            return self.async_abort(reason="not_dyson_hostname")
+    def _find_entry_by_serial_hostname(
+        self, hostname: str
+    ) -> config_entries.ConfigEntry | None:
+        """Match a ``{product_type}_{serial}`` DHCP hostname to an entry."""
+        if not hostname or "_" not in hostname:
+            return None
         serial = hostname.split("_", 1)[-1]
-
-        matching_entry = next(
+        return next(
             (
                 entry
                 for entry in self.hass.config_entries.async_entries(DOMAIN)
@@ -509,8 +494,52 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             None,
         )
+
+    def _find_entry_by_ip(self, ip: str) -> config_entries.ConfigEntry | None:
+        """Match a DHCP discovery IP to an entry via config or its live host.
+
+        Used when the DHCP hostname is missing or unrecognized. Home
+        Assistant's active network scan and device-tracker-sourced watchers
+        often report a blank or router-assigned hostname instead of the
+        Dyson ``{product_type}_{serial}`` value carried in native DHCP
+        request packets, so hostname matching alone misses those events.
+        """
+        domain_data = self.hass.data.get(DOMAIN, {})
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if not entry.data.get(CONF_SERIAL_NUMBER):
+                continue
+            if entry.data.get(CONF_HOSTNAME, "").strip() == ip:
+                return entry
+            if entry.data.get(CONF_DHCP_HOST) == ip:
+                return entry
+            coordinator = domain_data.get(entry.entry_id)
+            if getattr(getattr(coordinator, "device", None), "host", None) == ip:
+                return entry
+        return None
+
+    async def async_step_dhcp(
+        self, discovery_info: DhcpServiceInfo
+    ) -> ConfigFlowResult:
+        """Enrich an existing device's registry connections from DHCP discovery.
+
+        Home Assistant invokes this whenever it observes DHCP traffic from a
+        MAC matching one of the Dyson OUI matchers in manifest.json. The
+        entry is matched first by the ``{product_type}_{serial}`` DHCP
+        hostname Dyson devices broadcast, falling back to the discovery IP
+        against already-configured/known hosts when the hostname is missing
+        or unrecognized. This step never creates a new config entry — it
+        only records the MAC in the device registry and the IP for use by
+        ``DysonDataUpdateCoordinator._get_device_host`` and then aborts. When
+        the learned IP changes and no static ``CONF_HOSTNAME`` override is
+        configured, the entry is reloaded so the new host takes effect
+        immediately instead of waiting for the next natural reconnect.
+        """
+        matching_entry = self._find_entry_by_serial_hostname(
+            discovery_info.hostname
+        ) or self._find_entry_by_ip(discovery_info.ip)
         if matching_entry is None:
             return self.async_abort(reason="no_matching_device")
+        serial = matching_entry.data.get(CONF_SERIAL_NUMBER)
 
         from homeassistant.helpers import device_registry as dr
 
