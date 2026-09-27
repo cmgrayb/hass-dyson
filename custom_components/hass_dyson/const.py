@@ -25,6 +25,9 @@ CONF_SERIAL_NUMBER: Final = "serial_number"
 CONF_DEVICE_NAME: Final = "device_name"
 CONF_CREDENTIAL: Final = "credential"
 CONF_HOSTNAME: Final = "hostname"
+CONF_DHCP_HOST: Final = (
+    "dhcp_host"  # IP learned via DHCP discovery, distinct from user-set CONF_HOSTNAME
+)
 CONF_CAPABILITIES: Final = "capabilities"
 CONF_DISCOVERY_METHOD: Final = "discovery_method"
 CONF_CONNECTION_TYPE: Final = "connection_type"

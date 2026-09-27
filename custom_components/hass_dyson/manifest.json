@@ -8,6 +8,20 @@
   "dependencies": [
     "bluetooth"
   ],
+  "dhcp": [
+    {
+      "macaddress": "446FF8*"
+    },
+    {
+      "macaddress": "B0521F*"
+    },
+    {
+      "macaddress": "C0AFF2*"
+    },
+    {
+      "macaddress": "C8FF77*"
+    }
+  ],
   "documentation": "https://github.com/cmgrayb/hass-dyson",
   "homekit": {},
   "integration_type": "hub",
