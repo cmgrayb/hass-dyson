@@ -60,6 +60,7 @@ class TestAsyncStepDhcp:
         """A hostname matching an existing serial merges the MAC and stores the IP."""
         mock_device = MagicMock()
         mock_device.id = "device_id_1"
+        mock_device.connections = set()
         mock_registry = MagicMock()
         mock_registry.async_get_device_by_identifier.return_value = mock_device
 
@@ -73,7 +74,7 @@ class TestAsyncStepDhcp:
         assert result["reason"] == "already_configured"
         mock_registry.async_update_device.assert_called_once()
         _, kwargs = mock_registry.async_update_device.call_args
-        assert kwargs["merge_connections"] == {("mac", "c8:ff:77:11:22:33")}
+        assert kwargs["new_connections"] == {("mac", "c8:ff:77:11:22:33")}
         config_flow.hass.config_entries.async_update_entry.assert_called_once()
         _, update_kwargs = config_flow.hass.config_entries.async_update_entry.call_args
         assert update_kwargs["data"][CONF_DHCP_HOST] == "192.168.1.50"
@@ -111,6 +112,7 @@ class TestAsyncStepDhcp:
         }
         mock_device = MagicMock()
         mock_device.id = "device_id_1"
+        mock_device.connections = set()
         mock_registry = MagicMock()
         mock_registry.async_get_device_by_identifier.return_value = mock_device
 
@@ -147,6 +149,26 @@ class TestAsyncStepDhcp:
             )
 
         assert result["reason"] == "already_configured"
+
+    @pytest.mark.asyncio
+    async def test_existing_mac_connection_skips_registry_write(
+        self, config_flow, mock_config_entry
+    ):
+        """No registry write occurs when the MAC connection is already recorded."""
+        mock_device = MagicMock()
+        mock_device.id = "device_id_1"
+        mock_device.connections = {("mac", "c8:ff:77:11:22:33")}
+        mock_registry = MagicMock()
+        mock_registry.async_get_device_by_identifier.return_value = mock_device
+
+        with patch(
+            "homeassistant.helpers.device_registry.async_get",
+            return_value=mock_registry,
+        ):
+            result = await config_flow.async_step_dhcp(_discovery_info(f"527_{SERIAL}"))
+
+        assert result["reason"] == "already_configured"
+        mock_registry.async_update_device.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_unchanged_dhcp_host_skips_entry_update(

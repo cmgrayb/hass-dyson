@@ -548,15 +548,15 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             (DOMAIN, serial), matching_entry.entry_id
         )
         if device is not None:
-            registry.async_update_device(
-                device.id,
-                merge_connections={
-                    (
-                        dr.CONNECTION_NETWORK_MAC,
-                        dr.format_mac(discovery_info.macaddress),
-                    )
-                },
+            mac_connection = (
+                dr.CONNECTION_NETWORK_MAC,
+                dr.format_mac(discovery_info.macaddress),
             )
+            if mac_connection not in device.connections:
+                registry.async_update_device(
+                    device.id,
+                    new_connections=device.connections | {mac_connection},
+                )
 
         if matching_entry.data.get(CONF_DHCP_HOST) != discovery_info.ip:
             self.hass.config_entries.async_update_entry(
