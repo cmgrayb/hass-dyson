@@ -2073,6 +2073,16 @@ class DysonDevice:
         return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
     @property
+    def using_fallback(self) -> bool:
+        """Return True while connected over the fallback connection."""
+        return self._using_fallback
+
+    @property
+    def preferred_connection_type(self) -> str:
+        """Return the preferred connection type, "local" or "cloud"."""
+        return self._preferred_connection_type
+
+    @property
     def is_connected(self) -> bool:
         """Return if device is connected."""
         if not self._connected or not self._mqtt_client:
