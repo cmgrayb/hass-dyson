@@ -2942,6 +2942,15 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=None,  # Push-only; no polling
         )
 
+    def _on_ble_mac_resolved(self, new_mac: str) -> None:
+        """Persist a MAC address rediscovered after a Bluetooth address rotation."""
+        from .const import CONF_BLE_MAC
+
+        self.hass.config_entries.async_update_entry(
+            self._config_entry,
+            data={**self._config_entry.data, CONF_BLE_MAC: new_mac},
+        )
+
     async def async_setup(self) -> None:
         """Set up the BLE coordinator: subscribe to events and start BLE task.
 
@@ -3000,6 +3009,7 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or BLE_CAPABILITY_DAYLIGHT in self.capabilities
                 or BLE_CAPABILITY_PERSONAL_DAYLIGHT in self.capabilities
             ),
+            on_mac_resolved=self._on_ble_mac_resolved,
         )
 
         # Subscribe to BLE state change events
@@ -3210,6 +3220,15 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             update_interval=None,  # Push-only; no polling interval
         )
 
+    def _on_ble_mac_resolved(self, new_mac: str) -> None:
+        """Persist a MAC address rediscovered after a Bluetooth address rotation."""
+        from .const import CONF_BLE_MAC
+
+        self.hass.config_entries.async_update_entry(
+            self._config_entry,
+            data={**self._config_entry.data, CONF_BLE_MAC: new_mac},
+        )
+
     async def async_setup(self) -> None:
         """Set up the coordinator: subscribe events and start BLE task."""
         import uuid as _uuid
@@ -3250,6 +3269,7 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             account_uuid=account_uuid,
             ble_proxy=ble_proxy,
             state_callback=self._handle_state_update,
+            on_mac_resolved=self._on_ble_mac_resolved,
         )
 
         # The device calls us back directly.  It still fires

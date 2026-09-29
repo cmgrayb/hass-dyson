@@ -1571,6 +1571,59 @@ class TestBleCoordinatorShutdownCleanup:
         coord.ble_device.disconnect.assert_awaited_once()
 
 
+class TestBleCoordinatorMacResolvedPersistence:
+    """A rediscovered BLE MAC (address rotation) must be persisted to the entry.
+
+    Otherwise every restart repeats the same failed lookup against the
+    now-stale MAC captured at initial setup (see issue #453).
+    """
+
+    @staticmethod
+    def _coordinator(cls):
+        from unittest.mock import MagicMock, patch
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            hass = MagicMock()
+            entry = MagicMock()
+            entry.data = {
+                "serial_number": "7RD-EU-TEST0000X",
+                "ble_mac": "AA:BB:CC:DD:EE:FF",
+            }
+            coord = cls(hass, entry)
+        coord.hass = hass
+        return coord
+
+    def test_light_coordinator_persists_new_mac(self):
+        from custom_components.hass_dyson.const import CONF_BLE_MAC
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEDataUpdateCoordinator,
+        )
+
+        coord = self._coordinator(DysonBLEDataUpdateCoordinator)
+        coord._on_ble_mac_resolved("11:22:33:44:55:66")
+
+        coord.hass.config_entries.async_update_entry.assert_called_once()
+        args, kwargs = coord.hass.config_entries.async_update_entry.call_args
+        assert args[0] is coord._config_entry
+        assert kwargs["data"][CONF_BLE_MAC] == "11:22:33:44:55:66"
+
+    def test_vacuum_coordinator_persists_new_mac(self):
+        from custom_components.hass_dyson.const import CONF_BLE_MAC
+        from custom_components.hass_dyson.coordinator import (
+            DysonBLEVacuumDataUpdateCoordinator,
+        )
+
+        coord = self._coordinator(DysonBLEVacuumDataUpdateCoordinator)
+        coord._on_ble_mac_resolved("11:22:33:44:55:66")
+
+        coord.hass.config_entries.async_update_entry.assert_called_once()
+        args, kwargs = coord.hass.config_entries.async_update_entry.call_args
+        assert args[0] is coord._config_entry
+        assert kwargs["data"][CONF_BLE_MAC] == "11:22:33:44:55:66"
+
+
 class TestBleCoordinatorCloudFirmwarePersistence:
     """Cloud firmware must survive the next BLE push.
 

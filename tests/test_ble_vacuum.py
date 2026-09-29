@@ -1237,6 +1237,61 @@ class TestGetBleakClient:
         device._connect_with_retries.assert_awaited_once()
         assert client is not None
 
+    async def test_rediscovers_by_serial_name_and_updates_mac(self, device):
+        """Stale MAC not seen, but a matching advertised name is adopted."""
+        device._connect_with_retries = AsyncMock(side_effect=lambda c, **k: c)
+        on_mac_resolved = MagicMock()
+        device._on_mac_resolved = on_mac_resolved
+
+        rediscovered = MagicMock()
+        rediscovered.name = device.serial_number
+        rediscovered.address = "11:22:33:44:55:66"
+        rediscovered.device = MagicMock()
+
+        bt = MagicMock()
+        bt.async_last_service_info = MagicMock(return_value=None)
+        bt.async_discovered_service_info = MagicMock(return_value=[rediscovered])
+        import sys
+
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setitem(sys.modules, "homeassistant.components.bluetooth", bt)
+            mp.setitem(
+                sys.modules,
+                "bleak_retry_connector",
+                MagicMock(establish_connection=AsyncMock(return_value=MagicMock())),
+            )
+            client = await device._get_bleak_client()
+
+        assert client is not None
+        assert device.mac_address == "11:22:33:44:55:66"
+        on_mac_resolved.assert_called_once_with("11:22:33:44:55:66")
+
+    async def test_no_matching_name_falls_back_to_raw_mac(self, device):
+        """No advertisement matches the serial name — falls back to the raw MAC."""
+        device._connect_with_retries = AsyncMock(side_effect=lambda c, **k: c)
+        on_mac_resolved = MagicMock()
+        device._on_mac_resolved = on_mac_resolved
+        original_mac = device.mac_address
+
+        unrelated = MagicMock()
+        unrelated.name = "SOME-OTHER-DEVICE"
+
+        bt = MagicMock()
+        bt.async_last_service_info = MagicMock(return_value=None)
+        bt.async_discovered_service_info = MagicMock(return_value=[unrelated])
+        bt.async_scanner_count = MagicMock(return_value=1)
+        import sys
+
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setitem(sys.modules, "homeassistant.components.bluetooth", bt)
+            client = await device._get_bleak_client()
+
+        from bleak import BleakClient as _Real
+
+        assert isinstance(client, _Real)
+        assert device.mac_address == original_mac
+        on_mac_resolved.assert_not_called()
+
 
 class TestSubscribeAndReadAll:
     async def test_subscribe_all_acked(self, device):
