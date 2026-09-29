@@ -693,7 +693,7 @@
   "issues": {
     "configured_host_unreachable": {
       "title": "{device_name} is not reachable at its configured address",
-      "description": "{device_name} has a static address ({hostname}) set in its connection options, but nothing has answered there for over 10 minutes, so it is running on the cloud connection instead. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. This warning clears itself once the local connection works again."
+      "description": "{device_name} has a static address ({hostname}) set in its connection options, but nothing has answered there for over 10 minutes, so it is running on the cloud connection instead. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. Saving new connection options reconnects the device, as does its Reconnect button; this warning clears itself once it connects locally."
     }
   }
 }
