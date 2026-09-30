@@ -123,7 +123,8 @@
       "user_declined": "Gerätekonfiguration wurde vom Benutzer abgebrochen.",
       "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden.",
       "reauth_successful": "Erneute Authentifizierung erfolgreich. Ihre Zugangsdaten wurden aktualisiert.",
-      "reauth_failed": "Erneute Authentifizierung unerwartet fehlgeschlagen. Bitte versuchen Sie es erneut."
+      "reauth_failed": "Erneute Authentifizierung unerwartet fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "no_matching_device": "Kein konfiguriertes Dyson-Gerät entspricht dieser DHCP-Erkennung."
     }
   },
   "options": {

@@ -44,6 +44,7 @@ from .const import (
     CONF_CREDENTIAL,
     CONF_CULTURE,
     CONF_DEVICE_NAME,
+    CONF_DHCP_HOST,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
     CONF_MQTT_PREFIX,
@@ -2368,7 +2369,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Priority order:
         1. User-provided static IP/hostname from config entry (bypasses mDNS)
         2. Hostname from device_info (cloud API)
-        3. Fall back to {serial}.local for mDNS resolution
+        3. IP learned via DHCP discovery (see async_step_dhcp in config_flow.py)
+        4. Fall back to {serial}.local for mDNS resolution
         """
         # Check if user provided a static IP/hostname in config entry
         configured_hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
@@ -2389,6 +2391,16 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 api_hostname,
             )
             return api_hostname
+
+        # Use IP learned via DHCP discovery, if any, before resorting to mDNS
+        dhcp_host = self.config_entry.data.get(CONF_DHCP_HOST, "").strip()
+        if dhcp_host:
+            _LOGGER.debug(
+                "Using DHCP-discovered host for device %s: %s",
+                mask_serial(self.serial_number),
+                dhcp_host,
+            )
+            return dhcp_host
 
         # Fall back to mDNS resolution using {serial}.local
         fallback_hostname = f"{self.serial_number}.local"
