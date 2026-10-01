@@ -33,6 +33,17 @@ This devcontainer provides a complete development environment for the Dyson Home
    - **Home Assistant**: http://localhost:8123
    - **MQTT**: localhost:1883 (from host) or mosquitto:1883 (from container)
 
+## Known Limitations
+
+- **DHCP discovery cannot be validated in this environment**: the `homeassistant`
+  service runs on the isolated `ha-dyson-network` Docker bridge, not `host`
+  networking or a macvlan attached to the physical LAN. Home Assistant's `dhcp`
+  component (passive sniffing and active ARP scanning) requires L2 visibility
+  into the same broadcast domain as the physical device, which a bridge network
+  does not provide. Test DHCP discovery (`async_step_dhcp`, device registry
+  `connections` population) against a real, non-containerized Home Assistant
+  instance on the same LAN as the device instead.
+
 ## Available Services
 
 ### Development Container

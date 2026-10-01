@@ -189,6 +189,22 @@ Configure a static IP address or hostname when:
 - You prefer predictable device addressing
 - You've configured DHCP reservations for your devices
 
+### **Automatic Device Registry Linking via DHCP Discovery**
+
+The integration also uses Home Assistant's built-in `dhcp` discovery component
+to learn a device's MAC address and populate the device registry's
+`connections` field automatically, which lets Home Assistant merge the Dyson
+device with the same physical device reported by a router-backed integration
+(TP-Link, UniFi, Fritz!Box, etc.).
+
+**Running Home Assistant in Docker?** This requires the Home Assistant
+container itself to have real network visibility into the device's LAN
+segment — use `network_mode: host` (Linux only) or a `macvlan` network
+attached to the physical LAN interface. A container on an isolated bridge
+network (the Docker default) cannot observe DHCP/ARP traffic from other
+devices on your LAN, so this linking will not occur regardless of the
+integration's configuration.
+
 ### **How to Configure Static IP**
 
 #### **During Cloud Device Discovery**

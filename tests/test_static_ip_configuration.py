@@ -378,6 +378,62 @@ class TestCoordinatorHostnameResolution:
             # Should fall back to {serial}.local
             assert hostname == "VS6-EU-HJA1234A.local"
 
+    @pytest.mark.asyncio
+    async def test_uses_dhcp_host_when_no_configured_or_api_hostname(self):
+        """DHCP-learned IP is used when no configured or API hostname is available."""
+        from custom_components.hass_dyson.const import CONF_DHCP_HOST
+        from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
+        mock_hass = MagicMock()
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {
+            CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
+            CONF_DHCP_HOST: "192.168.1.75",
+            # No CONF_HOSTNAME configured
+        }
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry
+
+            mock_device_info = MagicMock()
+            mock_device_info.hostname = None
+
+            hostname = coordinator._get_device_host(mock_device_info)
+
+            assert hostname == "192.168.1.75"
+
+    @pytest.mark.asyncio
+    async def test_configured_hostname_wins_over_dhcp_host(self):
+        """A user-configured hostname still takes priority over a DHCP-learned IP."""
+        from custom_components.hass_dyson.const import CONF_DHCP_HOST
+        from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
+
+        mock_hass = MagicMock()
+        mock_config_entry = MagicMock()
+        mock_config_entry.data = {
+            CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A",
+            CONF_HOSTNAME: "192.168.1.100",
+            CONF_DHCP_HOST: "192.168.1.75",
+        }
+
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator(mock_hass, mock_config_entry)
+            coordinator.hass = mock_hass
+            coordinator.config_entry = mock_config_entry
+
+            mock_device_info = MagicMock()
+            mock_device_info.hostname = None
+
+            hostname = coordinator._get_device_host(mock_device_info)
+
+            assert hostname == "192.168.1.100"
+
 
 class TestDeviceUtilsHostnameSupport:
     """Test device utils hostname parameter support."""
