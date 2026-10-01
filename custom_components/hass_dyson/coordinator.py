@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed  # noqa: F401
-from homeassistant.helpers import instance_id as ha_instance_id
+from homeassistant.helpers import instance_id as ha_instance_id, issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from libdyson_rest import AsyncDysonClient
 from libdyson_rest.exceptions import DysonAPIError, DysonAuthError, DysonConnectionError
@@ -67,6 +67,11 @@ from .device import DysonDevice
 from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
+
+# How long a configured host may fail, with the cloud fallback in use, before
+# a repair issue is raised. Long enough to ride out a device reboot or a wifi
+# blip, short enough that a stale static address is noticed the same day.
+CONFIGURED_HOST_ISSUE_DELAY: Final = 600
 
 # Compiled regex patterns for culture/language normalisation (module-level for efficiency).
 _CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
@@ -283,6 +288,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_SERIAL_NUMBER
         ) or config_entry.data.get("device_serial_number", "unknown")
         self.device: DysonDevice | None = None
+        self._local_fallback_since: float | None = None
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
         self._device_type: str = ""  # Will be extracted from device info
@@ -1900,6 +1906,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     fault_err,
                 )
 
+            self._async_update_configured_host_issue()
+
             return device_state
 
         except UpdateFailed:
@@ -2121,9 +2129,58 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.async_update_listeners()
             return False
 
+    @property
+    def _configured_host_issue_id(self) -> str:
+        """Return the repair issue id for this device entry."""
+        return f"configured_host_unreachable_{self.config_entry.entry_id}"
+
+    @callback
+    def _async_update_configured_host_issue(self) -> None:
+        """Warn in Repairs while a configured host fails and cloud is used instead.
+
+        A static hostname always wins over discovery, so when that address
+        stops answering the device silently stays on its cloud fallback. The
+        issue is raised only after the fallback has lasted a while, so a short
+        local outage does not flash a warning, and it clears itself once the
+        local connection is back.
+        """
+        hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
+        device = self.device
+        on_fallback = (
+            bool(hostname)
+            and device is not None
+            and device.preferred_connection_type == "local"
+            and device.using_fallback
+        )
+        if not on_fallback:
+            self._local_fallback_since = None
+            ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
+            return
+
+        now = time.monotonic()
+        if self._local_fallback_since is None:
+            self._local_fallback_since = now
+        if now - self._local_fallback_since < CONFIGURED_HOST_ISSUE_DELAY:
+            return
+
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._configured_host_issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="configured_host_unreachable",
+            translation_placeholders={
+                "device_name": self.config_entry.title,
+                "hostname": hostname,
+            },
+        )
+
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator and cleanup connections."""
         _LOGGER.debug("Shutting down coordinator for device %s", self.serial_number)
+
+        ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
 
         if self.device:
             # Remove environmental callback before disconnecting
