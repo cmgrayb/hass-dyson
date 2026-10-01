@@ -264,6 +264,7 @@ class DysonBleVacuumDevice:
         account_uuid: str,
         ble_proxy: str | None = None,
         state_callback: Callable[[dict[str, Any]], None] | None = None,
+        on_mac_resolved: Callable[[str], None] | None = None,
     ) -> None:
         """Initialise the BLE vacuum device wrapper.
 
@@ -272,6 +273,10 @@ class DysonBleVacuumDevice:
                 snapshot.  The coordinator uses this instead of subscribing to
                 the event bus, so it is not woken by every other BLE device's
                 updates just to filter them out by serial.
+            on_mac_resolved: Optional callback invoked with a newly
+                rediscovered MAC address when the configured one is no longer
+                advertising (e.g. after a Bluetooth address rotation), so the
+                caller can persist it for future reconnects.
         """
         self.hass = hass
         self._state_callback = state_callback
@@ -280,6 +285,7 @@ class DysonBleVacuumDevice:
         self._ltk_hex = ltk_hex
         self._account_uuid = account_uuid
         self._ble_proxy = ble_proxy
+        self._on_mac_resolved = on_mac_resolved
 
         self.state = BLEVacuumState()
         self._client: Any | None = None
@@ -671,6 +677,64 @@ class DysonBleVacuumDevice:
 
     # ── Connection / auth ─────────────────────────────────────────────────────
 
+    async def _connect_via_service_info(self, service_info: Any) -> Any:
+        """Connect to a discovered ``BluetoothServiceInfoBleak`` via bleak-retry-connector.
+
+        Falls back to a raw (unconnected) ``BleakClient`` wrapping the same
+        device on failure so the caller's retry loop can still attempt a
+        manual ``.connect()``.
+        """
+        from bleak import BleakClient  # provided by HA core
+
+        try:
+            from bleak_retry_connector import establish_connection
+
+            client = await establish_connection(
+                BleakClient,
+                service_info.device,
+                self.serial_number,
+                disconnected_callback=self._on_bleak_disconnect,
+                max_attempts=4,
+                use_services_cache=True,
+            )
+            _LOGGER.info(
+                "BLE connection to %s established via bleak_retry_connector",
+                mask_serial(self.serial_number),
+            )
+            return client
+        except ImportError:
+            _LOGGER.warning(
+                "bleak_retry_connector not available for %s — "
+                "falling back to direct BleakClient",
+                mask_serial(self.serial_number),
+            )
+            return BleakClient(service_info.device)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "establish_connection() failed for %s (%s) — "
+                "falling back to direct BleakClient",
+                mask_serial(self.serial_number),
+                exc,
+            )
+            return BleakClient(service_info.device)
+
+    def _rescan_by_serial_name(self, _bt: Any) -> Any | None:
+        """Search all currently discovered advertisements for this serial's name.
+
+        Dyson BLE devices advertise their serial number as the BLE device
+        name, which stays stable even if the underlying MAC address changes
+        (e.g. a Bluetooth privacy/random address rotation). Used as a
+        last-resort identity match when the previously known MAC address is
+        no longer advertising.
+        """
+        for connectable in (True, False):
+            for service_info in _bt.async_discovered_service_info(
+                self.hass, connectable=connectable
+            ):
+                if (service_info.name or "").upper() == self.serial_number.upper():
+                    return service_info
+        return None
+
     async def _get_bleak_client(self) -> Any:
         """Obtain a connected (or connectable) BleakClient via HA bluetooth."""
         from bleak import BleakClient  # provided by HA core
@@ -683,44 +747,37 @@ class DysonBleVacuumDevice:
                 self.hass, self.mac_address, connectable=True
             )
             if connectable_info is not None:
-                try:
-                    from bleak_retry_connector import establish_connection
-
-                    client = await establish_connection(
-                        BleakClient,
-                        connectable_info.device,
-                        self.serial_number,
-                        disconnected_callback=self._on_bleak_disconnect,
-                        max_attempts=4,
-                        use_services_cache=True,
-                    )
-                    _LOGGER.info(
-                        "BLE connection to %s established via bleak_retry_connector",
-                        mask_serial(self.serial_number),
-                    )
-                    return client
-                except ImportError:
-                    _LOGGER.warning(
-                        "bleak_retry_connector not available for %s — "
-                        "falling back to direct BleakClient",
-                        mask_serial(self.serial_number),
-                    )
-                    client = BleakClient(connectable_info.device)
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "establish_connection() failed for %s (%s) — "
-                        "falling back to direct BleakClient",
-                        mask_serial(self.serial_number),
-                        exc,
-                    )
-                    client = BleakClient(connectable_info.device)
+                client = await self._connect_via_service_info(connectable_info)
             else:
-                _LOGGER.warning(
-                    "BLE vacuum %s (%s) not currently seen as connectable — "
-                    "check range / ESPHome proxy 'active: true'",
-                    mask_serial(self.serial_number),
-                    self.mac_address,
-                )
+                # The configured MAC hasn't been seen at all — it may have
+                # changed (Bluetooth privacy/random address rotation). Try to
+                # re-identify the device by its advertised name before giving up.
+                rediscovered = self._rescan_by_serial_name(_bt)
+                if rediscovered is not None:
+                    old_mac = self.mac_address
+                    self.mac_address = rediscovered.address.upper()
+                    _LOGGER.info(
+                        "BLE address rotation detected for %s: %s -> %s "
+                        "(matched by advertised name) — connecting via "
+                        "bleak_retry_connector",
+                        mask_serial(self.serial_number),
+                        old_mac,
+                        self.mac_address,
+                    )
+                    if self._on_mac_resolved is not None:
+                        self._on_mac_resolved(self.mac_address)
+                    client = await self._connect_via_service_info(rediscovered)
+                else:
+                    scanner_count = _bt.async_scanner_count(self.hass, connectable=True)
+                    _LOGGER.warning(
+                        "BLE vacuum %s (%s) not currently seen as connectable, and no "
+                        "advertisement matching its serial name was found (%d "
+                        "connectable scanner(s) registered) — check range / ESPHome "
+                        "proxy 'active: true'",
+                        mask_serial(self.serial_number),
+                        self.mac_address,
+                        scanner_count,
+                    )
         except ImportError:
             _LOGGER.warning(
                 "HA bluetooth integration unavailable for %s — "
@@ -735,6 +792,8 @@ class DysonBleVacuumDevice:
             )
         if client is None:
             client = BleakClient(self.mac_address)
+        if getattr(client, "is_connected", False):
+            return client  # bleak_retry_connector already connected it
         return await self._connect_with_retries(client, attempts=3, delay=1.25)
 
     async def _connect_with_retries(

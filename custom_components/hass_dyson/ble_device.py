@@ -30,6 +30,7 @@ import hmac
 import logging
 import math
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -498,6 +499,7 @@ class DysonBLEDevice:
         account_uuid: str,
         ble_proxy: str | None = None,
         daylight_capable: bool = True,
+        on_mac_resolved: Callable[[str], None] | None = None,
     ) -> None:
         """Initialise the BLE device wrapper.
 
@@ -510,6 +512,10 @@ class DysonBLEDevice:
             ble_proxy: Optional pinned Bluetooth proxy host (future use).
             daylight_capable: Whether this device uses characteristic 11009 in
                 lumens rather than characteristic 11000 in percent.
+            on_mac_resolved: Optional callback invoked with a newly
+                rediscovered MAC address when the configured one is no longer
+                advertising (e.g. after a Bluetooth address rotation), so the
+                caller can persist it for future reconnects.
         """
         self.hass = hass
         self.serial_number = serial_number
@@ -518,6 +524,7 @@ class DysonBLEDevice:
         self._account_uuid = account_uuid
         self._ble_proxy = ble_proxy
         self._daylight_capable = daylight_capable
+        self._on_mac_resolved = on_mac_resolved
         self._manual_mode_valid_until = 0.0
 
         self.state = BLELightState()
@@ -766,6 +773,68 @@ class DysonBLEDevice:
                 BLE_AUTH_CHAR_UUID, fragment, response=False
             )
 
+    async def _connect_via_service_info(self, service_info: Any) -> Any:
+        """Connect to a discovered ``BluetoothServiceInfoBleak`` via bleak-retry-connector.
+
+        Falls back to a raw (unconnected) ``BleakClient`` wrapping the same
+        device on failure so callers can still attempt a manual ``.connect()``.
+        """
+        from bleak import BleakClient  # provided by HA core
+
+        try:
+            from bleak_retry_connector import establish_connection
+
+            client = await establish_connection(
+                BleakClient,
+                service_info.device,
+                self.serial_number,
+                disconnected_callback=self._on_bleak_disconnect,
+                max_attempts=4,
+                # Cache the service collection after the first successful
+                # connection so reconnects skip GATT service discovery.
+                # Discovery involves many GATT reads that can hit the BLE
+                # proxy's 10-second timeout under the default esp32_ble_tracker
+                # scan parameters (window=30ms, interval=320ms).
+                use_services_cache=True,
+            )
+            _LOGGER.info(
+                "BLE connection to %s established via bleak_retry_connector",
+                self.serial_number,
+            )
+            return client  # Already connected — skip manual .connect()
+        except ImportError:
+            _LOGGER.warning(
+                "bleak_retry_connector not available for %s — "
+                "falling back to direct BleakClient (connection may be unreliable)",
+                self.serial_number,
+            )
+            return BleakClient(service_info.device)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning(
+                "establish_connection() failed for %s (%s) — "
+                "falling back to direct BleakClient",
+                self.serial_number,
+                exc,
+            )
+            return BleakClient(service_info.device)
+
+    def _rescan_by_serial_name(self, _bt: Any) -> Any | None:
+        """Search all currently discovered advertisements for this serial's name.
+
+        Dyson BLE devices advertise their serial number as the BLE device
+        name, which stays stable even if the underlying MAC address changes
+        (e.g. a Bluetooth privacy/random address rotation). Used as a
+        last-resort identity match when the previously known MAC address is
+        no longer advertising.
+        """
+        for connectable in (True, False):
+            for service_info in _bt.async_discovered_service_info(
+                self.hass, connectable=connectable
+            ):
+                if (service_info.name or "").upper() == self.serial_number.upper():
+                    return service_info
+        return None
+
     async def _get_bleak_client(self) -> Any:
         """Obtain a connected (or connectable) BleakClient.
 
@@ -803,42 +872,7 @@ class DysonBLEDevice:
                     getattr(connectable_info, "source", "unknown"),
                     getattr(connectable_info, "rssi", "unknown"),
                 )
-                try:
-                    from bleak_retry_connector import establish_connection
-
-                    client = await establish_connection(
-                        BleakClient,
-                        connectable_info.device,
-                        self.serial_number,
-                        disconnected_callback=self._on_bleak_disconnect,
-                        max_attempts=4,
-                        # Cache the service collection after the first successful
-                        # connection so reconnects skip GATT service discovery.
-                        # Discovery involves many GATT reads that can hit the BLE
-                        # proxy's 10-second timeout under the default esp32_ble_tracker
-                        # scan parameters (window=30ms, interval=320ms).
-                        use_services_cache=True,
-                    )
-                    _LOGGER.info(
-                        "BLE connection to %s established via bleak_retry_connector",
-                        self.serial_number,
-                    )
-                    return client  # Already connected — skip manual .connect()
-                except ImportError:
-                    _LOGGER.warning(
-                        "bleak_retry_connector not available for %s — "
-                        "falling back to direct BleakClient (connection may be unreliable)",
-                        self.serial_number,
-                    )
-                    return BleakClient(connectable_info.device)
-                except Exception as exc:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "establish_connection() failed for %s (%s) — "
-                        "falling back to direct BleakClient",
-                        self.serial_number,
-                        exc,
-                    )
-                    return BleakClient(connectable_info.device)
+                return await self._connect_via_service_info(connectable_info)
             elif non_connectable_info is not None:
                 _LOGGER.warning(
                     "BLE device %s (%s) is visible (RSSI: %s dBm, source: '%s') but NOT "
@@ -851,12 +885,35 @@ class DysonBLEDevice:
                     getattr(non_connectable_info, "source", "unknown"),
                 )
             else:
+                # The configured MAC hasn't been seen at all — it may have
+                # changed (Bluetooth privacy/random address rotation). Try to
+                # re-identify the device by its advertised name before giving up.
+                rediscovered = self._rescan_by_serial_name(_bt)
+                if rediscovered is not None:
+                    old_mac = self.mac_address
+                    self.mac_address = rediscovered.address.upper()
+                    _LOGGER.info(
+                        "BLE address rotation detected for %s: %s -> %s "
+                        "(matched by advertised name) — connecting via "
+                        "bleak_retry_connector",
+                        self.serial_number,
+                        old_mac,
+                        self.mac_address,
+                    )
+                    if self._on_mac_resolved is not None:
+                        self._on_mac_resolved(self.mac_address)
+                    return await self._connect_via_service_info(rediscovered)
+
+                scanner_count = _bt.async_scanner_count(self.hass, connectable=True)
                 _LOGGER.warning(
                     "BLE device %s (%s) has NOT been seen by any HA Bluetooth adapter or "
-                    "proxy. Check that the device is powered on and within range. "
-                    "Falling back to raw MAC address — connection will likely fail.",
+                    "proxy, and no advertisement matching its serial name was found "
+                    "(%d connectable scanner(s) registered). Check that the device is "
+                    "powered on and within range. Falling back to raw MAC address — "
+                    "connection will likely fail.",
                     self.serial_number,
                     self.mac_address,
+                    scanner_count,
                 )
         except ImportError:
             _LOGGER.warning(
