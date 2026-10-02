@@ -30,7 +30,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "cryptography>=50.0.0",
-    "libdyson-rest==0.16.2b1",
+    "libdyson-rest==0.17.0",
     "homeassistant==2026.10.0b0",
     "paho-mqtt>=2.1.0",
 ]
