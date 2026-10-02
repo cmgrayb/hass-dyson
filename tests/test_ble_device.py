@@ -740,6 +740,82 @@ class TestDysonBLEDevice:
         assert info["manufacturer"] == "Dyson"
 
 
+class TestGetBleakClientRediscovery:
+    """Tests for the serial-name rediscovery fallback in _get_bleak_client()."""
+
+    SERIAL = "CD06-GB-HAA0001A"
+    MAC = "AA:BB:CC:DD:EE:FF"
+    NEW_MAC = "11:22:33:44:55:66"
+
+    def _make_device(self, on_mac_resolved=None):
+        hass = MagicMock()
+        hass.bus = MagicMock()
+        hass.bus.async_fire = MagicMock()
+        hass.loop = asyncio.new_event_loop()
+        return DysonBLEDevice(
+            hass=hass,
+            serial_number=self.SERIAL,
+            mac_address=self.MAC,
+            ltk_hex="deadbeefdeadbeefdeadbeefdeadbeef",
+            account_uuid="12345678-1234-1234-1234-123456789abc",
+            on_mac_resolved=on_mac_resolved,
+        )
+
+    async def test_rediscovers_by_serial_name_and_updates_mac(self):
+        """When the stored MAC isn't seen, a matching advertised name is adopted."""
+        on_mac_resolved = MagicMock()
+        device = self._make_device(on_mac_resolved=on_mac_resolved)
+
+        rediscovered = MagicMock()
+        rediscovered.name = self.SERIAL
+        rediscovered.address = self.NEW_MAC
+        rediscovered.device = MagicMock()
+
+        bt = MagicMock()
+        bt.async_last_service_info = MagicMock(return_value=None)
+        bt.async_discovered_service_info = MagicMock(return_value=[rediscovered])
+
+        import sys
+
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setitem(sys.modules, "homeassistant.components.bluetooth", bt)
+            mp.setitem(
+                sys.modules,
+                "bleak_retry_connector",
+                MagicMock(establish_connection=AsyncMock(return_value=MagicMock())),
+            )
+            client = await device._get_bleak_client()
+
+        assert client is not None
+        assert device.mac_address == self.NEW_MAC
+        on_mac_resolved.assert_called_once_with(self.NEW_MAC)
+
+    async def test_no_matching_name_falls_back_to_raw_mac(self):
+        """No advertisement matches the serial name — falls back to the raw MAC."""
+        on_mac_resolved = MagicMock()
+        device = self._make_device(on_mac_resolved=on_mac_resolved)
+
+        unrelated = MagicMock()
+        unrelated.name = "SOME-OTHER-DEVICE"
+
+        bt = MagicMock()
+        bt.async_last_service_info = MagicMock(return_value=None)
+        bt.async_discovered_service_info = MagicMock(return_value=[unrelated])
+        bt.async_scanner_count = MagicMock(return_value=1)
+
+        import sys
+
+        with pytest.MonkeyPatch().context() as mp:
+            mp.setitem(sys.modules, "homeassistant.components.bluetooth", bt)
+            client = await device._get_bleak_client()
+
+        from bleak import BleakClient as _Real
+
+        assert isinstance(client, _Real)
+        assert device.mac_address == self.MAC
+        on_mac_resolved.assert_not_called()
+
+
 class TestDysonBLEDeviceReauth:
     """Tests for the LTK re-auth flow (mocked GATT)."""
 

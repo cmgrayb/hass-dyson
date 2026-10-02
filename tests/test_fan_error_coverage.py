@@ -676,6 +676,7 @@ class TestUpdateHeatingDataErrorHandling:
         # Arrange
         fan = DysonFan(mock_coordinator)
         fan._has_heating = True
+        mock_coordinator.data["environmental-data"] = {"tact": "INVALID"}
         product_state = {"tmp": "INVALID", "hmax": "2931", "hmod": "HEAT", "fpwr": "ON"}
 
         # Act - should not raise
@@ -684,8 +685,10 @@ class TestUpdateHeatingDataErrorHandling:
         # Assert - current_temperature should be None
         assert fan._attr_current_temperature is None
 
-    def test_update_heating_data_current_temp_type_error(self, mock_coordinator):
-        """Test _update_heating_data handles TypeError for None current temperature."""
+    def test_update_heating_data_missing_environmental_current_temp(
+        self, mock_coordinator
+    ):
+        """Do not use product-state tmp when environmental data is missing."""
         # Arrange
         fan = DysonFan(mock_coordinator)
         fan._has_heating = True
@@ -712,12 +715,74 @@ class TestUpdateHeatingDataErrorHandling:
         # Assert - target_temperature should default to 20.0°C
         assert fan._attr_target_temperature == 20.0
 
+
+class TestUpdateHeatingDataTemperatures:
+    """Test heating temperature source selection and conversion."""
+
+    @staticmethod
+    def set_product_state(mock_coordinator, **values):
+        """Configure product-state values returned by the mocked device."""
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: values.get(key, default)
+        )
+
+    def test_update_heating_data_uses_environmental_temperature(self, mock_coordinator):
+        """Use tact rather than the product-state tmp value for current temperature."""
+        fan = DysonFan(mock_coordinator)
+        fan._has_heating = True
+        mock_coordinator.data["environmental-data"] = {"tact": "2970"}
+        self.set_product_state(mock_coordinator, tmp="2900", hmax="2890")
+
+        fan._update_heating_data({"tmp": "2900", "hmax": "2890"})
+
+        assert fan._attr_current_temperature == 23.9
+        assert fan._attr_target_temperature == 16.0
+
+    @pytest.mark.parametrize("current_temp", [None, "OFF", "0000"])
+    def test_update_heating_data_invalid_current_temperature_is_none(
+        self, mock_coordinator, current_temp
+    ):
+        """Treat absent, off, and zero environmental readings as unavailable."""
+        fan = DysonFan(mock_coordinator)
+        fan._has_heating = True
+        mock_coordinator.data["environmental-data"] = {"tact": current_temp}
+        self.set_product_state(mock_coordinator, hmax="2932")
+
+        fan._update_heating_data({"hmax": "2932"})
+
+        assert fan._attr_current_temperature is None
+
+    def test_update_heating_data_zero_target_uses_default(self, mock_coordinator):
+        """Treat a zero target sentinel as unavailable."""
+        fan = DysonFan(mock_coordinator)
+        fan._has_heating = True
+        self.set_product_state(mock_coordinator, hmax="0000")
+
+        fan._update_heating_data({"hmax": "0000"})
+
+        assert fan._attr_target_temperature == 20.0
+
+    def test_extra_state_target_kelvin_rounds_to_device_step(self, mock_coordinator):
+        """Format target Kelvin using the same rounding as device commands."""
+        mock_coordinator.device_capabilities = ["Heating"]
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.data["environmental-data"] = {"tact": "2970"}
+        self.set_product_state(mock_coordinator, hmax="2892", hmod="OFF", fpwr="OFF")
+        fan._update_heating_data({"hmax": "2892", "hmod": "OFF", "fpwr": "OFF"})
+
+        attributes = fan.extra_state_attributes
+
+        assert attributes["target_temperature_kelvin"] == "2892"
+
     def test_update_heating_data_target_temp_type_error(self, mock_coordinator):
         """Test _update_heating_data handles TypeError for None target temperature."""
         # Arrange
         fan = DysonFan(mock_coordinator)
         fan._has_heating = True
         product_state = {"tmp": "2981", "hmax": None, "hmod": "HEAT", "fpwr": "ON"}
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: None if key == "hmax" else default
+        )
 
         # Act
         fan._update_heating_data(product_state)

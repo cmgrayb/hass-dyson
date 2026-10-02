@@ -52,6 +52,7 @@ from .const import (
     FAULT_TRANSLATIONS,
     LEGACY_FILTER_LIFE_MAX_HOURS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
+    ROBOT_FAULT_ACTION_LOG_ONLY,
     ROBOT_FAULT_SUBSYSTEMS,
     STATE_KEY_LEGACY_FILTER_LIFE,
     celsius_to_decikelvin,
@@ -206,6 +207,14 @@ class DysonDevice:
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: list[Callable[[str, dict[str, Any]], None]] = []
+
+        # Recently-commanded product-state values, so a stale/racing device
+        # reply (e.g. a heartbeat CURRENT-STATE in flight before the command
+        # was applied) can't snap a just-changed value back to its old state.
+        self._pending_state_values: dict[str, tuple[Any, float]] = {}
+        self._pending_state_ttl = (
+            10.0  # seconds a pending value guards against contradiction
+        )
 
         # Power control capability detection
         self._fpwr_message_count = 0  # Track messages containing fpwr
@@ -1569,6 +1578,41 @@ class DysonDevice:
         # Notify callbacks
         self._notify_callbacks(topic, data)
 
+    def _apply_pending_state_guard(
+        self, product_state: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Drop incoming values that contradict a just-sent, unconfirmed command.
+
+        Returns a copy of ``product_state`` with any still-pending, contradicted
+        keys removed. Matching values clear their pending entry; expired entries
+        (older than ``_pending_state_ttl``) are dropped and no longer guarded.
+        """
+        # Bare test doubles built via object.__new__() skip __init__, so fall back safely.
+        pending = getattr(self, "_pending_state_values", None)
+        if not pending:
+            return product_state
+
+        now = time.time()
+        filtered = dict(product_state)
+        for key, (expected, sent_at) in list(pending.items()):
+            if now - sent_at > getattr(self, "_pending_state_ttl", 10.0):
+                del pending[key]
+                continue
+            if key not in filtered:
+                continue
+            if filtered[key] == expected:
+                del pending[key]
+            else:
+                _LOGGER.debug(
+                    "Ignoring stale %s=%s for %s; pending command expects %s",
+                    key,
+                    filtered[key],
+                    self._log_serial,
+                    expected,
+                )
+                del filtered[key]
+        return filtered
+
     def _handle_current_state(self, data: dict[str, Any], topic: str) -> None:
         """Handle current state message."""
         _LOGGER.debug("Received current state data for %s: %s", self._log_serial, data)
@@ -1585,8 +1629,16 @@ class DysonDevice:
                 if value is not None:
                     _LOGGER.debug("Filter field %s: %s", field, value)
 
-        # For CURRENT-STATE messages, values are already strings - store directly
-        self._state_data.update(data)
+        # For CURRENT-STATE messages, values are already strings - merge
+        # per-key rather than replacing the whole payload, so a partial or
+        # racing snapshot can't wipe out unrelated keys changed elsewhere.
+        guarded_product_state = self._apply_pending_state_guard(product_state)
+        if guarded_product_state or "product-state" in data:
+            self._state_data.setdefault("product-state", {}).update(
+                guarded_product_state
+            )
+        other_data = {k: v for k, v in data.items() if k != "product-state"}
+        self._state_data.update(other_data)
         _LOGGER.debug("Updated device state for %s", self._log_serial)
 
         self._reconcile_robot_faults(data.get("activeFaults"))
@@ -1780,6 +1832,18 @@ class DysonDevice:
             else:
                 # Already a string or other type, keep as-is
                 normalized_product_state[key] = value
+
+        # STATE-CHANGE is an authoritative device-initiated transition (unlike
+        # a CURRENT-STATE poll reply, which can be stale/in-flight), so it
+        # always applies. If a command is still pending for one of these keys,
+        # update the guarded expectation rather than clearing it outright -
+        # a later stale CURRENT-STATE reply could otherwise still revert it
+        # before the guard's TTL elapses.
+        for key, value in normalized_product_state.items():
+            pending = getattr(self, "_pending_state_values", None)
+            if pending and key in pending:
+                _, sent_at = pending[key]
+                pending[key] = (value, sent_at)
 
         if "product-state" not in self._state_data:
             self._state_data["product-state"] = {}
@@ -2009,6 +2073,16 @@ class DysonDevice:
         return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
     @property
+    def using_fallback(self) -> bool:
+        """Return True while connected over the fallback connection."""
+        return self._using_fallback
+
+    @property
+    def preferred_connection_type(self) -> str:
+        """Return the preferred connection type, "local" or "cloud"."""
+        return self._preferred_connection_type
+
+    @property
     def is_connected(self) -> bool:
         """Return if device is connected."""
         if not self._connected or not self._mqtt_client:
@@ -2035,6 +2109,63 @@ class DysonDevice:
             return False
 
         return self._connected
+
+    async def send_jdm_command(
+        self, method: str, params: dict[str, Any], timeout: float = 15
+    ) -> dict[str, Any]:
+        """Send an RB05 request and await its matching acknowledgement.
+
+        Device message callbacks originate on Paho's thread. Resolve futures on
+        the HA loop, ignoring echoed commands, unrelated and late replies.
+        """
+        if self.mqtt_prefix != "RB05":
+            raise ValueError("JDM commands are only supported for RB05")
+        if not self._connected or not self._mqtt_client:
+            raise RuntimeError("Spot+Scrub is disconnected")
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        request_id = str(uuid.uuid4().int & 0xFFFFFFFF)
+        topic = f"{self.mqtt_prefix}/{self.serial_number}"
+
+        def complete(data: dict[str, Any]) -> None:
+            if not future.done():
+                future.set_result(data)
+
+        def receive(message_topic: str, data: dict[str, Any]) -> None:
+            if (
+                message_topic == f"{topic}/status/jdm"
+                and str(data.get("msgId")) == request_id
+                and data.get("method") == method
+                and "code" in data
+            ):
+                loop.call_soon_threadsafe(complete, data)
+
+        self.add_message_callback(receive)
+        try:
+            payload = json.dumps(
+                {
+                    "msgId": request_id,
+                    "version": "1.0.1",
+                    "method": method,
+                    "params": params,
+                }
+            )
+            result = await self.hass.async_add_executor_job(
+                self._mqtt_client.publish, f"{topic}/command/jdm", payload
+            )
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                raise RuntimeError("Unable to publish Spot+Scrub request")
+            response = await asyncio.wait_for(future, timeout)
+            data = response.get("data", {})
+            if (
+                response["code"] != 0
+                or not isinstance(data, dict)
+                or data.get("result", 0) != 0
+            ):
+                raise RuntimeError("Spot+Scrub rejected the request")
+            return data
+        finally:
+            self.remove_message_callback(receive)
 
     async def send_command(
         self, command: str, data: dict[str, Any] | None = None
@@ -2129,6 +2260,11 @@ class DysonDevice:
                 # STATE-SET commands need data wrapped in a "data" field
                 if command == "STATE-SET":
                     command_msg["data"] = data
+                    now = time.time()
+                    pending = getattr(self, "_pending_state_values", None)
+                    if pending is not None:
+                        for key, value in data.items():
+                            pending[key] = (value, now)
                 else:
                     command_msg.update(data)
 
@@ -2860,6 +2996,48 @@ class DysonDevice:
             return None
 
     @property
+    def robot_clean_duration(self) -> int | None:
+        """Return elapsed cleaning time for the current or last run.
+
+        Returns:
+            Seconds of cleaning, or None if the device does not report it
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            duration = product_state.get("cleanDuration")
+
+            if duration is None:
+                duration = self._state_data.get("cleanDuration")
+            if duration is None:
+                return None
+            return int(duration)
+        except (KeyError, TypeError, ValueError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean duration for %s: %s", self._log_serial, e
+            )
+            return None
+
+    @property
+    def robot_full_clean_action(self) -> str | None:
+        """Return what the robot is doing on this run (Spot+Scrub only).
+
+        Returns:
+            Action such as VACUUMING_AND_MOPPING, or None if not reported
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            action = product_state.get("fullCleanAction")
+
+            if not action:
+                action = self._state_data.get("fullCleanAction")
+            return action or None
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug(
+                "Failed to get robot clean action for %s: %s", self._log_serial, e
+            )
+            return None
+
+    @property
     def robot_clean_id(self) -> str | None:
         """Return robot vacuum current cleaning session ID.
 
@@ -2968,6 +3146,27 @@ class DysonDevice:
         return value if isinstance(value, list) else None
 
     @property
+    def robot_action_required_faults(self) -> list[dict] | None:
+        """Return active faults that need the user to do something.
+
+        Spot+Scrub reports status in the same list as genuine problems and
+        marks the difference with ``nextActionRequired``. Anything other
+        than LOG_ONLY stopped the robot or will.
+
+        Returns:
+            Matching fault entries, [] when healthy, None when not reported
+        """
+        faults = self.robot_active_faults
+        if faults is None:
+            return None
+        return [
+            entry
+            for entry in faults
+            if isinstance(entry, dict)
+            and entry.get("nextActionRequired") != ROBOT_FAULT_ACTION_LOG_ONLY
+        ]
+
+    @property
     def robot_last_clean_zones(self) -> list[str]:
         """Zones targeted by the current/most recent MQTT-commanded clean.
 
@@ -2983,6 +3182,51 @@ class DysonDevice:
             programme.get("unorderedZones") or []
         )
         return [str(z) for z in zones if z]
+
+    @property
+    def robot_consumables(self) -> dict[str, int | None]:
+        """Return remaining life percent per robot consumable type.
+
+        CURRENT-STATE carries a top-level ``consumables`` list of
+        ``{"type": str, "usage": int}`` entries; the app displays
+        ``100 - usage`` as remaining life. A ``usage`` of -1 means the
+        consumable is not applicable/installed, reported as None. Entries
+        without a numeric ``usage`` (e.g. ``cleaningSolution``, which uses
+        ``needsRefill`` instead) are excluded here.
+        """
+        consumables = self._state_data.get("consumables")
+        if not isinstance(consumables, list):
+            return {}
+
+        result: dict[str, int | None] = {}
+        for entry in consumables:
+            if not isinstance(entry, dict):
+                continue
+            consumable_type = entry.get("type")
+            usage = entry.get("usage")
+            if not isinstance(consumable_type, str) or not isinstance(usage, int):
+                continue
+            result[consumable_type] = (
+                max(0, min(100, 100 - usage)) if usage >= 0 else None
+            )
+        return result
+
+    @property
+    def robot_cleaning_solution_needs_refill(self) -> bool | None:
+        """Return whether the robot's cleaning solution needs a refill.
+
+        Sourced from the ``cleaningSolution`` entry in the top-level
+        ``consumables`` list, which reports ``needsRefill`` instead of a
+        ``usage`` percentage. None if the entry is not reported.
+        """
+        consumables = self._state_data.get("consumables")
+        if not isinstance(consumables, list):
+            return None
+        for entry in consumables:
+            if isinstance(entry, dict) and entry.get("type") == "cleaningSolution":
+                needs_refill = entry.get("needsRefill")
+                return needs_refill if isinstance(needs_refill, bool) else None
+        return None
 
     def _get_command_timestamp(self) -> str:
         """Get formatted timestamp for MQTT commands."""

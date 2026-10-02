@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -14,18 +14,23 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service_info.dhcp import DhcpServiceInfo
 
 from .const import (
     AVAILABLE_CAPABILITIES,
     AVAILABLE_DEVICE_CATEGORIES,
+    BLE_DEVICE_KIND_LIGHT,
+    BLE_DEVICE_KIND_VACUUM,
     BLE_LTK_FALLBACK_CODE,
     BLE_SERVICE_UUID,
     CONF_AUTO_ADD_DEVICES,
+    CONF_BLE_DEVICE_KIND,
     CONF_BLE_MAC,
     CONF_BLE_PROXY,
     CONF_COUNTRY,
     CONF_CREDENTIAL,
     CONF_CULTURE,
+    CONF_DHCP_HOST,
     CONF_DISCOVERY_METHOD,
     CONF_HOSTNAME,
     CONF_LTK,
@@ -34,6 +39,8 @@ from .const import (
     CONF_SERIAL_NUMBER,
     DEFAULT_AUTO_ADD_DEVICES,
     DEFAULT_POLL_FOR_DEVICES,
+    DEVICE_CATEGORY_FLRC,
+    DEVICE_CATEGORY_LIGHT,
     DISCOVERY_CLOUD,
     DOMAIN,
     MDNS_SERVICE_DYSON,
@@ -71,6 +78,7 @@ def _get_setup_method_options() -> dict[str, str]:
         "cloud_account": "Dyson Cloud Account (Recommended)",
         "manual_device": "Manual Device Setup",
         "ble_light": "Dyson BLE Light (e.g. Lightcycle Morph)",
+        "ble_vacuum": "Dyson BLE Vacuum (e.g. V16 floor-care vacuums)",
     }
 
 
@@ -197,21 +205,57 @@ async def _discover_device_via_mdns(
         def _find_device():
             """Synchronous mDNS discovery function."""
             try:
-                # Look for Dyson services
-                services = zeroconf_instance.get_service_info(
-                    MDNS_SERVICE_DYSON, f"{serial_number}.{MDNS_SERVICE_DYSON}"
+                from zeroconf import (
+                    AddressResolver,
+                    IPVersion,
+                    ServiceBrowser,
+                    ServiceListener,
                 )
-                if services and services.addresses:
-                    # Return the first available IP address
-                    return socket.inet_ntoa(services.addresses[0])
 
-                # Also try the common pattern {serial}.local
+                # Devices announce "<product_type>_<serial>.<service>" (e.g. "527_XXX-AU-YYY"),
+                # so browse the service type and match on the serial suffix. Only record names
+                # in the callback (it runs on zeroconf's thread); look them up from here.
+                names: list[str] = []
+
+                class _Listener(ServiceListener):
+                    def add_service(self, zc, type_, name):
+                        if name.split(".")[0].endswith(serial_number):
+                            names.append(name)
+
+                    def update_service(self, zc, type_, name):
+                        pass
+
+                    def remove_service(self, zc, type_, name):
+                        pass
+
+                browser = ServiceBrowser(
+                    zeroconf_instance, MDNS_SERVICE_DYSON, _Listener()
+                )
                 try:
-                    hostname = f"{serial_number}.local"
-                    ip = socket.gethostbyname(hostname)
-                    return ip
-                except socket.gaierror:
-                    pass
+                    # Budget: half the timeout for browsing, a third for the hostname
+                    # fallback below, so both fit inside the caller's wait_for().
+                    deadline = time.monotonic() + max(0.5, timeout / 2)
+                    while not names and time.monotonic() < deadline:
+                        time.sleep(0.25)
+                    for name in names:
+                        services = zeroconf_instance.get_service_info(
+                            MDNS_SERVICE_DYSON, name
+                        )
+                        if services:
+                            addrs = services.parsed_addresses(IPVersion.V4Only)
+                            if addrs:
+                                return addrs[0]
+                finally:
+                    browser.cancel()
+
+                # Fall back to the hostname, resolved through HA's mDNS listener rather than the
+                # OS resolver: Dyson devices answer with IP TTL 16 (RFC 6762 requires 255) and
+                # systemd-resolved drops such replies.
+                resolver = AddressResolver(f"{serial_number}.local.")
+                if resolver.request(zeroconf_instance, int(timeout * 1000 / 3)):
+                    addrs = resolver.ip_addresses_by_version(IPVersion.V4Only)
+                    if addrs:
+                        return str(addrs[0])
 
             except Exception as e:
                 _LOGGER.debug(
@@ -288,6 +332,34 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._ble_serial: str | None = None
         self._ble_capabilities: list[str] = []
         self._ble_found_devices: list[tuple[str, str]] = []  # (mac, name)
+        # Which BLE device family the current flow serves: "light" (default)
+        # or "vacuum" (floor-cleaners like the V16 Piston Animal).  Stored in
+        # the created config entry so entry setup can route accordingly.
+        self._ble_kind: str = BLE_DEVICE_KIND_LIGHT
+
+    @staticmethod
+    def _normalize_discovery_categories(discovery_info: Any) -> set[str]:
+        """Normalize the device-category field(s) of a discovery payload.
+
+        Cloud discovery sends either ``device_category`` (possibly a list,
+        as reported by the Dyson account API) or a scalar ``category``;
+        values may be strings or enum-like objects.  Returns a lowercase set.
+        """
+        raw = discovery_info.get("device_category")
+        if raw is None:
+            raw = discovery_info.get("category")
+        if raw is None:
+            return set()
+        if isinstance(raw, (list, tuple, set, frozenset)):
+            items = list(raw)
+        else:
+            items = [raw]
+        result: set[str] = set()
+        for item in items:
+            value = getattr(item, "value", item)
+            if isinstance(value, str) and value:
+                result.add(value.lower())
+        return result
 
     def _device_is_supported(self, device) -> bool:
         """Check if a device is supported by this integration.
@@ -407,6 +479,96 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"email": self._email or ""},
         )
 
+    def _find_entry_by_serial_hostname(
+        self, hostname: str
+    ) -> config_entries.ConfigEntry | None:
+        """Match a ``{product_type}_{serial}`` DHCP hostname to an entry."""
+        if not hostname or "_" not in hostname:
+            return None
+        serial = hostname.split("_", 1)[-1]
+        return next(
+            (
+                entry
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+                if entry.data.get(CONF_SERIAL_NUMBER) == serial
+            ),
+            None,
+        )
+
+    def _find_entry_by_ip(self, ip: str) -> config_entries.ConfigEntry | None:
+        """Match a DHCP discovery IP to an entry via config or its live host.
+
+        Used when the DHCP hostname is missing or unrecognized. Home
+        Assistant's active network scan and device-tracker-sourced watchers
+        often report a blank or router-assigned hostname instead of the
+        Dyson ``{product_type}_{serial}`` value carried in native DHCP
+        request packets, so hostname matching alone misses those events.
+        """
+        domain_data = self.hass.data.get(DOMAIN, {})
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if not entry.data.get(CONF_SERIAL_NUMBER):
+                continue
+            if entry.data.get(CONF_HOSTNAME, "").strip() == ip:
+                return entry
+            if entry.data.get(CONF_DHCP_HOST) == ip:
+                return entry
+            coordinator = domain_data.get(entry.entry_id)
+            if getattr(getattr(coordinator, "device", None), "host", None) == ip:
+                return entry
+        return None
+
+    async def async_step_dhcp(
+        self, discovery_info: DhcpServiceInfo
+    ) -> ConfigFlowResult:
+        """Enrich an existing device's registry connections from DHCP discovery.
+
+        Home Assistant invokes this whenever it observes DHCP traffic from a
+        MAC matching one of the Dyson OUI matchers in manifest.json. The
+        entry is matched first by the ``{product_type}_{serial}`` DHCP
+        hostname Dyson devices broadcast, falling back to the discovery IP
+        against already-configured/known hosts when the hostname is missing
+        or unrecognized. This step never creates a new config entry — it
+        only records the MAC in the device registry and the IP for use by
+        ``DysonDataUpdateCoordinator._get_device_host`` and then aborts. When
+        the learned IP changes and no static ``CONF_HOSTNAME`` override is
+        configured, the entry is reloaded so the new host takes effect
+        immediately instead of waiting for the next natural reconnect.
+        """
+        matching_entry = self._find_entry_by_serial_hostname(
+            discovery_info.hostname
+        ) or self._find_entry_by_ip(discovery_info.ip)
+        if matching_entry is None:
+            return self.async_abort(reason="no_matching_device")
+        serial = matching_entry.data.get(CONF_SERIAL_NUMBER)
+
+        from homeassistant.helpers import device_registry as dr
+
+        registry = dr.async_get(self.hass)
+        device = registry.async_get_device_by_identifier(
+            (DOMAIN, serial), matching_entry.entry_id
+        )
+        if device is not None:
+            mac_connection = (
+                dr.CONNECTION_NETWORK_MAC,
+                dr.format_mac(discovery_info.macaddress),
+            )
+            if mac_connection not in device.connections:
+                registry.async_update_device(
+                    device.id,
+                    new_connections=device.connections | {mac_connection},
+                )
+
+        if matching_entry.data.get(CONF_DHCP_HOST) != discovery_info.ip:
+            self.hass.config_entries.async_update_entry(
+                matching_entry,
+                data={**matching_entry.data, CONF_DHCP_HOST: discovery_info.ip},
+            )
+            # A static hostname override always wins, so a reload can't help it.
+            if not matching_entry.data.get(CONF_HOSTNAME, "").strip():
+                self.hass.config_entries.async_schedule_reload(matching_entry.entry_id)
+
+        return self.async_abort(reason="already_configured")
+
     async def _finish_reauth(self) -> ConfigFlowResult:
         """Complete re-authentication by updating the existing entry in place.
 
@@ -467,6 +629,10 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 elif setup_method == "manual_device":
                     return await self.async_step_manual_device()
                 elif setup_method == "ble_light":
+                    self._ble_kind = BLE_DEVICE_KIND_LIGHT
+                    return await self.async_step_ble_discover()
+                elif setup_method == "ble_vacuum":
+                    self._ble_kind = BLE_DEVICE_KIND_VACUUM
                     return await self.async_step_ble_discover()
                 else:
                     _LOGGER.error("Invalid setup method selected: %s", setup_method)
@@ -983,6 +1149,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_BLE_MAC: mac,
                         CONF_LTK: ltk,
                         "account_uuid": account_uuid,
+                        CONF_BLE_DEVICE_KIND: self._ble_kind,
                     }
                     if self._ble_capabilities:
                         config_data["capabilities"] = self._ble_capabilities
@@ -1212,6 +1379,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_BLE_MAC: mac,
                     CONF_LTK: ltk_hex,
                     "account_uuid": account_uuid,
+                    CONF_BLE_DEVICE_KIND: self._ble_kind,
                 }
                 if self._ble_capabilities:
                     config_data["capabilities"] = self._ble_capabilities
@@ -1796,11 +1964,34 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # BLE-only (lecOnly) devices cannot be set up via the MQTT discovery path.
         # Redirect to the BLE configure step so the user gets the correct pairing
         # flow (MAC address entry + automatic LTK fetch) with serial pre-filled.
+        # The BLE device family (light vs floor-care vacuum) is routed by the
+        # device's declared category — previously every lecOnly device was sent
+        # to the BLE Light flow, which is wrong for vacuums (issue #434).
         if discovery_info.get("connection_category") == "lecOnly":
-            _LOGGER.info(
-                "Device %s is BLE-only (lecOnly) — redirecting discovery to BLE configure flow",
-                device_serial,
-            )
+            categories = self._normalize_discovery_categories(discovery_info)
+            if DEVICE_CATEGORY_FLRC in categories:
+                _LOGGER.info(
+                    "Device %s is a BLE-only floor-cleaner (lecOnly + flrc) — "
+                    "redirecting discovery to the BLE vacuum configure flow",
+                    device_serial,
+                )
+                self._ble_kind = BLE_DEVICE_KIND_VACUUM
+            elif DEVICE_CATEGORY_LIGHT in categories:
+                _LOGGER.info(
+                    "Device %s is a BLE-only light (lecOnly + light) — "
+                    "redirecting discovery to the BLE light configure flow",
+                    device_serial,
+                )
+                self._ble_kind = BLE_DEVICE_KIND_LIGHT
+            else:
+                _LOGGER.warning(
+                    "Device %s is BLE-only (lecOnly) with unsupported category "
+                    "%r — only 'light' and 'flrc' devices are currently supported; "
+                    "falling back to the BLE light configure flow",
+                    device_serial,
+                    categories,
+                )
+                self._ble_kind = BLE_DEVICE_KIND_LIGHT
             self._ble_serial = device_serial
             self._ble_capabilities = discovery_info.get("capabilities", [])
             return await self.async_step_ble_configure()

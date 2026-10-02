@@ -51,7 +51,7 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, celsius_to_decikelvin, decikelvin_to_celsius
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -770,7 +770,7 @@ class DysonFan(DysonEntity, FanEntity):
 
                 # Target temperature in Kelvin format for device commands
                 if self._attr_target_temperature is not None:
-                    temp_kelvin = int((self._attr_target_temperature + 273.15) * 10)
+                    temp_kelvin = celsius_to_decikelvin(self._attr_target_temperature)
                     attributes["target_temperature_kelvin"] = f"{temp_kelvin:04d}"  # type: ignore[assignment]
 
         return attributes if attributes else None
@@ -947,16 +947,21 @@ class DysonFan(DysonEntity, FanEntity):
         if not self._has_heating or not self.coordinator.device:
             return
 
-        # Current temperature
-        current_temp = self.coordinator.device.get_state_value(
-            device_data, "tmp", "0000"
-        )
-        try:
-            temp_kelvin = int(current_temp) / 10  # Device reports in 0.1K increments
-            self._attr_current_temperature = float(
-                temp_kelvin - 273.15
-            )  # Convert to Celsius
-        except (ValueError, TypeError):
+        # Current temperature from environmental data (same source as climate)
+        environmental_data = self.coordinator.data.get("environmental-data", {})
+        current_temp = environmental_data.get("tact")
+        if current_temp is not None and current_temp != "OFF":
+            try:
+                temp_kelvin = float(current_temp) / 10
+                if temp_kelvin > 0:
+                    self._attr_current_temperature = round(
+                        decikelvin_to_celsius(float(current_temp)), 1
+                    )
+                else:
+                    self._attr_current_temperature = None
+            except (ValueError, TypeError):
+                self._attr_current_temperature = None
+        else:
             self._attr_current_temperature = None
 
         # Target temperature
@@ -965,7 +970,12 @@ class DysonFan(DysonEntity, FanEntity):
         )
         try:
             temp_kelvin = int(target_temp) / 10
-            self._attr_target_temperature = float(temp_kelvin - 273.15)
+            if target_temp != "0000" and temp_kelvin > 0:
+                self._attr_target_temperature = float(
+                    round(decikelvin_to_celsius(int(target_temp)))
+                )
+            else:
+                self._attr_target_temperature = 20.0
         except (ValueError, TypeError):
             self._attr_target_temperature = 20.0  # Default to 20°C
 

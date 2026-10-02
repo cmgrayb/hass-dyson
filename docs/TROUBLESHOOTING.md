@@ -69,6 +69,39 @@ Most common solutions:
 
 **See also**: [Static IP Configuration Guide](SETUP.md#static-ip--hostname-configuration)
 
+### **Device Registry Missing MAC Address / Not Linking to Router-Reported Device**
+
+**Problem**: The device page shows an empty `connections` field, so it never merges
+with the same physical device tracked by a router-backed integration (TP-Link,
+UniFi, Fritz!Box, etc.).
+
+**How this works**: The integration relies on Home Assistant's built-in `dhcp`
+discovery component to observe a Dyson device's MAC address on the network and
+populate the device registry automatically — no cooperation from the device
+itself is required.
+
+**Common Causes**:
+- **Docker container networking**: if Home Assistant runs in a container on an
+  isolated bridge network (the default for `docker-compose`), it has no L2
+  visibility into the physical LAN and can never observe the device's DHCP or
+  ARP traffic. Requires `network_mode: host` (Linux only) or a `macvlan`
+  network attached to the physical LAN interface.
+- **DHCP lease not yet renewed and no active scan**: HA performs an active
+  network scan at startup in addition to passive sniffing, but this still
+  requires L2 visibility as above.
+- **Device's WiFi module uses an OUI not yet recognized**: the integration
+  matches DHCP traffic against a known list of Dyson MAC prefixes; devices
+  using a newer/unlisted WiFi module won't be discovered until that OUI is
+  added.
+
+**Solution**:
+- Ensure Home Assistant itself (not just this integration) has real network
+  visibility to the device's LAN segment (host networking or macvlan for
+  containerized installs).
+- Enable debug logging for `homeassistant.components.dhcp` and
+  `custom_components.hass_dyson.config_flow` to confirm discovery events are
+  received.
+
 ### **MQTT Connection Failed**
 
 ```bash
