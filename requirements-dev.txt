@@ -11,6 +11,10 @@ types-cryptography==3.3.23.2
 # Additional testing utilities
 responses==0.26.3
 aioresponses==0.7.9
+# Transitive pin: aioresponses allows aiohttp>=3.3.0, which resolves to
+# versions with known vulnerabilities. Enforce a safe minimum.
+# Remove the below line once aioresponses updates its aiohttp requirement to a safe version.
+aiohttp>=3.9.0
 
 # MQTT testing
 paho-mqtt==2.1.0
