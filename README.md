@@ -48,6 +48,7 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 ### Robotic Vacuums
 
 - **Start Controls** - Individual buttons for room cleaning in addition to support for zone cleaning introduced in Home Assistant 2026.3.0.  Start button on the device object cleans all configured spaces.
+- **Cleaning Modes** - Supports [cleaning modes](docs/spot-scrub-cleaning-modes.md), including simultaneous vacuuming and mopping for supported devices
 - **Mid-run Controls** - Pause, Resume, and Stop (Return to Dock)
 - **Vacuum Status** - Battery level, Unique Identifier for Current Cleaning Session (for future use)
 
@@ -57,6 +58,16 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **Scene Support** - Lights may be controlled as part of a Home Assistant Scene
 - **Active BLE Proxy connections** - Lights may be added as their own hub and connect through Bluetooth Proxies
   - For more information, please see [esphome Bluetooth Proxy](https://esphome.io/components/bluetooth_proxy/)
+
+### BLE Floor-cleaning Vacuums (e.g. V16 Piston Animal)
+
+- **Battery & charging** - Level %, actively charging, charger/dock presence, battery temperature, charge-required alert
+- **Health & maintenance** - Blockage, filter missing/washing, system error, non-genuine battery detection
+- **Cleaning** - Power mode, brush-bar type, session-active state
+- **Settings** - Brush-bar speed, dust-illumination mode and machine UI language selects; task-detection and battery-care switches (the five settings the MyDyson app writes over BLE; everything else is read-only)
+- **Firmware** - Installed version, and a staged update when the app has pushed one (read-only; installs go through the MyDyson app)
+- **BLE-only** - no Wi-Fi, no MQTT, no cloud required after the one-time LTK pairing fetch
+  - Details and setup: [docs/FLOORCARE_BLE.md](docs/FLOORCARE_BLE.md)
 
 <!-- ## Planned Features
 
@@ -120,13 +131,13 @@ Choose your preferred default connection method for your devices:
 - **Local with Cloud Fallback**: Stays local until and unless the local server cannot be
     reached, then reconnects to the device through the Dyson-hosted MQTT Proxy service.
   - Balances privacy and uptime by only using cloud when necessary
-  - Attempts to reconnect to local periodically
+  - Attempts to reconnect to local periodically, raises repair after repeated failure
   - Allows the user to reconnect to local manually through the Reconnect button
 
 - **Cloud with Local Fallback**: Stays on the Dyson MQTT Proxy service until and unless
     internet access is lost, then reconnects to the device directly
   - Uses an encrypted connection as often as possible but switches to local to maintain connectivity in the event of internet outage
-  - Attempts to reconnect to cloud periodically
+  - Attempts to reconnect to cloud periodically, raises repair after repeated failure
   - Allows the user to reconnect to cloud manually through the Reconnect button
 
 - **Cloud Only**: Stays on the Dyson MQTT Proxy
@@ -143,12 +154,12 @@ Choose your preference for level of control of discovery:
 - **Poll for New Devices**: If selected, the API will be queried for new devices periodically, making them available for discovery
 - **Automatically Add Discovered Devices**: Uses the information from polling your Dyson account to connect to the devices using your Default Connection Method
 
-Scenarios:
+**Scenarios**:
 
 1. I want my Dyson devices to show up in Home Assistant as soon as they are found
     - Leave both checkboxes selected
 
-2. I want Home Assistant to ask me to add my devices as they are found so I can choose which ones to add or ignore
+2. I want Home Assistant to ask me to add my devices as they are found so I can choose which ones to add or ignore, or I want to configure the devices before they are added
     - Only select Poll for New Devices, leave Automatically Add Discovered Devices unchecked.
 
 3. I want to add my Dyson devices individually and manually or I am only interested in using the Get Cloud Devices Action
@@ -188,15 +199,13 @@ Based on your device capabilities and category, you'll automatically get:
 
 **Heating models (Heating Capability):**
 
-- **Climate control platform**
-- **HVAC Controls**:
+- **Climate Entity**:
   - Mode control: Heat/Fan only/Off
   - Heat minimum temperature (thermostat)
 
 **Humidifier models (Humidifier Capability):**
 
-- **Climate control platform**
-- **Humidifier Controls**:
+- **Humidifier Entity**:
   - Mode control: Humidify/Fan only/Off
   - Humidifier minimum humidity (humidistat)
   - Empty tank diagnostic sensor
@@ -230,8 +239,8 @@ Required information from device sticker, libdyson-rest, or opendyson:
 
 - **Serial Number** (e.g., MOCK-SERIAL-TEST123)
 - **Device Password** (from sticker)
-- **MQTT Prefix** (e.g., 438M for Pure Cool models)
-- **Device Type** (e.g., EC for air purifiers)
+- **MQTT Prefix** (e.g., **438M**)
+- **Device Type** (e.g., **ec** for fans/heaters/humidifiers)
 
 ### YAML Configuration (Optional, **Not** Recommended)
 

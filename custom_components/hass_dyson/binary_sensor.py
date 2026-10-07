@@ -126,6 +126,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Dyson binary sensor platform."""
+    from .entry_routing import async_route_ble_platform
+
+    routed = await async_route_ble_platform(
+        hass, config_entry, async_add_entities, "binary_sensor"
+    )
+    if routed is not None:
+        return routed
+
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
 
     # BLE light devices — motion sensor only
@@ -184,7 +192,23 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
         entities.append(DysonRobotBatteryChargingSensor(coordinator))
+        # RB05 reports flat numeric codes the subsystem sensors cannot read.
+        if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+            entities.append(DysonRobotActionRequiredSensor(coordinator))
         _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
+
+        # Cleaning solution refill sensor — only for models that report it
+        # (hot-water-mop robots); the consumables entry is absent otherwise.
+        robot_state_data = coordinator.data or {}
+        consumables = robot_state_data.get("consumables")
+        if isinstance(consumables, list) and any(
+            isinstance(entry, dict) and entry.get("type") == "cleaningSolution"
+            for entry in consumables
+        ):
+            entities.append(DysonCleaningSolutionSensor(coordinator))
+            _LOGGER.debug(
+                "Adding cleaning solution sensor for %s", coordinator.serial_number
+            )
 
     async_add_entities(entities, True)
     return True
@@ -493,6 +517,47 @@ class DysonFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
             return "Unknown"
 
 
+class DysonRobotActionRequiredSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """On when a Spot+Scrub fault needs the user to intervene.
+
+    activeFaults carries status and real problems together; only
+    nextActionRequired separates them.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the action-required sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_action_required"
+        self._attr_translation_key = "robot_action_required"
+        self._attr_icon = "mdi:robot-vacuum-alert"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        blocking = (
+            getattr(device, "robot_action_required_faults", None) if device else None
+        )
+        if blocking is None:
+            self._attr_is_on = None
+            self._attr_extra_state_attributes = {}
+            super()._handle_coordinator_update()
+            return
+
+        self._attr_is_on = bool(blocking)
+        self._attr_extra_state_attributes = {
+            "fault_codes": [
+                str(entry.get("faultCode"))
+                for entry in blocking
+                if entry.get("faultCode") is not None
+            ]
+        }
+        super()._handle_coordinator_update()
+
+
 class DysonRobotFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
     """Per-subsystem fault sensor for robot vacuums.
 
@@ -543,6 +608,31 @@ class DysonRobotFaultSensor(DysonEntity, BinarySensorEntity):  # type: ignore[mi
                             attributes[key] = detail[key]
                     break
         self._attr_extra_state_attributes = attributes
+        super()._handle_coordinator_update()
+
+
+class DysonCleaningSolutionSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Cleaning solution refill status for hot-water-mop robot vacuums."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the cleaning solution sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_cleaning_solution"
+        self._attr_translation_key = "cleaning_solution_refill_needed"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:water-alert"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        self._attr_is_on = (
+            getattr(device, "robot_cleaning_solution_needs_refill", None)
+            if device
+            else None
+        )
         super()._handle_coordinator_update()
 
 

@@ -1791,6 +1791,128 @@ class TestDysonDeviceFaultHandling:
         assert result[0]["value"] == "FAIL"
 
 
+class TestDysonDevicePendingStateGuard:
+    """Regression tests for the rhtm 'snap back' race condition (issue #469).
+
+    A command's target value is tracked as pending until either a matching
+    state update arrives or the guard TTL expires, so a stale CURRENT-STATE
+    reply racing a heartbeat poll can't silently revert a just-sent command.
+    """
+
+    @pytest.fixture
+    def mock_hass(self):
+        """Mock Home Assistant instance."""
+        hass = MagicMock()
+        hass.async_add_executor_job = AsyncMock()
+        return hass
+
+    @pytest.mark.asyncio
+    async def test_stale_current_state_does_not_revert_pending_command(
+        self, mock_hass, mock_mqtt_client
+    ):
+        """A stale CURRENT-STATE reply must not undo an unconfirmed STATE-SET."""
+        with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+            mock_mqtt_client.connect.return_value = 0
+
+            def mock_executor_job(func, *args):
+                return func(*args) if args else func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+            device = DysonDevice(
+                hass=mock_hass,
+                serial_number="TEST123",
+                host="192.168.1.100",
+                credential="test_cred",
+            )
+            device._connected = True
+            device._mqtt_client = mock_mqtt_client
+            device._state_data = {"product-state": {"rhtm": "ON"}}
+
+            # User turns continuous monitoring off.
+            await device.set_continuous_monitoring(False)
+            assert device._state_data["product-state"]["rhtm"] == "ON"  # unconfirmed
+
+            # A racing heartbeat CURRENT-STATE reply arrives, still showing the
+            # pre-command value because it was in flight before the command
+            # reached the device.
+            device._handle_current_state(
+                {"msg": "CURRENT-STATE", "product-state": {"rhtm": "ON"}},
+                "475/TEST123/status/current",
+            )
+
+            assert device._state_data["product-state"]["rhtm"] == "ON"
+
+            # The device's real STATE-CHANGE confirmation now arrives.
+            device._handle_state_change(
+                {"msg": "STATE-CHANGE", "product-state": {"rhtm": ["ON", "OFF"]}}
+            )
+            assert device._state_data["product-state"]["rhtm"] == "OFF"
+
+            # A further stale CURRENT-STATE reply must not revert the confirmed
+            # OFF state either, while the guard is still within its TTL.
+            device._handle_current_state(
+                {"msg": "CURRENT-STATE", "product-state": {"rhtm": "ON"}},
+                "475/TEST123/status/current",
+            )
+            assert device._state_data["product-state"]["rhtm"] == "OFF"
+
+    def test_matching_current_state_clears_pending_guard(self, mock_hass):
+        """A CURRENT-STATE reply matching the pending value is accepted."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+        device._pending_state_values = {"rhtm": ("OFF", time.time())}
+
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "product-state": {"rhtm": "OFF"}},
+            "475/TEST123/status/current",
+        )
+
+        assert device._state_data["product-state"]["rhtm"] == "OFF"
+        assert "rhtm" not in device._pending_state_values
+
+    def test_pending_guard_expires_after_ttl(self, mock_hass):
+        """After the TTL elapses, a contradicting value is accepted as truth."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+        stale_timestamp = time.time() - (device._pending_state_ttl + 1)
+        device._pending_state_values = {"rhtm": ("OFF", stale_timestamp)}
+
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "product-state": {"rhtm": "ON"}},
+            "475/TEST123/status/current",
+        )
+
+        assert device._state_data["product-state"]["rhtm"] == "ON"
+        assert "rhtm" not in device._pending_state_values
+
+    def test_current_state_merges_per_key_without_wiping_other_keys(self, mock_hass):
+        """A partial CURRENT-STATE snapshot must not erase unrelated keys."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+        device._state_data = {"product-state": {"fpwr": "ON", "nmod": "ON"}}
+
+        device._handle_current_state(
+            {"msg": "CURRENT-STATE", "product-state": {"fpwr": "OFF"}},
+            "475/TEST123/status/current",
+        )
+
+        assert device._state_data["product-state"]["fpwr"] == "OFF"
+        assert device._state_data["product-state"]["nmod"] == "ON"
+
+
 class TestDysonDeviceProperties:
     """Test device property methods."""
 

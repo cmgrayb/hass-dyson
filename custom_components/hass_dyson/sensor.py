@@ -78,7 +78,9 @@ from .const import (
     CAPABILITY_EXTENDED_AQ,
     CAPABILITY_FORMALDEHYDE,
     CAPABILITY_VOC,
+    CONSUMABLE_TYPE_NAMES,
     DOMAIN,
+    ROBOT_NUMERIC_FAULT_NAMES,
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
@@ -1101,6 +1103,14 @@ async def async_setup_entry(  # noqa: C901
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Set up Dyson sensor platform."""
+    from .entry_routing import async_route_ble_platform
+
+    routed = await async_route_ble_platform(
+        hass, config_entry, async_add_entities, "sensor"
+    )
+    if routed is not None:
+        return routed
+
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities: list[SensorEntity] = []
@@ -1256,6 +1266,27 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
                 device_category,
             )
+
+        # Add per-consumable life sensors for robot vacuums, data-driven from
+        # whatever "consumables" entries the device actually reports (models
+        # vary, e.g. dry-only robots have no mopRoller/cleaningSolution).
+        if "robot" in device_category:
+            robot_state_data = coordinator.data or {}
+            consumables = robot_state_data.get("consumables")
+            if isinstance(consumables, list):
+                for consumable in consumables:
+                    if not isinstance(consumable, dict):
+                        continue
+                    consumable_type = consumable.get("type")
+                    if isinstance(consumable_type, str) and "usage" in consumable:
+                        entities.append(
+                            DysonConsumableLifeSensor(coordinator, consumable_type)
+                        )
+                        _LOGGER.debug(
+                            "Adding consumable life sensor '%s' for device %s",
+                            consumable_type,
+                            mask_serial(device_serial),
+                        )
 
         # Add HEPA filter sensors for devices with EnvironmentalData or ExtendedAQ capability
         # These capabilities indicate the device has air filtration with PM monitoring
@@ -1498,6 +1529,11 @@ async def async_setup_entry(  # noqa: C901
                 device_serial,
             )
             entities.append(DysonRobotBatterySensor(coordinator))
+            # Spot+Scrub reports run detail the other robots do not send.
+            if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+                entities.append(DysonRobotCleanDurationSensor(coordinator))
+                entities.append(DysonRobotCleanActionSensor(coordinator))
+                entities.append(DysonRobotActiveFaultSensor(coordinator))
             # Cloud-fetched cleaning history + Dyson's recommended-next-room
             # sensor. Both gated on cloud auth.
             if coordinator.config_entry.data.get("auth_token"):
@@ -2711,6 +2747,46 @@ class DysonCarbonFilterLifeSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+class DysonConsumableLifeSensor(DysonEntity, SensorEntity):
+    """Remaining life percentage sensor for a robot vacuum consumable."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    _ICONS = {
+        "brushBar": "mdi:broom",
+        "mopRoller": "mdi:water",
+        "sideBrushes": "mdi:broom",
+        "robotFilter": "mdi:air-filter",
+        "dockFilter": "mdi:air-filter",
+        "ioniserCartridge": "mdi:air-purifier",
+    }
+
+    def __init__(
+        self, coordinator: DysonDataUpdateCoordinator, consumable_type: str
+    ) -> None:
+        """Initialize the consumable life sensor."""
+        super().__init__(coordinator)
+
+        self.consumable_type = consumable_type
+        self._attr_unique_id = f"{coordinator.serial_number}_{consumable_type}_life"
+        self._attr_translation_key = "consumable_life"
+        self._attr_translation_placeholders = {
+            "consumable_type": CONSUMABLE_TYPE_NAMES.get(
+                consumable_type, consumable_type.title()
+            )
+        }
+        self._attr_native_unit_of_measurement = PERCENTAGE
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = self._ICONS.get(consumable_type, "mdi:recycle")
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        consumables = getattr(self.coordinator.device, "robot_consumables", None) or {}
+        self._attr_native_value = consumables.get(self.consumable_type)
+        super()._handle_coordinator_update()
+
+
 class DysonFilterStatusSensor(DysonEntity, SensorEntity):
     """Filter status sensor for Dyson devices."""
 
@@ -3229,6 +3305,124 @@ class DysonRobotBatterySensor(DysonEntity, SensorEntity):
             )
             self._attr_native_value = None
 
+        super()._handle_coordinator_update()
+
+
+# ============================================================================
+# Spot+Scrub run detail (RB05)
+# ============================================================================
+# cleanDuration and fullCleanAction ride every CURRENT-STATE message but were
+# not surfaced. Both are Spot+Scrub-only fields.
+
+
+class DysonRobotCleanDurationSensor(DysonEntity, SensorEntity):
+    """Elapsed cleaning time for the current or most recent run.
+
+    Mirrors the timer MyDyson shows beneath the cleaning status. The value
+    is retained after a run finishes until the next one starts.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the clean duration sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_clean_duration"
+        self._attr_translation_key = "robot_clean_duration"
+        self._attr_device_class = SensorDeviceClass.DURATION
+        self._attr_native_unit_of_measurement = UnitOfTime.SECONDS
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:timer-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        self._attr_native_value = device.robot_clean_duration if device else None
+        super()._handle_coordinator_update()
+
+
+class DysonRobotCleanActionSensor(DysonEntity, SensorEntity):
+    """What the robot is doing on this run, e.g. VACUUMING_AND_MOPPING.
+
+    Reported raw. Dyson adds values per firmware, so no mapping is applied
+    that would turn an unknown action into a wrong label.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the clean action sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_clean_action"
+        self._attr_translation_key = "robot_clean_action"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:spray-bottle"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        self._attr_native_value = device.robot_full_clean_action if device else None
+        super()._handle_coordinator_update()
+
+
+class DysonRobotActiveFaultSensor(DysonEntity, SensorEntity):
+    """Fault the Spot+Scrub is currently reporting.
+
+    RB05 sends flat numeric codes in activeFaults instead of the
+    per-subsystem dict, so none of it reaches the subsystem sensors.
+    Unknown codes are shown raw.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the active fault sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_active_fault"
+        self._attr_translation_key = "robot_active_fault"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:alert-circle-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        faults = getattr(device, "robot_active_faults", None) if device else None
+
+        if faults is None:
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            super()._handle_coordinator_update()
+            return
+
+        entries = [
+            entry
+            for entry in faults
+            if isinstance(entry, dict) and entry.get("faultCode") is not None
+        ]
+        if not entries:
+            self._attr_native_value = "none"
+            self._attr_extra_state_attributes = {"fault_codes": []}
+            super()._handle_coordinator_update()
+            return
+
+        # Status shares the list with real problems, so report the one the
+        # user has to act on. robot_action_required_faults owns that test.
+        blocking = [
+            entry
+            for entry in (getattr(device, "robot_action_required_faults", None) or [])
+            if isinstance(entry, dict) and entry.get("faultCode") is not None
+        ]
+        chosen = blocking[0] if blocking else entries[0]
+        code = str(chosen["faultCode"])
+        self._attr_native_value = ROBOT_NUMERIC_FAULT_NAMES.get(code, code)
+        self._attr_extra_state_attributes = {
+            "fault_code": code,
+            "fault_codes": [str(entry["faultCode"]) for entry in entries],
+            "next_action_required": chosen.get("nextActionRequired"),
+        }
         super()._handle_coordinator_update()
 
 
@@ -3784,7 +3978,9 @@ def _device_product_type(coordinator: DysonDataUpdateCoordinator) -> str | None:
         from homeassistant.helpers import device_registry as dr
 
         dev_reg = dr.async_get(coordinator.hass)
-        d = dev_reg.async_get_device_by_identifier((DOMAIN, coordinator.serial_number))
+        d = dev_reg.async_get_device_by_identifier(
+            (DOMAIN, coordinator.serial_number), coordinator.config_entry.entry_id
+        )
         if d and d.model and str(d.model).lower() not in ("unknown", ""):
             return d.model
     except Exception:  # noqa: BLE001

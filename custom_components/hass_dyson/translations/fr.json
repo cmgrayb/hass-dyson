@@ -123,7 +123,8 @@
       "user_declined": "La configuration de l'appareil a été annulée par l'utilisateur.",
       "no_device_data": "Les informations requises de l'appareil sont manquantes. Impossible de terminer la configuration.",
       "reauth_successful": "La ré-authentification a réussi. Vos identifiants ont été mis à jour.",
-      "reauth_failed": "La ré-authentification a échoué de manière inattendue. Veuillez réessayer."
+      "reauth_failed": "La ré-authentification a échoué de manière inattendue. Veuillez réessayer.",
+      "no_matching_device": "Aucun appareil Dyson configuré ne correspond à cette découverte DHCP."
     }
   },
   "options": {
@@ -224,6 +225,9 @@
       },
       "filter_life": {
         "name": "Durée de vie du filtre {filter_type}"
+      },
+      "consumable_life": {
+        "name": "Durée de vie {consumable_type}"
       },
       "hepa_filter_life": {
         "name": "Durée de vie du filtre HEPA"
@@ -361,11 +365,17 @@
       }
     },
     "binary_sensor": {
+      "robot_action_required": {
+        "name": "Action requise"
+      },
       "filter_replacement": {
         "name": "Remplacement du filtre"
       },
       "robot_battery_charging": {
         "name": "En charge"
+      },
+      "cleaning_solution_refill_needed": {
+        "name": "Solution de nettoyage"
       },
       "motion": {
         "name": "Mouvement"

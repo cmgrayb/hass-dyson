@@ -123,7 +123,8 @@
       "user_declined": "Device setup was cancelled by user.",
       "no_device_data": "Required device information is missing. Unable to complete setup.",
       "reauth_successful": "Re-authentication was successful. Your credentials have been updated.",
-      "reauth_failed": "Re-authentication failed unexpectedly. Please try again."
+      "reauth_failed": "Re-authentication failed unexpectedly. Please try again.",
+      "no_matching_device": "No configured Dyson device matches this DHCP discovery."
     }
   },
   "options": {
@@ -183,6 +184,15 @@
   },
   "entity": {
     "sensor": {
+      "robot_active_fault": {
+        "name": "Active fault"
+      },
+      "robot_clean_duration": {
+        "name": "Clean duration"
+      },
+      "robot_clean_action": {
+        "name": "Clean action"
+      },
       "temperature": {
         "name": "Temperature"
       },
@@ -224,6 +234,9 @@
       },
       "filter_life": {
         "name": "{filter_type} Filter Life"
+      },
+      "consumable_life": {
+        "name": "{consumable_type} Life"
       },
       "hepa_filter_life": {
         "name": "HEPA Filter Life"
@@ -275,9 +288,40 @@
       },
       "scheduled_events": {
         "name": "Scheduled Events"
+      },
+      "ble_vacuum_battery_level": {
+        "name": "Battery Level"
+      },
+      "ble_vacuum_power_mode": {
+        "name": "Power Mode",
+        "state": {
+          "eco": "Eco",
+          "med": "Medium",
+          "auto": "Auto",
+          "boost": "Boost"
+        }
+      },
+      "ble_vacuum_brush_bar_type": {
+        "name": "Brush Bar Type",
+        "state": {
+          "erp_768": "Standard head (ERP 768)",
+          "row_768": "Wide head (ROW 768)",
+          "none_attached": "None attached"
+        }
+      },
+      "ble_vacuum_battery_temperature": {
+        "name": "Battery Temperature",
+        "state": {
+          "ok": "OK",
+          "cold": "Cold",
+          "hot": "Hot"
+        }
       }
     },
     "switch": {
+      "ble_vacuum_task_detection_switch": {
+        "name": "Task Detection"
+      },
       "auto_mode": {
         "name": "Auto Mode"
       },
@@ -301,6 +345,9 @@
       },
       "daylight_mode": {
         "name": "Daylight Mode"
+      },
+      "ble_vacuum_battery_care_switch": {
+        "name": "Battery Care"
       }
     },
     "button": {
@@ -341,6 +388,66 @@
       },
       "robot_power_generic": {
         "name": "Power Level"
+      },
+      "ble_vacuum_brush_bar_speed_select": {
+        "name": "Brush Bar Speed",
+        "state": {
+          "low": "Low",
+          "high": "High",
+          "auto": "Auto"
+        }
+      },
+      "ble_vacuum_dust_illumination_select": {
+        "name": "Dust Illumination Mode",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "auto": "Auto"
+        }
+      },
+      "ble_vacuum_ui_language_select": {
+        "name": "Machine UI Language",
+        "state": {
+          "english": "English",
+          "korean": "Korean",
+          "spanish": "Spanish",
+          "french": "French",
+          "japanese": "Japanese",
+          "simplified_chinese": "Simplified Chinese",
+          "traditional_chinese": "Traditional Chinese",
+          "german": "German",
+          "italian": "Italian",
+          "dutch": "Dutch",
+          "russian": "Russian",
+          "arabic": "Arabic",
+          "czech": "Czech",
+          "danish": "Danish",
+          "greek": "Greek",
+          "finnish": "Finnish",
+          "hebrew": "Hebrew",
+          "croatian": "Croatian",
+          "hungarian": "Hungarian",
+          "lithuanian": "Lithuanian",
+          "norwegian": "Norwegian",
+          "polish": "Polish",
+          "portuguese": "Portuguese",
+          "slovenian": "Slovenian",
+          "swedish": "Swedish",
+          "thai": "Thai",
+          "turkish": "Turkish",
+          "spanish_us": "Spanish (US)",
+          "french_canada": "French (Canada)",
+          "portuguese_brazil": "Portuguese (Brazil)"
+        }
+      },
+      "spot_scrub_cleaning_mode": {
+        "name": "Cleaning mode (all rooms)",
+        "state": {
+          "vacuum_only": "Vacuum only",
+          "vacuum_and_mop": "Vacuum and mop",
+          "mop_only": "Mop only",
+          "vacuum_then_mop": "Vacuum then mop"
+        }
       }
     },
     "number": {
@@ -361,19 +468,58 @@
       }
     },
     "binary_sensor": {
+      "robot_action_required": {
+        "name": "Action required"
+      },
       "filter_replacement": {
         "name": "Filter Replacement"
       },
       "robot_battery_charging": {
         "name": "Charging"
       },
+      "cleaning_solution_refill_needed": {
+        "name": "Cleaning Solution"
+      },
       "motion": {
         "name": "Motion"
+      },
+      "ble_vacuum_actively_charging": {
+        "name": "Actively Charging"
+      },
+      "ble_vacuum_charger_present": {
+        "name": "Charger Present"
+      },
+      "ble_vacuum_blockage": {
+        "name": "Blockage"
+      },
+      "ble_vacuum_filter_present": {
+        "name": "Filter Missing"
+      },
+      "ble_vacuum_filter_wash": {
+        "name": "Filter Needs Washing"
+      },
+      "ble_vacuum_system_error": {
+        "name": "System Error"
+      },
+      "ble_vacuum_charge_required": {
+        "name": "Charge Required"
+      },
+      "ble_vacuum_session_active": {
+        "name": "Cleaning Session Active"
+      },
+      "ble_vacuum_battery_authenticity": {
+        "name": "Non-Genuine Battery"
+      },
+      "ble_vacuum_dust_illumination_auto": {
+        "name": "Dust Illumination Auto Available"
       }
     },
     "update": {
       "firmware_update": {
         "name": "Firmware Update"
+      },
+      "ble_vacuum_firmware": {
+        "name": "Firmware"
       }
     },
     "climate": {
@@ -532,6 +678,23 @@
           "description": "Remove sensitive information for safe public posting."
         }
       }
+    }
+  },
+  "exceptions": {
+    "spot_scrub_invalid_mode": {
+      "message": "This cleaning mode is not supported."
+    },
+    "spot_scrub_not_idle": {
+      "message": "Wait until Spot+Scrub is docked or idle before changing its cleaning mode."
+    },
+    "spot_scrub_request_failed": {
+      "message": "Unable to confirm the cleaning mode. Check the robot connection and room settings in MyDyson, then try again."
+    }
+  },
+  "issues": {
+    "configured_host_unreachable": {
+      "title": "{device_name} is not reachable at its configured address",
+      "description": "{device_name} has a static address ({hostname}) set in its connection options, but nothing has answered there for over 10 minutes, so it is running on the cloud connection instead. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. Saving new connection options reconnects the device, as does its Reconnect button; this warning clears itself once it connects locally."
     }
   }
 }

@@ -123,7 +123,8 @@
       "user_declined": "Gerätekonfiguration wurde vom Benutzer abgebrochen.",
       "no_device_data": "Erforderliche Geräteinformationen fehlen. Einrichtung kann nicht abgeschlossen werden.",
       "reauth_successful": "Erneute Authentifizierung erfolgreich. Ihre Zugangsdaten wurden aktualisiert.",
-      "reauth_failed": "Erneute Authentifizierung unerwartet fehlgeschlagen. Bitte versuchen Sie es erneut."
+      "reauth_failed": "Erneute Authentifizierung unerwartet fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "no_matching_device": "Kein konfiguriertes Dyson-Gerät entspricht dieser DHCP-Erkennung."
     }
   },
   "options": {
@@ -224,6 +225,9 @@
       },
       "filter_life": {
         "name": "{filter_type}-Filter Lebensdauer"
+      },
+      "consumable_life": {
+        "name": "{consumable_type} Lebensdauer"
       },
       "hepa_filter_life": {
         "name": "HEPA-Filter Lebensdauer"
@@ -361,11 +365,17 @@
       }
     },
     "binary_sensor": {
+      "robot_action_required": {
+        "name": "Aktion erforderlich"
+      },
       "filter_replacement": {
         "name": "Filterwechsel"
       },
       "robot_battery_charging": {
         "name": "Lädt"
+      },
+      "cleaning_solution_refill_needed": {
+        "name": "Reinigungslösung"
       },
       "motion": {
         "name": "Bewegung"
