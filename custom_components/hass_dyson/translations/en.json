@@ -695,6 +695,10 @@
     "configured_host_unreachable": {
       "title": "{device_name} is not reachable at its configured address",
       "description": "{device_name} has a static address ({hostname}) set in its connection options, but nothing has answered there for over 10 minutes, so it is running on the cloud connection instead. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. Saving new connection options reconnects the device, as does its Reconnect button; this warning clears itself once it connects locally."
+    },
+    "discovered_host_unreachable": {
+      "title": "{device_name} is not reachable on the local network",
+      "description": "{device_name} prefers a local connection, but nothing has answered at {hostname} for over 10 minutes, so it is running on the cloud connection instead. The device keeps working this way, only slower and without local control. This address was discovered rather than entered by hand, so either mDNS is being filtered on the network or the address has changed. Set the device's IP address in its connection options to bypass discovery, or fix mDNS on the network; see the troubleshooting guide. This warning clears itself once the device connects locally."
     }
   }
 }

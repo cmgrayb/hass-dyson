@@ -49,6 +49,7 @@ Sensor States:
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from datetime import timedelta
 from typing import Any
@@ -80,6 +81,7 @@ from .const import (
     CAPABILITY_VOC,
     CONSUMABLE_TYPE_NAMES,
     DOMAIN,
+    HOST_SOURCE_CONFIGURED,
     ROBOT_NUMERIC_FAULT_NAMES,
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
@@ -2991,9 +2993,15 @@ class DysonIpAddressSensor(DysonEntity, SensorEntity):
     Exposes the host currently used for the local MQTT connection, i.e. the
     same value resolved by :meth:`DysonDataUpdateCoordinator._get_device_host`
     (user-configured static IP/hostname, hostname reported by the cloud API,
-    or the ``{serial}.local`` mDNS fallback). This is a diagnostic entity
-    intended to help users confirm/troubleshoot local connectivity without
-    digging through logs.
+    IP learned via DHCP discovery, or the ``{serial}.local`` mDNS fallback).
+    This is a diagnostic entity intended to help users confirm/troubleshoot
+    local connectivity without digging through logs.
+
+    The state alone cannot say whether that host is usable: an unresolvable
+    ``{serial}.local`` reads like a perfectly good answer, which is misleading
+    in exactly the situation this entity exists for. The ``host_source`` and
+    ``is_ip_address`` attributes make that readable, and usable in a template
+    or an automation.
 
     Note:
         Dyson devices do not expose their WiFi network MAC address via the
@@ -3021,6 +3029,29 @@ class DysonIpAddressSensor(DysonEntity, SensorEntity):
         if self.coordinator.device:
             return getattr(self.coordinator.device, "host", None)
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return where the host came from and whether it is already an IP.
+
+        ``host_source`` is one of the ``HOST_SOURCE_*`` values, so a stale
+        static address can be told apart from discovery that is not working.
+        ``is_ip_address`` is False while the state is still a name awaiting
+        resolution, which is the case that silently falls back to the cloud.
+        """
+        host = self.native_value
+        is_ip = False
+        if host:
+            try:
+                ipaddress.ip_address(host)
+                is_ip = True
+            except ValueError:
+                is_ip = False
+        return {
+            "host_source": self.coordinator.host_source,
+            "is_ip_address": is_ip,
+            "is_configured": self.coordinator.host_source == HOST_SOURCE_CONFIGURED,
+        }
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
