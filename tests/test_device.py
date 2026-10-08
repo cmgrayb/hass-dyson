@@ -1524,9 +1524,26 @@ class TestDysonDeviceMessageHandling:
 
         test_data = {"fpwr": "ON", "nmdv": "0005", "wacd": "AUTO"}
         test_topic = "475/TEST123/status/current"
+        assert device.has_current_state is False
         device._handle_current_state(test_data, test_topic)
 
         assert device._state_data == test_data
+        assert device.has_current_state is True
+
+    @pytest.mark.asyncio
+    async def test_wait_for_current_state(self, mock_hass):
+        """Test waiting for the first CURRENT-STATE message."""
+        device = DysonDevice(
+            hass=mock_hass,
+            serial_number="TEST123",
+            host="192.168.1.100",
+            credential="test_cred",
+        )
+
+        assert await device.async_wait_for_current_state(0.2) is False
+
+        device._handle_current_state({"fpwr": "ON"}, "475/TEST123/status/current")
+        assert await device.async_wait_for_current_state(0.2) is True
 
     def test_handle_environmental_data(self, mock_hass):
         """Test handling environmental data updates."""
