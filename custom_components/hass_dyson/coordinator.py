@@ -59,6 +59,11 @@ from .const import (
     DISCOVERY_STICKER,
     DOMAIN,
     EVENT_DEVICE_FAULT,
+    HOST_SOURCE_CLOUD_API,
+    HOST_SOURCE_CONFIGURED,
+    HOST_SOURCE_DHCP,
+    HOST_SOURCE_MDNS,
+    HOST_SOURCE_UNKNOWN,
     MQTT_CMD_REQUEST_CURRENT_STATE,
     MQTT_CMD_REQUEST_ENVIRONMENT,
     UnsupportedDeviceError,
@@ -68,9 +73,9 @@ from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
-# How long a configured host may fail, with the cloud fallback in use, before
-# a repair issue is raised. Long enough to ride out a device reboot or a wifi
-# blip, short enough that a stale static address is noticed the same day.
+# How long the local host may fail, with the cloud fallback in use, before a
+# repair issue is raised. Long enough to ride out a device reboot or a wifi
+# blip, short enough that a stale address is noticed the same day.
 CONFIGURED_HOST_ISSUE_DELAY: Final = 600
 
 # Compiled regex patterns for culture/language normalisation (module-level for efficiency).
@@ -289,6 +294,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ) or config_entry.data.get("device_serial_number", "unknown")
         self.device: DysonDevice | None = None
         self._local_fallback_since: float | None = None
+        self._host_source: str = HOST_SOURCE_UNKNOWN
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
         self._device_type: str = ""  # Will be extracted from device info
@@ -1727,6 +1733,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(
                     f"Manual device setup requires hostname/IP address for device {serial_number}"
                 )
+            self._host_source = HOST_SOURCE_CONFIGURED
 
             # Get connection type from config entry
             connection_type = self._get_effective_connection_type()
@@ -2141,24 +2148,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def _configured_host_issue_id(self) -> str:
-        """Return the repair issue id for this device entry."""
+        """Return the repair issue id for this device entry.
+
+        The id keeps its original wording so that an issue raised by an earlier
+        version is still the one cleared here, even when the warning now
+        describes a discovered address rather than a configured one.
+        """
         return f"configured_host_unreachable_{self.config_entry.entry_id}"
 
     @callback
     def _async_update_configured_host_issue(self) -> None:
-        """Warn in Repairs while a configured host fails and cloud is used instead.
+        """Warn in Repairs while the local host fails and cloud is used instead.
 
-        A static hostname always wins over discovery, so when that address
-        stops answering the device silently stays on its cloud fallback. The
-        issue is raised only after the fallback has lasted a while, so a short
-        local outage does not flash a warning, and it clears itself once the
-        local connection is back.
+        A device that prefers a local connection and ends up on its cloud
+        fallback keeps working, so nothing in the UI says the local path is
+        broken. That holds whichever address was tried: a static hostname
+        always wins over discovery and goes stale when the device moves, and a
+        discovered address is just as silent when mDNS is filtered or a DHCP
+        lease has expired. The two cases call for different remedies, so they
+        get different wording, but both are worth a warning.
+
+        The issue is raised only after the fallback has lasted a while, so a
+        short local outage does not flash a warning, and it clears itself once
+        the local connection is back.
         """
-        hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
         device = self.device
         on_fallback = (
-            bool(hostname)
-            and device is not None
+            device is not None
             and device.preferred_connection_type == "local"
             and device.using_fallback
         )
@@ -2173,16 +2189,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if now - self._local_fallback_since < CONFIGURED_HOST_ISSUE_DELAY:
             return
 
+        configured = self._host_source == HOST_SOURCE_CONFIGURED
+        hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
+        host = getattr(device, "host", "") or hostname or "unknown"
         ir.async_create_issue(
             self.hass,
             DOMAIN,
             self._configured_host_issue_id,
             is_fixable=False,
             severity=ir.IssueSeverity.WARNING,
-            translation_key="configured_host_unreachable",
+            translation_key=(
+                "configured_host_unreachable"
+                if configured
+                else "discovered_host_unreachable"
+            ),
             translation_placeholders={
                 "device_name": self.config_entry.title,
-                "hostname": hostname,
+                "hostname": host,
             },
         )
 
@@ -2449,6 +2472,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         2. Hostname from device_info (cloud API)
         3. IP learned via DHCP discovery (see async_step_dhcp in config_flow.py)
         4. Fall back to {serial}.local for mDNS resolution
+
+        The branch taken is recorded in :attr:`host_source`, so the IP address
+        sensor can tell a user-entered address apart from a discovered one and
+        the Repairs warning can name the right remedy.
         """
         # Check if user provided a static IP/hostname in config entry
         configured_hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
@@ -2458,6 +2485,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.serial_number,
                 configured_hostname,
             )
+            self._host_source = HOST_SOURCE_CONFIGURED
             return configured_hostname
 
         # For cloud devices, try to get the local IP from API if available
@@ -2468,6 +2496,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.serial_number,
                 api_hostname,
             )
+            self._host_source = HOST_SOURCE_CLOUD_API
             return api_hostname
 
         # Use IP learned via DHCP discovery, if any, before resorting to mDNS
@@ -2478,6 +2507,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mask_serial(self.serial_number),
                 dhcp_host,
             )
+            self._host_source = HOST_SOURCE_DHCP
             return dhcp_host
 
         # Fall back to mDNS resolution using {serial}.local
@@ -2487,7 +2517,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             mask_serial(self.serial_number),
             mask_serial(self.serial_number),
         )
+        self._host_source = HOST_SOURCE_MDNS
         return fallback_hostname
+
+    @property
+    def host_source(self) -> str:
+        """Return where the host used for the local connection came from.
+
+        One of the ``HOST_SOURCE_*`` constants, or ``HOST_SOURCE_UNKNOWN``
+        before a host has been resolved.
+        """
+        return self._host_source
 
     def _get_mqtt_prefix(self, device_info: Any) -> str:
         """Get MQTT prefix from device info using API-first approach.
