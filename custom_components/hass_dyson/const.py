@@ -45,6 +45,16 @@ CONNECTION_TYPE_LOCAL_CLOUD_FALLBACK: Final = "local_cloud_fallback"
 CONNECTION_TYPE_CLOUD_LOCAL_FALLBACK: Final = "cloud_local_fallback"
 CONNECTION_TYPE_CLOUD_ONLY: Final = "cloud_only"
 
+# Where the host used for the local connection came from, in the priority order
+# applied by DysonDataUpdateCoordinator._get_device_host. Only CONFIGURED is a
+# user-entered address; the others are discovered, so a stale one is fixed by
+# repairing discovery rather than by editing the connection options.
+HOST_SOURCE_CONFIGURED: Final = "configured"
+HOST_SOURCE_CLOUD_API: Final = "cloud_api"
+HOST_SOURCE_DHCP: Final = "dhcp"
+HOST_SOURCE_MDNS: Final = "mdns"
+HOST_SOURCE_UNKNOWN: Final = "unknown"
+
 # Discovery methods
 DISCOVERY_CLOUD: Final = "cloud"
 DISCOVERY_STICKER: Final = "sticker"
