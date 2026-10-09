@@ -1839,7 +1839,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     for cap in capabilities
                 )
 
-                if has_environmental_capability:
+                already_have_initial_state = self.device.has_current_state and bool(
+                    self.device.get_environmental_data()
+                )
+
+                if has_environmental_capability and already_have_initial_state:
+                    _LOGGER.debug(
+                        "Initial refresh for device %s - state and environmental data "
+                        "already received, skipping extra request",
+                        self.serial_number,
+                    )
+                elif has_environmental_capability:
                     _LOGGER.debug(
                         "Initial refresh for device %s with environmental capability - requesting state",
                         self.serial_number,
@@ -2281,20 +2291,31 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         try:
-            # Request current state to ensure we have fresh data for capability detection
-            try:
-                await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
-                _LOGGER.debug("Requested current state for capability refinement")
-
-                # Give device a moment to respond with current state
-                import asyncio
-
-                await asyncio.sleep(2)
-            except Exception as cmd_err:
-                _LOGGER.warning(
-                    "Failed to request current state for capability refinement: %s",
-                    cmd_err,
+            # Request current state to ensure we have fresh data for capability detection.
+            # The device already requests CURRENT-STATE right after connecting, so wait
+            # (up to the same 2 seconds) for that answer first, and only send another
+            # request plus the fixed wait if it has not arrived.
+            if (
+                self.device.has_current_state
+                or await self.device.async_wait_for_current_state(2.0)
+            ):
+                _LOGGER.debug(
+                    "Using CURRENT-STATE received on connect for capability refinement"
                 )
+            else:
+                try:
+                    await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+                    _LOGGER.debug("Requested current state for capability refinement")
+
+                    # Give device a moment to respond with current state
+                    import asyncio
+
+                    await asyncio.sleep(2)
+                except Exception as cmd_err:
+                    _LOGGER.warning(
+                        "Failed to request current state for capability refinement: %s",
+                        cmd_err,
+                    )
 
             # Get current device state to check for capability-indicating keys
             device_state = await self.device.get_state()
