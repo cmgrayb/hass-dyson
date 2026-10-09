@@ -4135,11 +4135,11 @@ class DysonDevice:
         Args:
             hardness: Water hardness level ("soft", "medium", "hard")
         """
-        # Map hardness level to device values
+        # Map hardness level to device values (same encoding as libdyson-neon)
         hardness_map = {
-            "soft": "0675",
+            "soft": "2025",
             "medium": "1350",
-            "hard": "2025",
+            "hard": "0675",
         }
 
         if hardness not in hardness_map:
