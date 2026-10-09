@@ -204,6 +204,9 @@ class DysonDevice:
         self._last_heartbeat = 0.0
         self._ha_stop_unsub: Callable[[], None] | None = None
         self._state_data: dict[str, Any] = {}
+        # Set once a full CURRENT-STATE message has been processed, so setup can
+        # skip re-requesting state the device has already sent after connecting.
+        self._current_state_received = False
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: list[Callable[[str, dict[str, Any]], None]] = []
@@ -1639,6 +1642,7 @@ class DysonDevice:
             )
         other_data = {k: v for k, v in data.items() if k != "product-state"}
         self._state_data.update(other_data)
+        self._current_state_received = True
         _LOGGER.debug("Updated device state for %s", self._log_serial)
 
         self._reconcile_robot_faults(data.get("activeFaults"))
@@ -2081,6 +2085,24 @@ class DysonDevice:
     def preferred_connection_type(self) -> str:
         """Return the preferred connection type, "local" or "cloud"."""
         return self._preferred_connection_type
+
+    @property
+    def has_current_state(self) -> bool:
+        """Return True once a full CURRENT-STATE message has been received."""
+        return self._current_state_received
+
+    async def async_wait_for_current_state(self, timeout: float) -> bool:
+        """Wait until a CURRENT-STATE message has been received.
+
+        Returns True as soon as the state is available, or False if it did not
+        arrive within ``timeout`` seconds.
+        """
+        deadline = time.monotonic() + timeout
+        while not self._current_state_received:
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(0.1)
+        return True
 
     @property
     def is_connected(self) -> bool:
@@ -4113,11 +4135,11 @@ class DysonDevice:
         Args:
             hardness: Water hardness level ("soft", "medium", "hard")
         """
-        # Map hardness level to device values
+        # Map hardness level to device values (same encoding as libdyson-neon)
         hardness_map = {
-            "soft": "0675",
+            "soft": "2025",
             "medium": "1350",
-            "hard": "2025",
+            "hard": "0675",
         }
 
         if hardness not in hardness_map:

@@ -1020,7 +1020,26 @@ class TestDeviceControl:
         # Use lowercase as expected by device
         await mock_device_basic.set_water_hardness("soft")
 
-        mock_device_basic.send_command.assert_called_once()
+        mock_device_basic.send_command.assert_called_once_with(
+            "STATE-SET", {"wath": "2025"}
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("hardness", "wath"), [("soft", "2025"), ("medium", "1350"), ("hard", "0675")]
+    )
+    async def test_set_water_hardness_device_codes(
+        self, mock_device_basic, hardness, wath
+    ):
+        """Water hardness levels use the device encoding (2025 is soft, 0675 is hard)."""
+        mock_device_basic._connected = True
+        mock_device_basic.send_command = AsyncMock()
+
+        await mock_device_basic.set_water_hardness(hardness)
+
+        mock_device_basic.send_command.assert_called_once_with(
+            "STATE-SET", {"wath": wath}
+        )
 
 
 class TestFaultHandling:

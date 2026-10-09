@@ -1,7 +1,6 @@
 # Development dependencies - exact versions for reproducibility
 ruff==0.16.8
 bandit==1.9.4
-codecov==2.1.13
 pytest==9.1.1
 pytest-cov>=7.1.0
 pytest-asyncio==1.4.0
@@ -12,6 +11,12 @@ types-cryptography==3.3.23.2
 # Additional testing utilities
 responses==0.26.3
 aioresponses==0.7.9
+# Transitive pin: aioresponses allows aiohttp>=3.3.0, which resolves to
+# versions with known vulnerabilities. Enforce a safe minimum.
+# Remove the below line once aioresponses updates its aiohttp requirement to a safe version.
+aiohttp>=3.9.0
+# Transitive pin: yarl (via aiohttp) allows idna>=2.0; enforce a safe minimum.
+idna>=3.15
 
 # MQTT testing
 paho-mqtt==2.1.0
