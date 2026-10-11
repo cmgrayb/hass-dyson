@@ -3865,7 +3865,12 @@ class DysonDevice:
 
     async def set_continuous_monitoring(self, enabled: bool) -> None:
         """Set continuous monitoring on/off."""
-        await self.send_command("STATE-SET", {"rhtm": "ON" if enabled else "OFF"})
+        data = {"rhtm": "ON" if enabled else "OFF"}
+        product_state = self._state_data.get("product-state", {})
+        if "fmod" in product_state:
+            # Link devices require fmod alongside rhtm for this command.
+            data["fmod"] = self.get_state_value(product_state, "fmod")
+        await self.send_command("STATE-SET", data)
 
     # Robot Vacuum Control Methods
     # ============================
