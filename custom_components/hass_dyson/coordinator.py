@@ -1768,9 +1768,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"Failed to connect to manual device {self.serial_number}"
                 )
 
-            # For manual devices, trust user's capability selection - no refinement needed
+            # Refine capabilities based on actual device state (e.g. FocusMode for ec devices)
+            await self._refine_capabilities_from_device_state()
+
+            # For manual devices, log effective capabilities
             _LOGGER.debug(
-                "Manual device %s connected - using user-selected capabilities: %s",
+                "Manual device %s connected - using capabilities: %s",
                 self.serial_number,
                 self._device_capabilities,
             )
@@ -2271,24 +2274,25 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         This method checks for specific state keys in the device's current state
         to determine if certain capabilities should be added or removed.
-        For example, the presence of 'hmod' key indicates heating capability.
+        For example, the presence of 'hmod' key indicates heating capability, and
+        the presence of 'ffoc' on environment cleaner ('ec') devices indicates focus mode.
 
-        Note: Manual devices skip this refinement to trust user's explicit capability selection.
+        Note: Manual devices preserve user-selected capabilities while auto-detecting
+        hardware-only features such as FocusMode.
         """
-        # Skip capability refinement for manual devices - trust user's selection
-        discovery_method = self.config_entry.data.get(
-            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
-        )
-        if discovery_method == DISCOVERY_MANUAL:
-            _LOGGER.debug(
-                "Skipping capability refinement for manual device %s - trusting user selection",
-                self.serial_number,
-            )
-            return
-
         if not self.device or not self.device.is_connected:
             _LOGGER.debug("Device not connected, skipping capability refinement")
             return
+
+        discovery_method = self.config_entry.data.get(
+            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+        )
+        is_manual = discovery_method == DISCOVERY_MANUAL
+        if is_manual:
+            _LOGGER.debug(
+                "Refining capabilities for manual device %s while preserving user selection",
+                self.serial_number,
+            )
 
         try:
             # Request current state to ensure we have fresh data for capability detection.
@@ -2325,54 +2329,64 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             product_state = device_state.get("product-state", {})
             original_capabilities = list(self._device_capabilities)  # Make a copy
 
-            if "hmod" in product_state:
-                # Device has heating mode state key, so it supports heating
-                if "Heating" not in self._device_capabilities:
-                    self._device_capabilities.append("Heating")
-                    _LOGGER.debug(
-                        "Device %s supports heating ('hmod' key found) - capability added for internal consistency",
-                        self.serial_number,
-                    )
-            else:
-                # Device doesn't have heating mode state key, remove heating capability if present
-                if "Heating" in self._device_capabilities:
-                    self._device_capabilities.remove("Heating")
-                    _LOGGER.debug(
-                        "Device %s does not support heating ('hmod' key not found) - capability removed",
-                        self.serial_number,
-                    )
+            # For cloud devices, refine Heating and Humidifier capabilities.
+            # For manual devices, preserve user-selected capabilities.
+            if not is_manual:
+                if "hmod" in product_state:
+                    # Device has heating mode state key, so it supports heating
+                    if "Heating" not in self._device_capabilities:
+                        self._device_capabilities.append("Heating")
+                        _LOGGER.debug(
+                            "Device %s supports heating ('hmod' key found) - capability added for internal consistency",
+                            self.serial_number,
+                        )
+                else:
+                    # Device doesn't have heating mode state key, remove heating capability if present
+                    if "Heating" in self._device_capabilities:
+                        self._device_capabilities.remove("Heating")
+                        _LOGGER.debug(
+                            "Device %s does not support heating ('hmod' key not found) - capability removed",
+                            self.serial_number,
+                        )
 
-            if "hume" in product_state:
-                # Device has humidity mode state key, so it supports humidification
-                if "Humidifier" not in self._device_capabilities:
-                    self._device_capabilities.append("Humidifier")
-                    _LOGGER.debug(
-                        "Device %s supports humidification ('hume' key found) - capability added for internal consistency",
-                        self.serial_number,
-                    )
-            else:
-                # Device doesn't have humidity mode state key, remove humidifier capability if present
-                if "Humidifier" in self._device_capabilities:
-                    self._device_capabilities.remove("Humidifier")
-                    _LOGGER.debug(
-                        "Device %s does not support humidification ('hume' key not found) - capability removed",
-                        self.serial_number,
-                    )
+                if "hume" in product_state:
+                    # Device has humidity mode state key, so it supports humidification
+                    if "Humidifier" not in self._device_capabilities:
+                        self._device_capabilities.append("Humidifier")
+                        _LOGGER.debug(
+                            "Device %s supports humidification ('hume' key found) - capability added for internal consistency",
+                            self.serial_number,
+                        )
+                else:
+                    # Device doesn't have humidity mode state key, remove humidifier capability if present
+                    if "Humidifier" in self._device_capabilities:
+                        self._device_capabilities.remove("Humidifier")
+                        _LOGGER.debug(
+                            "Device %s does not support humidification ('hume' key not found) - capability removed",
+                            self.serial_number,
+                        )
 
-            if "ffoc" in product_state:
+            # FocusMode capability refinement:
+            # Filtered to 'ec' devices that report 'ffoc' in their CURRENT-STATE product_state
+            device_categories = getattr(self, "_device_category", []) or []
+            if isinstance(device_categories, str):
+                device_categories = [device_categories]
+            is_ec_device = any(cat == "ec" for cat in device_categories)
+
+            if is_ec_device and "ffoc" in product_state:
                 # Device has focus/diffuse mode state key (older HP02-type devices)
                 if "FocusMode" not in self._device_capabilities:
                     self._device_capabilities.append("FocusMode")
                     _LOGGER.debug(
-                        "Device %s supports focus/diffuse mode ('ffoc' key found) - capability added",
+                        "Device %s supports focus/diffuse mode ('ffoc' key found on ec device) - capability added",
                         self.serial_number,
                     )
             else:
-                # Device doesn't have focus mode state key, remove capability if present
+                # Device doesn't have focus mode state key or is not an ec device, remove capability if present
                 if "FocusMode" in self._device_capabilities:
                     self._device_capabilities.remove("FocusMode")
                     _LOGGER.debug(
-                        "Device %s does not support focus/diffuse mode ('ffoc' key not found) - capability removed",
+                        "Device %s does not support focus/diffuse mode ('ffoc' key not found or not ec device) - capability removed",
                         self.serial_number,
                     )
 
@@ -2419,6 +2433,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Log capability changes at debug level to avoid confusion
             if original_capabilities != self._device_capabilities:
+                if self.device:
+                    self.device.capabilities = self._device_capabilities
                 _LOGGER.debug(
                     "Capabilities refined for %s based on device state: %s -> %s",
                     self.serial_number,
