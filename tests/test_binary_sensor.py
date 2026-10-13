@@ -978,6 +978,31 @@ class TestDysonRobotBatteryChargingSensor:
         sensor._handle_coordinator_update()
         assert sensor._attr_is_on is None
 
+    def test_paused_state_is_unknown_without_explicit_charging(
+        self, pure_mock_coordinator
+    ):
+        """FULL_CLEAN_PAUSED does not identify whether the robot is docked."""
+        pure_mock_coordinator.device.robot_state = "FULL_CLEAN_PAUSED"
+        pure_mock_coordinator.device.robot_is_charging = None
+        sensor = self._sensor(pure_mock_coordinator)
+
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_is_on is None
+
+    @pytest.mark.parametrize("charging", [True, False])
+    def test_explicit_charging_flag_takes_precedence(
+        self, pure_mock_coordinator, charging
+    ):
+        """A payload charging flag is authoritative over the raw state."""
+        pure_mock_coordinator.device.robot_state = "FULL_CLEAN_PAUSED"
+        pure_mock_coordinator.device.robot_is_charging = charging
+        sensor = self._sensor(pure_mock_coordinator)
+
+        sensor._handle_coordinator_update()
+
+        assert sensor._attr_is_on is charging
+
     def test_empty_state_is_unknown(self, pure_mock_coordinator):
         pure_mock_coordinator.device.robot_state = ""
         sensor = self._sensor(pure_mock_coordinator)
