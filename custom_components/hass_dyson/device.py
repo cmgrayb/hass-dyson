@@ -3060,6 +3060,71 @@ class DysonDevice:
             return None
 
     @property
+    def robot_cleaning_details(self) -> dict[str, Any]:
+        """Return explicitly reported cleaning stage, programme, room, and progress.
+
+        Firmware vocabulary differs between robot models, so values are read
+        from known payload keys without deriving them from state or duration.
+        """
+        details: dict[str, Any] = {}
+        product_state = self._state_data.get("product-state", {})
+        sources = (
+            product_state if isinstance(product_state, dict) else {},
+            self._state_data,
+        )
+        fields = {
+            "stage": ("cleanStage", "cleaningStage", "stage", "currentStage"),
+            "room": (
+                "currentRoom",
+                "currentRoomId",
+                "room",
+                "roomId",
+                "zoneId",
+                "newZoneId",
+            ),
+            "programme": (
+                "cleaningProgramme",
+                "cleaningProgram",
+                "programme",
+                "fullCleanType",
+            ),
+            "progress": (
+                "cleanProgress",
+                "cleaningProgress",
+                "progress",
+                "cleaningPercentage",
+                "progressPercentage",
+            ),
+        }
+        for name, keys in fields.items():
+            for source in sources:
+                for key in keys:
+                    value = source.get(key)
+                    if value is not None and value != "":
+                        details[name] = value
+                        break
+                if name in details:
+                    break
+        return details
+
+    @property
+    def robot_is_charging(self) -> bool | None:
+        """Return an explicit charging flag when the payload reports one."""
+        product_state = self._state_data.get("product-state", {})
+        sources = (
+            product_state if isinstance(product_state, dict) else {},
+            self._state_data,
+        )
+        for source in sources:
+            for key in ("isCharging", "charging", "activelyCharging"):
+                value = source.get(key)
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str) and value.upper() in {"TRUE", "FALSE"}:
+                    return value.upper() == "TRUE"
+        return None
+
+    @property
     def robot_clean_id(self) -> str | None:
         """Return robot vacuum current cleaning session ID.
 
