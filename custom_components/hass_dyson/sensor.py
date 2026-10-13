@@ -1535,6 +1535,8 @@ async def async_setup_entry(  # noqa: C901
             if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
                 entities.append(DysonRobotCleanDurationSensor(coordinator))
                 entities.append(DysonRobotCleanActionSensor(coordinator))
+                for detail in ("stage", "room", "programme", "progress"):
+                    entities.append(DysonRobotCleanDetailSensor(coordinator, detail))
                 entities.append(DysonRobotActiveFaultSensor(coordinator))
             # Cloud-fetched cleaning history + Dyson's recommended-next-room
             # sensor. Both gated on cloud auth.
@@ -3398,6 +3400,39 @@ class DysonRobotCleanActionSensor(DysonEntity, SensorEntity):
         super()._handle_coordinator_update()
 
 
+class DysonRobotCleanDetailSensor(DysonEntity, SensorEntity):
+    """A firmware-reported Spot+Scrub cleaning detail."""
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator, detail: str) -> None:
+        """Initialize a cleaning detail sensor."""
+        super().__init__(coordinator)
+        self._detail = detail
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_clean_{detail}"
+        self._attr_translation_key = f"robot_clean_{detail}"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = {
+            "stage": "mdi:progress-clock",
+            "room": "mdi:room",
+            "programme": "mdi:format-list-bulleted",
+            "progress": "mdi:percent",
+        }[detail]
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        details = device.robot_cleaning_details if device else {}
+        value = details.get(self._detail)
+        if isinstance(value, (dict, list)):
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {"value": value}
+        else:
+            self._attr_native_value = value
+            self._attr_extra_state_attributes = {}
+        super()._handle_coordinator_update()
+
+
 class DysonRobotActiveFaultSensor(DysonEntity, SensorEntity):
     """Fault the Spot+Scrub is currently reporting.
 
@@ -3446,12 +3481,25 @@ class DysonRobotActiveFaultSensor(DysonEntity, SensorEntity):
             for entry in (getattr(device, "robot_action_required_faults", None) or [])
             if isinstance(entry, dict) and entry.get("faultCode") is not None
         ]
-        chosen = blocking[0] if blocking else entries[0]
+        chosen = blocking[0] if blocking else None
+        if chosen is None:
+            self._attr_native_value = "none"
+            self._attr_extra_state_attributes = {
+                "fault_codes": [str(entry["faultCode"]) for entry in entries],
+                "log_only_fault_codes": [str(entry["faultCode"]) for entry in entries],
+            }
+            super()._handle_coordinator_update()
+            return
         code = str(chosen["faultCode"])
         self._attr_native_value = ROBOT_NUMERIC_FAULT_NAMES.get(code, code)
         self._attr_extra_state_attributes = {
             "fault_code": code,
             "fault_codes": [str(entry["faultCode"]) for entry in entries],
+            "log_only_fault_codes": [
+                str(entry["faultCode"])
+                for entry in entries
+                if entry.get("nextActionRequired") == "LOG_ONLY"
+            ],
             "next_action_required": chosen.get("nextActionRequired"),
         }
         super()._handle_coordinator_update()
