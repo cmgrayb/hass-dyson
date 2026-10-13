@@ -1427,6 +1427,40 @@ class DysonBLEDevice:
             self.state.power = on
             self._fire_state_change()
 
+    def _wants_write_request(self, char_uuid: str, *, default: bool = True) -> bool:
+        """Return whether a characteristic accepts an acknowledged ATT Write Request.
+
+        The MyDyson app sends Write Requests, but the Solarcycle Morph family
+        (E5R/E5V) advertises ``write-without-response`` only on its light
+        characteristics, so a Write Request is refused with ATT error 0x03 (Write
+        Not Permitted) and the control silently does nothing.  Verified on hardware
+        (firmware 5.17, product code PF000552): brightness (11009) and colour
+        temperature (11001) apply unacknowledged writes, and the value reads back
+        exactly as written.
+
+        When the property cannot be read (no client, empty service cache), the
+        caller's ``default`` decides, so devices are only affected by what they
+        actually advertise.
+
+        Args:
+            char_uuid: Characteristic UUID about to be written.
+            default: Value to use when the advertised properties are unavailable.
+
+        Returns:
+            ``True`` when a Write Request can be used, ``False`` for a Write Command.
+        """
+        client = self._client
+        if client is None:
+            return default
+        try:
+            characteristic = client.services.get_characteristic(char_uuid)
+            properties = set(getattr(characteristic, "properties", None) or ())
+        except Exception:  # noqa: BLE001 - an unreadable service cache is not fatal
+            return default
+        if not properties:
+            return default
+        return "write" in properties
+
     async def _disable_daylight_mode(self) -> None:
         """Write the Daylight-Mode-disable packet to the write-attribute characteristic.
 
@@ -1454,9 +1488,9 @@ class DysonBLEDevice:
         await self._client.write_gatt_char(
             BLE_WRITE_ATTR_CHAR_UUID,
             BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
-            # Manual controls depend on this mode change.  Do not race the
-            # following value write against an unacknowledged ATT command.
-            response=True,
+            # Manual controls depend on this mode change, so only race the
+            # following value write when the lamp accepts a Write Request.
+            response=self._wants_write_request(BLE_WRITE_ATTR_CHAR_UUID),
         )
         self.state.daylight_mode = False
         # The acknowledgement confirms receipt, but the lamp applies the mode
@@ -1502,7 +1536,7 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 BLE_WRITE_ATTR_CHAR_UUID,
                 payload,
-                response=True,
+                response=self._wants_write_request(BLE_WRITE_ATTR_CHAR_UUID),
             )
             self.state.daylight_mode = enabled
             if enabled:
@@ -1557,10 +1591,13 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 self._brightness_uuid,
                 payload,
-                # The Morph's GATT server silently drops ATT Write Commands for
-                # this characteristic.  Match the MyDyson app and use an ATT
-                # Write Request so the lamp acknowledges and applies the value.
-                response=self._daylight_capable,
+                # Verified on the Morph family: 11009 applies an unacknowledged
+                # write (the lumen value reads back exactly), while an ATT Write
+                # Request is refused with 0x03 Write Not Permitted.  Devices on
+                # the 11000 percentage protocol keep their command writes.
+                response=self._wants_write_request(
+                    self._brightness_uuid, default=self._daylight_capable
+                ),
             )
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;
@@ -1604,9 +1641,9 @@ class DysonBLEDevice:
             await self._client.write_gatt_char(
                 BLE_COLOR_TEMP_UUID,
                 payload,
-                # As with brightness, this characteristic is only reliable with
-                # an acknowledged ATT Write Request.
-                response=True,
+                # As with brightness: follow the advertised property, because the
+                # Morph family refuses Write Requests on 11001.
+                response=self._wants_write_request(BLE_COLOR_TEMP_UUID),
             )
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;

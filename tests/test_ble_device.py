@@ -684,6 +684,106 @@ class TestDysonBLEDevice:
         ]
         sleep.assert_awaited_once_with(0.2)
 
+    def _client_advertising(self, properties, *, read_value=b"\xa0\x0f"):
+        """Mock BleakClient whose characteristics advertise "properties"."""
+        client = MagicMock()
+        client.is_connected = True
+        client.write_gatt_char = AsyncMock()
+        client.read_gatt_char = AsyncMock(return_value=bytearray(read_value))
+        client.services.get_characteristic = MagicMock(
+            return_value=MagicMock(properties=list(properties))
+        )
+        return client
+
+    @pytest.mark.parametrize(
+        ("properties", "expected_response"),
+        [
+            (["read", "write", "write-without-response"], True),
+            (["read", "write-without-response"], False),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_light_writes_follow_advertised_properties(
+        self, properties, expected_response, monkeypatch
+    ):
+        """The write flag comes from the GATT properties, not from the model family.
+
+        A Solarcycle Morph (E5R) advertises "write-without-response" on 11009/11001
+        and answers a Write Request with ATT 0x03 Write Not Permitted, so brightness
+        and colour temperature silently did nothing when the flag was hardcoded.
+        """
+        from unittest.mock import call
+
+        from custom_components.hass_dyson.const import (
+            BLE_BRIGHTNESS_LUMENS_UUID,
+            BLE_COLOR_TEMP_UUID,
+            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+            BLE_WRITE_ATTR_CHAR_UUID,
+        )
+
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+        dev = self._make_device()
+        dev._client = self._client_advertising(properties)
+        dev.state.authenticated = True
+        dev.state.connected = True
+
+        await dev.set_brightness(191)
+        await dev.set_color_temp_kelvin(4000)
+
+        writes = dev._client.write_gatt_char.call_args_list
+        assert (
+            call(
+                BLE_WRITE_ATTR_CHAR_UUID,
+                BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+                response=expected_response,
+            )
+            in writes
+        )
+        for char_uuid in (BLE_BRIGHTNESS_LUMENS_UUID, BLE_COLOR_TEMP_UUID):
+            assert any(
+                entry.args[0] == char_uuid
+                and entry.kwargs == {"response": expected_response}
+                for entry in writes
+            ), (
+                f"{char_uuid} was not written with response={expected_response}: {writes}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_write_flag_falls_back_to_the_model_when_properties_are_unreadable(
+        self, monkeypatch
+    ):
+        """Without a readable service cache, the previous per-model behaviour stands."""
+        from unittest.mock import ANY
+
+        from custom_components.hass_dyson.const import (
+            BLE_BRIGHTNESS_LUMENS_UUID,
+            BLE_BRIGHTNESS_UUID,
+        )
+
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
+        for daylight_capable, expected_uuid, expected_response in (
+            (True, BLE_BRIGHTNESS_LUMENS_UUID, True),
+            (False, BLE_BRIGHTNESS_UUID, False),
+        ):
+            dev = self._make_device(daylight_capable=daylight_capable)
+            client = MagicMock()
+            client.is_connected = True
+            client.write_gatt_char = AsyncMock()
+            client.read_gatt_char = AsyncMock(return_value=bytearray(b"\xa0\x0f"))
+            client.services.get_characteristic = MagicMock(
+                side_effect=KeyError("no cache")
+            )
+            dev._client = client
+            dev.state.authenticated = True
+            dev.state.connected = True
+
+            await dev.set_brightness(191)
+
+            client.write_gatt_char.assert_any_call(
+                expected_uuid, ANY, response=expected_response
+            )
+
     @pytest.mark.asyncio
     async def test_set_color_temp_kelvin_clamps_below_min(self, monkeypatch):
         """Values below 2700 K are clamped to 2700 K."""
