@@ -1,5 +1,6 @@
 """Test device wrapper communication logic."""
 
+import json
 import socket
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1873,6 +1874,36 @@ class TestDysonDevicePendingStateGuard:
                 "475/TEST123/status/current",
             )
             assert device._state_data["product-state"]["rhtm"] == "OFF"
+
+    @pytest.mark.asyncio
+    async def test_continuous_monitoring_includes_fmod_for_link_devices(
+        self, mock_hass, mock_mqtt_client
+    ):
+        """Link devices require their current fan mode with rhtm changes."""
+        with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+            mock_mqtt_client.connect.return_value = 0
+
+            def mock_executor_job(func, *args):
+                return func(*args) if args else func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+            device = DysonDevice(
+                hass=mock_hass,
+                serial_number="TEST123",
+                host="192.168.1.100",
+                credential="test_cred",
+                mqtt_prefix="475",
+            )
+            device._connected = True
+            device._mqtt_client = mock_mqtt_client
+            device._state_data = {"product-state": {"fmod": "OFF", "rhtm": "ON"}}
+
+            await device.set_continuous_monitoring(False)
+
+            payload = json.loads(mock_mqtt_client.publish.call_args.args[1])
+            assert payload["msg"] == "STATE-SET"
+            assert payload["data"] == {"fmod": "OFF", "rhtm": "OFF"}
 
     def test_matching_current_state_clears_pending_guard(self, mock_hass):
         """A CURRENT-STATE reply matching the pending value is accepted."""
