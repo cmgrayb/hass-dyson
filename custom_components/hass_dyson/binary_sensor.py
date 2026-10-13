@@ -641,9 +641,9 @@ class DysonRobotBatteryChargingSensor(DysonEntity, BinarySensorEntity):  # type:
 
     Pairs with ``DysonRobotBatterySensor`` to complete the migration off the
     removed vacuum BATTERY feature: that one reports level, this one reports
-    charging. Derived from ``DysonDevice.robot_state`` rather than the vacuum's
-    activity, because charging is orthogonal to it — FULL_CLEAN_CHARGING maps to
-    RETURNING and FAULT_ON_DOCK_CHARGING to ERROR, yet both are charging.
+    charging.     Uses an explicit payload charging flag when available. For other states it
+    retains the state-based behavior, except that a paused clean is unknown
+    because ``FULL_CLEAN_PAUSED`` does not identify the robot's location.
 
     Attributes:
         _attr_device_class: :attr:`BinarySensorDeviceClass.BATTERY_CHARGING`,
@@ -674,7 +674,14 @@ class DysonRobotBatteryChargingSensor(DysonEntity, BinarySensorEntity):  # type:
         """Handle updated data from the coordinator."""
         device = self.coordinator.device
         robot_state = getattr(device, "robot_state", None) if device else None
-        if not robot_state:
+        explicit_charging = (
+            getattr(device, "robot_is_charging", None) if device else None
+        )
+        if isinstance(explicit_charging, bool):
+            self._attr_is_on = explicit_charging
+        elif robot_state == "FULL_CLEAN_PAUSED":
+            self._attr_is_on = None
+        elif not robot_state:
             # Not reported until the robot's first state message — unknown,
             # not "not charging".
             self._attr_is_on = None
