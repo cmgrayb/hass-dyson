@@ -69,6 +69,45 @@ Most common solutions:
 
 **See also**: [Static IP Configuration Guide](SETUP.md#static-ip--hostname-configuration)
 
+### **Device Silently Running on the Cloud Connection**
+
+**Problem**: Everything looks healthy. The device is discovered, all its entities
+exist, none of them is unavailable and there is no error in the log, yet local
+control is gone: commands take seconds instead of being instant, and the device
+stops responding at all when the internet does.
+
+**How this happens**: a device set to prefer a local connection falls back to
+the cloud when the local MQTT connection cannot be established, which is the
+right behaviour, but it is not an error, so nothing in the UI announces it. The
+address that failed may come from four different places, in this priority order:
+
+1. a static IP or hostname entered in the device's connection options
+2. the hostname reported by the cloud API
+3. an IP learned from DHCP discovery
+4. `{serial}.local`, resolved over mDNS
+
+Only the first is something you typed. The other three are discovered, and each
+has its own way of going stale: a device that moves to a new DHCP lease, a
+network that filters mDNS, a hostname the cloud never updated.
+
+**How to tell**:
+
+- **Repairs** raises a warning after the fallback has lasted ten minutes, and
+  the wording differs depending on whether the failing address was configured or
+  discovered. It clears itself once the device connects locally again.
+- The **Connection Status** sensor reads `Cloud` instead of `Local`.
+- The **IP Address** sensor shows the address actually in use, and its
+  attributes say where that address came from. `host_source` is one of
+  `configured`, `cloud_api`, `dhcp` or `mdns`, and `is_ip_address` is false
+  while the value is still a name waiting to be resolved. An unresolvable
+  `{serial}.local` reads like a perfectly good value in the state alone, which
+  is exactly what makes this failure quiet.
+
+**Solution**: set the device's IP address in its connection options, which
+bypasses discovery entirely, or fix mDNS on the network as described in the
+section above. Reserve the address on the DHCP server so it survives a lease
+renewal.
+
 ### **Device Registry Missing MAC Address / Not Linking to Router-Reported Device**
 
 **Problem**: The device page shows an empty `connections` field, so it never merges

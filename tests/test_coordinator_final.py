@@ -1766,3 +1766,76 @@ class TestDysonCloudAccountCoordinatorCNRegion:
                 # Verify device data was returned correctly
                 assert result == mock_device_data
                 mock_client.get_devices.assert_called_once()
+
+
+class TestCapabilityRefinementReusesConnectState:
+    """Test that refinement reuses the CURRENT-STATE received on connect."""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator with a connected device."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            coordinator.hass = MagicMock()
+            coordinator.config_entry = MagicMock()
+            coordinator.config_entry.data = {
+                CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+                CONF_SERIAL_NUMBER: "PH01-EU-ABC1234A",
+            }
+            coordinator.device = MagicMock()
+            coordinator.device.is_connected = True
+            coordinator.device.send_command = AsyncMock()
+            coordinator.device.get_state = AsyncMock(
+                return_value={"product-state": {"hume": "OFF", "fpwr": "ON"}}
+            )
+            coordinator._device_capabilities = []
+            return coordinator
+
+    @pytest.mark.asyncio
+    async def test_skips_request_when_state_already_received(self, mock_coordinator):
+        """No extra request or wait when the connect-time state has arrived."""
+        mock_coordinator.device.has_current_state = True
+
+        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            await mock_coordinator._refine_capabilities_from_device_state()
+
+        mock_coordinator.device.send_command.assert_not_called()
+        mock_sleep.assert_not_called()
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_requests_state_when_not_yet_received(self, mock_coordinator):
+        """Fall back to requesting state and waiting when nothing arrived yet."""
+        mock_coordinator.device.has_current_state = False
+        mock_coordinator.device.async_wait_for_current_state = AsyncMock(
+            return_value=False
+        )
+
+        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            await mock_coordinator._refine_capabilities_from_device_state()
+
+        mock_coordinator.device.send_command.assert_awaited_once_with(
+            "REQUEST-CURRENT-STATE"
+        )
+        mock_sleep.assert_awaited_once_with(2)
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_waits_for_connect_state_before_requesting(self, mock_coordinator):
+        """Use the connect-time state if it arrives within the wait window."""
+        mock_coordinator.device.has_current_state = False
+        mock_coordinator.device.async_wait_for_current_state = AsyncMock(
+            return_value=True
+        )
+
+        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            await mock_coordinator._refine_capabilities_from_device_state()
+
+        mock_coordinator.device.async_wait_for_current_state.assert_awaited_once_with(
+            2.0
+        )
+        mock_coordinator.device.send_command.assert_not_called()
+        mock_sleep.assert_not_called()
+        assert "Humidifier" in mock_coordinator._device_capabilities
