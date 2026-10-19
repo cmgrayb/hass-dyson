@@ -193,6 +193,18 @@
       "robot_clean_action": {
         "name": "Clean action"
       },
+      "robot_clean_stage": {
+        "name": "Clean stage"
+      },
+      "robot_clean_room": {
+        "name": "Current room"
+      },
+      "robot_clean_programme": {
+        "name": "Clean programme"
+      },
+      "robot_clean_progress": {
+        "name": "Clean progress"
+      },
       "temperature": {
         "name": "Temperature"
       },
