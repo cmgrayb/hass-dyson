@@ -289,6 +289,12 @@
       "robot_clean_action": {
         "name": "Reinigungsaktion"
       },
+      "robot_dock_state": {
+        "name": "Dockstatus"
+      },
+      "robot_dock_timer_end": {
+        "name": "Ende des Dock-Timers"
+      },
       "robot_clean_stage": {
         "name": "Reinigungsstufe"
       },

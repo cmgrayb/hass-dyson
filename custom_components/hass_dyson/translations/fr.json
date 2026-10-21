@@ -289,6 +289,12 @@
       "robot_clean_action": {
         "name": "Action de nettoyage"
       },
+      "robot_dock_state": {
+        "name": "État de la station"
+      },
+      "robot_dock_timer_end": {
+        "name": "Fin du minuteur de la station"
+      },
       "robot_clean_stage": {
         "name": "Étape de nettoyage"
       },
