@@ -37,11 +37,13 @@ import socket
 import time
 import uuid
 from collections.abc import Callable
+from datetime import datetime as dt
 from typing import Any
 
 import paho.mqtt.client as mqtt
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONNECTION_STATUS_CLOUD,
@@ -204,6 +206,9 @@ class DysonDevice:
         self._last_heartbeat = 0.0
         self._ha_stop_unsub: Callable[[], None] | None = None
         self._state_data: dict[str, Any] = {}
+        # End of the dock work timer (epoch seconds) from a Spot+Scrub
+        # prop.post work_time message; see robot_dock_timer_end.
+        self._dock_timer_end: float | None = None
         # Set once a full CURRENT-STATE message has been processed, so setup can
         # skip re-requesting state the device has already sent after connecting.
         self._current_state_received = False
@@ -1570,6 +1575,10 @@ class DysonDevice:
             # update). Payload is only {msg, time} — no state to merge;
             # consumers react via the message callbacks below.
             _LOGGER.debug("Persistent-map manifest updated for %s", self._log_serial)
+        elif not message_type and data.get("method") == "prop.post":
+            # Spot+Scrub property push (no "msg" key). Carries the dock work
+            # timer, e.g. mop drying; other properties are ignored.
+            self._handle_property_post(data)
         else:
             _LOGGER.debug(
                 "Unknown message type '%s' for device %s: %s",
@@ -1580,6 +1589,25 @@ class DysonDevice:
 
         # Notify callbacks
         self._notify_callbacks(topic, data)
+
+    def _handle_property_post(self, data: dict[str, Any]) -> None:
+        """Keep the dock work timer end from a Spot+Scrub prop.post message.
+
+        Observed while the dock dried the mop roller after a clean:
+        ``{"method": "prop.post", "params": {"work_time": {"type": 3,
+        "total": 14400, "surplus": 4080}}}``; ``surplus`` is the remaining
+        seconds and counts down.
+        """
+        params = data.get("params")
+        work_time = params.get("work_time") if isinstance(params, dict) else None
+        if not isinstance(work_time, dict):
+            return
+        try:
+            self._dock_timer_end = time.time() + int(work_time["surplus"])
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.debug(
+                "Ignoring malformed work_time for %s: %s", self._log_serial, err
+            )
 
     def _apply_pending_state_guard(
         self, product_state: dict[str, Any]
@@ -3038,6 +3066,41 @@ class DysonDevice:
                 "Failed to get robot clean duration for %s: %s", self._log_serial, e
             )
             return None
+
+    @property
+    def robot_dock_state(self) -> str | None:
+        """Return what the dock is doing (Spot+Scrub only).
+
+        Returns:
+            Raw dock state such as DRYING_MOP, or None if not reported
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            dock_state = product_state.get("dockState")
+
+            if not dock_state:
+                dock_state = self._state_data.get("dockState")
+            return dock_state or None
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug("Failed to get dock state for %s: %s", self._log_serial, e)
+            return None
+
+    @property
+    def robot_dock_timer_end(self) -> dt | None:
+        """Return when the running dock work timer ends (Spot+Scrub only).
+
+        Fixed when the timer message arrived, so the value stays stable
+        between messages instead of drifting.
+
+        Returns:
+            End time in UTC, or None if no timer is running
+        """
+        if self._dock_timer_end is None:
+            return None
+        end = dt_util.utc_from_timestamp(self._dock_timer_end)
+        if end <= dt_util.utcnow():
+            return None
+        return end
 
     @property
     def robot_full_clean_action(self) -> str | None:
