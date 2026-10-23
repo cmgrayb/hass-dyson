@@ -21,6 +21,7 @@ from .spot_scrub import (
     mode_payload,
     read_preferences,
 )
+from .spot_scrub_room_select import get_room_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,6 +59,8 @@ class DysonSpotScrubCleaningModeSelect(DysonEntity, SelectEntity):
 
     def _apply_preferences(self, preferences: dict[str, Any]) -> None:
         self._preferences = preferences
+        # Keep the per-room selects in step with reads and writes made here.
+        get_room_store(self.coordinator).publish(preferences)
         codes = {row[3] for row in preferences["room"]}
         reverse = {code: name for name, code in MODE_CODES.items()}
         self._attr_current_option = (

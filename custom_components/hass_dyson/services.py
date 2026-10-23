@@ -91,13 +91,11 @@ from .const import (
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_email, mask_serial
-from .spot_scrub import (
-    IDLE_STATES,
-    MODE_CODES,
-    read_preferences,
-    resolve_room_settings,
-    room_settings_payload,
-    settings_match,
+from .spot_scrub import MODE_CODES, resolve_room_settings
+from .spot_scrub_room_select import (
+    SpotScrubInvalidRequestError,
+    SpotScrubNotIdleError,
+    get_room_store,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -994,33 +992,19 @@ async def _handle_set_room_cleaning_modes(
     coordinator = await _get_coordinator_from_device_id(hass, device_id)
     if not coordinator:
         raise ServiceValidationError(f"Device {device_id} not found")
-    device = coordinator.device
-    if device is None or getattr(device, "robot_state", None) not in IDLE_STATES:
+    raw = call.data["room_modes"]
+    try:
+        changes = await get_room_store(coordinator).async_apply(
+            lambda preferences: resolve_room_settings(preferences, raw)
+        )
+    except SpotScrubNotIdleError as err:
         raise HomeAssistantError(
             translation_domain=DOMAIN, translation_key="spot_scrub_not_idle"
-        )
-    try:
-        map_id, preferences = await read_preferences(device)
-    except (RuntimeError, ValueError, TimeoutError, AttributeError) as err:
-        raise HomeAssistantError(
-            translation_domain=DOMAIN, translation_key="spot_scrub_request_failed"
         ) from err
-    try:
-        changes = resolve_room_settings(preferences, call.data["room_modes"])
-    except ValueError as err:
+    except SpotScrubInvalidRequestError as err:
         raise ServiceValidationError(str(err)) from err
-    try:
-        payload = room_settings_payload(map_id, preferences, changes)
-        await device.send_jdm_command("service.set_preference", payload)
-        confirmed_map, confirmed = await read_preferences(device)
-        actual = {row[0]: row for row in confirmed["room"]}
-        if confirmed_map != map_id or any(
-            room_id not in actual or not settings_match(actual[room_id], settings)
-            for room_id, settings in changes.items()
-        ):
-            raise ValueError("Robot did not confirm the requested room settings")
-    except (RuntimeError, ValueError, TimeoutError) as err:
-        _LOGGER.debug("Spot+Scrub room mode change failed: %s", err)
+    except (RuntimeError, ValueError, TimeoutError, AttributeError) as err:
+        _LOGGER.debug("Spot+Scrub room settings change failed: %s", err)
         raise HomeAssistantError(
             translation_domain=DOMAIN, translation_key="spot_scrub_request_failed"
         ) from err

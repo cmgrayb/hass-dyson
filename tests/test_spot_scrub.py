@@ -421,3 +421,54 @@ async def test_room_service_writes_settings(selector, preferences):
     assert sent[4:6] == [1, 2]
     with pytest.raises(ServiceValidationError):
         await _call_room_service(selector, {"Room A": {"hydration": "soaking"}})
+
+
+@pytest.mark.asyncio
+async def test_room_selects_discover_and_write(selector, preferences):
+    """Rooms become selects; one setting is written and confirmed by read-back."""
+    from custom_components.hass_dyson import spot_scrub_room_select as rs
+
+    coordinator = selector.coordinator
+    hass = MagicMock()
+    hass.async_create_task = lambda coro: coro.close()
+    added = []
+    with patch.object(rs, "async_track_time_interval", return_value=MagicMock()):
+        await rs.async_setup_room_selects(hass, coordinator, added.extend)
+        store = rs.get_room_store(coordinator)
+        await store.async_refresh()
+    assert len(added) == 2 * len(rs.ROOM_SETTINGS)
+    hydration = next(e for e in added if e.unique_id == "TEST-SERIAL_room_2_hydration")
+    hydration.async_write_ha_state = MagicMock()
+    assert hydration.current_option == "very_low"
+    assert (
+        "2x"
+        in next(
+            e for e in added if e.unique_id == "TEST-SERIAL_room_1_wash_repetitions"
+        ).options
+    )
+    await hydration.async_select_option("high")
+    assert hydration.current_option == "high"
+    sent = coordinator.device.send_jdm_command.await_args_list[-3].args[1]
+    assert [row[5] for row in sent["room_preference"]] == [
+        preferences["room"][0][5],
+        2,
+    ]
+    coordinator.device.robot_state = "FULL_CLEAN_RUNNING"
+    with pytest.raises(HomeAssistantError):
+        await hydration.async_select_option("low")
+
+
+def test_room_store_timer_follows_listeners(selector):
+    """The refresh timer runs only while something listens."""
+    from custom_components.hass_dyson import spot_scrub_room_select as rs
+
+    store = rs.SpotScrubRoomStore(selector.coordinator)
+    unsub = MagicMock()
+    with patch.object(rs, "async_track_time_interval", return_value=unsub) as track:
+        first = store.async_add_listener(MagicMock(), MagicMock())
+        second = store.async_add_listener(MagicMock(), MagicMock())
+        assert track.call_count == 1
+        first()
+        unsub.assert_not_called()
+        second()
+        unsub.assert_called_once()
