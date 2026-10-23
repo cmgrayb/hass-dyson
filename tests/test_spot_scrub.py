@@ -3,17 +3,23 @@
 import asyncio
 import copy
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.hass_dyson.device import DysonDevice
 from custom_components.hass_dyson.select import async_setup_entry
+from custom_components.hass_dyson.services import (
+    SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA,
+    _handle_set_room_cleaning_modes,
+)
 from custom_components.hass_dyson.spot_scrub import (
     MODE_CODES,
     mode_payload,
     read_preferences,
+    resolve_room_modes,
+    room_modes_payload,
 )
 from custom_components.hass_dyson.spot_scrub_select import (
     DysonSpotScrubCleaningModeSelect,
@@ -258,3 +264,98 @@ async def test_only_rb05_gets_selector(prefix):
     assert sum(
         isinstance(e, DysonSpotScrubCleaningModeSelect) for e in add.call_args.args[0]
     ) == (prefix == "RB05")
+
+
+def test_room_modes_payload_changes_only_listed_rooms(preferences):
+    """Unlisted rooms keep their mode; listed ones get the requested code."""
+    original = copy.deepcopy(preferences)
+    payload = room_modes_payload(123, preferences, {2: "mop_only"})
+    assert preferences == original
+    rows = payload["room_preference"]
+    assert rows[0][3] == preferences["room"][0][3]
+    assert rows[1][3] == MODE_CODES["mop_only"]
+    assert rows[1][1] == "Room B"
+    with pytest.raises(ValueError):
+        room_modes_payload(123, preferences, {9: "mop_only"})
+
+
+def test_resolve_room_modes(preferences):
+    """Rooms resolve by id or case-insensitive decoded name."""
+    assert resolve_room_modes(
+        preferences, {"1": "mop_only", "room b": "vacuum_only"}
+    ) == {
+        1: "mop_only",
+        2: "vacuum_only",
+    }
+    for bad in ({"Room C": "mop_only"}, {"9": "mop_only"}, {"1": "scrub"}):
+        with pytest.raises(ValueError):
+            resolve_room_modes(preferences, bad)
+
+
+def test_room_modes_schema():
+    """Keys are coerced to strings and modes must be known."""
+    data = SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA(
+        {"device_id": "abc", "room_modes": {10: "mop_only"}}
+    )
+    assert data["room_modes"] == {"10": "mop_only"}
+    for bad in ({}, {"10": "scrub"}):
+        with pytest.raises(Exception):
+            SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA(
+                {"device_id": "abc", "room_modes": bad}
+            )
+
+
+async def _call_room_service(selector, room_modes):
+    call = MagicMock()
+    call.data = {"device_id": "abc", "room_modes": room_modes}
+    with patch(
+        "custom_components.hass_dyson.services._get_coordinator_from_device_id",
+        AsyncMock(return_value=selector.coordinator),
+    ):
+        await _handle_set_room_cleaning_modes(MagicMock(), call)
+
+
+@pytest.mark.asyncio
+async def test_room_service_writes_and_verifies(selector, preferences):
+    """The service writes listed rooms only and reads them back."""
+    await _call_room_service(selector, {"Room B": "mop_only"})
+    device = selector.coordinator.device
+    calls = device.send_jdm_command.await_args_list
+    assert [c.args[0] for c in calls] == [
+        "service.get_map_list",
+        "service.get_preference",
+        "service.set_preference",
+        "service.get_map_list",
+        "service.get_preference",
+    ]
+    sent = calls[2].args[1]["room_preference"]
+    assert [row[3] for row in sent] == [preferences["room"][0][3], 2]
+
+
+@pytest.mark.asyncio
+async def test_room_service_guards(selector):
+    """Refuse while moving, for unknown rooms, and on unconfirmed writes."""
+    device = selector.coordinator.device
+    device.robot_state = "FULL_CLEAN_RUNNING"
+    with pytest.raises(HomeAssistantError):
+        await _call_room_service(selector, {"1": "mop_only"})
+    device.send_jdm_command.assert_not_awaited()
+
+    device.robot_state = "INACTIVE_CHARGED"
+    with pytest.raises(ServiceValidationError):
+        await _call_room_service(selector, {"Nowhere": "mop_only"})
+    assert all(
+        c.args[0] != "service.set_preference"
+        for c in device.send_jdm_command.await_args_list
+    )
+
+    original = device.send_jdm_command.side_effect
+
+    async def ignore_writes(method, params):
+        if method == "service.set_preference":
+            return {"result": 0}
+        return await original(method, params)
+
+    device.send_jdm_command.side_effect = ignore_writes
+    with pytest.raises(HomeAssistantError):
+        await _call_room_service(selector, {"1": "mop_only"})

@@ -14,7 +14,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
-from .spot_scrub import MODE_CODES, mode_payload, read_preferences
+from .spot_scrub import IDLE_STATES, MODE_CODES, mode_payload, read_preferences
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,11 +86,7 @@ class DysonSpotScrubCleaningModeSelect(DysonEntity, SelectEntity):
             )
         async with self._lock:
             device = self.coordinator.device
-            if device is None or device.robot_state not in {
-                "INACTIVE_CHARGING",
-                "INACTIVE_CHARGED",
-                "FULL_CLEAN_FINISHED",
-            }:
+            if device is None or device.robot_state not in IDLE_STATES:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="spot_scrub_not_idle"
                 )

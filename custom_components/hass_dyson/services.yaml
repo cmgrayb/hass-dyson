@@ -195,3 +195,29 @@ set_zone_behaviour:
       example: Downstairs
       selector:
         text:
+
+set_room_cleaning_modes:
+  name: Set Room Cleaning Modes (Spot+Scrub)
+  description: >-
+    Set the vacuum/mop mode for individual rooms on a Dyson Spot+Scrub's
+    current map, without starting a clean. Rooms not listed keep their
+    current mode. The robot must be docked or finished, and the change is
+    confirmed by reading the room preferences back.
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson robot vacuum device.
+      required: true
+      selector:
+        device:
+          integration: hass_dyson
+    room_modes:
+      name: Room Modes
+      description: >-
+        Mapping of room ID or MyDyson room name to a mode: vacuum_only,
+        vacuum_and_mop, mop_only or vacuum_then_mop. Room IDs are shown in
+        the cleaning mode select's room_modes attribute.
+      required: true
+      example: '{"10": "vacuum_then_mop", "Kitchen": "mop_only"}'
+      selector:
+        object:
