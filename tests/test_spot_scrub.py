@@ -16,10 +16,13 @@ from custom_components.hass_dyson.services import (
 )
 from custom_components.hass_dyson.spot_scrub import (
     MODE_CODES,
+    decode_room_settings,
     mode_payload,
     read_preferences,
     resolve_room_modes,
+    resolve_room_settings,
     room_modes_payload,
+    room_settings_payload,
 )
 from custom_components.hass_dyson.spot_scrub_select import (
     DysonSpotScrubCleaningModeSelect,
@@ -359,3 +362,62 @@ async def test_room_service_guards(selector):
     device.send_jdm_command.side_effect = ignore_writes
     with pytest.raises(HomeAssistantError):
         await _call_room_service(selector, {"1": "mop_only"})
+
+
+def test_decode_room_settings(preferences):
+    """Known codes decode; unknown ones are reported as None."""
+    assert decode_room_settings(preferences["room"][0]) == {
+        "cleaning_mode": "vacuum_only",
+        "vacuum_power": "auto",
+        "hydration": "medium",
+        "wash_repetitions": 1,
+    }
+    assert decode_room_settings(preferences["room"][1])["hydration"] == "very_low"
+    preferences["room"][0][4] = 7
+    assert decode_room_settings(preferences["room"][0])["vacuum_power"] is None
+
+
+def test_room_settings_payload(preferences):
+    """Only the requested setting fields change; the rest is preserved."""
+    payload = room_settings_payload(
+        123,
+        preferences,
+        {1: {"vacuum_power": "quick", "hydration": "very_low", "wash_repetitions": 2}},
+    )
+    before = preferences["room"][0]
+    after = payload["room_preference"][0]
+    assert after[3:7] == [before[3], 3, 99, 1]
+    assert after[7:] == before[7:11]
+    assert payload["room_preference"][1][3:11] == preferences["room"][1][3:11]
+
+
+def test_resolve_room_settings(preferences):
+    """Values may be a mode or a mapping; unknown settings or values fail."""
+    assert resolve_room_settings(
+        preferences,
+        {"1": "mop_only", "Room B": {"hydration": "high", "wash_repetitions": "2"}},
+    ) == {
+        1: {"cleaning_mode": "mop_only"},
+        2: {"hydration": "high", "wash_repetitions": 2},
+    }
+    for bad in (
+        {"1": {"suction": "max"}},
+        {"1": {"hydration": "soaking"}},
+        {"1": {"wash_repetitions": 3}},
+        {"1": {}},
+    ):
+        with pytest.raises(ValueError):
+            resolve_room_settings(preferences, bad)
+
+
+@pytest.mark.asyncio
+async def test_room_service_writes_settings(selector, preferences):
+    """The service writes per-room settings and confirms them by read-back."""
+    await _call_room_service(
+        selector, {"Room A": {"hydration": "high", "vacuum_power": "boost"}}
+    )
+    calls = selector.coordinator.device.send_jdm_command.await_args_list
+    sent = calls[2].args[1]["room_preference"][0]
+    assert sent[4:6] == [1, 2]
+    with pytest.raises(ServiceValidationError):
+        await _call_room_service(selector, {"Room A": {"hydration": "soaking"}})

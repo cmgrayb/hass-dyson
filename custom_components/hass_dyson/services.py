@@ -95,8 +95,9 @@ from .spot_scrub import (
     IDLE_STATES,
     MODE_CODES,
     read_preferences,
-    resolve_room_modes,
-    room_modes_payload,
+    resolve_room_settings,
+    room_settings_payload,
+    settings_match,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -201,14 +202,17 @@ SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
     }
 )
 
-# Spot+Scrub (RB05) per-room cleaning modes, written over MQTT the same way
-# as the cleaning mode select. Keys are room ids or MyDyson room names; rooms
-# not listed keep their current mode.
+# Spot+Scrub (RB05) per-room settings, written over MQTT the same way as the
+# cleaning mode select. Keys are room ids or MyDyson room names. A value is a
+# cleaning mode, or a mapping of cleaning_mode / vacuum_power / hydration /
+# wash_repetitions (validated against the robot's rooms in the handler).
+# Rooms and settings not listed are preserved.
 SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA = vol.Schema(
     {
         vol.Required("device_id"): str,
         vol.Required("room_modes"): vol.All(
-            {vol.Coerce(str): vol.In(tuple(MODE_CODES))}, vol.Length(min=1)
+            {vol.Coerce(str): vol.Any(vol.In(tuple(MODE_CODES)), dict)},
+            vol.Length(min=1),
         ),
     }
 )
@@ -1002,28 +1006,28 @@ async def _handle_set_room_cleaning_modes(
             translation_domain=DOMAIN, translation_key="spot_scrub_request_failed"
         ) from err
     try:
-        room_modes = resolve_room_modes(preferences, call.data["room_modes"])
+        changes = resolve_room_settings(preferences, call.data["room_modes"])
     except ValueError as err:
         raise ServiceValidationError(str(err)) from err
     try:
-        payload = room_modes_payload(map_id, preferences, room_modes)
+        payload = room_settings_payload(map_id, preferences, changes)
         await device.send_jdm_command("service.set_preference", payload)
         confirmed_map, confirmed = await read_preferences(device)
-        actual = {row[0]: row[3] for row in confirmed["room"]}
+        actual = {row[0]: row for row in confirmed["room"]}
         if confirmed_map != map_id or any(
-            actual.get(room_id) != MODE_CODES[option]
-            for room_id, option in room_modes.items()
+            room_id not in actual or not settings_match(actual[room_id], settings)
+            for room_id, settings in changes.items()
         ):
-            raise ValueError("Robot did not confirm the requested room modes")
+            raise ValueError("Robot did not confirm the requested room settings")
     except (RuntimeError, ValueError, TimeoutError) as err:
         _LOGGER.debug("Spot+Scrub room mode change failed: %s", err)
         raise HomeAssistantError(
             translation_domain=DOMAIN, translation_key="spot_scrub_request_failed"
         ) from err
     _LOGGER.info(
-        "Set room cleaning modes on %s: %s",
+        "Set room cleaning settings on %s: %s",
         mask_serial(coordinator.serial_number),
-        room_modes,
+        changes,
     )
 
 

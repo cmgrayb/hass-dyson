@@ -14,7 +14,13 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
-from .spot_scrub import IDLE_STATES, MODE_CODES, mode_payload, read_preferences
+from .spot_scrub import (
+    IDLE_STATES,
+    MODE_CODES,
+    decode_room_settings,
+    mode_payload,
+    read_preferences,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +53,7 @@ class DysonSpotScrubCleaningModeSelect(DysonEntity, SelectEntity):
             "scope": "all_mapped_rooms",
             "room_modes": {str(row[0]): reverse.get(row[3]) for row in rows},
             "mixed_modes": len({row[3] for row in rows}) > 1,
+            "room_settings": {str(row[0]): decode_room_settings(row) for row in rows},
         }
 
     def _apply_preferences(self, preferences: dict[str, Any]) -> None:
