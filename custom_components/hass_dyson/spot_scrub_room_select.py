@@ -258,7 +258,7 @@ async def async_setup_room_selects(
         new = [row for room_id, row in store.rows.items() if room_id not in added]
         if not new:
             return
-        entities = []
+        entities: list[DysonSpotScrubRoomSettingSelect] = []
         for row in new:
             added.add(row[0])
             try:
