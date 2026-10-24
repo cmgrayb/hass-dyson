@@ -87,6 +87,7 @@ from .const import (
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_serial
 from .entity import DysonEntity
+from .spot_scrub_coverage import get_coverage_recorder, zone_at
 from .vacuum import _clean_maps_cache, fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
@@ -1547,6 +1548,8 @@ async def async_setup_entry(  # noqa: C901
                     entities.append(DysonLastCleanSensor(coordinator, slot=i))
                 entities.append(DysonRecommendedCleanSensor(coordinator))
                 entities.append(DysonCurrentMapSensor(coordinator))
+                if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+                    entities.append(DysonRobotCurrentRoomSensor(coordinator))
                 _register_end_of_clean_listener(hass, config_entry, coordinator)
 
         # Cloud-fetched purifier sensors (outdoor AQI, daily history,
@@ -3481,6 +3484,44 @@ class DysonRobotDockTimerEndSensor(DysonEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         device = self.coordinator.device
         self._attr_native_value = device.robot_dock_timer_end if device else None
+        super()._handle_coordinator_update()
+
+
+class DysonRobotCurrentRoomSensor(DysonEntity, SensorEntity):
+    """Room the Spot+Scrub was last reported in, from its live position.
+
+    The position is in metres in the map frame. The room comes from the
+    room outlines of the latest clean's map, which the clean coverage image
+    fetches.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the current room sensor."""
+        super().__init__(coordinator)
+        self._recorder = get_coverage_recorder(coordinator.hass, coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_robot_current_room"
+        self._attr_translation_key = "robot_current_room"
+        self._attr_icon = "mdi:map-marker"
+        self._attr_extra_state_attributes = {}
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        pose = self._recorder.pose
+        if pose is None:
+            device = self.coordinator.device
+            position = device.robot_global_position if device else None
+            if isinstance(position, list) and len(position) == 2:
+                pose = {"x": position[0], "y": position[1], "angle": None}
+        zone = zone_at(self._recorder.geometry, pose["x"], pose["y"]) if pose else None
+        self._attr_native_value = zone["name"] if zone else None
+        self._attr_extra_state_attributes = {
+            "x": pose["x"] if pose else None,
+            "y": pose["y"] if pose else None,
+            "angle": pose.get("angle") if pose else None,
+            "room_id": zone["id"] if zone else None,
+        }
         super()._handle_coordinator_update()
 
 

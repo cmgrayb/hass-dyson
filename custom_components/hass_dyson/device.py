@@ -2993,11 +2993,12 @@ class DysonDevice:
         return None
 
     @property
-    def robot_global_position(self) -> list[int] | None:
+    def robot_global_position(self) -> list[int] | list[float] | None:
         """Return robot vacuum global position coordinates.
 
         Returns:
-            List of [x, y] coordinates or None if not available
+            List of [x, y] coordinates or None if not available. Spot+Scrub
+            reports a list of points in metres; its latest point is used.
         """
         try:
             # Try product-state first (air purifiers), then top level (robot vacuums)
@@ -3008,6 +3009,14 @@ class DysonDevice:
             if position is None:
                 position = self._state_data.get("globalPosition")
 
+            if (
+                position
+                and isinstance(position, list)
+                and isinstance(position[-1], dict)
+            ):
+                # RB05: [{"id", "x", "y", "angle", "update"}] in metres
+                latest = position[-1]
+                return [round(float(latest["x"]), 3), round(float(latest["y"]), 3)]
             if position and isinstance(position, list) and len(position) == 2:
                 pos_coords = [int(position[0]), int(position[1])]
                 _LOGGER.debug("Robot position for %s: %s", self._log_serial, pos_coords)
