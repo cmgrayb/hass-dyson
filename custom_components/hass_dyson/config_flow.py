@@ -2173,6 +2173,14 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "category": discovery_info.get("category", "unknown"),
             }
 
+            # Region/locale live on the parent account entry; without them the
+            # client falls back to US/en-US and CN tokens are rejected.
+            parent_data: Any = {}
+            for entry in self.hass.config_entries.async_entries(DOMAIN):
+                if entry.entry_id == discovery_info["parent_entry_id"]:
+                    parent_data = entry.data
+                    break
+
             config_data = create_cloud_device_config(
                 serial_number=device_serial,
                 username=discovery_info["email"],
@@ -2181,6 +2189,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 parent_entry_id=discovery_info["parent_entry_id"],
                 connection_type=connection_type,
                 hostname=hostname if hostname else None,
+                country=discovery_info.get("country") or parent_data.get(CONF_COUNTRY),
+                culture=discovery_info.get("culture") or parent_data.get(CONF_CULTURE),
             )
 
             _LOGGER.info("Creating config entry for discovered device: %s", device_name)
