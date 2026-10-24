@@ -18,7 +18,7 @@ from custom_components.hass_dyson.sensor import DysonRobotActiveFaultSensor
 # told apart only by nextActionRequired.
 STATUS_FAULT = {"faultCode": "2105", "nextActionRequired": "LOG_ONLY"}
 BLOCKING_FAULT = {"faultCode": "581", "nextActionRequired": "USER_CONTINUE"}
-UNNAMED_FAULT = {"faultCode": "2102", "nextActionRequired": "LOG_ONLY"}
+UNNAMED_FAULT = {"faultCode": "9999", "nextActionRequired": "USER_CONTINUE"}
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_unknown_code_is_shown_raw(pure_mock_sensor_entity, coordinator, device)
 
     sensor._handle_coordinator_update()
 
-    assert sensor.native_value == "2102"
+    assert sensor.native_value == "9999"
 
 
 def test_actionable_fault_wins_over_a_status_code(
@@ -228,3 +228,18 @@ def test_fault_sensor_unreported_without_a_device(pure_mock_sensor_entity, coord
     sensor._handle_coordinator_update()
 
     assert sensor.native_value is None
+
+
+def test_log_only_code_is_not_the_active_fault(
+    pure_mock_sensor_entity, coordinator, device
+):
+    """Service codes stay in attributes but do not become the active fault."""
+    device._state_data = {
+        "activeFaults": [{"faultCode": "2102", "nextActionRequired": "LOG_ONLY"}]
+    }
+    sensor = pure_mock_sensor_entity(DysonRobotActiveFaultSensor, coordinator)
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value == "none"
+    assert sensor.extra_state_attributes["log_only_fault_codes"] == ["2102"]

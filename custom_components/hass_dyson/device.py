@@ -37,11 +37,13 @@ import socket
 import time
 import uuid
 from collections.abc import Callable
+from datetime import datetime as dt
 from typing import Any
 
 import paho.mqtt.client as mqtt
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONNECTION_STATUS_CLOUD,
@@ -204,6 +206,12 @@ class DysonDevice:
         self._last_heartbeat = 0.0
         self._ha_stop_unsub: Callable[[], None] | None = None
         self._state_data: dict[str, Any] = {}
+        # End of the dock work timer (epoch seconds) from a Spot+Scrub
+        # prop.post work_time message; see robot_dock_timer_end.
+        self._dock_timer_end: float | None = None
+        # Set once a full CURRENT-STATE message has been processed, so setup can
+        # skip re-requesting state the device has already sent after connecting.
+        self._current_state_received = False
         self._environmental_data: dict[str, Any] = {}
         self._faults_data: dict[str, Any] = {}  # Raw fault data from device
         self._message_callbacks: list[Callable[[str, dict[str, Any]], None]] = []
@@ -1567,6 +1575,10 @@ class DysonDevice:
             # update). Payload is only {msg, time} — no state to merge;
             # consumers react via the message callbacks below.
             _LOGGER.debug("Persistent-map manifest updated for %s", self._log_serial)
+        elif not message_type and data.get("method") == "prop.post":
+            # Spot+Scrub property push (no "msg" key). Carries the dock work
+            # timer, e.g. mop drying; other properties are ignored.
+            self._handle_property_post(data)
         else:
             _LOGGER.debug(
                 "Unknown message type '%s' for device %s: %s",
@@ -1577,6 +1589,25 @@ class DysonDevice:
 
         # Notify callbacks
         self._notify_callbacks(topic, data)
+
+    def _handle_property_post(self, data: dict[str, Any]) -> None:
+        """Keep the dock work timer end from a Spot+Scrub prop.post message.
+
+        Observed while the dock dried the mop roller after a clean:
+        ``{"method": "prop.post", "params": {"work_time": {"type": 3,
+        "total": 14400, "surplus": 4080}}}``; ``surplus`` is the remaining
+        seconds and counts down.
+        """
+        params = data.get("params")
+        work_time = params.get("work_time") if isinstance(params, dict) else None
+        if not isinstance(work_time, dict):
+            return
+        try:
+            self._dock_timer_end = time.time() + int(work_time["surplus"])
+        except (KeyError, TypeError, ValueError) as err:
+            _LOGGER.debug(
+                "Ignoring malformed work_time for %s: %s", self._log_serial, err
+            )
 
     def _apply_pending_state_guard(
         self, product_state: dict[str, Any]
@@ -1639,6 +1670,7 @@ class DysonDevice:
             )
         other_data = {k: v for k, v in data.items() if k != "product-state"}
         self._state_data.update(other_data)
+        self._current_state_received = True
         _LOGGER.debug("Updated device state for %s", self._log_serial)
 
         self._reconcile_robot_faults(data.get("activeFaults"))
@@ -2081,6 +2113,24 @@ class DysonDevice:
     def preferred_connection_type(self) -> str:
         """Return the preferred connection type, "local" or "cloud"."""
         return self._preferred_connection_type
+
+    @property
+    def has_current_state(self) -> bool:
+        """Return True once a full CURRENT-STATE message has been received."""
+        return self._current_state_received
+
+    async def async_wait_for_current_state(self, timeout: float) -> bool:
+        """Wait until a CURRENT-STATE message has been received.
+
+        Returns True as soon as the state is available, or False if it did not
+        arrive within ``timeout`` seconds.
+        """
+        deadline = time.monotonic() + timeout
+        while not self._current_state_received:
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(0.1)
+        return True
 
     @property
     def is_connected(self) -> bool:
@@ -3018,6 +3068,41 @@ class DysonDevice:
             return None
 
     @property
+    def robot_dock_state(self) -> str | None:
+        """Return what the dock is doing (Spot+Scrub only).
+
+        Returns:
+            Raw dock state such as DRYING_MOP, or None if not reported
+        """
+        try:
+            product_state = self._state_data.get("product-state", {})
+            dock_state = product_state.get("dockState")
+
+            if not dock_state:
+                dock_state = self._state_data.get("dockState")
+            return dock_state or None
+        except (KeyError, TypeError) as e:
+            _LOGGER.debug("Failed to get dock state for %s: %s", self._log_serial, e)
+            return None
+
+    @property
+    def robot_dock_timer_end(self) -> dt | None:
+        """Return when the running dock work timer ends (Spot+Scrub only).
+
+        Fixed when the timer message arrived, so the value stays stable
+        between messages instead of drifting.
+
+        Returns:
+            End time in UTC, or None if no timer is running
+        """
+        if self._dock_timer_end is None:
+            return None
+        end = dt_util.utc_from_timestamp(self._dock_timer_end)
+        if end <= dt_util.utcnow():
+            return None
+        return end
+
+    @property
     def robot_full_clean_action(self) -> str | None:
         """Return what the robot is doing on this run (Spot+Scrub only).
 
@@ -3036,6 +3121,71 @@ class DysonDevice:
                 "Failed to get robot clean action for %s: %s", self._log_serial, e
             )
             return None
+
+    @property
+    def robot_cleaning_details(self) -> dict[str, Any]:
+        """Return explicitly reported cleaning stage, programme, room, and progress.
+
+        Firmware vocabulary differs between robot models, so values are read
+        from known payload keys without deriving them from state or duration.
+        """
+        details: dict[str, Any] = {}
+        product_state = self._state_data.get("product-state", {})
+        sources = (
+            product_state if isinstance(product_state, dict) else {},
+            self._state_data,
+        )
+        fields = {
+            "stage": ("cleanStage", "cleaningStage", "stage", "currentStage"),
+            "room": (
+                "currentRoom",
+                "currentRoomId",
+                "room",
+                "roomId",
+                "zoneId",
+                "newZoneId",
+            ),
+            "programme": (
+                "cleaningProgramme",
+                "cleaningProgram",
+                "programme",
+                "fullCleanType",
+            ),
+            "progress": (
+                "cleanProgress",
+                "cleaningProgress",
+                "progress",
+                "cleaningPercentage",
+                "progressPercentage",
+            ),
+        }
+        for name, keys in fields.items():
+            for source in sources:
+                for key in keys:
+                    value = source.get(key)
+                    if value is not None and value != "":
+                        details[name] = value
+                        break
+                if name in details:
+                    break
+        return details
+
+    @property
+    def robot_is_charging(self) -> bool | None:
+        """Return an explicit charging flag when the payload reports one."""
+        product_state = self._state_data.get("product-state", {})
+        sources = (
+            product_state if isinstance(product_state, dict) else {},
+            self._state_data,
+        )
+        for source in sources:
+            for key in ("isCharging", "charging", "activelyCharging"):
+                value = source.get(key)
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str) and value.upper() in {"TRUE", "FALSE"}:
+                    return value.upper() == "TRUE"
+        return None
 
     @property
     def robot_clean_id(self) -> str | None:
@@ -3843,7 +3993,12 @@ class DysonDevice:
 
     async def set_continuous_monitoring(self, enabled: bool) -> None:
         """Set continuous monitoring on/off."""
-        await self.send_command("STATE-SET", {"rhtm": "ON" if enabled else "OFF"})
+        data = {"rhtm": "ON" if enabled else "OFF"}
+        product_state = self._state_data.get("product-state", {})
+        if "fmod" in product_state:
+            # Link devices require fmod alongside rhtm for this command.
+            data["fmod"] = self.get_state_value(product_state, "fmod")
+        await self.send_command("STATE-SET", data)
 
     # Robot Vacuum Control Methods
     # ============================
@@ -4113,11 +4268,11 @@ class DysonDevice:
         Args:
             hardness: Water hardness level ("soft", "medium", "hard")
         """
-        # Map hardness level to device values
+        # Map hardness level to device values (same encoding as libdyson-neon)
         hardness_map = {
-            "soft": "0675",
+            "soft": "2025",
             "medium": "1350",
-            "hard": "2025",
+            "hard": "0675",
         }
 
         if hardness not in hardness_map:

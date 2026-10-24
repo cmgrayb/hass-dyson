@@ -317,6 +317,14 @@ reconnect.
 
 **Fix**: Reload the integration entry (`Settings → Devices & Services → Dyson → … → Reload`).
 
+**Also check the lamp's write properties**: some models (Solarcycle Morph, E5R/E5V) advertise
+`write-without-response` on the light characteristics and answer an ATT Write Request with
+`0x03 Write Not Permitted`, so the lamp ignores the command entirely while Home Assistant still
+reports the write as successful.  The integration reads each characteristic's advertised
+properties before writing and follows them, so these lamps work without further configuration;
+if the log shows repeated `Write Not Permitted` errors, the GATT service cache was empty when the
+command ran — reload the entry so the properties are read after service discovery completes.
+
 ---
 
 ### Motion sensor always off
