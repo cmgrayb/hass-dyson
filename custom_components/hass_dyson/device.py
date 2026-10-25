@@ -2328,6 +2328,16 @@ class DysonDevice:
             )
             _LOGGER.debug("Sent command %s to %s", command, self._log_serial)
 
+            if command == "STATE-SET" and data:
+                # Reflect the commanded values in the cached state right away,
+                # so an entity refresh before the device's STATE-CHANGE does not
+                # flip the control back to the old value. The pending guard
+                # keeps a stale CURRENT-STATE from reverting it, and STATE-CHANGE
+                # confirms or corrects it. rstf is a one-shot reset action.
+                self._state_data.setdefault("product-state", {}).update(
+                    {k: v for k, v in data.items() if k != "rstf"}
+                )
+
         except Exception as err:
             _LOGGER.error(
                 "Failed to send command %s to device %s: %s",
