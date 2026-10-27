@@ -868,7 +868,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         # cleanId alone cannot tell a mid-clean snapshot from the final map.
         try:
             dust_blob = dust_map_model.dust_data[0].get("data") or ""
-        except (AttributeError, IndexError, TypeError):
+        except AttributeError, IndexError, TypeError:
             dust_blob = ""
         dust_fp = hashlib.sha1(dust_blob.encode()).hexdigest() if dust_blob else None
 
@@ -905,7 +905,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
             if pmap.presentation_map_data:
                 try:
                     presentation_png = base64.b64decode(pmap.presentation_map_data)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     presentation_png = None
             rotation_deg = pmap.display_orientation
             if pmap.offset_x is not None and pmap.offset_y is not None:
@@ -915,7 +915,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if latest.cleaned_footprint and latest.cleaned_footprint.data:
             try:
                 cleaned_fp_png = base64.b64decode(latest.cleaned_footprint.data)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 cleaned_fp_png = None
 
         # The renderer is pure-Python pixel loops over the full bitmap —

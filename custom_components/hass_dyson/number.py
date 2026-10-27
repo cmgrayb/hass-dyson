@@ -81,7 +81,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
             sltm = coordinator.device.get_state_value(product_state, "sltm", "OFF")
             try:
                 self._attr_native_value = 0 if sltm == "OFF" else int(sltm)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = 0
         else:
             self._attr_native_value = 0
@@ -121,7 +121,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                         self._timer_polling_task = asyncio.create_task(
                             self._poll_timer_updates()
                         )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
 
     async def _poll_timer_updates(self) -> None:
@@ -224,7 +224,7 @@ class DysonSleepTimerNumber(DysonEntity, NumberEntity):
                     try:
                         # Convert timer data to minutes
                         device_value = int(timer_data)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         device_value = 0
 
                 _LOGGER.debug(
@@ -393,7 +393,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
                     ) // 2
                     span = self._ANCP_SPAN_MAP[ancp]
                     self._attr_native_value = max(0, midpoint - span // 2)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     self._attr_native_value = 0
             else:
                 angle_data = self.coordinator.device.get_state_value(
@@ -401,7 +401,7 @@ class DysonOscillationLowerAngleNumber(DysonEntity, NumberEntity):
                 )
                 try:
                     self._attr_native_value = int(angle_data.lstrip("0") or "0")
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     self._attr_native_value = 0
         else:
             self._attr_native_value = None
@@ -510,7 +510,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
                     ) // 2
                     span = self._ANCP_SPAN_MAP[ancp]
                     self._attr_native_value = min(350, midpoint + span // 2)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     self._attr_native_value = 350
             else:
                 angle_data = self.coordinator.device.get_state_value(
@@ -518,7 +518,7 @@ class DysonOscillationUpperAngleNumber(DysonEntity, NumberEntity):
                 )
                 try:
                     self._attr_native_value = int(angle_data.lstrip("0") or "350")
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     self._attr_native_value = 350
         else:
             self._attr_native_value = None
@@ -622,7 +622,7 @@ class DysonOscillationCenterAngleNumber(DysonEntity, NumberEntity):
                 upper_angle = int(upper_data.lstrip("0") or "350")
                 # Center is the median between lower and upper
                 self._attr_native_value = (lower_angle + upper_angle) // 2
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = 175  # Default center
         else:
             self._attr_native_value = None
@@ -759,7 +759,7 @@ class DysonOscillationAngleSpanNumber(DysonEntity, NumberEntity):
                     lower_angle = int(lower_data.lstrip("0") or "0")
                     upper_angle = int(upper_data.lstrip("0") or "350")
                     self._attr_native_value = upper_angle - lower_angle
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     self._attr_native_value = 350  # Default full span
         else:
             self._attr_native_value = None
@@ -868,7 +868,7 @@ class DysonOscillationDay0LowerAngleNumber(DysonEntity, NumberEntity):
                 angle_value = int(angle_data.lstrip("0") or "142")
                 # Constrain to Day0 valid range
                 self._attr_native_value = max(142, min(212, angle_value))
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = 142
         else:
             self._attr_native_value = None
@@ -961,7 +961,7 @@ class DysonOscillationDay0UpperAngleNumber(DysonEntity, NumberEntity):
                 angle_value = int(angle_data.lstrip("0") or "212")
                 # Constrain to Day0 valid range
                 self._attr_native_value = max(142, min(212, angle_value))
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = 212
         else:
             self._attr_native_value = None
@@ -1055,7 +1055,7 @@ class DysonOscillationDay0AngleSpanNumber(DysonEntity, NumberEntity):
                 upper_angle = int(upper_data.lstrip("0") or "350")
                 # Span is the difference between upper and lower
                 self._attr_native_value = upper_angle - lower_angle
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = 70  # Default to 70° span for Day0
         else:
             self._attr_native_value = None
@@ -1167,7 +1167,7 @@ class DysonOscillationDay0CenterAngleNumber(DysonEntity, NumberEntity):
                 calculated_center = (lower_angle + upper_angle) // 2
                 # Constrain to Day0 valid center range
                 self._attr_native_value = max(147, min(207, calculated_center))
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = 177  # Default Day0 center
         else:
             self._attr_native_value = None

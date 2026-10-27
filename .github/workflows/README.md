@@ -125,7 +125,7 @@ All workflows use intelligent caching:
   uses: actions/cache@v4
   with:
     path: ~/.cache/pip
-    key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements-dev.txt', 'requirements.txt') }}
+    key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
 ```
 
 **Benefits:**
@@ -186,8 +186,8 @@ See `.github/BRANCH_PROTECTION.md` for detailed configuration.
 **Tests failing locally but passing in CI:**
 
 - Check Python version compatibility
-- Verify dependency versions match `requirements-dev.txt`
-- Run `pip install -e .` to install in development mode
+- Verify dependency versions match the `dev` extra in `pyproject.toml`
+- Run `pip install -e '.[dev]'` to install in development mode
 
 **Coverage reports missing:**
 
@@ -205,8 +205,7 @@ See `.github/BRANCH_PROTECTION.md` for detailed configuration.
 
 ```bash
 # Install development dependencies
-pip install -r requirements-dev.txt
-pip install -e .
+pip install -e '.[dev]'
 
 # Run the same tests as CI
 python -m pytest tests/ -v

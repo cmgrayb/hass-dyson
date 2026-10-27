@@ -57,7 +57,7 @@ path: |
 
 ### Dependencies Tracked
 
-- `requirements-dev.txt` - Development dependencies
+- `pyproject.toml` - Project and development dependencies
 - `requirements.txt` - Production dependencies
 - `pyproject.toml` - Project configuration and metadata
 

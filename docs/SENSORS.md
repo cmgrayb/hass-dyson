@@ -691,7 +691,7 @@ try:
     if not (min_range <= new_value <= max_range):
         _LOGGER.warning("Invalid value: %s", new_value)
         new_value = None
-except (ValueError, TypeError):
+except ValueError, TypeError:
     _LOGGER.warning("Invalid format: %s", raw_value)
     new_value = None
 ```

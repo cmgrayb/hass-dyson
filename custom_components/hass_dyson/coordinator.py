@@ -164,7 +164,7 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
             culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
-    except (AttributeError, TypeError):
+    except AttributeError, TypeError:
         # Fallback for any unexpected issues (e.g., during testing)
         return "US", "en-US"
 
@@ -1334,7 +1334,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Even if local MQTT credentials are empty (e.g., 360 robot vacuums)
             return True
 
-        except (AttributeError, TypeError):
+        except AttributeError, TypeError:
             return False
 
     async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:

@@ -242,7 +242,7 @@ humidity = env_data.get("hact", 0)  # Returns 0 if not available
 try:
     temp_celsius = int(env_data.get("tact", 0)) / 10
     humidity_percent = int(env_data.get("hact", 0))
-except (ValueError, TypeError):
+except ValueError, TypeError:
     temp_celsius = 0.0
     humidity_percent = 0
 ```
@@ -581,7 +581,7 @@ def get_device_temperature(coordinator) -> Optional[float]:
         env_data = coordinator.device.get_environmental_data()
         temp_raw = env_data.get("tact", 0)
         return float(temp_raw) / 10  # Convert from °C * 10
-    except (ValueError, TypeError, ZeroDivisionError):
+    except ValueError, TypeError, ZeroDivisionError:
         return None
 
 
@@ -594,7 +594,7 @@ def get_device_fan_speed(coordinator) -> Optional[int]:
         state_data = coordinator.device.state
         speed_str = coordinator.device.get_state_value(state_data, "fnsp", "0")
         return int(speed_str)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 ```
 

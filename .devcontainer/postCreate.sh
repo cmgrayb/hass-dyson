@@ -6,13 +6,9 @@ echo "🚀 Setting up Dyson Home Assistant Integration development environment..
 WORKSPACE_DIR=$(pwd)
 echo "📁 Working in workspace: $WORKSPACE_DIR"
 
-# Install development dependencies
-echo "📦 Installing development dependencies..."
-pip install -r requirements-dev.txt
-
-# Install the package in development mode
-echo "🔧 Installing package in development mode..."
-pip install -e .
+# Install the package and development dependencies in editable mode
+echo "📦 Installing development dependencies and package..."
+pip install -e '.[dev]'
 
 # Set up git hooks (if pre-commit is available)
 if command -v pre-commit &> /dev/null; then
