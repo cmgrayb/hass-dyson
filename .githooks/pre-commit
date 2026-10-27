@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+before_format="$(git diff --binary -- .)"
+make format
+
+if [[ "$(git diff --binary -- .)" != "$before_format" ]]; then
+    printf '%s\n' 'Ruff formatted tracked files. Review and stage the changes, then commit again.' >&2
+    exit 1
+fi

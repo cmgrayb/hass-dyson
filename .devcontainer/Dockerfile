@@ -1,6 +1,11 @@
 # Use the official Python devcontainer image as base - image format is patch-major.minor-OS
 FROM mcr.microsoft.com/devcontainers/python:3-3.14-bookworm
 
+COPY --from=ghcr.io/astral-sh/uv:0.9.8 /uv /uvx /usr/local/bin/
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_PYTHON=/usr/local/bin/python \
+    UV_PYTHON_PREFERENCE=only-system
+
 # Remove Yarn repository to avoid GPG key errors
 RUN rm -f /etc/apt/sources.list.d/yarn.list
 
@@ -29,24 +34,16 @@ RUN apt-get update && apt-get install -y \
     libxcb1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements to temporary location for installation
-COPY requirements-dev.txt /tmp/
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /tmp/requirements-dev.txt
-
-# Install additional development tools
-RUN pip install --no-cache-dir \
-    pytest-asyncio \
-    pytest-mock \
-    bandit
-
-# Create workspace directory but don't set it as WORKDIR during build
 RUN mkdir -p /workspaces
+WORKDIR /workspaces
 
-# Note: Project files will be available via volume mount
-# Package installation in development mode happens in postCreate script
+# Install the locked dependencies into the image's system Python.
+# The project source is mounted into the container at runtime.
+COPY pyproject.toml uv.lock /tmp/hass-dyson/
+RUN cd /tmp/hass-dyson && \
+    UV_PROJECT_ENVIRONMENT="$(/usr/local/bin/python -c 'import sys; print(sys.prefix)')" \
+      uv sync --locked --extra dev \
+      --no-install-project --inexact
 
 # Switch to vscode user (created by base image)
 USER vscode

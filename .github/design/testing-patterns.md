@@ -240,8 +240,7 @@ The development environment includes all necessary Home Assistant testing infras
 
 ### Development Testing Workflow
 1. **Create/activate virtual environment**
-2. **Install development dependencies**: `pip install -r requirements-dev.txt`
-3. **Install package in development mode**: `pip install -e .`
+2. **Install the package and development dependencies**: `pip install -e '.[dev]'`
 4. **Make changes following coding standards**
 5. **Run tests**: `python -m pytest`
 6. **Check coverage**: `python -m pytest --cov-report=term-missing`

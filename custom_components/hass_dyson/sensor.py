@@ -202,7 +202,7 @@ class DysonP25RSensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid P25R value format for device %s: %s",
                             device_serial,
@@ -305,7 +305,7 @@ class DysonP10RSensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid P10R value format for device %s: %s",
                             device_serial,
@@ -400,7 +400,7 @@ class DysonCO2Sensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid CO2 value format for device %s: %s",
                             device_serial,
@@ -505,7 +505,7 @@ class DysonVOCSensor(DysonEntity, SensorEntity):
                                 raw_value,
                                 new_value,
                             )
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid VOC value format for device %s: %s",
                             device_serial,
@@ -1632,7 +1632,7 @@ class DysonFilterLifeSensor(DysonEntity, SensorEntity):
         if filter_life is not None:
             try:
                 self._attr_native_value = int(filter_life)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = None
         else:
             self._attr_native_value = None
@@ -1678,7 +1678,7 @@ class DysonAirQualitySensor(DysonEntity, SensorEntity):
         if value is not None:
             try:
                 self._attr_native_value = int(value)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = None
         else:
             self._attr_native_value = None
@@ -1729,7 +1729,7 @@ class DysonTemperatureSensor(DysonEntity, SensorEntity):
                     # Home Assistant will automatically convert to Fahrenheit for imperial users
                     temp_celsius = (float(temperature) / 10) - 273.15
                     self._attr_native_value = round(temp_celsius, 1)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_value = None
         else:
             self._attr_native_value = None
@@ -1797,7 +1797,7 @@ class DysonHumiditySensor(DysonEntity, SensorEntity):
                                 humidity_raw,
                                 new_value,
                             )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     _LOGGER.warning(
                         "Invalid humidity value format for device %s: %s",
                         device_serial,
@@ -1924,7 +1924,7 @@ class DysonPM25Sensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid PM2.5 value format for device %s: %s",
                             device_serial,
@@ -2048,7 +2048,7 @@ class DysonPM10Sensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid PM10 value format for device %s: %s",
                             device_serial,
@@ -2170,7 +2170,7 @@ class DysonParticulatesSensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid particulates value format for device %s: %s",
                             device_serial,
@@ -2301,7 +2301,7 @@ class DysonVOCLinkSensor(DysonEntity, SensorEntity):
                                 raw_value,
                                 new_value,
                             )
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid VOC Link value format for device %s: %s",
                             device_serial,
@@ -2397,7 +2397,7 @@ class DysonNO2Sensor(DysonEntity, SensorEntity):
                                 new_value,
                             )
                             new_value = None
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning(
                             "Invalid NO2 value format for device %s: %s",
                             device_serial,
@@ -2506,7 +2506,7 @@ class DysonFormaldehydeSensor(DysonEntity, SensorEntity):
                             raw_value,
                             new_value,
                         )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     _LOGGER.warning(
                         "Invalid HCHO value format for device %s: %s",
                         device_serial,
@@ -3485,7 +3485,7 @@ def _extract_duration_minutes(clean) -> int | None:
         s = datetime.fromisoformat(start.replace("Z", "+00:00"))
         e = datetime.fromisoformat(end.replace("Z", "+00:00"))
         return max(0, int((e - s).total_seconds() // 60))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -3595,7 +3595,7 @@ class DysonLastCleanSensor(DysonEntity, SensorEntity):
                 if start_str
                 else None
             )
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             self._attr_native_value = None
 
         # Cross-reference zone IDs with the persistent-map metadata cache

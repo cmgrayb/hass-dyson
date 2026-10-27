@@ -21,7 +21,18 @@ See [`.devcontainer/README.md`](.devcontainer/README.md) for detailed documentat
 
 ### **Manual Development Setup**
 
-If you prefer local development:
+If you prefer local development, install [uv](https://docs.astral.sh/uv/getting-started/installation/) and run:
+
+```bash
+make install
+git config --local core.hooksPath .githooks
+```
+
+This creates a Python 3.14 `.venv`, installs the integration and its `dev` dependencies from `pyproject.toml`, and enables the repository's Git pre-commit hook. The hook runs `make format` and asks you to stage any formatting changes before committing. Run tools from the environment with `.venv/bin/python -m pytest` or `.venv/bin/ruff`.
+
+Run the test suite with `make test` and format Python files with `make format`.
+
+Alternatively, set up the environment with pip:
 
 ```bash
 # Create virtual environment
@@ -29,12 +40,8 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 .venv\Scripts\activate     # Windows
 
-# Install development dependencies
-pip install -r requirements-dev.txt
-pip install -e .
-
-# Install Home Assistant for testing
-pip install homeassistant
+# Install the integration and development dependencies
+pip install -e '.[dev]'
 ```
 
 ### **Architecture**

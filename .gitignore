@@ -234,3 +234,4 @@ __marimo__/
 .devcontainer/devcontainer-lock.json
 .devcontainer/config/secrets.yaml
 .devcontainer/config/backups/**
+/.idea/

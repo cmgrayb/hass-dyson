@@ -5,7 +5,7 @@ This project uses [Renovate Bot](https://github.com/renovatebot/renovate) for au
 ## **Managed Dependencies**
 
 - **`requirements.txt`** - Production dependencies (conservative 7-day minimum age)
-- **`requirements-dev.txt`** - Development tools (3-day minimum age)
+- **`pyproject.toml`** - Project and development dependencies
 - **`.devcontainer/Dockerfile`** - Docker base images and system packages
 - **`custom_components/hass_dyson/manifest.json`** - Home Assistant integration requirements
 
