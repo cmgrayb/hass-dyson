@@ -25,9 +25,10 @@ If you prefer local development, install [uv](https://docs.astral.sh/uv/getting-
 
 ```bash
 make install
+git config --local core.hooksPath .githooks
 ```
 
-This creates a Python 3.14 `.venv` and installs the integration and its `dev` dependencies from `pyproject.toml`. Run tools from the environment with `.venv/bin/python -m pytest` or `.venv/bin/ruff`.
+This creates a Python 3.14 `.venv`, installs the integration and its `dev` dependencies from `pyproject.toml`, and enables the repository's Git pre-commit hook. The hook runs `make format` and asks you to stage any formatting changes before committing. Run tools from the environment with `.venv/bin/python -m pytest` or `.venv/bin/ruff`.
 
 Run the test suite with `make test` and format Python files with `make format`.
 

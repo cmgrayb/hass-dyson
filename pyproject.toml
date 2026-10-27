@@ -44,6 +44,7 @@ dev = [
     "responses==0.26.3",
     "ruff==0.17.2",
     "types-cryptography==3.3.23.2",
+    "coverage[toml]"
 ]
 
 [project.urls]
@@ -187,15 +188,7 @@ norecursedirs = [".git", ".tox", "dist", "build", "south_migrations"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-# Coverage is enabled by default but with fail-under=0 to allow tests to run
-# The dedicated "coverage" job in GitHub Actions enforces the actual coverage requirements
 addopts = [
-    "--cov=custom_components.hass_dyson",
-    "--cov-report=term-missing",
-    "--cov-report=xml",
-    "--cov-report=html",
-    "--cov-branch",  # Enable branch coverage to match GitHub workflow
-    "--cov-fail-under=0",  # No failure threshold - handled by dedicated coverage job
     "--strict-markers",
     "-n", "auto",  # Run tests with pytest-xdist workers
     "-v"
@@ -231,9 +224,11 @@ markers = [
 ]
 
 [tool.coverage.run]
+command_line = "-m pytest tests"
 source = ["custom_components/hass_dyson"]
 branch = true  # Enable branch coverage measurement
 parallel = true
+patch = ["subprocess"]
 concurrency = ["multiprocessing"]
 omit = [
     "*/tests/*",

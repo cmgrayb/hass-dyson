@@ -1,12 +1,18 @@
 .PHONY: install test format
 
-UV ?= uv
+init:
+	@pip3 install uv
 
-install:
-	$(UV) sync --extra dev
+install: init
+	uv sync --locked --extra dev
 
-test:
-	$(UV) run --extra dev pytest tests
+upgrade: init
+	uv sync --upgrade --extra dev
+
+test: install format
+	uv run --locked --extra dev coverage erase
+	uv run --locked --extra dev coverage run
+	uv run --locked --extra dev coverage report
 
 format:
-	$(UV) run --extra dev ruff format .
+	uv run --locked --extra dev ruff format .
