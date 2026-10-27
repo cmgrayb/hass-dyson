@@ -61,7 +61,7 @@
     {
       "description": "Development dependencies - faster updates",
       "matchFileNames": [
-        "requirements-dev.txt"
+        "pyproject.toml"
       ],
       "matchDepTypes": [
         "devDependencies"

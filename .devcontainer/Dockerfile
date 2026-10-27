@@ -29,19 +29,6 @@ RUN apt-get update && apt-get install -y \
     libxcb1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements to temporary location for installation
-COPY requirements-dev.txt /tmp/
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /tmp/requirements-dev.txt
-
-# Install additional development tools
-RUN pip install --no-cache-dir \
-    pytest-asyncio \
-    pytest-mock \
-    bandit
-
 # Create workspace directory but don't set it as WORKDIR during build
 RUN mkdir -p /workspaces
 

@@ -1107,7 +1107,7 @@ class TestIconNames:
             try:
                 with open(chunk, encoding="utf-8") as fh:
                     names |= set(json.load(fh))
-            except (OSError, ValueError):  # pragma: no cover - defensive
+            except OSError, ValueError:  # pragma: no cover - defensive
                 continue
         if not names:  # pragma: no cover - frontend layout changed
             pytest.skip("could not read the MDI icon set")

@@ -305,7 +305,7 @@ class DysonFan(DysonEntity, FanEntity):
                 # Convert fnsp (0001-0010) to percentage (10-100%)
                 speed_int = int(fan_speed_setting)
                 self._attr_percentage = min(100, max(0, speed_int * 10))
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_percentage = 0
 
         # Update preset mode and heating data if applicable
@@ -740,7 +740,7 @@ class DysonFan(DysonEntity, FanEntity):
                 attributes["angle_low"] = lower_angle
                 attributes["angle_high"] = upper_angle
                 attributes["oscillation_span"] = upper_angle - lower_angle
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
 
             # Sleep timer if available
@@ -752,7 +752,7 @@ class DysonFan(DysonEntity, FanEntity):
                     attributes["sleep_timer"] = int(sltm)
                 else:
                     attributes["sleep_timer"] = 0
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 attributes["sleep_timer"] = 0
 
             # Heating information if device has heating capability
@@ -871,7 +871,7 @@ class DysonFan(DysonEntity, FanEntity):
                             await self.coordinator.device.set_oscillation_angles(
                                 new_lower, new_upper
                             )
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         pass
                     await self.coordinator.device.set_oscillation(oscillating)
 
@@ -961,7 +961,7 @@ class DysonFan(DysonEntity, FanEntity):
                     )
                 else:
                     self._attr_current_temperature = None
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_current_temperature = None
         else:
             self._attr_current_temperature = None
@@ -978,7 +978,7 @@ class DysonFan(DysonEntity, FanEntity):
                 )
             else:
                 self._attr_target_temperature = 20.0
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self._attr_target_temperature = 20.0  # Default to 20°C
 
         # HVAC mode based on device state

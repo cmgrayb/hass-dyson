@@ -727,7 +727,7 @@ class DysonBLEDevice:
                     msg = await asyncio.wait_for(
                         asyncio.shield(get_task), timeout=poll_timeout
                     )
-                except (asyncio.TimeoutError, TimeoutError):
+                except asyncio.TimeoutError, TimeoutError:
                     # Check if the client disconnected during the wait
                     if self._client is None or not getattr(
                         self._client, "is_connected", True

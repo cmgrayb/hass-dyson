@@ -238,12 +238,17 @@ markers = [
 [tool.coverage.run]
 source = ["custom_components/hass_dyson"]
 branch = true  # Enable branch coverage measurement
+parallel = true
+concurrency = ["multiprocessing"]
 omit = [
     "*/tests/*",
     "*/test_*",
 ]
 
 [tool.coverage.report]
+precision = 2
+skip_covered = false
+show_missing = true
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
@@ -251,7 +256,17 @@ exclude_lines = [
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+    "@abstractmethod",
 ]
+
+[tool.coverage.paths]
+source = [
+    "custom_components/hass_dyson",
+    "*/custom_components/hass_dyson",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [tool.bandit]
 exclude_dirs = ["tests"]

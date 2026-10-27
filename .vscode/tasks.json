@@ -4,7 +4,7 @@
         {
             "label": "Setup Dev Environment",
             "type": "shell",
-            "command": "pip install --upgrade pip && pip install -r requirements-dev.txt && pip install -e .",
+            "command": "pip install --upgrade pip && pip install -e '.[dev]'",
             "group": "build",
             "presentation": {
                 "echo": true,
@@ -20,7 +20,7 @@
         {
             "label": "Install Dev Dependencies",
             "type": "shell",
-            "command": "pip install -r requirements-dev.txt && pip install -e .",
+            "command": "pip install -e '.[dev]'",
             "group": "build",
             "presentation": {
                 "echo": true,

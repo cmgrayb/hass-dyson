@@ -92,9 +92,8 @@ Design documentation may be found in the `.github/design/` directory of the proj
 - Production dependencies only
 - Pinned versions for reproducibility
 
-### requirements-dev.txt
-- Development dependencies (ruff, pytest, mypy, etc.)
-- Pre-commit hooks
+### Development dependencies
+- Defined in the `dev` extra in `pyproject.toml` (ruff, pytest, mypy, etc.)
 
 ## VSCode Tasks
 The following tasks should be available:
@@ -344,7 +343,7 @@ python -m pytest tests/ -m 'not integration'
 ## Dependencies Management
 - Use virtual environments for isolation
 - Pin exact versions in requirements.txt
-- Use requirements-dev.txt for development tools
+- Use the `dev` extra in `pyproject.toml` for development tools
 - Regular dependency updates with testing
 
 ## Version Synchronization Process
@@ -377,20 +376,14 @@ When updating development tool versions, ensure consistency across all configura
    pip list | findstr "black flake8 isort pytest mypy"
    ```
 
-2. **Synchronize requirements-dev.txt**
-   - Update to exact version pins matching pre-commit hooks
-   - Use `==` instead of `>=` for consistency
-   - Include all development dependencies with exact versions
+2. **Update pyproject.toml Optional Dependencies**
+   - Update `[project.optional-dependencies].dev` with the development tools
+   - Use exact version pins (`==`) where appropriate
 
-3. **Update pyproject.toml Optional Dependencies**
-   - Match the exact versions from requirements-dev.txt
-   - Update `[project.optional-dependencies].dev` section
-   - Use exact version pins (`==`) for consistency
-
-4. **Verification Steps**
+3. **Verification Steps**
    ```bash
    # Install updated dependencies
-   pip install -r requirements-dev.txt
+   pip install -e '.[dev]'
 
    # Verify all tools work locally
    python -m ruff format --check .
@@ -400,8 +393,7 @@ When updating development tool versions, ensure consistency across all configura
    python -m peach_fuzzer
    ```
 
-5. **Files to Update**
-   - `requirements-dev.txt` (manual exact version pins)
+4. **Files to Update**
    - `pyproject.toml` (`[project.optional-dependencies].dev` section)
 
 ### Version Selection Strategy
@@ -415,7 +407,7 @@ When updating development tool versions, ensure consistency across all configura
 - Code coverage reporting
 - Security scanning of dependencies
 - Security scanning of application code with Peach Fuzzer
-- **Important**: CI workflows must install package in development mode (`pip install -e .`) for tests to import modules
+- **Important**: CI workflows must install the package and dev extra (`pip install -e '.[dev]'`) for tests to import modules
 
 ## Documentation
 - README with clear usage examples
@@ -428,8 +420,7 @@ When updating development tool versions, ensure consistency across all configura
 # Setup development environment
 python -m venv .venv
 .venv\Scripts\activate  # Windows
-pip install -r requirements-dev.txt
-pip install -e .  # Install package in development mode for testing
+pip install -e '.[dev]'  # Install package and development tools
 
 # Code quality checks
 python -m ruff format --check .
@@ -438,8 +429,8 @@ python -m mypy custom_components/hass_dyson
 python -m pytest
 python -m peach_fuzzer
 
-# Then manually update requirements-dev.txt and pyproject.toml to match
-pip install -r requirements-dev.txt     # Install updated versions
+# Then update the dev extra in pyproject.toml
+pip install -e '.[dev]'  # Install updated versions
 ```
 
 ## VSCode Tasks
@@ -507,7 +498,7 @@ The project uses Renovate Bot for self-hosted automated dependency management:
 
 ### Dependency Update Categories
 - **Production dependencies** (requirements.txt): 7-day minimum age, conservative updates
-- **Development dependencies** (requirements-dev.txt): 3-day minimum age
+- **Development dependencies** (`pyproject.toml` dev extra): 3-day minimum age
 - **Code quality tools** (black, flake8, isort, mypy, pytest): 3-day minimum age
 - **GitHub Actions**: 3-day minimum age, updates workflow dependencies
 - **Security tools**: 1-day minimum age for faster security patches

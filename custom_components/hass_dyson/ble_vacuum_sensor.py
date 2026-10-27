@@ -116,7 +116,7 @@ class DysonBleVacuumBatteryLevelSensor(DysonBleVacuumEntity, SensorEntity):
             return None
         try:
             return int(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
 
 
@@ -147,7 +147,7 @@ class _EnumSensorBase(DysonBleVacuumEntity, SensorEntity):
         # those are never in options and must not be reported.
         try:
             label = value if isinstance(value, str) else self._options.get(int(value))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             label = None
         if label is None or label not in self.options:
             _LOGGER.debug(
