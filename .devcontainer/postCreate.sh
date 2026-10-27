@@ -6,9 +6,9 @@ echo "🚀 Setting up Dyson Home Assistant Integration development environment..
 WORKSPACE_DIR=$(pwd)
 echo "📁 Working in workspace: $WORKSPACE_DIR"
 
-# Install the package and development dependencies in editable mode
-echo "📦 Installing development dependencies and package..."
-pip install -e '.[dev]'
+# Dependencies are installed from uv.lock during the image build.
+# The mounted workspace is importable through PYTHONPATH.
+echo "📦 Using locked dependencies from the devcontainer image..."
 
 # Set up git hooks (if pre-commit is available)
 if command -v pre-commit &> /dev/null; then

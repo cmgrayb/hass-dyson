@@ -195,9 +195,9 @@ A local Mosquitto MQTT broker is available for testing:
 - Check that `pyproject.toml` contains the `dev` extra
 
 ### Tests Failing
-- Ensure all dependencies are installed: `pip install -e '.[dev]'`
-- Check that Home Assistant is properly installed: `pip install homeassistant`
-- Verify the package is installed in development mode
+- Rebuild the container to reinstall dependencies from `uv.lock`
+- Check that Home Assistant is installed: `python -c 'import homeassistant'`
+- Verify the mounted workspace is importable through `PYTHONPATH`
 
 ### MQTT Not Working
 - Check if the Mosquitto service is running: `docker-compose ps`
