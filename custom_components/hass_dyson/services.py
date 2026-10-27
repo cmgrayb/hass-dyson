@@ -189,6 +189,9 @@ SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
             cv.ensure_list, [vol.All(str, vol.Length(min=1))], vol.Length(min=1)
         ),
         vol.Optional("map"): vol.All(str, vol.Length(min=1)),
+        vol.Optional("cleaning_mode"): vol.In(
+            ("vacuum_only", "vacuum_and_mop", "mop_only", "vacuum_then_mop")
+        ),
     }
 )
 
@@ -809,6 +812,76 @@ def _select_map(
     )
 
 
+async def _rb05_set_room_modes(
+    device: Any, map_id: int, room_ids: list[int], option: str
+) -> None:
+    """Set the cleaning mode of selected rooms, leaving other rooms untouched.
+
+    Uses the same read/validate path as the cleaning-mode select. The robot is
+    asked to store the preference, then re-read to confirm it.
+    """
+    import copy
+    import json
+
+    from .spot_scrub import MODE_CODES, read_preferences, validate_preferences
+
+    mode = MODE_CODES[option]
+    try:
+        current_map, preferences = await read_preferences(device)
+    except (RuntimeError, ValueError, TimeoutError) as err:
+        raise HomeAssistantError(f"Could not read room preferences: {err}") from err
+    if current_map != map_id:
+        raise HomeAssistantError(
+            f"Robot's current map {current_map} is not the requested map {map_id}"
+        )
+    rows = copy.deepcopy(validate_preferences(preferences))
+    if preferences.get("prefer_on") != 1 or any(row[11] != 0 for row in rows):
+        raise HomeAssistantError("Unsupported RB05 preference flags")
+    uv = preferences.get("uv_switch")
+    if not isinstance(uv, list) or any(
+        not isinstance(item, list) or len(item) != 2 for item in uv
+    ):
+        raise HomeAssistantError("Missing or malformed UV preferences")
+    missing = set(room_ids) - {row[0] for row in rows}
+    if missing:
+        raise HomeAssistantError(f"Rooms {sorted(missing)} have no preferences")
+    if all(row[3] == mode for row in rows if row[0] in room_ids):
+        _LOGGER.debug("Rooms %s already set to %s", room_ids, option)
+        return
+
+    for row in rows:
+        # Same normalisation as MyDyson: eleven fields, field 2 zero, display name.
+        row.pop()
+        row[2] = 0
+        if row[0] in room_ids:
+            row[3] = mode
+        if row[1].startswith("{"):
+            label = json.loads(row[1])
+            if not isinstance(label, dict) or not isinstance(label.get("name"), str):
+                raise HomeAssistantError("Unrecognized encoded room name")
+            row[1] = label["name"]
+    payload = {
+        "map_id": map_id,
+        "prefer_type": 1,
+        "room_preference": rows,
+        "uv_switch": copy.deepcopy(uv),
+    }
+    try:
+        await device.send_jdm_command("service.set_preference", payload)
+    except RuntimeError as err:
+        # Some RB05 replies use a non-zero code on success; verify below.
+        _LOGGER.debug("set_preference reply: %s", err)
+
+    try:
+        _, confirmed = await read_preferences(device)
+    except (RuntimeError, ValueError, TimeoutError) as err:
+        raise HomeAssistantError(f"Could not confirm room preferences: {err}") from err
+    wrong = [row[0] for row in confirmed["room"] if row[0] in room_ids and row[3] != mode]
+    if wrong:
+        raise HomeAssistantError(f"Robot did not store {option} for rooms {wrong}")
+    _LOGGER.info("Set rooms %s to %s", room_ids, option)
+
+
 async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle hass_dyson.start_zone_clean — Vis Nav zone-specific cleaning."""
     device_id = call.data["device_id"]
@@ -872,6 +945,23 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
     zdlud = pmap.zones_definition_last_updated_date
     if zdlud:
         cleaning_programme["zonesDefinitionLastUpdatedDate"] = zdlud
+
+    # Spot+Scrub (RB05): the cloud turns START into service.set_room_clean with
+    # clean_type 0, so the robot uses the stored per-room preference. Apply the
+    # requested mode to the targeted rooms first; fail closed so a room is
+    # never cleaned with a mode the caller did not ask for.
+    cleaning_mode: str | None = call.data.get("cleaning_mode")
+    if cleaning_mode is not None:
+        if getattr(coordinator.device, "mqtt_prefix", None) != "RB05":
+            raise ServiceValidationError(
+                "cleaning_mode is only supported on Spot+Scrub (RB05)"
+            )
+        await _rb05_set_room_modes(
+            coordinator.device,
+            int(pmap_id),
+            [int(z) for z in resolved_ids],
+            cleaning_mode,
+        )
 
     try:
         await coordinator.device.robot_start_clean(
