@@ -157,3 +157,45 @@ After replacing a HEPA filter, carbon filter, or both, use this action to reset 
 #### Maintenance Tracking
 
 Ensure the device accurately tracks filter usage and provides correct replacement notifications.
+
+## Set Room Cleaning Modes Action
+
+### Description
+
+The Set Room Cleaning Modes Action is available for Dyson Spot+Scrub (RB05) robots.
+
+The Action has two required parameters:
+
+1. Device ID: the device identifier for the target robot
+2. Room Modes: a mapping of room ID or MyDyson room name to either a cleaning mode ("vacuum_only", "vacuum_and_mop", "mop_only" or "vacuum_then_mop") or a mapping of settings:
+   - `cleaning_mode`: as above
+   - `vacuum_power`: "auto", "quick", "quiet" or "boost"
+   - `hydration`: "very_low", "low", "medium" or "high"
+   - `wash_repetitions`: 1 or 2
+
+Rooms and settings that are not listed keep their current value. Room IDs and the current settings are shown in the `room_settings` attribute of the robot's Cleaning mode select. The robot must be docked or have finished cleaning, and the change is confirmed by reading the room preferences back from the robot. No clean is started.
+
+### Purpose
+
+Set per-room cleaning behaviour from Home Assistant, as the MyDyson app's per-room settings do. The Cleaning mode select sets one mode for every room.
+
+### Intended Use Cases
+
+#### Mopping Without Carpeted Rooms
+
+```yaml
+action: hass_dyson.set_room_cleaning_modes
+data:
+  device_id: <robot device id>
+  room_modes:
+    Kitchen: mop_only
+    Bedroom: vacuum_only
+    Living room:
+      cleaning_mode: vacuum_then_mop
+      hydration: high
+      wash_repetitions: 2
+```
+
+#### Mode Presets for Voice Assistants and Matter Bridges
+
+Map a small set of presets (for example a dropdown helper exposed through a Matter bridge) to full per-room plans with an automation.

@@ -334,6 +334,9 @@
           "cold": "Kalt",
           "hot": "Heiß"
         }
+      },
+      "robot_current_room": {
+        "name": "Aktueller Raum"
       }
     },
     "switch": {
@@ -580,6 +583,9 @@
       },
       "floor_plan": {
         "name": "Grundriss"
+      },
+      "clean_coverage": {
+        "name": "Reinigungsabdeckung"
       }
     },
     "light": {
