@@ -899,7 +899,9 @@ async def _rb05_set_room_modes(
         _, confirmed = await read_preferences(device)
     except (RuntimeError, ValueError, TimeoutError) as err:
         raise HomeAssistantError(f"Could not confirm room preferences: {err}") from err
-    wrong = [row[0] for row in confirmed["room"] if row[0] in room_ids and row[3] != mode]
+    wrong = [
+        row[0] for row in confirmed["room"] if row[0] in room_ids and row[3] != mode
+    ]
     if wrong:
         raise HomeAssistantError(f"Robot did not store {option} for rooms {wrong}")
     _LOGGER.info("Set rooms %s to %s", room_ids, option)
