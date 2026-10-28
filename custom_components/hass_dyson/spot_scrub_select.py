@@ -14,7 +14,14 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
-from .spot_scrub import MODE_CODES, mode_payload, read_preferences
+from .spot_scrub import (
+    IDLE_STATES,
+    MODE_CODES,
+    decode_room_settings,
+    mode_payload,
+    read_preferences,
+)
+from .spot_scrub_room_select import get_room_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,10 +54,13 @@ class DysonSpotScrubCleaningModeSelect(DysonEntity, SelectEntity):
             "scope": "all_mapped_rooms",
             "room_modes": {str(row[0]): reverse.get(row[3]) for row in rows},
             "mixed_modes": len({row[3] for row in rows}) > 1,
+            "room_settings": {str(row[0]): decode_room_settings(row) for row in rows},
         }
 
     def _apply_preferences(self, preferences: dict[str, Any]) -> None:
         self._preferences = preferences
+        # Keep the per-room selects in step with reads and writes made here.
+        get_room_store(self.coordinator).publish(preferences)
         codes = {row[3] for row in preferences["room"]}
         reverse = {code: name for name, code in MODE_CODES.items()}
         self._attr_current_option = (
@@ -86,11 +96,7 @@ class DysonSpotScrubCleaningModeSelect(DysonEntity, SelectEntity):
             )
         async with self._lock:
             device = self.coordinator.device
-            if device is None or device.robot_state not in {
-                "INACTIVE_CHARGING",
-                "INACTIVE_CHARGED",
-                "FULL_CLEAN_FINISHED",
-            }:
+            if device is None or device.robot_state not in IDLE_STATES:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="spot_scrub_not_idle"
                 )

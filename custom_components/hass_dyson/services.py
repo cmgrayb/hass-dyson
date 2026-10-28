@@ -82,6 +82,7 @@ from .const import (
     SERVICE_REFRESH_ACCOUNT_DATA,
     SERVICE_RESET_FILTER,
     SERVICE_SET_OSCILLATION_ANGLES,
+    SERVICE_SET_ROOM_CLEANING_MODES,
     SERVICE_SET_SLEEP_TIMER,
     SERVICE_SET_ZONE_BEHAVIOUR,
     SERVICE_START_ZONE_CLEAN,
@@ -90,6 +91,12 @@ from .const import (
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .device_utils import mask_email, mask_serial
+from .spot_scrub import MODE_CODES, resolve_room_settings
+from .spot_scrub_room_select import (
+    SpotScrubInvalidRequestError,
+    SpotScrubNotIdleError,
+    get_room_store,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -122,6 +129,7 @@ DEVICE_CATEGORY_SERVICES = {
         SERVICE_RESET_FILTER,  # Different filter types for cleaning devices
         SERVICE_START_ZONE_CLEAN,  # Vis Nav zone cleaning via cleaningProgramme
         SERVICE_SET_ZONE_BEHAVIOUR,  # Vis Nav per-zone power/strategy overrides
+        SERVICE_SET_ROOM_CLEANING_MODES,  # Spot+Scrub per-room vacuum/mop modes
     ],
     "vacuum": [  # Vacuum devices
         SERVICE_RESET_FILTER,
@@ -191,6 +199,21 @@ SERVICE_START_ZONE_CLEAN_SCHEMA = vol.Schema(
         vol.Optional("map"): vol.All(str, vol.Length(min=1)),
         vol.Optional("cleaning_mode"): vol.In(
             ("vacuum_only", "vacuum_and_mop", "mop_only", "vacuum_then_mop")
+        ),
+    }
+)
+
+# Spot+Scrub (RB05) per-room settings, written over MQTT the same way as the
+# cleaning mode select. Keys are room ids or MyDyson room names. A value is a
+# cleaning mode, or a mapping of cleaning_mode / vacuum_power / hydration /
+# wash_repetitions (validated against the robot's rooms in the handler).
+# Rooms and settings not listed are preserved.
+SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Required("room_modes"): vol.All(
+            {vol.Coerce(str): vol.Any(vol.In(tuple(MODE_CODES)), dict)},
+            vol.Length(min=1),
         ),
     }
 )
@@ -1048,6 +1071,37 @@ async def _handle_set_zone_behaviour(hass: HomeAssistant, call: ServiceCall) -> 
         zone_id,
         zone_in,
         cleaning_strategy,
+    )
+
+
+async def _handle_set_room_cleaning_modes(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    """Write per-room cleaning modes to a Spot+Scrub and verify by read-back."""
+    device_id = call.data["device_id"]
+    coordinator = await _get_coordinator_from_device_id(hass, device_id)
+    if not coordinator:
+        raise ServiceValidationError(f"Device {device_id} not found")
+    raw = call.data["room_modes"]
+    try:
+        changes = await get_room_store(coordinator).async_apply(
+            lambda preferences: resolve_room_settings(preferences, raw)
+        )
+    except SpotScrubNotIdleError as err:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN, translation_key="spot_scrub_not_idle"
+        ) from err
+    except SpotScrubInvalidRequestError as err:
+        raise ServiceValidationError(str(err)) from err
+    except (RuntimeError, ValueError, TimeoutError, AttributeError) as err:
+        _LOGGER.debug("Spot+Scrub room settings change failed: %s", err)
+        raise HomeAssistantError(
+            translation_domain=DOMAIN, translation_key="spot_scrub_request_failed"
+        ) from err
+    _LOGGER.info(
+        "Set room cleaning settings on %s: %s",
+        mask_serial(coordinator.serial_number),
+        changes,
     )
 
 
@@ -2040,6 +2094,18 @@ async def _register_services(
 
         service_handlers[SERVICE_SET_ZONE_BEHAVIOUR] = async_handle_set_zone_behaviour
         service_schemas[SERVICE_SET_ZONE_BEHAVIOUR] = SERVICE_SET_ZONE_BEHAVIOUR_SCHEMA
+
+    if SERVICE_SET_ROOM_CLEANING_MODES in services_to_register:
+
+        async def async_handle_set_room_cleaning_modes(call: ServiceCall) -> None:
+            await _handle_set_room_cleaning_modes(hass, call)
+
+        service_handlers[SERVICE_SET_ROOM_CLEANING_MODES] = (
+            async_handle_set_room_cleaning_modes
+        )
+        service_schemas[SERVICE_SET_ROOM_CLEANING_MODES] = (
+            SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA
+        )
 
     # Register services that aren't already registered
     registered_services = []
