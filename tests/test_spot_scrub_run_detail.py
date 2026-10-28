@@ -6,7 +6,9 @@ import pytest
 
 from custom_components.hass_dyson.device import DysonDevice
 from custom_components.hass_dyson.sensor import (
+    DysonRobotActiveFaultSensor,
     DysonRobotCleanActionSensor,
+    DysonRobotCleanDetailSensor,
     DysonRobotCleanDurationSensor,
     async_setup_entry,
 )
@@ -78,6 +80,70 @@ def test_action_absent_or_empty(device, state):
     device._state_data = state
 
     assert device.robot_full_clean_action is None
+
+
+def test_cleaning_details_use_reported_values_without_inference(device):
+    """Cleaning details are read from firmware fields as-is."""
+    device._state_data = {
+        "cleanStage": "WASHING_MOP_ROLLER",
+        "currentRoom": "Bathroom",
+        "cleaningProgramme": "VACUUM_THEN_WASH",
+        "cleanProgress": 42,
+    }
+
+    assert device.robot_cleaning_details == {
+        "stage": "WASHING_MOP_ROLLER",
+        "room": "Bathroom",
+        "programme": "VACUUM_THEN_WASH",
+        "progress": 42,
+    }
+
+
+def test_cleaning_detail_sensor_exposes_scalar_value(
+    pure_mock_sensor_entity, sensor_coordinator, device
+):
+    """A scalar detail is exposed as a sensor value."""
+    device._state_data = {"cleanStage": "MOPPING"}
+    sensor = pure_mock_sensor_entity(
+        DysonRobotCleanDetailSensor, sensor_coordinator, "stage"
+    )
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value == "MOPPING"
+
+
+def test_cleaning_detail_sensor_keeps_structured_value_in_attributes(
+    pure_mock_sensor_entity, sensor_coordinator, device
+):
+    """Structured firmware values remain available without invalid sensor state."""
+    device._state_data = {"cleaningProgramme": {"mode": "VACUUM_THEN_WASH"}}
+    sensor = pure_mock_sensor_entity(
+        DysonRobotCleanDetailSensor, sensor_coordinator, "programme"
+    )
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes == {"value": {"mode": "VACUUM_THEN_WASH"}}
+
+
+def test_active_fault_sensor_hides_log_only_value(
+    pure_mock_sensor_entity, sensor_coordinator, device
+):
+    """Only LOG_ONLY entries leave the user-facing fault sensor clear."""
+    device._state_data = {
+        "activeFaults": [
+            {"faultCode": "2105", "nextActionRequired": "LOG_ONLY"},
+        ]
+    }
+    sensor = pure_mock_sensor_entity(DysonRobotActiveFaultSensor, sensor_coordinator)
+
+    sensor._handle_coordinator_update()
+
+    assert sensor.native_value == "none"
+    assert sensor.extra_state_attributes["fault_codes"] == ["2105"]
+    assert sensor.extra_state_attributes["log_only_fault_codes"] == ["2105"]
 
 
 def test_sensors_expose_device_values(

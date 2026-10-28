@@ -1149,6 +1149,97 @@ class TestHumidifierCapabilityRefinement:
         # Should not call get_state when not connected
         mock_coordinator.device.get_state.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_adds_focus_mode_for_ec_device(
+        self, mock_coordinator
+    ):
+        """Test that FocusMode capability is added when 'ffoc' is present on ec device."""
+        mock_coordinator._device_category = ["ec"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_does_not_add_focus_mode_for_non_ec_device(
+        self, mock_coordinator
+    ):
+        """Test that FocusMode is NOT added when 'ffoc' is present on non-ec device."""
+        mock_coordinator._device_category = ["robot"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" not in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_removes_focus_mode_when_ffoc_missing(
+        self, mock_coordinator
+    ):
+        """Test that FocusMode capability is removed when 'ffoc' key is absent."""
+        mock_coordinator._device_category = ["ec"]
+        mock_coordinator._device_capabilities = ["FocusMode"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" not in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_manual_ec_device_adds_focus_mode(
+        self, mock_coordinator
+    ):
+        """Test that manual ec device auto-detects FocusMode while preserving user selection."""
+        mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL}
+        mock_coordinator._device_category = ["ec"]
+        mock_coordinator._device_capabilities = ["Heating", "Scheduling"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" in mock_coordinator._device_capabilities
+        assert "Heating" in mock_coordinator._device_capabilities
+        assert "Scheduling" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_manual_non_ec_device_does_not_add_focus_mode(
+        self, mock_coordinator
+    ):
+        """Test that manual non-ec device does not get FocusMode even if ffoc present."""
+        mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL}
+        mock_coordinator._device_category = ["robot"]
+        mock_coordinator._device_capabilities = ["Scheduling"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" not in mock_coordinator._device_capabilities
+
 
 class TestCoordinatorErrorHandling:
     """Test error handling scenarios for coordinator."""

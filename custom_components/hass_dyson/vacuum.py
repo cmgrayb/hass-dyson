@@ -335,6 +335,9 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
         if device.robot_clean_id:
             attributes["clean_id"] = device.robot_clean_id
 
+        for key, value in device.robot_cleaning_details.items():
+            attributes[f"clean_{key}"] = value
+
         _LOGGER.debug(
             "Robot %s attributes: %s", self.coordinator.serial_number, attributes
         )

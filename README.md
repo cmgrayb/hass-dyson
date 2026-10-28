@@ -162,7 +162,10 @@ Choose your preference for level of control of discovery:
 2. I want Home Assistant to ask me to add my devices as they are found so I can choose which ones to add or ignore, or I want to configure the devices before they are added
     - Only select Poll for New Devices, leave Automatically Add Discovered Devices unchecked.
 
-3. I want to add my Dyson devices individually and manually or I am only interested in using the Get Cloud Devices Action
+3. I have discovered my Dyson devices, and I want to keep the cloud connection and the discovered devices, but stop any new devices from being added
+    - Deselect Poll for New Devices and leave Automatically add Discovered Devices selected.
+
+4. I want to add my Dyson devices individually and manually or I am only interested in using the Get Cloud Devices Action
     - Deselect both checkboxes
     - For more information, see: [Actions](docs/ACTIONS.md)
 
