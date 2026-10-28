@@ -151,6 +151,20 @@ start_zone_clean:
       example: Downstairs
       selector:
         text:
+    cleaning_mode:
+      name: Cleaning mode
+      description: >-
+        Spot+Scrub (RB05) only. Sets the cleaning mode of the targeted rooms
+        before the clean starts; other rooms keep their stored mode. When
+        omitted, each room's stored preference is used.
+      required: false
+      selector:
+        select:
+          options:
+            - vacuum_only
+            - vacuum_and_mop
+            - mop_only
+            - vacuum_then_mop
 
 set_zone_behaviour:
   name: Set Zone Behaviour (Vis Nav)
