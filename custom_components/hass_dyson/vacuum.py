@@ -58,7 +58,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN, ROBOT_STATE_TO_HA_STATE
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .entity import DysonEntity
 from .services import (
     _effective_current_map,
@@ -66,6 +66,7 @@ from .services import (
     _persistent_map_cache,
     _select_map,
 )
+from .spot_scrub_room_select import get_room_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -404,6 +405,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
 
         try:
             if start_new:
+                await self._async_wait_for_room_settings()
                 await device.robot_start_clean(cleaning_mode="global")
             else:
                 await device.robot_resume()
@@ -414,6 +416,16 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
                 ex,
             )
             raise HomeAssistantError(f"Failed to start vacuum: {ex}") from ex
+
+    async def _async_wait_for_room_settings(self) -> None:
+        """Hold a Spot+Scrub start until a mode change sent with it is written.
+
+        Room settings can only be written while docked; once START is sent a
+        late mode change is refused and the clean runs with the old settings.
+        """
+        if not uses_jdm_commands(self.coordinator.device):
+            return
+        await get_room_store(self.coordinator).async_wait_before_start()
 
     async def async_stop(self, **kwargs: Any) -> None:
         """Stop the vacuum and return to dock.
@@ -613,6 +625,7 @@ class DysonVacuumEntity(DysonEntity, StateVacuumEntity):
             pmap.id,
         )
         try:
+            await self._async_wait_for_room_settings()
             await self.coordinator.device.robot_start_clean(
                 cleaning_mode="zoneConfigured",
                 full_clean_type="immediate",
