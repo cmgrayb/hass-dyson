@@ -11,8 +11,6 @@
 [releases]: https://github.com/cmgrayb/hass-dyson/releases
 [commits-shield]: https://img.shields.io/github/commit-activity/y/cmgrayb/hass-dyson.svg?style=for-the-badge
 [commits]: https://github.com/cmgrayb/hass-dyson/commits/main
-[hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge
 [license-shield]: https://img.shields.io/github/license/cmgrayb/hass-dyson.svg?style=for-the-badge
 [codecov-shield]: https://img.shields.io/codecov/c/github/cmgrayb/hass-dyson?token=AG0CK5SE4R&style=for-the-badge
 [codecov]: https://codecov.io/github/cmgrayb/hass-dyson
@@ -20,7 +18,6 @@
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
 [![License][license-shield]](LICENSE)
-[![hacs][hacsbadge]][hacs]
 [![Codecov][codecov-shield]][codecov]
 
 A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidifiers, fans, lights, and robotic vacuums featuring real-time MQTT communication, BLE proxy compatibility, and complete platform coverage.
@@ -83,14 +80,14 @@ Anything helps, and all sponsorship money goes directly to development devices f
 
 ### Installation
 
-1. **Install Integration via HACS**
-   - Open **HACS** in Home Assistant
+1. **Install Integration via Marketplace (Previously known as HACS)**
+   - Open **Settings / Marketplace** in Home Assistant
    - Search for "**Dyson**"
    - Click **Download**
    - Restart Home Assistant
 
-   > **Can't find it?** If the integration does not appear in HACS search, you can add it manually as a custom repository:
-   > - Go to **Settings** (three dots menu) in HACS
+   > **Can't find it?** If the integration does not appear in search, you can add it manually as a custom repository:
+   > - Go to **Settings** (three dots menu) in Marketplace
    > - Select **Custom repositories**
    > - Add repository URL: `https://github.com/cmgrayb/hass-dyson`
    > - Select category: **Integration**
