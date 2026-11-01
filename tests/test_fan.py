@@ -1,6 +1,6 @@
 """Test fan platform for Dyson integration."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.components.fan import FanEntityFeature
@@ -487,14 +487,31 @@ class TestDysonFan:
         """Test async_set_percentage with valid percentage."""
         # Arrange
         fan = DysonFan(mock_coordinator)
+        fan._attr_is_on = False
+        device = mock_coordinator.device
+        commands = MagicMock()
+        commands.attach_mock(device.set_fan_power, "set_fan_power")
+        commands.attach_mock(device.set_fan_speed, "set_fan_speed")
 
         # Act
         await fan.async_set_percentage(60)
 
         # Assert
-        mock_coordinator.device.set_fan_speed.assert_called_once_with(
-            6
-        )  # 60 -> speed 6
+        assert commands.mock_calls == [
+            call.set_fan_power(True),
+            call.set_fan_speed(6),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_async_set_percentage_when_already_on(self, mock_coordinator):
+        """Test async_set_percentage does not toggle power when already on."""
+        fan = DysonFan(mock_coordinator)
+        fan._attr_is_on = True
+
+        await fan.async_set_percentage(60)
+
+        mock_coordinator.device.set_fan_power.assert_not_called()
+        mock_coordinator.device.set_fan_speed.assert_called_once_with(6)
 
     @pytest.mark.asyncio
     async def test_async_set_percentage_zero(self, mock_coordinator):

@@ -547,6 +547,8 @@ class DysonFan(DysonEntity, FanEntity):
         else:
             # Convert percentage to Dyson speed (1-10) with proper rounding
             speed = max(1, min(10, round(percentage / 10)))
+            if not self.is_on:
+                await self.coordinator.device.set_fan_power(True)
             await self.coordinator.device.set_fan_speed(speed)
 
             # Let the coordinator update naturally from MQTT messages for final state

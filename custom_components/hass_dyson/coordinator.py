@@ -59,6 +59,11 @@ from .const import (
     DISCOVERY_STICKER,
     DOMAIN,
     EVENT_DEVICE_FAULT,
+    HOST_SOURCE_CLOUD_API,
+    HOST_SOURCE_CONFIGURED,
+    HOST_SOURCE_DHCP,
+    HOST_SOURCE_MDNS,
+    HOST_SOURCE_UNKNOWN,
     MQTT_CMD_REQUEST_CURRENT_STATE,
     MQTT_CMD_REQUEST_ENVIRONMENT,
     UnsupportedDeviceError,
@@ -68,9 +73,9 @@ from .device_utils import mask_email, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
-# How long a configured host may fail, with the cloud fallback in use, before
-# a repair issue is raised. Long enough to ride out a device reboot or a wifi
-# blip, short enough that a stale static address is noticed the same day.
+# How long the local host may fail, with the cloud fallback in use, before a
+# repair issue is raised. Long enough to ride out a device reboot or a wifi
+# blip, short enough that a stale address is noticed the same day.
 CONFIGURED_HOST_ISSUE_DELAY: Final = 600
 
 # Compiled regex patterns for culture/language normalisation (module-level for efficiency).
@@ -289,6 +294,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ) or config_entry.data.get("device_serial_number", "unknown")
         self.device: DysonDevice | None = None
         self._local_fallback_since: float | None = None
+        self._host_source: str = HOST_SOURCE_UNKNOWN
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
         self._device_type: str = ""  # Will be extracted from device info
@@ -1727,6 +1733,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(
                     f"Manual device setup requires hostname/IP address for device {serial_number}"
                 )
+            self._host_source = HOST_SOURCE_CONFIGURED
 
             # Get connection type from config entry
             connection_type = self._get_effective_connection_type()
@@ -1761,9 +1768,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"Failed to connect to manual device {self.serial_number}"
                 )
 
-            # For manual devices, trust user's capability selection - no refinement needed
+            # Refine capabilities based on actual device state (e.g. FocusMode for ec devices)
+            await self._refine_capabilities_from_device_state()
+
+            # For manual devices, log effective capabilities
             _LOGGER.debug(
-                "Manual device %s connected - using user-selected capabilities: %s",
+                "Manual device %s connected - using capabilities: %s",
                 self.serial_number,
                 self._device_capabilities,
             )
@@ -1832,7 +1842,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     for cap in capabilities
                 )
 
-                if has_environmental_capability:
+                already_have_initial_state = self.device.has_current_state and bool(
+                    self.device.get_environmental_data()
+                )
+
+                if has_environmental_capability and already_have_initial_state:
+                    _LOGGER.debug(
+                        "Initial refresh for device %s - state and environmental data "
+                        "already received, skipping extra request",
+                        self.serial_number,
+                    )
+                elif has_environmental_capability:
                     _LOGGER.debug(
                         "Initial refresh for device %s with environmental capability - requesting state",
                         self.serial_number,
@@ -2131,24 +2151,33 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def _configured_host_issue_id(self) -> str:
-        """Return the repair issue id for this device entry."""
+        """Return the repair issue id for this device entry.
+
+        The id keeps its original wording so that an issue raised by an earlier
+        version is still the one cleared here, even when the warning now
+        describes a discovered address rather than a configured one.
+        """
         return f"configured_host_unreachable_{self.config_entry.entry_id}"
 
     @callback
     def _async_update_configured_host_issue(self) -> None:
-        """Warn in Repairs while a configured host fails and cloud is used instead.
+        """Warn in Repairs while the local host fails and cloud is used instead.
 
-        A static hostname always wins over discovery, so when that address
-        stops answering the device silently stays on its cloud fallback. The
-        issue is raised only after the fallback has lasted a while, so a short
-        local outage does not flash a warning, and it clears itself once the
-        local connection is back.
+        A device that prefers a local connection and ends up on its cloud
+        fallback keeps working, so nothing in the UI says the local path is
+        broken. That holds whichever address was tried: a static hostname
+        always wins over discovery and goes stale when the device moves, and a
+        discovered address is just as silent when mDNS is filtered or a DHCP
+        lease has expired. The two cases call for different remedies, so they
+        get different wording, but both are worth a warning.
+
+        The issue is raised only after the fallback has lasted a while, so a
+        short local outage does not flash a warning, and it clears itself once
+        the local connection is back.
         """
-        hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
         device = self.device
         on_fallback = (
-            bool(hostname)
-            and device is not None
+            device is not None
             and device.preferred_connection_type == "local"
             and device.using_fallback
         )
@@ -2163,16 +2192,23 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if now - self._local_fallback_since < CONFIGURED_HOST_ISSUE_DELAY:
             return
 
+        configured = self._host_source == HOST_SOURCE_CONFIGURED
+        hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
+        host = getattr(device, "host", "") or hostname or "unknown"
         ir.async_create_issue(
             self.hass,
             DOMAIN,
             self._configured_host_issue_id,
             is_fixable=False,
             severity=ir.IssueSeverity.WARNING,
-            translation_key="configured_host_unreachable",
+            translation_key=(
+                "configured_host_unreachable"
+                if configured
+                else "discovered_host_unreachable"
+            ),
             translation_placeholders={
                 "device_name": self.config_entry.title,
-                "hostname": hostname,
+                "hostname": host,
             },
         )
 
@@ -2238,40 +2274,52 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         This method checks for specific state keys in the device's current state
         to determine if certain capabilities should be added or removed.
-        For example, the presence of 'hmod' key indicates heating capability.
+        For example, the presence of 'hmod' key indicates heating capability, and
+        the presence of 'ffoc' on environment cleaner ('ec') devices indicates focus mode.
 
-        Note: Manual devices skip this refinement to trust user's explicit capability selection.
+        Note: Manual devices preserve user-selected capabilities while auto-detecting
+        hardware-only features such as FocusMode.
         """
-        # Skip capability refinement for manual devices - trust user's selection
-        discovery_method = self.config_entry.data.get(
-            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
-        )
-        if discovery_method == DISCOVERY_MANUAL:
-            _LOGGER.debug(
-                "Skipping capability refinement for manual device %s - trusting user selection",
-                self.serial_number,
-            )
-            return
-
         if not self.device or not self.device.is_connected:
             _LOGGER.debug("Device not connected, skipping capability refinement")
             return
 
+        discovery_method = self.config_entry.data.get(
+            CONF_DISCOVERY_METHOD, DISCOVERY_CLOUD
+        )
+        is_manual = discovery_method == DISCOVERY_MANUAL
+        if is_manual:
+            _LOGGER.debug(
+                "Refining capabilities for manual device %s while preserving user selection",
+                self.serial_number,
+            )
+
         try:
-            # Request current state to ensure we have fresh data for capability detection
-            try:
-                await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
-                _LOGGER.debug("Requested current state for capability refinement")
-
-                # Give device a moment to respond with current state
-                import asyncio
-
-                await asyncio.sleep(2)
-            except Exception as cmd_err:
-                _LOGGER.warning(
-                    "Failed to request current state for capability refinement: %s",
-                    cmd_err,
+            # Request current state to ensure we have fresh data for capability detection.
+            # The device already requests CURRENT-STATE right after connecting, so wait
+            # (up to the same 2 seconds) for that answer first, and only send another
+            # request plus the fixed wait if it has not arrived.
+            if (
+                self.device.has_current_state
+                or await self.device.async_wait_for_current_state(2.0)
+            ):
+                _LOGGER.debug(
+                    "Using CURRENT-STATE received on connect for capability refinement"
                 )
+            else:
+                try:
+                    await self.device.send_command(MQTT_CMD_REQUEST_CURRENT_STATE)
+                    _LOGGER.debug("Requested current state for capability refinement")
+
+                    # Give device a moment to respond with current state
+                    import asyncio
+
+                    await asyncio.sleep(2)
+                except Exception as cmd_err:
+                    _LOGGER.warning(
+                        "Failed to request current state for capability refinement: %s",
+                        cmd_err,
+                    )
 
             # Get current device state to check for capability-indicating keys
             device_state = await self.device.get_state()
@@ -2281,54 +2329,64 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             product_state = device_state.get("product-state", {})
             original_capabilities = list(self._device_capabilities)  # Make a copy
 
-            if "hmod" in product_state:
-                # Device has heating mode state key, so it supports heating
-                if "Heating" not in self._device_capabilities:
-                    self._device_capabilities.append("Heating")
-                    _LOGGER.debug(
-                        "Device %s supports heating ('hmod' key found) - capability added for internal consistency",
-                        self.serial_number,
-                    )
-            else:
-                # Device doesn't have heating mode state key, remove heating capability if present
-                if "Heating" in self._device_capabilities:
-                    self._device_capabilities.remove("Heating")
-                    _LOGGER.debug(
-                        "Device %s does not support heating ('hmod' key not found) - capability removed",
-                        self.serial_number,
-                    )
+            # For cloud devices, refine Heating and Humidifier capabilities.
+            # For manual devices, preserve user-selected capabilities.
+            if not is_manual:
+                if "hmod" in product_state:
+                    # Device has heating mode state key, so it supports heating
+                    if "Heating" not in self._device_capabilities:
+                        self._device_capabilities.append("Heating")
+                        _LOGGER.debug(
+                            "Device %s supports heating ('hmod' key found) - capability added for internal consistency",
+                            self.serial_number,
+                        )
+                else:
+                    # Device doesn't have heating mode state key, remove heating capability if present
+                    if "Heating" in self._device_capabilities:
+                        self._device_capabilities.remove("Heating")
+                        _LOGGER.debug(
+                            "Device %s does not support heating ('hmod' key not found) - capability removed",
+                            self.serial_number,
+                        )
 
-            if "hume" in product_state:
-                # Device has humidity mode state key, so it supports humidification
-                if "Humidifier" not in self._device_capabilities:
-                    self._device_capabilities.append("Humidifier")
-                    _LOGGER.debug(
-                        "Device %s supports humidification ('hume' key found) - capability added for internal consistency",
-                        self.serial_number,
-                    )
-            else:
-                # Device doesn't have humidity mode state key, remove humidifier capability if present
-                if "Humidifier" in self._device_capabilities:
-                    self._device_capabilities.remove("Humidifier")
-                    _LOGGER.debug(
-                        "Device %s does not support humidification ('hume' key not found) - capability removed",
-                        self.serial_number,
-                    )
+                if "hume" in product_state:
+                    # Device has humidity mode state key, so it supports humidification
+                    if "Humidifier" not in self._device_capabilities:
+                        self._device_capabilities.append("Humidifier")
+                        _LOGGER.debug(
+                            "Device %s supports humidification ('hume' key found) - capability added for internal consistency",
+                            self.serial_number,
+                        )
+                else:
+                    # Device doesn't have humidity mode state key, remove humidifier capability if present
+                    if "Humidifier" in self._device_capabilities:
+                        self._device_capabilities.remove("Humidifier")
+                        _LOGGER.debug(
+                            "Device %s does not support humidification ('hume' key not found) - capability removed",
+                            self.serial_number,
+                        )
 
-            if "ffoc" in product_state:
+            # FocusMode capability refinement:
+            # Filtered to 'ec' devices that report 'ffoc' in their CURRENT-STATE product_state
+            device_categories = getattr(self, "_device_category", []) or []
+            if isinstance(device_categories, str):
+                device_categories = [device_categories]
+            is_ec_device = any(cat == "ec" for cat in device_categories)
+
+            if is_ec_device and "ffoc" in product_state:
                 # Device has focus/diffuse mode state key (older HP02-type devices)
                 if "FocusMode" not in self._device_capabilities:
                     self._device_capabilities.append("FocusMode")
                     _LOGGER.debug(
-                        "Device %s supports focus/diffuse mode ('ffoc' key found) - capability added",
+                        "Device %s supports focus/diffuse mode ('ffoc' key found on ec device) - capability added",
                         self.serial_number,
                     )
             else:
-                # Device doesn't have focus mode state key, remove capability if present
+                # Device doesn't have focus mode state key or is not an ec device, remove capability if present
                 if "FocusMode" in self._device_capabilities:
                     self._device_capabilities.remove("FocusMode")
                     _LOGGER.debug(
-                        "Device %s does not support focus/diffuse mode ('ffoc' key not found) - capability removed",
+                        "Device %s does not support focus/diffuse mode ('ffoc' key not found or not ec device) - capability removed",
                         self.serial_number,
                     )
 
@@ -2375,6 +2433,8 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Log capability changes at debug level to avoid confusion
             if original_capabilities != self._device_capabilities:
+                if self.device:
+                    self.device.capabilities = self._device_capabilities
                 _LOGGER.debug(
                     "Capabilities refined for %s based on device state: %s -> %s",
                     self.serial_number,
@@ -2428,6 +2488,10 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         2. Hostname from device_info (cloud API)
         3. IP learned via DHCP discovery (see async_step_dhcp in config_flow.py)
         4. Fall back to {serial}.local for mDNS resolution
+
+        The branch taken is recorded in :attr:`host_source`, so the IP address
+        sensor can tell a user-entered address apart from a discovered one and
+        the Repairs warning can name the right remedy.
         """
         # Check if user provided a static IP/hostname in config entry
         configured_hostname = self.config_entry.data.get(CONF_HOSTNAME, "").strip()
@@ -2437,6 +2501,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.serial_number,
                 configured_hostname,
             )
+            self._host_source = HOST_SOURCE_CONFIGURED
             return configured_hostname
 
         # For cloud devices, try to get the local IP from API if available
@@ -2447,6 +2512,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.serial_number,
                 api_hostname,
             )
+            self._host_source = HOST_SOURCE_CLOUD_API
             return api_hostname
 
         # Use IP learned via DHCP discovery, if any, before resorting to mDNS
@@ -2457,6 +2523,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mask_serial(self.serial_number),
                 dhcp_host,
             )
+            self._host_source = HOST_SOURCE_DHCP
             return dhcp_host
 
         # Fall back to mDNS resolution using {serial}.local
@@ -2466,7 +2533,17 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             mask_serial(self.serial_number),
             mask_serial(self.serial_number),
         )
+        self._host_source = HOST_SOURCE_MDNS
         return fallback_hostname
+
+    @property
+    def host_source(self) -> str:
+        """Return where the host used for the local connection came from.
+
+        One of the ``HOST_SOURCE_*`` constants, or ``HOST_SOURCE_UNKNOWN``
+        before a host has been resolved.
+        """
+        return self._host_source
 
     def _get_mqtt_prefix(self, device_info: Any) -> str:
         """Get MQTT prefix from device info using API-first approach.

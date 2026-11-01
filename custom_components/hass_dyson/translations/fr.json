@@ -279,6 +279,64 @@
       },
       "scheduled_events": {
         "name": "Événements programmés"
+      },
+      "robot_active_fault": {
+        "name": "Défaut actif"
+      },
+      "robot_clean_duration": {
+        "name": "Durée du nettoyage"
+      },
+      "robot_clean_action": {
+        "name": "Action de nettoyage"
+      },
+      "robot_dock_state": {
+        "name": "État de la station"
+      },
+      "robot_dock_timer_end": {
+        "name": "Fin du minuteur de la station"
+      },
+      "robot_clean_stage": {
+        "name": "Étape de nettoyage"
+      },
+      "robot_clean_room": {
+        "name": "Pièce actuelle"
+      },
+      "robot_clean_programme": {
+        "name": "Programme de nettoyage"
+      },
+      "robot_clean_progress": {
+        "name": "Progression du nettoyage"
+      },
+      "ble_vacuum_battery_level": {
+        "name": "Niveau de batterie"
+      },
+      "ble_vacuum_power_mode": {
+        "name": "Mode de puissance",
+        "state": {
+          "eco": "Éco",
+          "med": "Moyen",
+          "auto": "Automatique",
+          "boost": "Boost"
+        }
+      },
+      "ble_vacuum_brush_bar_type": {
+        "name": "Type de brosse rotative",
+        "state": {
+          "erp_768": "Tête standard (ERP 768)",
+          "row_768": "Tête large (ROW 768)",
+          "none_attached": "Aucune tête fixée"
+        }
+      },
+      "ble_vacuum_battery_temperature": {
+        "name": "Température de la batterie",
+        "state": {
+          "ok": "OK",
+          "cold": "Froide",
+          "hot": "Chaude"
+        }
+      },
+      "robot_current_room": {
+        "name": "Pièce actuelle"
       }
     },
     "switch": {
@@ -305,6 +363,12 @@
       },
       "daylight_mode": {
         "name": "Mode lumière du jour"
+      },
+      "ble_vacuum_task_detection_switch": {
+        "name": "Détection de tâche"
+      },
+      "ble_vacuum_battery_care_switch": {
+        "name": "Protection de la batterie"
       }
     },
     "button": {
@@ -345,6 +409,66 @@
       },
       "robot_power_generic": {
         "name": "Niveau de puissance"
+      },
+      "ble_vacuum_brush_bar_speed_select": {
+        "name": "Vitesse de la brosse rotative",
+        "state": {
+          "low": "Faible",
+          "high": "Élevée",
+          "auto": "Automatique"
+        }
+      },
+      "ble_vacuum_dust_illumination_select": {
+        "name": "Mode d'éclairage de la poussière",
+        "state": {
+          "off": "Désactivé",
+          "on": "Activé",
+          "auto": "Automatique"
+        }
+      },
+      "ble_vacuum_ui_language_select": {
+        "name": "Langue de l'interface de l'appareil",
+        "state": {
+          "english": "Anglais",
+          "korean": "Coréen",
+          "spanish": "Espagnol",
+          "french": "Français",
+          "japanese": "Japonais",
+          "simplified_chinese": "Chinois simplifié",
+          "traditional_chinese": "Chinois traditionnel",
+          "german": "Allemand",
+          "italian": "Italien",
+          "dutch": "Néerlandais",
+          "russian": "Russe",
+          "arabic": "Arabe",
+          "czech": "Tchèque",
+          "danish": "Danois",
+          "greek": "Grec",
+          "finnish": "Finnois",
+          "hebrew": "Hébreu",
+          "croatian": "Croate",
+          "hungarian": "Hongrois",
+          "lithuanian": "Lituanien",
+          "norwegian": "Norvégien",
+          "polish": "Polonais",
+          "portuguese": "Portugais",
+          "slovenian": "Slovène",
+          "swedish": "Suédois",
+          "thai": "Thaï",
+          "turkish": "Turc",
+          "spanish_us": "Espagnol (États-Unis)",
+          "french_canada": "Français (Canada)",
+          "portuguese_brazil": "Portugais (Brésil)"
+        }
+      },
+      "spot_scrub_cleaning_mode": {
+        "name": "Mode de nettoyage (toutes les pièces)",
+        "state": {
+          "vacuum_only": "Aspiration uniquement",
+          "vacuum_and_mop": "Aspiration et lavage",
+          "mop_only": "Lavage uniquement",
+          "vacuum_then_mop": "Aspiration puis lavage"
+        }
       }
     },
     "number": {
@@ -379,11 +503,44 @@
       },
       "motion": {
         "name": "Mouvement"
+      },
+      "ble_vacuum_actively_charging": {
+        "name": "En charge"
+      },
+      "ble_vacuum_charger_present": {
+        "name": "Chargeur présent"
+      },
+      "ble_vacuum_blockage": {
+        "name": "Obstruction"
+      },
+      "ble_vacuum_filter_present": {
+        "name": "Filtre manquant"
+      },
+      "ble_vacuum_filter_wash": {
+        "name": "Filtre à laver"
+      },
+      "ble_vacuum_system_error": {
+        "name": "Erreur système"
+      },
+      "ble_vacuum_charge_required": {
+        "name": "Recharge nécessaire"
+      },
+      "ble_vacuum_session_active": {
+        "name": "Session de nettoyage active"
+      },
+      "ble_vacuum_battery_authenticity": {
+        "name": "Batterie non originale"
+      },
+      "ble_vacuum_dust_illumination_auto": {
+        "name": "Éclairage automatique de la poussière disponible"
       }
     },
     "update": {
       "firmware_update": {
         "name": "Mise à jour du firmware"
+      },
+      "ble_vacuum_firmware": {
+        "name": "Firmware"
       }
     },
     "climate": {
@@ -426,6 +583,9 @@
       },
       "floor_plan": {
         "name": "Plan du logement"
+      },
+      "clean_coverage": {
+        "name": "Couverture du nettoyage"
       }
     },
     "light": {
@@ -542,6 +702,27 @@
           "description": "Supprimez les informations sensibles pour une publication publique sûre."
         }
       }
+    }
+  },
+  "exceptions": {
+    "spot_scrub_invalid_mode": {
+      "message": "Ce mode de nettoyage n'est pas pris en charge."
+    },
+    "spot_scrub_not_idle": {
+      "message": "Attendez que Spot+Scrub soit à sa station ou au repos avant de modifier son mode de nettoyage."
+    },
+    "spot_scrub_request_failed": {
+      "message": "Impossible de confirmer le mode de nettoyage. Vérifiez la connexion du robot et les paramètres des pièces dans MyDyson, puis réessayez."
+    }
+  },
+  "issues": {
+    "configured_host_unreachable": {
+      "title": "{device_name} est inaccessible à l'adresse configurée",
+      "description": "{device_name} a une adresse statique ({hostname}) définie dans ses options de connexion, mais aucune réponse n'a été reçue à cette adresse depuis plus de 10 minutes. Il utilise donc la connexion cloud à la place. Si l'adresse de l'appareil a changé, ouvrez ses options de connexion pour la mettre à jour, ou effacez le champ pour utiliser la découverte automatique. L'enregistrement de nouvelles options de connexion, ou l'utilisation du bouton Reconnecter, rétablit la connexion. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
+    },
+    "discovered_host_unreachable": {
+      "title": "{device_name} est inaccessible sur le réseau local",
+      "description": "{device_name} préfère une connexion locale, mais aucune réponse n'a été reçue à l'adresse {hostname} depuis plus de 10 minutes. Il utilise donc la connexion cloud à la place. L'appareil continue de fonctionner ainsi, mais plus lentement et sans contrôle local. Cette adresse a été découverte automatiquement et non saisie manuellement : mDNS est donc peut-être filtré sur le réseau ou l'adresse a changé. Définissez l'adresse IP de l'appareil dans ses options de connexion pour contourner la découverte, ou corrigez mDNS sur le réseau ; consultez le guide de dépannage. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
     }
   }
 }

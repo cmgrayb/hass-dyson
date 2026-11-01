@@ -19,6 +19,7 @@ from .const import (
 )
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
+from .spot_scrub_room_select import async_setup_room_selects
 from .spot_scrub_select import DysonSpotScrubCleaningModeSelect
 
 _LOGGER = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ async def async_setup_entry(
     # No separate heating mode select needed
 
     async_add_entities(entities, True)
+
+    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+        await async_setup_room_selects(hass, coordinator, async_add_entities)
 
 
 class DysonOscillationModeSelect(DysonEntity, SelectEntity):
@@ -820,12 +824,12 @@ class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
                 "1350",  # Default to Medium
             )
 
-            # Map device values to display names
-            if water_hardness == "0675":
+            # Map device values to display names (same encoding as libdyson-neon)
+            if water_hardness == "2025":
                 self._attr_current_option = "Soft"
             elif water_hardness == "1350":
                 self._attr_current_option = "Medium"
-            elif water_hardness == "2025":
+            elif water_hardness == "0675":
                 self._attr_current_option = "Hard"
             else:
                 _LOGGER.warning(
@@ -846,9 +850,9 @@ class DysonWaterHardnessSelect(DysonEntity, SelectEntity):
 
         # Map display names to device values
         value_map = {
-            "Soft": "0675",
+            "Soft": "2025",
             "Medium": "1350",
-            "Hard": "2025",
+            "Hard": "0675",
         }
 
         if option not in value_map:

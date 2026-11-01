@@ -1140,6 +1140,97 @@ class TestHumidifierCapabilityRefinement:
         # Should not call get_state when not connected
         mock_coordinator.device.get_state.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_adds_focus_mode_for_ec_device(
+        self, mock_coordinator
+    ):
+        """Test that FocusMode capability is added when 'ffoc' is present on ec device."""
+        mock_coordinator._device_category = ["ec"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_does_not_add_focus_mode_for_non_ec_device(
+        self, mock_coordinator
+    ):
+        """Test that FocusMode is NOT added when 'ffoc' is present on non-ec device."""
+        mock_coordinator._device_category = ["robot"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" not in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_removes_focus_mode_when_ffoc_missing(
+        self, mock_coordinator
+    ):
+        """Test that FocusMode capability is removed when 'ffoc' key is absent."""
+        mock_coordinator._device_category = ["ec"]
+        mock_coordinator._device_capabilities = ["FocusMode"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" not in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_manual_ec_device_adds_focus_mode(
+        self, mock_coordinator
+    ):
+        """Test that manual ec device auto-detects FocusMode while preserving user selection."""
+        mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL}
+        mock_coordinator._device_category = ["ec"]
+        mock_coordinator._device_capabilities = ["Heating", "Scheduling"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" in mock_coordinator._device_capabilities
+        assert "Heating" in mock_coordinator._device_capabilities
+        assert "Scheduling" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_refine_capabilities_manual_non_ec_device_does_not_add_focus_mode(
+        self, mock_coordinator
+    ):
+        """Test that manual non-ec device does not get FocusMode even if ffoc present."""
+        mock_coordinator.config_entry.data = {CONF_DISCOVERY_METHOD: DISCOVERY_MANUAL}
+        mock_coordinator._device_category = ["robot"]
+        mock_coordinator._device_capabilities = ["Scheduling"]
+        mock_coordinator.device.get_state.return_value = {
+            "product-state": {
+                "ffoc": "ON",
+                "fpwr": "ON",
+            }
+        }
+
+        await mock_coordinator._refine_capabilities_from_device_state()
+
+        assert "FocusMode" not in mock_coordinator._device_capabilities
+
 
 # ============================================================================
 # ENHANCED COORDINATOR TESTS - From test_coordinator_comprehensive_enhanced.py
@@ -1766,3 +1857,76 @@ class TestDysonCloudAccountCoordinatorCNRegion:
                 # Verify device data was returned correctly
                 assert result == mock_device_data
                 mock_client.get_devices.assert_called_once()
+
+
+class TestCapabilityRefinementReusesConnectState:
+    """Test that refinement reuses the CURRENT-STATE received on connect."""
+
+    @pytest.fixture
+    def mock_coordinator(self):
+        """Create a mock coordinator with a connected device."""
+        with patch(
+            "custom_components.hass_dyson.coordinator.DataUpdateCoordinator.__init__"
+        ):
+            coordinator = DysonDataUpdateCoordinator.__new__(DysonDataUpdateCoordinator)
+            coordinator.hass = MagicMock()
+            coordinator.config_entry = MagicMock()
+            coordinator.config_entry.data = {
+                CONF_DISCOVERY_METHOD: DISCOVERY_CLOUD,
+                CONF_SERIAL_NUMBER: "PH01-EU-ABC1234A",
+            }
+            coordinator.device = MagicMock()
+            coordinator.device.is_connected = True
+            coordinator.device.send_command = AsyncMock()
+            coordinator.device.get_state = AsyncMock(
+                return_value={"product-state": {"hume": "OFF", "fpwr": "ON"}}
+            )
+            coordinator._device_capabilities = []
+            return coordinator
+
+    @pytest.mark.asyncio
+    async def test_skips_request_when_state_already_received(self, mock_coordinator):
+        """No extra request or wait when the connect-time state has arrived."""
+        mock_coordinator.device.has_current_state = True
+
+        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            await mock_coordinator._refine_capabilities_from_device_state()
+
+        mock_coordinator.device.send_command.assert_not_called()
+        mock_sleep.assert_not_called()
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_requests_state_when_not_yet_received(self, mock_coordinator):
+        """Fall back to requesting state and waiting when nothing arrived yet."""
+        mock_coordinator.device.has_current_state = False
+        mock_coordinator.device.async_wait_for_current_state = AsyncMock(
+            return_value=False
+        )
+
+        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            await mock_coordinator._refine_capabilities_from_device_state()
+
+        mock_coordinator.device.send_command.assert_awaited_once_with(
+            "REQUEST-CURRENT-STATE"
+        )
+        mock_sleep.assert_awaited_once_with(2)
+        assert "Humidifier" in mock_coordinator._device_capabilities
+
+    @pytest.mark.asyncio
+    async def test_waits_for_connect_state_before_requesting(self, mock_coordinator):
+        """Use the connect-time state if it arrives within the wait window."""
+        mock_coordinator.device.has_current_state = False
+        mock_coordinator.device.async_wait_for_current_state = AsyncMock(
+            return_value=True
+        )
+
+        with patch("asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            await mock_coordinator._refine_capabilities_from_device_state()
+
+        mock_coordinator.device.async_wait_for_current_state.assert_awaited_once_with(
+            2.0
+        )
+        mock_coordinator.device.send_command.assert_not_called()
+        mock_sleep.assert_not_called()
+        assert "Humidifier" in mock_coordinator._device_capabilities
