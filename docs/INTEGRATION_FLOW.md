@@ -52,7 +52,8 @@ flowchart TB
     DevicePolling -->|No| CreateCloudEntry
 
     BLEDiscovery --> BLEConfigure[async_step_ble_configure<br/>Resolve MAC from HA BT Cache]
-    BLEConfigure --> BLEPaired{LTK Already<br/>Stored?}
+    BLEConfigure --> LampAccountKey[Registered lamp: fetch account-owned LTK<br/>Auto-add when exact serial is visible<br/>Otherwise retain configuration form]
+    LampAccountKey --> BLEPaired{LTK Already<br/>Stored?}
     BLEPaired -->|Yes| CreateBLEEntry[Create BLE Device Entry]
     BLEPaired -->|No| FreshPair[Guided Fresh Pairing Flow<br/>in HA UI]
     FreshPair --> FreshPairSteps[1. Connect to lamp via GATT<br/>2. Send Hello + RSSI probe<br/>3. Prompt user: hold Flash button<br/>4. Cloud: POST /v1/lec/auth<br/>5. Send PayloadA → receive PayloadB<br/>6. Cloud: POST /v1/lec/verify<br/>7. Send Payload3<br/>8. Cloud: POST /v1/lec/provision + ltk<br/>9. Store LTK locally]
@@ -62,8 +63,10 @@ flowchart TB
     CreateBLECoord --> BLEConnect[Connect via GATT<br/>LTK Re-auth]
     BLEConnect --> BLEReauth[LTK Re-auth Handshake<br/>0x0A → 0x0B → 0x06 PayloadA<br/>→ 0x07 PayloadB → 0x08 PayloadC<br/>→ 0x26 Established]
     BLEReauth --> BLEReadState[Read Initial State:<br/>Power / Brightness / Color Temp]
-    BLEReadState --> BLESubscribe[Subscribe GATT Notifications:<br/>Char 11008 Motion<br/>Chars 11006/11007/11009 Diagnostics]
-    BLESubscribe --> BLEPlatforms[Setup Light Platform:<br/>- DysonLightEntity<br/>- DysonMotionBinarySensor]
+    BLEReadState --> BLESubscribe[Subscribe GATT Notifications:<br/>Power / Kelvin / Lumens / Sensor Enablement<br/>11008 Undecoded Status]
+    BLESubscribe --> BLEPlatforms[Setup Existing Light and Optional Settings:<br/>Switch / Select / Number / Time / Date / Button<br/>Legacy Motion Remains Unknown]
+    BLEPlatforms --> LampAttributes[Background attribute discovery on same BLE link<br/>Confirm writes and subscribe to physical changes]
+    LampAttributes --> LampLocation[Optional account location / timezone / DST sync<br/>Offline cache; cloud failure does not block control]
     BLEPlatforms --> SetupComplete
 
     ManualSetup --> ManualSteps[Configure Device Details:<br/>- Serial Number<br/>- MQTT Credential and Prefix<br/>- Hostname - optional, mDNS fallback<br/>- Device Category and Capabilities]
@@ -163,7 +166,7 @@ flowchart TB
     PollInterval --> RequestState
 
     Runtime --> BLERuntime[BLE Device Runtime]
-    BLERuntime --> BLENotify[GATT Notifications Drive State<br/>Motion on Char 11008<br/>Power/Brightness/Color via reads]
+    BLERuntime --> BLENotify[GATT Notifications Drive State<br/>Undecoded Status on Char 11008<br/>Power/Brightness/Color via reads]
     BLENotify --> BLEEventBus[hass.bus.async_fire<br/>EVENT_BLE_STATE_CHANGE]
     BLEEventBus --> BLECoordUpdate[BLECoordinator<br/>async_set_updated_data]
     BLECoordUpdate --> BLEEntities[BLE Entities Update<br/>Light + Motion Binary Sensor]
@@ -265,7 +268,7 @@ graph TB
         Vacuum[Vacuum Entity<br/>- Cleaning Control<br/>- Zones]
         Humidifier[Humidifier Entity<br/>- Humidity Control]
         BLELight[BLE Light Entity<br/>- Power On/Off<br/>- Brightness 0-100%<br/>- Color Temp 2700-6500 K]
-        BLEMotion[BLE Motion Binary Sensor<br/>- Motion Detected<br/>- GATT Char 11008]
+        BLEMotion[Legacy Motion Binary Sensor<br/>- State Unknown<br/>- Char 11008 Not Decoded]
     end
 
     subgraph "External Services"
@@ -661,7 +664,7 @@ sequenceDiagram
     Lamp-->>BLEDevice: 0x07 PayloadB (challenge)
     BLEDevice->>Lamp: 0x08 PayloadC (66 bytes)<br/>g20c_encrypt(challenge)
     Lamp-->>BLEDevice: 0x26 Established
-    BLEDevice->>Lamp: Subscribe char 11008 (motion)
+    BLEDevice->>Lamp: Subscribe char 11008 (undecoded status)
     BLEDevice->>Lamp: Subscribe chars 11006/11007/11009
     BLEDevice->>Lamp: Read power / brightness / color temp
     Lamp-->>BLEDevice: Initial state values
@@ -670,13 +673,13 @@ sequenceDiagram
 
     Note over User,Lamp: Runtime State Updates
 
-    Lamp->>GATT: GATT notify char 11008 (motion)
-    GATT->>BLEDevice: Motion event bytes
+    Lamp->>GATT: GATT notify char 11008 (undecoded status)
+    GATT->>BLEDevice: Raw status bytes (not verified motion)
     BLEDevice->>HACore: async_fire EVENT_BLE_STATE_CHANGE
     HACore->>BLECoord: Event listener callback
     BLECoord->>BLECoord: async_set_updated_data()
     BLECoord->>HACore: Notify BLE entities
-    HACore->>User: Motion sensor state updated
+    HACore->>User: Legacy motion sensor remains unknown
 
     Note over User,Lamp: User Control Action
 
@@ -730,7 +733,7 @@ sequenceDiagram
    - Completes in under one second on a typical BLE connection
 
 3. **State Updates**
-   - GATT notifications on char 11008 fire HA events for motion
+   - GATT notifications on char 11008 retain undecoded status; motion stays unknown
    - Power, brightness, and color temp read from chars 11005/11000/11001
    - All state flows through `EVENT_BLE_STATE_CHANGE` → coordinator → entities
 

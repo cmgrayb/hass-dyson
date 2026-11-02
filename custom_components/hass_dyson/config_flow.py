@@ -1153,6 +1153,16 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }
                     if self._ble_capabilities:
                         config_data["capabilities"] = self._ble_capabilities
+                    if self._ble_kind == BLE_DEVICE_KIND_LIGHT:
+                        config_data["device_name"] = f"Dyson {serial}"
+                        discovery = self.init_data or {}
+                        for key in ("parent_entry_id", "product_type", "country"):
+                            if discovery.get(key):
+                                config_data[key] = discovery[key]
+                        parent_id = getattr(self, "_ble_parent_entry_id", None)
+                        if parent_id:
+                            config_data["parent_entry_id"] = parent_id
+                        device_name = discovery.get("name") or device_name
                     if user_input.get(CONF_BLE_PROXY):
                         config_data[CONF_BLE_PROXY] = user_input[CONF_BLE_PROXY].strip()
                     return self.async_create_entry(title=device_name, data=config_data)
@@ -1210,6 +1220,23 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "Bluetooth MAC auto-resolve unavailable for %s", default_serial
                 )
 
+        if (
+            user_input is None
+            and self._ble_kind == BLE_DEVICE_KIND_LIGHT
+            and (self.init_data or {}).get("ble_auto_add")
+            and DEVICE_CATEGORY_LIGHT
+            in self._normalize_discovery_categories(self.init_data or {})
+            and default_serial
+            and default_mac
+        ):
+            return await self.async_step_ble_configure(
+                {
+                    CONF_SERIAL_NUMBER: default_serial,
+                    CONF_BLE_MAC: default_mac,
+                    "device_name": f"Dyson {default_serial}",
+                }
+            )
+
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_SERIAL_NUMBER, default=default_serial): str,
@@ -1241,6 +1268,8 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             A ``(ltk_hex, account_uuid)`` tuple on success, or ``None`` if no
             account is available or the cloud endpoint does not return a valid LTK.
         """
+        if self._ble_kind == BLE_DEVICE_KIND_LIGHT:
+            return await self._fetch_light_ltk_from_account(serial)
         for entry in self.hass.config_entries.async_entries(DOMAIN):
             auth_token = entry.data.get("auth_token")
             if not auth_token:
@@ -1251,6 +1280,39 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if ltk:
                 account_uuid = entry.data.get("account_uuid") or ""
                 return ltk, account_uuid
+        return None
+
+    async def _fetch_light_ltk_from_account(
+        self, serial: str
+    ) -> tuple[str, str] | None:
+        """Use the owning account, regional API and validated UUID/key values."""
+        from uuid import UUID
+
+        from homeassistant.helpers.httpx_client import get_async_client
+
+        from .ble_light_cloud import DysonBLELightCloudClient, DysonBLELightCloudError
+
+        parent_id = (self.init_data or {}).get("parent_entry_id")
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if parent_id and entry.entry_id != parent_id:
+                continue
+            token = entry.data.get("auth_token")
+            account_uuid = entry.data.get("account_uuid")
+            if not token or not account_uuid:
+                continue
+            try:
+                if UUID(account_uuid).int == 0:
+                    continue
+                cloud = DysonBLELightCloudClient(
+                    token,
+                    entry.data.get(CONF_COUNTRY) or "US",
+                    client=get_async_client(self.hass),
+                )
+                ltk = await cloud.fetch_ltk(serial)
+            except (ValueError, DysonBLELightCloudError):
+                continue
+            self._ble_parent_entry_id = entry.entry_id
+            return ltk, account_uuid
         return None
 
     def _cloud_fetch_ltk(self, serial: str, auth_token: str) -> str | None:
@@ -1926,7 +1988,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: dict[str, Any]
     ) -> ConfigFlowResult:
         """Handle discovery of a Dyson device from cloud account."""
-        _LOGGER.info("Discovery step triggered for device: %s", discovery_info)
+        _LOGGER.info("Discovery step triggered")
 
         # Extract device information - check both direct and properties patterns
         device_serial = discovery_info.get("serial_number")
@@ -1944,7 +2006,6 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         # Debug logging for complete discovery info
-        _LOGGER.debug("Complete discovery_info contents: %r", discovery_info)
         _LOGGER.debug(
             "Discovery_info keys: %r",
             list(discovery_info.keys()) if discovery_info else None,
@@ -1956,7 +2017,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Store discovery info for later use
         self.init_data = discovery_info
-        _LOGGER.debug("Stored discovery info: %s", discovery_info)
+        _LOGGER.debug("Stored discovery metadata for device setup")
 
         # Update context with device name for discovery card subtitle
         self.context["title_placeholders"] = {"name": device_name}

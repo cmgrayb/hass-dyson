@@ -823,7 +823,8 @@ BLE_CHAR_11006_UUID: Final = (
 )
 BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # movement sensor (MOVEMENT_SENSOR_UUID in Android)
 
-# Motion detection characteristic — notify; non-zero payload = motion detected
+# Undecoded status characteristic. Retain the public constant for compatibility;
+# nonzero bytes are not a validated movement measurement.
 BLE_MOTION_UUID: Final = "2dd11008-1c37-452d-8979-d1b4a787d0a4"
 
 # Additional probe UUIDs read post-auth during device discovery
@@ -832,10 +833,11 @@ BLE_CHAR_10021_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 
 # Write-Attribute protocol (service 0020, characteristic 0021)
 # Used to configure lamp operating modes on Dyson Lightcycle Morph (CF06).
-# Protocol: write a 5-byte packet to characteristic 0021 —
-#   bytes 0-1 = attribute ID (little-endian)
-#   bytes 2-3 = length of value field (uint16 LE)
-#   bytes 4..  = value
+# Protocol: a DBP-framed write-attribute request on characteristic 0021.
+#   bytes 0-1 = 0x80 (single fragment), 0x93 (write request)
+#   bytes 2-3 = attribute ID (little-endian)
+#   bytes 4-5 = value length (uint16 LE)
+#   bytes 6.. = value
 #
 # DAYLIGHT_MODE (attribute 0x2013 = {0x13, 0x20}):
 #   When enabled the lamp controls its own brightness/colour-temperature via its
@@ -844,9 +846,13 @@ BLE_CHAR_10021_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 #   colour-temperature commands (source: q90.C30554a / ga0.C15075x2).
 BLE_WRITE_ATTR_CHAR_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 # Packet: DAYLIGHT_MODE attribute = false  →  lamp enters manual control mode
-BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD: Final = bytes([0x13, 0x20, 0x01, 0x00, 0x00])
+BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD: Final = bytes(
+    [0x80, 0x93, 0x13, 0x20, 0x01, 0x00, 0x00]
+)
 # Packet: DAYLIGHT_MODE attribute = true  →  lamp enters daylight/auto mode
-BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD: Final = bytes([0x13, 0x20, 0x01, 0x00, 0x01])
+BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD: Final = bytes(
+    [0x80, 0x93, 0x13, 0x20, 0x01, 0x00, 0x01]
+)
 
 # Dyson device capability strings for daylight-capable BLE lights (CF06/CD06).
 # Used to gate the daylight-mode switch entity.
@@ -913,6 +919,16 @@ BLE_MSG_TYPE_PUSH_ATTRIBUTE_REQUEST: Final = 0x96
 BLE_MSG_TYPE_PUSH_ATTRIBUTE: Final = 0x97
 BLE_MSG_TYPE_PUSH_ATTRIBUTE_ACK: Final = 0x98
 BLE_MSG_TYPE_APP_ACTIVE_STATUS: Final = 0x30
+
+# Additional platforms for the verified daylight-capable BLE light protocol.
+BLE_LIGHT_SETTINGS_PLATFORMS: Final = (
+    "switch",
+    "select",
+    "number",
+    "time",
+    "date",
+    "button",
+)
 
 # AppActiveStatus payload values — the app sends these to tell the machine
 # whether a foreground client is attached.  Always send ACTIVE on connect and

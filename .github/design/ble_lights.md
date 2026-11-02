@@ -29,24 +29,37 @@ All characteristics belong to the primary Dyson BLE service:
 | 11000 | `2dd11000-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Brightness 0–100 % (non-daylight devices) |
 | 11001 | `2dd11001-1c37-452d-8979-d1b4a787d0a4` | read/write | uint16 LE | Color temperature (Kelvin) |
 | 11005 | `2dd11005-1c37-452d-8979-d1b4a787d0a4` | read/write | 1 byte | Power: `0x00`=off, `0x01`=on |
-| 11006 | `2dd11006-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Runtime / scheduled-light flags |
-| 11007 | `2dd11007-1c37-452d-8979-d1b4a787d0a4` | read/notify | bytes | Ambient sensor (not fully decoded) |
-| 11008 | `2dd11008-1c37-452d-8979-d1b4a787d0a4` | notify | bytes | **Motion events** (non-zero = motion) |
+| 11006 | `2dd11006-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | Boolean | Auto-brightness enablement, not a lux reading |
+| 11007 | `2dd11007-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | Boolean | Movement-sensor enablement, not instantaneous motion |
+| 11008 | `2dd11008-1c37-452d-8979-d1b4a787d0a4` | notify | bytes | Undecoded status; not a validated motion measurement |
 | 11009 | `2dd11009-1c37-452d-8979-d1b4a787d0a4` | read/write/notify | uint16 LE | Brightness 100–1000 lm (CF06/CD06) |
 
 Daylight-capable devices select 11009 from their persisted `Daylight` or
-`PersonalDaylight` capability and use acknowledged ATT Write Requests for
-brightness, colour-temperature, and daylight-mode writes. Explicitly
+`PersonalDaylight` capability. Brightness, colour-temperature and daylight-mode
+writes follow each characteristic's advertised ATT properties; the tested Morph
+advertises write-without-response only. Explicitly
 non-daylight devices retain the original 11000 percentage characteristic;
 missing capability metadata defaults to daylight support for the currently
 supported CF06/CD06 models. Power continues to use write-without-response.
 
-Daylight mode is currently an optimistic setting. Attribute `0x2013` can be
-written through characteristic 10021, but no readable/notifiable representation
-of that attribute has yet been decoded. Manual brightness or colour-temperature
-interactions therefore reassert manual mode once per short interaction session,
-allowing a later interaction to recover if daylight mode was enabled with the
-physical lamp button.
+Daylight mode is represented by Boolean attribute `0x2013` on characteristic
+10021. The optional settings service reads/subscribes to it and confirms writes
+by readback. Manual brightness/colour-temperature adjustments disable it through
+the same confirmed channel. A short interaction window avoids repeating that
+mode change for every slider update. Physical pushes invalidate the window.
+
+The fallback packet is a complete DBP frame, for example
+`80 93 13 20 01 00 00` to disable daylight. Sending only the five-byte attribute
+body omits the fragment header and opcode and does not establish manual mode.
+The Bluetooth MCU can acknowledge before the lamp MCU applies a setting;
+confirmation retries reads for a bounded period, never the write itself.
+Morph light-control, sensor-enable and attribute writes share a 250 ms minimum
+spacing under the command lock. Attribute reads and notifications are not paced.
+Without it, a combined brightness/temperature update can apply only its
+first write while HA's optimistic state appears correct. The first command is
+not delayed; only a subsequent command inside that interval waits. Legacy
+non-daylight lamps do not use this pacing. Zero/out-of-range Kelvin reports at
+power-off are ignored rather than replacing the last valid colour temperature.
 
 ---
 
@@ -316,8 +329,8 @@ HA entity attributes: `min_color_temp_kelvin = 2700`, `max_color_temp_kelvin = 6
 
 ## Write Operations
 
-The Morph can silently discard unacknowledged brightness, colour-temperature,
-and daylight-mode commands:
+Follow the advertised ATT properties, not the model name alone. An application
+write acknowledgement/readback is distinct from an acknowledged ATT Write Request:
 
 ```python
 # Power
@@ -327,7 +340,8 @@ await client.write_gatt_char(BLE_POWER_UUID, b"\x01" if on else b"\x00", respons
 await client.write_gatt_char(
     BLE_WRITE_ATTR_CHAR_UUID,
     BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
-    response=True,
+    response="write"
+    in client.services.get_characteristic(BLE_WRITE_ATTR_CHAR_UUID).properties,
 )
 await asyncio.sleep(0.2)
 
@@ -335,12 +349,17 @@ await asyncio.sleep(0.2)
 await client.write_gatt_char(
     BLE_BRIGHTNESS_LUMENS_UUID,
     lumens.to_bytes(2, byteorder="little"),
-    response=True,
+    response="write"
+    in client.services.get_characteristic(BLE_BRIGHTNESS_LUMENS_UUID).properties,
 )
+await asyncio.sleep(0.25)  # Morph MCU command spacing, not an ATT acknowledgement.
 
 # Color temperature (Kelvin, uint16 little-endian)
 await client.write_gatt_char(
-    BLE_COLOR_TEMP_UUID, kelvin.to_bytes(2, byteorder="little"), response=True
+    BLE_COLOR_TEMP_UUID,
+    kelvin.to_bytes(2, byteorder="little"),
+    response="write"
+    in client.services.get_characteristic(BLE_COLOR_TEMP_UUID).properties,
 )
 ```
 
@@ -348,15 +367,19 @@ await client.write_gatt_char(
 
 ## Motion Detection
 
-Motion events arrive as GATT notifications on characteristic **11008**
-(`2dd11008-1c37-452d-8979-d1b4a787d0a4`).
+Notifications arrive on characteristic **11008**, but the earlier interpretation
+of nonzero bytes as motion was not validated. Controlled Lightcycle Morph tests
+observed `0000100000000000` repeatedly while stationary and during movement.
+The alternative value `2000100000000000` was also observed during setting changes;
+neither observation establishes a motion bit. Zero bytes are not a validated
+absence-of-motion signal either.
 
-A notification payload of all-zero bytes means **no motion** (idle).
-Any non-zero byte in the payload indicates **motion detected**.
-
-The integration fires `EVENT_BLE_STATE_CHANGE` with `motion_detected: True/False`
-upon each notification.  The `DysonMotionBinarySensor` entity updates its state
-in response.
+The transport retains the payload as `char_11008_hex` and publishes
+`motion_detected: None`. The existing `DysonMotionBinarySensor` unique ID remains
+for compatibility, but the state is unknown; new entities are disabled by
+default. No occupancy automation should rely on this characteristic until a
+decoder has independent positive and negative validation. Sensor enablement is
+not the same as instantaneous sensor telemetry.
 
 ---
 
@@ -373,7 +396,7 @@ in response.
   │     └──────── reconnect (backoff) ─────────┘       │
   │                                                    │
   │   On connected:                                    │
-  │     • subscribe char 11008 (motion)               │
+  │     • subscribe char 11008 (undecoded status)     │
   │     • subscribe chars 11006/11007/11009 (debug)   │
   │     • read initial power/brightness/color_temp    │
   │     • start keepalive loop (read every 20s)       │
