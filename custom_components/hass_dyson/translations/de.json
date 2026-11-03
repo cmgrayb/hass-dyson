@@ -723,6 +723,21 @@
     "discovered_host_unreachable": {
       "title": "{device_name} ist im lokalen Netzwerk nicht erreichbar",
       "description": "{device_name} bevorzugt eine lokale Verbindung, aber unter {hostname} antwortet seit über 10 Minuten kein Gerät. Daher wird stattdessen die Cloud-Verbindung verwendet. Das Gerät funktioniert weiterhin, jedoch langsamer und ohne lokale Steuerung. Diese Adresse wurde automatisch erkannt und nicht manuell eingegeben. Daher wird mDNS entweder im Netzwerk gefiltert oder die Adresse hat sich geändert. Legen Sie die IP-Adresse des Geräts in den Verbindungsoptionen fest, um die Erkennung zu umgehen, oder beheben Sie mDNS im Netzwerk. Weitere Informationen finden Sie in der Anleitung zur Fehlerbehebung. Diese Warnung wird automatisch ausgeblendet, sobald eine lokale Verbindung besteht."
+    },
+    "temperature_unit_changed": {
+      "title": "{device_name} neu laden, um die Temperatureinheit anzuwenden",
+      "description": "Die Temperatureinheit von Home Assistant wurde von {old_unit} auf {new_unit} geändert. Lade {device_name} neu, um die Temperatursteuerung und die Ein-Grad-Schrittweite zu aktualisieren.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{device_name} neu laden?",
+            "description": "Lade dieses Dyson-Gerät neu, um die Temperatureinheit von Home Assistant anzuwenden. Seine Entitäten werden dabei kurz getrennt."
+          }
+        },
+        "error": {
+          "reload_failed": "Das Gerät konnte nicht neu geladen werden. Prüfe die Verbindung und versuche es erneut."
+        }
+      }
     }
   }
 }

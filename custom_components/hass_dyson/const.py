@@ -3,6 +3,8 @@
 from typing import Final
 
 from homeassistant.components.vacuum import VacuumActivity
+from homeassistant.const import UnitOfTemperature
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 # Type alias for AQI ranges: (low, high, aqi_low, aqi_high, category)
 # First two can be int or float depending on pollutant measurement units
@@ -1096,3 +1098,23 @@ def celsius_to_decikelvin(celsius: float) -> int:
     setpoint downwards.
     """
     return round((celsius + ZERO_CELSIUS_IN_KELVIN) * 10)
+
+
+def decikelvin_to_units(decikelvin: float, temperature_unit: str) -> float:
+    """Convert Dyson Kelvin x 10 directly to the requested temperature unit."""
+    return TemperatureConverter.convert(
+        decikelvin / 10, UnitOfTemperature.KELVIN, temperature_unit
+    )
+
+
+def decikelvin_to_target_units(decikelvin: float, temperature_unit: str) -> float:
+    """Return a device setpoint rounded to a whole degree in the requested unit."""
+    return float(round(decikelvin_to_units(decikelvin, temperature_unit)))
+
+
+def units_to_decikelvin(temperature: float, temperature_unit: str) -> int:
+    """Convert a temperature directly to the nearest Dyson Kelvin x 10 value."""
+    kelvin = TemperatureConverter.convert(
+        temperature, temperature_unit, UnitOfTemperature.KELVIN
+    )
+    return round(kelvin * 10)

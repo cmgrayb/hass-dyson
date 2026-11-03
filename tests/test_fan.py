@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from homeassistant.components.fan import FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 
 from custom_components.hass_dyson.const import DOMAIN
 from custom_components.hass_dyson.fan import DysonFan, async_setup_entry
@@ -14,6 +15,7 @@ from custom_components.hass_dyson.fan import DysonFan, async_setup_entry
 def mock_coordinator():
     """Create a mock coordinator."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device_category = "ec"  # Environment Cleaner
@@ -51,6 +53,7 @@ def mock_coordinator():
 def mock_coordinator_heating():
     """Create a mock coordinator for a heating-capable device (Hot+Cool series)."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device_category = "ec"
@@ -84,6 +87,7 @@ def mock_coordinator_heating():
 def mock_coordinator_no_direction():
     """Create a mock coordinator without direction support."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device_category = "ec"  # Environment Cleaner

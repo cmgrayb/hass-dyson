@@ -15,6 +15,7 @@ from custom_components.hass_dyson.climate import DysonClimateEntity, async_setup
 def mock_coordinator():
     """Create a mock coordinator."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device = MagicMock()
@@ -31,7 +32,8 @@ def mock_coordinator():
 def mock_hass():
     """Create a mock HomeAssistant instance."""
     hass = MagicMock(spec=HomeAssistant)
-    return hass
+    with patch("custom_components.hass_dyson.climate.async_watch_temperature_unit"):
+        yield hass
 
 
 @pytest.fixture
@@ -151,8 +153,8 @@ class TestDysonClimateEntity:
 
         # Temperature settings
         assert entity._attr_temperature_unit == UnitOfTemperature.CELSIUS
-        assert entity._attr_min_temp == 1
-        assert entity._attr_max_temp == 37
+        assert entity.min_temp == 1
+        assert entity.max_temp == 37
         assert entity._attr_target_temperature_step == 1
 
         # HVAC modes (heating device)
@@ -677,7 +679,9 @@ class TestDysonClimateEntity:
 
         # Assert
         # Should call the device's set_target_temperature method with temperature in Celsius
-        mock_coordinator.device.set_target_temperature.assert_called_once_with(22.5)
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(
+            22.5, UnitOfTemperature.CELSIUS
+        )
         # Should update local state immediately
         assert entity._attr_target_temperature == 22.5
         entity.async_write_ha_state.assert_called()
@@ -823,7 +827,9 @@ class TestClimateIntegration:
         )
 
         await entity.async_set_temperature(**{ATTR_TEMPERATURE: 20.0})
-        mock_coordinator.device.set_target_temperature.assert_called_once_with(20.0)
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(
+            20.0, UnitOfTemperature.CELSIUS
+        )
 
     def test_climate_current_temperature_from_environmental_data(
         self, mock_coordinator
