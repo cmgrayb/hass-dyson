@@ -94,6 +94,32 @@ class TestCloudDeviceDiscoveryWithHostname:
             assert result["type"] == "create_entry"
 
     @pytest.mark.asyncio
+    async def test_discovery_passes_parent_region_to_config(
+        self, mock_hass, mock_discovery_info
+    ):
+        """Country/culture from the parent account entry reach the device config."""
+        parent = MagicMock()
+        parent.entry_id = "parent_entry_123"
+        parent.data = {"country": "CN", "culture": "zh-CN"}
+        mock_hass.config_entries.async_entries.return_value = [parent]
+
+        flow = DysonConfigFlow()
+        flow.hass = mock_hass
+        flow.init_data = mock_discovery_info
+
+        with patch(
+            "custom_components.hass_dyson.device_utils.create_cloud_device_config"
+        ) as mock_create_config:
+            mock_create_config.return_value = {CONF_SERIAL_NUMBER: "VS6-EU-HJA1234A"}
+            await flow.async_step_discovery_connection(
+                {"connection_type": "local_only", CONF_HOSTNAME: ""}
+            )
+
+            call_kwargs = mock_create_config.call_args.kwargs
+            assert call_kwargs["country"] == "CN"
+            assert call_kwargs["culture"] == "zh-CN"
+
+    @pytest.mark.asyncio
     async def test_discovery_without_hostname_creates_device_with_none(
         self, mock_hass, mock_discovery_info
     ):

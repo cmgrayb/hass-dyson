@@ -1849,7 +1849,8 @@ class TestDysonDevicePendingStateGuard:
 
             # User turns continuous monitoring off.
             await device.set_continuous_monitoring(False)
-            assert device._state_data["product-state"]["rhtm"] == "ON"  # unconfirmed
+            # Shown right away, so the control does not flip back (#512).
+            assert device._state_data["product-state"]["rhtm"] == "OFF"
 
             # A racing heartbeat CURRENT-STATE reply arrives, still showing the
             # pre-command value because it was in flight before the command
@@ -1859,7 +1860,7 @@ class TestDysonDevicePendingStateGuard:
                 "475/TEST123/status/current",
             )
 
-            assert device._state_data["product-state"]["rhtm"] == "ON"
+            assert device._state_data["product-state"]["rhtm"] == "OFF"
 
             # The device's real STATE-CHANGE confirmation now arrives.
             device._handle_state_change(
@@ -1874,6 +1875,32 @@ class TestDysonDevicePendingStateGuard:
                 "475/TEST123/status/current",
             )
             assert device._state_data["product-state"]["rhtm"] == "OFF"
+
+    @pytest.mark.asyncio
+    async def test_state_set_skips_one_shot_reset_in_cached_state(
+        self, mock_hass, mock_mqtt_client
+    ):
+        """The rstf filter reset action is sent but not kept as device state."""
+        with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+
+            def mock_executor_job(func, *args):
+                return func(*args) if args else func()
+
+            mock_hass.async_add_executor_job.side_effect = mock_executor_job
+
+            device = DysonDevice(
+                hass=mock_hass,
+                serial_number="TEST123",
+                host="192.168.1.100",
+                credential="test_cred",
+            )
+            device._connected = True
+            device._mqtt_client = mock_mqtt_client
+            device._state_data = {"product-state": {"fnsp": "0003"}}
+
+            await device.send_command("STATE-SET", {"fnsp": "0007", "rstf": "RSTF"})
+
+            assert device._state_data["product-state"] == {"fnsp": "0007"}
 
     @pytest.mark.asyncio
     async def test_continuous_monitoring_includes_fmod_for_link_devices(

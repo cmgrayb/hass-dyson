@@ -151,6 +151,20 @@ start_zone_clean:
       example: Downstairs
       selector:
         text:
+    cleaning_mode:
+      name: Cleaning mode
+      description: >-
+        Spot+Scrub (RB05) only. Sets the cleaning mode of the targeted rooms
+        before the clean starts; other rooms keep their stored mode. When
+        omitted, each room's stored preference is used.
+      required: false
+      selector:
+        select:
+          options:
+            - vacuum_only
+            - vacuum_and_mop
+            - mop_only
+            - vacuum_then_mop
 
 set_zone_behaviour:
   name: Set Zone Behaviour (Vis Nav)
@@ -195,3 +209,33 @@ set_zone_behaviour:
       example: Downstairs
       selector:
         text:
+
+set_room_cleaning_modes:
+  name: Set Room Cleaning Modes (Spot+Scrub)
+  description: >-
+    Set the cleaning mode, vacuum power, hydration level or wash repetitions
+    for individual rooms on a Dyson Spot+Scrub's current map, without
+    starting a clean. Rooms and settings not listed keep their current value.
+    The robot must be docked or finished, and the change is confirmed by
+    reading the room preferences back.
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson robot vacuum device.
+      required: true
+      selector:
+        device:
+          integration: hass_dyson
+    room_modes:
+      name: Room Modes
+      description: >-
+        Mapping of room ID or MyDyson room name to either a cleaning mode
+        (vacuum_only, vacuum_and_mop, mop_only, vacuum_then_mop) or a mapping
+        of settings: cleaning_mode, vacuum_power (auto, quick, quiet, boost),
+        hydration (very_low, low, medium, high) and wash_repetitions (1 or 2).
+        Room IDs and current settings are shown in the cleaning mode select's
+        room_settings attribute.
+      required: true
+      example: '{"Kitchen": "mop_only", "10": {"hydration": "high", "wash_repetitions": 2}}'
+      selector:
+        object:

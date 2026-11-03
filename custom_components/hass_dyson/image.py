@@ -44,6 +44,7 @@ import logging
 import zlib
 from datetime import datetime, timezone
 from functools import partial
+from typing import Any
 
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
@@ -53,6 +54,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
 from .entity import DysonEntity
+from .spot_scrub import IDLE_STATES
+from .spot_scrub_coverage import (
+    CoverageRecorder,
+    get_coverage_recorder,
+    render_coverage_png,
+)
 from .vacuum import fetch_clean_maps
 
 _LOGGER = logging.getLogger(__name__)
@@ -100,6 +107,13 @@ async def async_setup_entry(
         DysonDustMapImage(hass, coordinator),
         DysonFloorPlanImage(hass, coordinator),
     ]
+    # Spot+Scrub streams its path live; draw what it vacuumed and mopped.
+    device = coordinator.device
+    if device is not None and getattr(device, "mqtt_prefix", None) == "RB05":
+        recorder = get_coverage_recorder(hass, coordinator)
+        await recorder.async_start()
+        config_entry.async_on_unload(recorder.async_stop)
+        entities.append(DysonCleanCoverageImage(hass, coordinator, recorder))
     async_add_entities(entities, True)
     _LOGGER.info(
         "Created dust-map + floor-plan image entities for %s",
@@ -1066,3 +1080,116 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
 
     async def async_update(self) -> None:
         await self._build()
+
+
+class DysonCleanCoverageImage(DysonEntity, ImageEntity):
+    """What the Spot+Scrub vacuumed and mopped on its current or last run.
+
+    Two panels over the room outlines, drawn from the live path the robot
+    streams. Without a live recording (for example after a reinstall) the
+    cloud's path of the last clean is drawn instead.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+    _attr_content_type = "image/png"
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        coordinator: DysonDataUpdateCoordinator,
+        recorder: CoverageRecorder,
+    ) -> None:
+        ImageEntity.__init__(self, hass)
+        DysonEntity.__init__(self, coordinator)
+        self._recorder = recorder
+        self._attr_unique_id = f"{coordinator.serial_number}_clean_coverage"
+        self._attr_translation_key = "clean_coverage"
+        self._attr_icon = "mdi:map-marker-path"
+        self._rendered: tuple | None = None
+        self._cached_png: bytes | None = None
+        self._areas: dict[str, float] = {}
+        self._source: str | None = None
+
+    @property
+    def should_poll(self) -> bool:
+        # _attr_should_poll is inert on CoordinatorEntity subclasses (#408).
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Areas covered and where the path came from."""
+        recorder = self._recorder
+        geometry = recorder.geometry or {}
+        corners = [
+            (x, y)
+            for zone in geometry.get("zones", [])
+            for x1, y1, x2, y2 in zone["segments"]
+            for x, y in ((x1, y1), (x2, y2))
+        ]
+        return {
+            "source": self._source,
+            "vacuumed_m2": self._areas.get("vacuumed"),
+            "mopped_m2": self._areas.get("mopped"),
+            "points": len(recorder.points),
+            "run_started": _iso(recorder.started),
+            "run_updated": _iso(recorder.updated),
+            "map_clean_id": recorder.geometry_clean_id,
+            # Map metres, for checking the path against the room outlines.
+            "map_dock": geometry.get("dock"),
+            "map_bounds": [
+                min(x for x, _ in corners),
+                max(x for x, _ in corners),
+                min(y for _, y in corners),
+                max(y for _, y in corners),
+            ]
+            if corners
+            else None,
+        }
+
+    async def _build(self) -> bytes | None:
+        recorder = self._recorder
+        await recorder.async_refresh_geometry()
+        if recorder.geometry is None:
+            return None
+        device = self.coordinator.device
+        # The marker is only drawn while the robot is out.
+        cleaning = getattr(device, "robot_state", None) not in IDLE_STATES
+        key = (recorder.revision, recorder.geometry_clean_id, cleaning)
+        if key == self._rendered and self._cached_png:
+            return self._cached_png
+        source, path = recorder.path()
+        footer = ""
+        if source == "live" and recorder.started:
+            start = datetime.fromtimestamp(recorder.started).astimezone()
+            footer = f"Run started {start:%a %d %b %H:%M}"
+        elif source == "cloud":
+            footer = "Last clean, from the Dyson cloud"
+        result = await self.hass.async_add_executor_job(
+            partial(
+                render_coverage_png,
+                recorder.geometry,
+                path,
+                recorder.pose if cleaning else None,
+                footer,
+            )
+        )
+        if result is None:
+            return None
+        self._cached_png, self._areas = result
+        self._source = source
+        self._rendered = key
+        self._attr_image_last_updated = datetime.now(timezone.utc)
+        return self._cached_png
+
+    async def async_image(self) -> bytes | None:
+        return await self._build()
+
+    async def async_update(self) -> None:
+        await self._recorder.async_start()
+        await self._build()
+
+
+def _iso(timestamp: float | None) -> str | None:
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()

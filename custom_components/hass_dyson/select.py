@@ -19,6 +19,7 @@ from .const import (
 )
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
+from .spot_scrub_room_select import async_setup_room_selects
 from .spot_scrub_select import DysonSpotScrubCleaningModeSelect
 
 _LOGGER = logging.getLogger(__name__)
@@ -102,6 +103,9 @@ async def async_setup_entry(
     # No separate heating mode select needed
 
     async_add_entities(entities, True)
+
+    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+        await async_setup_room_selects(hass, coordinator, async_add_entities)
 
 
 class DysonOscillationModeSelect(DysonEntity, SelectEntity):
