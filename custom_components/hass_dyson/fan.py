@@ -47,12 +47,13 @@ from typing import Any
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
+    HEATER_TEMPERATURE_SETTINGS,
     decikelvin_to_target_units,
     decikelvin_to_units,
     units_to_decikelvin,
@@ -241,11 +242,12 @@ class DysonFan(DysonEntity, FanEntity):
             ]
             # Add climate-specific attributes for heating devices
             self._attr_temperature_unit = coordinator.hass.config.units.temperature_unit
-            fahrenheit = self._attr_temperature_unit == UnitOfTemperature.FAHRENHEIT
-            self._attr_min_temp = 34 if fahrenheit else 1
-            self._attr_max_temp = 98 if fahrenheit else 37
+            (
+                self._attr_min_temp,
+                self._attr_max_temp,
+                self._default_target_temperature,
+            ) = HEATER_TEMPERATURE_SETTINGS[self._attr_temperature_unit]
             self._attr_target_temperature_step = 1
-            self._default_target_temperature = 68 if fahrenheit else 20
             self._attr_target_temperature = self._default_target_temperature
             self._attr_current_temperature = None
             self._attr_hvac_modes = [
@@ -963,8 +965,7 @@ class DysonFan(DysonEntity, FanEntity):
         current_temp = environmental_data.get("tact")
         if current_temp is not None and current_temp != "OFF":
             try:
-                temp_kelvin = float(current_temp) / 10
-                if temp_kelvin > 0:
+                if float(current_temp) > 0:
                     self._attr_current_temperature = round(
                         decikelvin_to_units(
                             float(current_temp), self._attr_temperature_unit
@@ -983,8 +984,7 @@ class DysonFan(DysonEntity, FanEntity):
             device_data, "hmax", "0000"
         )
         try:
-            temp_kelvin = int(target_temp) / 10
-            if target_temp != "0000" and temp_kelvin > 0:
+            if int(target_temp) > 0:
                 self._attr_target_temperature = decikelvin_to_target_units(
                     int(target_temp), self._attr_temperature_unit
                 )

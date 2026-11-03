@@ -13,6 +13,12 @@ AQIRange = tuple[float | int, float | int, int, int, str]
 # Integration domain
 DOMAIN: Final = "hass_dyson"
 
+# Whole-degree heater limits and default target, in each entity unit.
+HEATER_TEMPERATURE_SETTINGS: Final[dict[str, tuple[int, int, int]]] = {
+    UnitOfTemperature.CELSIUS: (1, 37, 20),
+    UnitOfTemperature.FAHRENHEIT: (34, 98, 68),
+}
+
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 60  # 1 minute in seconds
 # 1 minute for connectivity checks only (devices send natural STATE-CHANGE messages)

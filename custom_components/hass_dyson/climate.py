@@ -14,12 +14,13 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
+    HEATER_TEMPERATURE_SETTINGS,
     decikelvin_to_target_units,
     decikelvin_to_units,
     units_to_decikelvin,
@@ -93,9 +94,11 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         # Temperature settings
         self._attr_temperature_unit = coordinator.hass.config.units.temperature_unit
         self._attr_target_temperature_step = 1
-        self._default_target_temperature = (
-            68 if self._attr_temperature_unit == UnitOfTemperature.FAHRENHEIT else 20
-        )
+        (
+            self._attr_min_temp,
+            self._attr_max_temp,
+            self._default_target_temperature,
+        ) = HEATER_TEMPERATURE_SETTINGS[self._attr_temperature_unit]
 
         # Humidity settings
         self._attr_min_humidity = 30
@@ -117,16 +120,6 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         # Initialize HVAC mode to OFF (will be updated in _handle_coordinator_update)
         self._attr_hvac_mode = HVACMode.OFF
         self._attr_hvac_action = HVACAction.OFF
-
-    @property
-    def min_temp(self) -> float:
-        """Return the lowest supported whole degree in the entity's unit."""
-        return 34 if self._attr_temperature_unit == UnitOfTemperature.FAHRENHEIT else 1
-
-    @property
-    def max_temp(self) -> float:
-        """Return the highest supported whole degree in the entity's unit."""
-        return 98 if self._attr_temperature_unit == UnitOfTemperature.FAHRENHEIT else 37
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -155,9 +148,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if current_temp is not None and current_temp != "OFF":
             try:
                 # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
-                temp_kelvin = float(current_temp) / 10
-                # Only set temperature if we have a valid reading
-                if temp_kelvin > 0:
+                if float(current_temp) > 0:
                     self._attr_current_temperature = round(
                         decikelvin_to_units(
                             float(current_temp), self._attr_temperature_unit
@@ -176,9 +167,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             device_data, "hmax", "0000"
         )
         try:
-            temp_kelvin = int(target_temp) / 10
-            # Only set target temperature if we have a valid reading
-            if target_temp != "0000" and temp_kelvin > 0:
+            if int(target_temp) > 0:
                 # Convert straight from Dyson's wire format to the entity's unit,
                 # then snap to the advertised one-degree step.
                 self._attr_target_temperature = decikelvin_to_target_units(

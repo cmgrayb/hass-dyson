@@ -153,8 +153,8 @@ class TestDysonClimateEntity:
 
         # Temperature settings
         assert entity._attr_temperature_unit == UnitOfTemperature.CELSIUS
-        assert entity.min_temp == 1
-        assert entity.max_temp == 37
+        assert entity._attr_min_temp == 1
+        assert entity._attr_max_temp == 37
         assert entity._attr_target_temperature_step == 1
 
         # HVAC modes (heating device)
