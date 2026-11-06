@@ -41,7 +41,11 @@ from datetime import datetime as dt
 from typing import Any
 
 import paho.mqtt.client as mqtt
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
+    EVENT_HOMEASSISTANT_STOP,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -57,7 +61,7 @@ from .const import (
     ROBOT_FAULT_ACTION_LOG_ONLY,
     ROBOT_FAULT_SUBSYSTEMS,
     STATE_KEY_LEGACY_FILTER_LIFE,
-    celsius_to_decikelvin,
+    units_to_decikelvin,
 )
 from .device_utils import mask_serial, mask_token
 
@@ -3987,26 +3991,35 @@ class DysonDevice:
         humidity_value = f"{humidity:04d}"
         await self.send_command("STATE-SET", {"humt": humidity_value})
 
-    async def set_target_temperature(self, temperature: float) -> None:
-        """Set target temperature in Celsius.
+    async def set_target_temperature(
+        self,
+        temperature: float,
+        temperature_unit: str = UnitOfTemperature.CELSIUS,
+    ) -> None:
+        """Set the heating target in the supplied Celsius or Fahrenheit unit.
 
-        Args:
-            temperature: Target temperature in Celsius (1-37°C)
+        Celsius remains the default for existing callers. Climate and fan
+        entities explicitly supply their unit, selected from HA at setup.
         """
-        # Validate temperature range (convert to Kelvin for validation)
-        temp_kelvin = temperature + 273.15
-        if not 274 <= temp_kelvin <= 310:
-            raise ValueError("Target temperature must be between 1°C and 37°C")
+        if temperature_unit == UnitOfTemperature.CELSIUS:
+            min_temp, max_temp = 1, 37
+        elif temperature_unit == UnitOfTemperature.FAHRENHEIT:
+            min_temp, max_temp = 33.8, 98.6
+        else:
+            raise ValueError("Heating targets must use Celsius or Fahrenheit")
+        if not min_temp <= temperature <= max_temp:
+            raise ValueError(
+                f"Target temperature must be between {min_temp}{temperature_unit} "
+                f"and {max_temp}{temperature_unit}"
+            )
 
-        # Convert Celsius to Kelvin × 10 format for device
-        temp_value = celsius_to_decikelvin(temperature)
-        temp_str = f"{temp_value:04d}"
-
+        # Convert directly from the caller's unit to Dyson's Kelvin x 10 format.
+        temp_value = units_to_decikelvin(temperature, temperature_unit)
         await self.send_command(
             "STATE-SET",
             {
-                "hmod": "HEAT",  # Enable heating mode when setting temperature
-                "hmax": temp_str,
+                "hmod": "HEAT",
+                "hmax": f"{temp_value:04d}",
             },
         )
 

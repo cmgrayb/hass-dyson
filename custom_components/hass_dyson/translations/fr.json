@@ -791,6 +791,20 @@
     "discovered_host_unreachable": {
       "title": "{device_name} est inaccessible sur le réseau local",
       "description": "{device_name} préfère une connexion locale, mais aucune réponse n'a été reçue à l'adresse {hostname} depuis plus de 10 minutes. Il utilise donc la connexion cloud à la place. L'appareil continue de fonctionner ainsi, mais plus lentement et sans contrôle local. Cette adresse a été découverte automatiquement et non saisie manuellement : mDNS est donc peut-être filtré sur le réseau ou l'adresse a changé. Définissez l'adresse IP de l'appareil dans ses options de connexion pour contourner la découverte, ou corrigez mDNS sur le réseau ; consultez le guide de dépannage. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
+    },
+    "temperature_unit_changed": {
+      "title": "Recharger {device_name} pour appliquer l’unité de température",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Recharger {device_name} ?",
+            "description": "Rechargez cet appareil Dyson pour appliquer l’unité de température de Home Assistant. Ses entités seront brièvement déconnectées pendant le rechargement."
+          }
+        },
+        "error": {
+          "reload_failed": "Impossible de recharger l’appareil. Vérifiez sa connexion et réessayez."
+        }
+      }
     }
   }
 }

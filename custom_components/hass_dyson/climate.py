@@ -14,13 +14,20 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, celsius_to_decikelvin, decikelvin_to_celsius
+from .const import (
+    DOMAIN,
+    HEATER_TEMPERATURE_SETTINGS,
+    decikelvin_to_target_units,
+    decikelvin_to_units,
+    units_to_decikelvin,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
+from .repairs import async_watch_temperature_unit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +48,8 @@ async def async_setup_entry(
         entities.append(DysonClimateEntity(coordinator))
 
     async_add_entities(entities, True)
+    if entities:
+        async_watch_temperature_unit(hass, config_entry)
 
 
 class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
@@ -83,10 +92,13 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         self._attr_supported_features = supported_features
 
         # Temperature settings
-        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_min_temp = 1
-        self._attr_max_temp = 37
+        self._attr_temperature_unit = coordinator.hass.config.units.temperature_unit
         self._attr_target_temperature_step = 1
+        (
+            self._attr_min_temp,
+            self._attr_max_temp,
+            self._default_target_temperature,
+        ) = HEATER_TEMPERATURE_SETTINGS[self._attr_temperature_unit]
 
         # Humidity settings
         self._attr_min_humidity = 30
@@ -136,12 +148,13 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         if current_temp is not None and current_temp != "OFF":
             try:
                 # Dyson reports temperature in Kelvin * 10 (e.g., "2977" = 297.7K)
-                temp_kelvin = float(current_temp) / 10
-                # Only set temperature if we have a valid reading
-                if temp_kelvin > 0:
+                if float(current_temp) > 0:
                     self._attr_current_temperature = round(
-                        decikelvin_to_celsius(float(current_temp)), 1
-                    )  # Convert to Celsius
+                        decikelvin_to_units(
+                            float(current_temp), self._attr_temperature_unit
+                        ),
+                        1,
+                    )
                 else:
                     self._attr_current_temperature = None
             except (ValueError, TypeError):
@@ -154,18 +167,16 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
             device_data, "hmax", "0000"
         )
         try:
-            temp_kelvin = int(target_temp) / 10
-            # Only set target temperature if we have a valid reading
-            if target_temp != "0000" and temp_kelvin > 0:
-                # Snap to the 1 degree step this entity advertises, otherwise the
-                # setpoint reads back a fraction of a degree off what was set.
-                self._attr_target_temperature = float(
-                    round(decikelvin_to_celsius(int(target_temp)))
+            if int(target_temp) > 0:
+                # Convert straight from Dyson's wire format to the entity's unit,
+                # then snap to the advertised one-degree step.
+                self._attr_target_temperature = decikelvin_to_target_units(
+                    int(target_temp), self._attr_temperature_unit
                 )
             else:
-                self._attr_target_temperature = 20  # Default to 20°C
+                self._attr_target_temperature = self._default_target_temperature
         except (ValueError, TypeError):
-            self._attr_target_temperature = 20  # Default to 20°C
+            self._attr_target_temperature = self._default_target_temperature
 
     def _update_humidity(self, device_data: dict[str, Any]) -> None:
         """Update current and target humidity from humidifier entity (compatibility layer)."""
@@ -469,35 +480,41 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         try:
             # Call the device method directly
-            await self.coordinator.device.set_target_temperature(temperature)
+            await self.coordinator.device.set_target_temperature(
+                temperature, self._attr_temperature_unit
+            )
 
             # Update local state immediately for responsive UI
             self._attr_target_temperature = temperature
             self.async_write_ha_state()
 
             _LOGGER.debug(
-                "Set target temperature to %s°C for %s",
+                "Set target temperature to %s%s for %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
             )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
-                "Communication error setting temperature to %s°C for %s: %s",
+                "Communication error setting temperature to %s%s for %s: %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
                 err,
             )
         except ValueError as err:
             _LOGGER.error(
-                "Invalid temperature value %s°C for %s: %s",
+                "Invalid temperature value %s%s for %s: %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
                 err,
             )
         except Exception as err:
             _LOGGER.error(
-                "Unexpected error setting temperature to %s°C for %s: %s",
+                "Unexpected error setting temperature to %s%s for %s: %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
                 err,
             )
@@ -628,6 +645,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         target_temp: float | None = self._attr_target_temperature
         hvac_mode: HVACMode | None = self._attr_hvac_mode
 
+        attributes["temperature_unit"] = self._attr_temperature_unit
         attributes["target_temperature"] = target_temp  # type: ignore[assignment]
         attributes["hvac_mode"] = hvac_mode  # type: ignore[assignment]
 
@@ -669,7 +687,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
         # Target temperature in Kelvin for device commands
         if target_temp is not None:
-            temp_kelvin: int = celsius_to_decikelvin(target_temp)
+            temp_kelvin: int = units_to_decikelvin(
+                target_temp, self._attr_temperature_unit
+            )
             kelvin_str: str = f"{temp_kelvin:04d}"
             attributes["target_temperature_kelvin"] = kelvin_str  # type: ignore[assignment]
 
