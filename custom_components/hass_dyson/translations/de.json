@@ -794,7 +794,6 @@
     },
     "temperature_unit_changed": {
       "title": "{device_name} neu laden, um die Temperatureinheit anzuwenden",
-      "description": "Die Temperatureinheit von Home Assistant wurde von {old_unit} auf {new_unit} geändert. Lade {device_name} neu, um die Temperatursteuerung und die Ein-Grad-Schrittweite zu aktualisieren.",
       "fix_flow": {
         "step": {
           "confirm": {

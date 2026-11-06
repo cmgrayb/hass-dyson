@@ -794,7 +794,6 @@
     },
     "temperature_unit_changed": {
       "title": "Recharger {device_name} pour appliquer l’unité de température",
-      "description": "L’unité de température de Home Assistant est passée de {old_unit} à {new_unit}. Rechargez {device_name} pour mettre à jour ses commandes de température et son pas de réglage d’un degré.",
       "fix_flow": {
         "step": {
           "confirm": {

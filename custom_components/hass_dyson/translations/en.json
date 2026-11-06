@@ -794,7 +794,6 @@
     },
     "temperature_unit_changed": {
       "title": "Reload {device_name} to apply temperature units",
-      "description": "Home Assistant’s temperature unit changed from {old_unit} to {new_unit}. Reload {device_name} to update its temperature controls and one-degree adjustment step.",
       "fix_flow": {
         "step": {
           "confirm": {
