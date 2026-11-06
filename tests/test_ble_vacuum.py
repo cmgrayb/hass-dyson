@@ -1106,7 +1106,10 @@ class TestIconNames:
         for chunk in glob.glob(os.path.join(mdi_dir, "*.json")):
             try:
                 with open(chunk, encoding="utf-8") as fh:
-                    names |= set(json.load(fh))
+                    icons = json.load(fh)
+                # Icon chunks are dictionaries; metadata files can be lists.
+                if isinstance(icons, dict):
+                    names.update(icons)
             except (OSError, ValueError):  # pragma: no cover - defensive
                 continue
         if not names:  # pragma: no cover - frontend layout changed
