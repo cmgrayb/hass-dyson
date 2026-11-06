@@ -183,6 +183,25 @@
     }
   },
   "entity": {
+    "date": {
+      "lightcycle_away_start_date": {
+        "name": "Beginn der Abwesenheit"
+      }
+    },
+    "time": {
+      "lightcycle_sunrise_time": {
+        "name": "Sonnenaufgangszeit"
+      },
+      "lightcycle_sunset_time": {
+        "name": "Sonnenuntergangszeit"
+      },
+      "lightcycle_sleep_start_time": {
+        "name": "Beginn der Schlafenszeit"
+      },
+      "lightcycle_sleep_end_time": {
+        "name": "Ende der Schlafenszeit"
+      }
+    },
     "sensor": {
       "temperature": {
         "name": "Temperatur"
@@ -340,6 +359,27 @@
       }
     },
     "switch": {
+      "lightcycle_auto_brightness": {
+        "name": "Automatische Helligkeitsregelung"
+      },
+      "lightcycle_movement_sensor": {
+        "name": "Bewegungssensor"
+      },
+      "lightcycle_age_adjustment": {
+        "name": "Altersanpassung"
+      },
+      "lightcycle_sleep_mode": {
+        "name": "Schlafmodus"
+      },
+      "lightcycle_away_mode": {
+        "name": "Abwesenheitsmodus"
+      },
+      "lightcycle_personal_daylight": {
+        "name": "Persönliche Tageslichtzeiten"
+      },
+      "lightcycle_wake_up_schedule": {
+        "name": "Weckzeitplan"
+      },
       "auto_mode": {
         "name": "Automatik-Modus"
       },
@@ -372,6 +412,12 @@
       }
     },
     "button": {
+      "lightcycle_sync_location": {
+        "name": "Cloud-Standort synchronisieren"
+      },
+      "lightcycle_reset_daylight_times": {
+        "name": "Tageslichtzeiten zurücksetzen"
+      },
       "find_follow_scan": {
         "name": "Verfolgen Scan"
       },
@@ -383,6 +429,16 @@
       }
     },
     "select": {
+      "lightcycle_lighting_mode": {
+        "name": "Lichtmodus",
+        "state": {
+          "manual": "Manuell",
+          "daylight": "Tageslicht",
+          "study": "Lernen",
+          "relax": "Entspannen",
+          "precision": "Präzision"
+        }
+      },
       "fan_control_mode": {
         "name": "Lüfter-Steuerungsmodus"
       },
@@ -472,6 +528,18 @@
       }
     },
     "number": {
+      "lightcycle_baseline_brightness": {
+        "name": "Helligkeit nach Sonnenuntergang"
+      },
+      "lightcycle_baseline_colour_temperature": {
+        "name": "Farbtemperatur nach Sonnenuntergang"
+      },
+      "lightcycle_wake_up_brightness": {
+        "name": "Weckhelligkeit"
+      },
+      "lightcycle_birth_year": {
+        "name": "Geburtsjahr"
+      },
       "sleep_timer": {
         "name": "Schlaftimer"
       },

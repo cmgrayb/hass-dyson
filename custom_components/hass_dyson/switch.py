@@ -36,8 +36,16 @@ async def async_setup_entry(
 
     # BLE-only light devices (Lightcycle Morph CF06/CD06)
     if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        from .ble_light_entities import lightcycle_switches
+
         ble_coordinator: DysonBLEDataUpdateCoordinator = entry_data["ble_coordinator"]
-        async_add_entities([DysonDaylightModeSwitch(ble_coordinator)], True)
+        async_add_entities(
+            [
+                DysonDaylightModeSwitch(ble_coordinator),
+                *lightcycle_switches(ble_coordinator),
+            ],
+            True,
+        )
         return True
 
     # MQTT / cloud-connected devices

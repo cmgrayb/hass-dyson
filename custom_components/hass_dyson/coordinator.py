@@ -3012,7 +3012,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device_serial,
         )
         try:
-            result = await self.hass.async_create_task(
+            await self.hass.async_create_task(
                 self.hass.config_entries.flow.async_init(
                     DOMAIN,
                     context={
@@ -3028,10 +3028,33 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "auth_token": self._auth_token,
                         "email": self._email,
                         "parent_entry_id": self.config_entry.entry_id,
+                        **(
+                            {
+                                "ble_auto_add": self.config_entry.data.get(
+                                    CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES
+                                ),
+                                "capabilities": [
+                                    getattr(capability, "value", capability)
+                                    for capability in (
+                                        getattr(device, "capabilities", []) or []
+                                    )
+                                ],
+                                "country": self.config_entry.data.get(CONF_COUNTRY),
+                            }
+                            if getattr(
+                                getattr(device, "category", None),
+                                "value",
+                                getattr(device, "category", None),
+                            )
+                            in ("light", ["light"])
+                            else {}
+                        ),
                     },
                 )
             )
-            _LOGGER.info("BLE discovery flow created for %s: %s", device_name, result)
+            _LOGGER.info(
+                "BLE discovery flow created for %s", mask_serial(device_serial)
+            )
         except Exception as e:
             _LOGGER.error(
                 "Failed to create BLE discovery flow for %s: %s", device_name, e
@@ -3063,6 +3086,7 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ``CONF_BLE_MAC``, ``CONF_LTK``, and optionally ``CONF_BLE_PROXY``.
         """
         self.serial_number: str = config_entry.data[CONF_SERIAL_NUMBER]
+        self._light_location: Any | None = None
         self.ble_device: DysonBLEDevice | None = None
         self._config_entry = config_entry
         self._unsub_event: Any | None = None
@@ -3179,6 +3203,9 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         on every exit path.
         """
         self._stop_event.set()
+        location = getattr(self, "_light_location", None)
+        if location is not None:
+            await location.close()
         task, self._ble_task = self._ble_task, None
         try:
             if task is not None and not task.done():
@@ -3229,6 +3256,11 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             try:
                 await self.ble_device.connect_and_authenticate()
+                if getattr(self, "_light_location", None) is None:
+                    from .ble_light_location import BLELightLocation
+
+                    self._light_location = BLELightLocation(self)
+                self._light_location.start()
                 attempt = 0  # Reset backoff on successful connect
                 _LOGGER.info(
                     "BLE lifecycle task: %s connected — entering keepalive loop",
@@ -3277,6 +3309,14 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return  # Stop event set during sleep
             except asyncio.TimeoutError:
                 pass
+
+    async def async_sync_light_location(self) -> None:
+        """Explicitly refresh this lamp's saved location from its owning account."""
+        if getattr(self, "_light_location", None) is None:
+            from .ble_light_location import BLELightLocation
+
+            self._light_location = BLELightLocation(self)
+        await self._light_location.sync()
 
     async def _handle_ble_event(self, event: Any) -> None:
         """Handle ``EVENT_BLE_STATE_CHANGE`` and push data to entities.

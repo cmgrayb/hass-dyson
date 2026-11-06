@@ -284,12 +284,24 @@ async def _create_discovery_flow(
                 "auth_token": entry.data.get("auth_token"),
                 "email": entry.data.get("email"),
                 "parent_entry_id": entry.entry_id,
+                **(
+                    {
+                        "ble_auto_add": entry.data.get(
+                            CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES
+                        ),
+                        "capabilities": device_info.get("capabilities", []),
+                        "country": entry.data.get(CONF_COUNTRY),
+                    }
+                    if device_info.get("connection_category") == "lecOnly"
+                    and device_info.get("category") in ("light", ["light"])
+                    else {}
+                ),
             },
         )
         _LOGGER.info(
             "Background task: Discovery flow creation result for %s: %s",
             device_name,
-            result,
+            result.get("type") if isinstance(result, dict) else type(result).__name__,
         )
 
     except (KeyError, ValueError) as err:
@@ -472,7 +484,11 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     Returns:
         True on successful setup.
     """
-    from .const import BLE_CAPABILITY_DAYLIGHT, BLE_CAPABILITY_PERSONAL_DAYLIGHT
+    from .const import (
+        BLE_CAPABILITY_DAYLIGHT,
+        BLE_CAPABILITY_PERSONAL_DAYLIGHT,
+        BLE_LIGHT_SETTINGS_PLATFORMS,
+    )
 
     _LOGGER.info("Setting up BLE light device '%s'", entry.data.get(CONF_SERIAL_NUMBER))
     coordinator = DysonBLEDataUpdateCoordinator(hass, entry)
@@ -493,7 +509,7 @@ async def _setup_ble_device_entry(hass: HomeAssistant, entry: ConfigEntry) -> bo
     )
     ble_platforms = ["light", "binary_sensor"]
     if has_daylight:
-        ble_platforms.append("switch")
+        ble_platforms.extend(BLE_LIGHT_SETTINGS_PLATFORMS)
 
     await hass.config_entries.async_forward_entry_setups(entry, ble_platforms)
     _LOGGER.info(
@@ -902,7 +918,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # BLE light devices
     if isinstance(entry_data, dict) and entry_data.get("is_ble"):
         ble_coordinator: DysonBLEDataUpdateCoordinator = entry_data["ble_coordinator"]
-        from .const import BLE_CAPABILITY_DAYLIGHT, BLE_CAPABILITY_PERSONAL_DAYLIGHT
+        from .const import (
+            BLE_CAPABILITY_DAYLIGHT,
+            BLE_CAPABILITY_PERSONAL_DAYLIGHT,
+            BLE_LIGHT_SETTINGS_PLATFORMS,
+        )
 
         caps = ble_coordinator.capabilities
         has_daylight = (
@@ -912,7 +932,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         ble_platforms = ["light", "binary_sensor"]
         if has_daylight:
-            ble_platforms.append("switch")
+            ble_platforms.extend(BLE_LIGHT_SETTINGS_PLATFORMS)
         unload_ok = await hass.config_entries.async_unload_platforms(
             entry, ble_platforms
         )
