@@ -183,6 +183,25 @@
     }
   },
   "entity": {
+    "date": {
+      "lightcycle_away_start_date": {
+        "name": "Away start date"
+      }
+    },
+    "time": {
+      "lightcycle_sunrise_time": {
+        "name": "Sunrise time"
+      },
+      "lightcycle_sunset_time": {
+        "name": "Sunset time"
+      },
+      "lightcycle_sleep_start_time": {
+        "name": "Sleep start time"
+      },
+      "lightcycle_sleep_end_time": {
+        "name": "Sleep end time"
+      }
+    },
     "sensor": {
       "robot_active_fault": {
         "name": "Active fault"
@@ -340,6 +359,27 @@
       }
     },
     "switch": {
+      "lightcycle_auto_brightness": {
+        "name": "Auto-brightness sensor"
+      },
+      "lightcycle_movement_sensor": {
+        "name": "Movement sensor"
+      },
+      "lightcycle_age_adjustment": {
+        "name": "Age adjustment"
+      },
+      "lightcycle_sleep_mode": {
+        "name": "Sleep mode"
+      },
+      "lightcycle_away_mode": {
+        "name": "Away mode"
+      },
+      "lightcycle_personal_daylight": {
+        "name": "Personal daylight times"
+      },
+      "lightcycle_wake_up_schedule": {
+        "name": "Wake-up schedule"
+      },
       "ble_vacuum_task_detection_switch": {
         "name": "Task Detection"
       },
@@ -372,6 +412,12 @@
       }
     },
     "button": {
+      "lightcycle_sync_location": {
+        "name": "Sync cloud location"
+      },
+      "lightcycle_reset_daylight_times": {
+        "name": "Reset daylight times"
+      },
       "find_follow_scan": {
         "name": "Find+Follow Scan"
       },
@@ -383,6 +429,16 @@
       }
     },
     "select": {
+      "lightcycle_lighting_mode": {
+        "name": "Lighting mode",
+        "state": {
+          "manual": "Manual",
+          "daylight": "Daylight",
+          "study": "Study",
+          "relax": "Relax",
+          "precision": "Precision"
+        }
+      },
       "fan_control_mode": {
         "name": "Fan Control Mode"
       },
@@ -472,6 +528,18 @@
       }
     },
     "number": {
+      "lightcycle_baseline_brightness": {
+        "name": "After-sunset brightness"
+      },
+      "lightcycle_baseline_colour_temperature": {
+        "name": "After-sunset colour temperature"
+      },
+      "lightcycle_wake_up_brightness": {
+        "name": "Wake-up brightness"
+      },
+      "lightcycle_birth_year": {
+        "name": "Year of birth"
+      },
       "sleep_timer": {
         "name": "Sleep Timer"
       },

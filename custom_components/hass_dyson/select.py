@@ -39,7 +39,13 @@ async def async_setup_entry(
     ):
         return None
 
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        from .ble_light_entities import DysonBLELightModeSelect
+
+        async_add_entities([DysonBLELightModeSelect(entry_data["ble_coordinator"])])
+        return
+    coordinator: DysonDataUpdateCoordinator = entry_data
 
     entities: list[SelectEntity] = []
 

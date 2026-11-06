@@ -183,6 +183,25 @@
     }
   },
   "entity": {
+    "date": {
+      "lightcycle_away_start_date": {
+        "name": "Date de début d’absence"
+      }
+    },
+    "time": {
+      "lightcycle_sunrise_time": {
+        "name": "Heure de lever du soleil"
+      },
+      "lightcycle_sunset_time": {
+        "name": "Heure de coucher du soleil"
+      },
+      "lightcycle_sleep_start_time": {
+        "name": "Début du mode sommeil"
+      },
+      "lightcycle_sleep_end_time": {
+        "name": "Fin du mode sommeil"
+      }
+    },
     "sensor": {
       "temperature": {
         "name": "Température"
@@ -340,6 +359,27 @@
       }
     },
     "switch": {
+      "lightcycle_auto_brightness": {
+        "name": "Luminosité automatique"
+      },
+      "lightcycle_movement_sensor": {
+        "name": "Détecteur de mouvement"
+      },
+      "lightcycle_age_adjustment": {
+        "name": "Adaptation à l’âge"
+      },
+      "lightcycle_sleep_mode": {
+        "name": "Mode sommeil"
+      },
+      "lightcycle_away_mode": {
+        "name": "Mode absence"
+      },
+      "lightcycle_personal_daylight": {
+        "name": "Horaires de lumière personnels"
+      },
+      "lightcycle_wake_up_schedule": {
+        "name": "Programme de réveil"
+      },
       "auto_mode": {
         "name": "Mode automatique"
       },
@@ -372,6 +412,12 @@
       }
     },
     "button": {
+      "lightcycle_sync_location": {
+        "name": "Synchroniser le lieu enregistré"
+      },
+      "lightcycle_reset_daylight_times": {
+        "name": "Réinitialiser les horaires solaires"
+      },
       "find_follow_scan": {
         "name": "Scan Suivi"
       },
@@ -383,6 +429,16 @@
       }
     },
     "select": {
+      "lightcycle_lighting_mode": {
+        "name": "Mode d’éclairage",
+        "state": {
+          "manual": "Manuel",
+          "daylight": "Lumière du jour",
+          "study": "Étude",
+          "relax": "Détente",
+          "precision": "Précision"
+        }
+      },
       "fan_control_mode": {
         "name": "Mode de contrôle du ventilateur"
       },
@@ -472,6 +528,18 @@
       }
     },
     "number": {
+      "lightcycle_baseline_brightness": {
+        "name": "Luminosité après le coucher du soleil"
+      },
+      "lightcycle_baseline_colour_temperature": {
+        "name": "Température de couleur après le coucher du soleil"
+      },
+      "lightcycle_wake_up_brightness": {
+        "name": "Luminosité de réveil"
+      },
+      "lightcycle_birth_year": {
+        "name": "Année de naissance"
+      },
       "sleep_timer": {
         "name": "Minuterie de veille"
       },

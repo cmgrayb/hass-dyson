@@ -84,8 +84,32 @@ class TestInitModule:
     @pytest.mark.parametrize(
         ("capabilities", "expected_platforms"),
         [
-            ([], ["light", "binary_sensor", "switch"]),
-            (["Daylight"], ["light", "binary_sensor", "switch"]),
+            (
+                [],
+                [
+                    "light",
+                    "binary_sensor",
+                    "switch",
+                    "select",
+                    "number",
+                    "time",
+                    "date",
+                    "button",
+                ],
+            ),
+            (
+                ["Daylight"],
+                [
+                    "light",
+                    "binary_sensor",
+                    "switch",
+                    "select",
+                    "number",
+                    "time",
+                    "date",
+                    "button",
+                ],
+            ),
             (["UnrelatedCapability"], ["light", "binary_sensor"]),
         ],
     )
