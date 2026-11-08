@@ -34,6 +34,7 @@ import hashlib
 import json
 import logging
 import socket
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -192,15 +193,20 @@ class DysonDevice:
         )  # Store preferred type
         self._using_fallback: bool = False  # Track if we're using fallback connection
         self._last_reconnect_attempt = 0.0  # Track last reconnection attempt
-        self._last_preferred_retry = 0.0  # Track last preferred connection retry
         self._reconnect_backoff = 30.0  # Wait 30 seconds between reconnect attempts
         self._preferred_retry_interval = (
             300.0  # Retry preferred connection every 5 minutes
         )
         self._intentional_disconnect = False  # Track intentional disconnections
         self._rst_during_handshake = False  # RST arrived before CONNACK (async path)
+        self._network_attempted = False
         self._connect_lock = asyncio.Lock()
+        self._connection_callback_lock = threading.RLock()
         self._reconnect_task: asyncio.Task | None = None
+        self._preferred_retry_task: asyncio.Task | None = None
+        self._fallback_since: float | None = None
+        self._preferred_failure_at: float | None = None
+        self._connection_callbacks: list[Callable[[], None]] = []
         self._local_connect_block_until = 0.0
         self._local_failure_count = 0
 
@@ -345,10 +351,6 @@ class DysonDevice:
             if await self._try_preferred_connection_after_disconnect():
                 return True
 
-            # Try preferred connection if using fallback and it's time to retry
-            if await self._try_preferred_connection_retry():
-                return True
-
             # Try connections in order
             return await self._try_connection_order()
 
@@ -416,6 +418,8 @@ class DysonDevice:
                         if self._preferred_connection_type == "local"
                         else CONNECTION_STATUS_CLOUD
                     )
+                    self._end_fallback_episode()
+                    self._notify_connection_callbacks()
                     _LOGGER.info(
                         "Successfully reconnected to preferred connection (%s) after disconnection for %s",
                         self._preferred_connection_type.upper(),
@@ -426,39 +430,6 @@ class DysonDevice:
             _LOGGER.debug(
                 "Failed to reconnect to preferred connection, falling back to connection order"
             )
-        return False
-
-    async def _try_preferred_connection_retry(self) -> bool:
-        """Try preferred connection if using fallback and it's time to retry."""
-        if self._using_fallback and self._should_retry_preferred():
-            _LOGGER.debug(
-                "Attempting to reconnect to preferred connection type for %s",
-                self._log_serial,
-            )
-
-            preferred_host, preferred_credential = self._get_connection_details(
-                self._preferred_connection_type
-            )
-            if preferred_host and preferred_credential:
-                if await self._attempt_connection(
-                    self._preferred_connection_type,
-                    preferred_host,
-                    preferred_credential,
-                ):
-                    self._using_fallback = False
-                    self._current_connection_type = (
-                        CONNECTION_STATUS_LOCAL
-                        if self._preferred_connection_type == "local"
-                        else CONNECTION_STATUS_CLOUD
-                    )
-                    _LOGGER.info(
-                        "Successfully reconnected to preferred connection (%s) for %s",
-                        self._preferred_connection_type.upper(),
-                        self._log_serial,
-                    )
-                    return True
-
-            self._last_preferred_retry = time.time()
         return False
 
     async def _try_connection_order(self) -> bool:
@@ -488,6 +459,11 @@ class DysonDevice:
                     if conn_type == "local"
                     else CONNECTION_STATUS_CLOUD
                 )
+                if self._using_fallback:
+                    self._start_preferred_retry()
+                else:
+                    self._end_fallback_episode()
+                self._notify_connection_callbacks()
 
                 _LOGGER.info(
                     "Successfully connected to %s via %s%s",
@@ -499,15 +475,159 @@ class DysonDevice:
 
         _LOGGER.error("Failed to connect to device %s via any method", self._log_serial)
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
-        self._using_fallback = False
         return False
 
-    def _should_retry_preferred(self) -> bool:
-        """Check if it's time to retry the preferred connection."""
-        current_time = time.time()
-        return (
-            current_time - self._last_preferred_retry
-        ) >= self._preferred_retry_interval
+    def add_connection_callback(self, callback: Callable[[], None]) -> None:
+        """Register a callback for connection and retry outcome changes."""
+        self._connection_callbacks.append(callback)
+
+    def remove_connection_callback(self, callback: Callable[[], None]) -> None:
+        """Remove a previously registered connection callback."""
+        if callback in self._connection_callbacks:
+            self._connection_callbacks.remove(callback)
+
+    def _notify_connection_callbacks(self) -> None:
+        """Notify listeners on the Home Assistant event loop."""
+        for callback in tuple(self._connection_callbacks):
+            self.hass.loop.call_soon_threadsafe(callback)
+
+    @property
+    def fallback_since(self) -> float | None:
+        """Return the monotonic start of the current fallback episode."""
+        return self._fallback_since
+
+    @property
+    def preferred_failure_at(self) -> float | None:
+        """Return the monotonic time of the latest completed preferred retry failure."""
+        return self._preferred_failure_at
+
+    def _start_preferred_retry(self) -> None:
+        """Start the periodic preferred-connection retry when using fallback."""
+        if self._fallback_since is None:
+            self._fallback_since = time.monotonic()
+            self._preferred_failure_at = None
+        if self._preferred_retry_task is None or self._preferred_retry_task.done():
+            self._preferred_retry_task = self.hass.async_create_background_task(
+                self._preferred_retry_loop(),
+                name=f"dyson-preferred-retry-{self._log_serial}",
+            )
+
+    def _end_fallback_episode(self) -> None:
+        """Clear fallback evidence and stop any other retry task."""
+        self._fallback_since = None
+        self._preferred_failure_at = None
+        task = self._preferred_retry_task
+        if task is not None and not task.done():
+            try:
+                current = asyncio.current_task()
+            except RuntimeError:
+                current = None
+            if task is not current:
+                task.cancel()
+                self._preferred_retry_task = None
+
+    async def _stop_preferred_retry(self) -> None:
+        """Cancel and await the retry task, including candidate cleanup."""
+        task = self._preferred_retry_task
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            if self._preferred_retry_task is task:
+                self._preferred_retry_task = None
+
+    async def _preferred_retry_loop(self) -> None:
+        """Periodically retry the preferred path without interrupting fallback."""
+        try:
+            while self._fallback_since is not None:
+                await asyncio.sleep(self._preferred_retry_interval)
+                if not self._connected or not self._using_fallback:
+                    continue
+                try:
+                    await self._retry_preferred_on_fallback()
+                except Exception:
+                    _LOGGER.exception(
+                        "Preferred connection retry failed for %s", self._log_serial
+                    )
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if self._preferred_retry_task is asyncio.current_task():
+                self._preferred_retry_task = None
+
+    async def _retry_preferred_on_fallback(self) -> None:
+        """Try an isolated MQTT client and promote it only after its handshake."""
+        async with self._connect_lock:
+            if not self._connected or not self._using_fallback:
+                return
+            host, credential = self._get_connection_details(
+                self._preferred_connection_type
+            )
+            if not host or not credential:
+                _LOGGER.warning(
+                    "Cannot retry preferred %s connection for %s: missing connection details",
+                    self._preferred_connection_type,
+                    self._log_serial,
+                )
+                return
+            if (
+                self._preferred_connection_type == "local"
+                and time.time() < self._local_connect_block_until
+            ):
+                return
+
+            candidate = _PreferredConnectionCandidate(self)
+            candidate._local_failure_count = self._local_failure_count
+            candidate._local_connect_block_until = self._local_connect_block_until
+            try:
+                attempt = asyncio.create_task(
+                    candidate._attempt_connection(
+                        self._preferred_connection_type, host, credential
+                    )
+                )
+                try:
+                    success = await asyncio.shield(attempt)
+                except asyncio.CancelledError:
+                    await attempt
+                    raise
+                self._local_failure_count = candidate._local_failure_count
+                self._local_connect_block_until = candidate._local_connect_block_until
+                if success and self._connected and self._using_fallback:
+                    old_client = candidate.promote()
+                    if old_client is not None:
+                        self._notify_connection_callbacks()
+                        close_task = asyncio.create_task(
+                            self._close_mqtt_client(old_client)
+                        )
+                        try:
+                            await asyncio.shield(close_task)
+                        except asyncio.CancelledError:
+                            await close_task
+                            raise
+                        return
+                if (
+                    not success
+                    and candidate._network_attempted
+                    and self._fallback_since is not None
+                ):
+                    self._preferred_failure_at = time.monotonic()
+                    self._notify_connection_callbacks()
+            finally:
+                if not candidate.promoted:
+                    await candidate.disconnect()
+
+    async def _close_mqtt_client(self, client: mqtt.Client) -> None:
+        """Stop a retired MQTT client without changing active connection state."""
+        try:
+            await self.hass.async_add_executor_job(client.disconnect)
+        except (OSError, RuntimeError) as err:
+            _LOGGER.debug("Could not disconnect retired MQTT client: %s", err)
+        try:
+            await self.hass.async_add_executor_job(client.loop_stop)
+        except (OSError, RuntimeError) as err:
+            _LOGGER.warning("Could not stop retired MQTT client: %s", err)
 
     def _get_connection_details(self, conn_type: str) -> tuple[str | None, str | None]:
         """Get connection details for a specific connection type."""
@@ -760,6 +880,7 @@ class DysonDevice:
 
                 rst_detected = False
                 try:
+                    self._network_attempted = True
                     result = await self.hass.async_add_executor_job(
                         mqtt_client.connect, host, port, 60
                     )
@@ -801,21 +922,10 @@ class DysonDevice:
                         # The stable ID has a stale session on the broker.
                         # Retry with a random UUID that the broker has never seen.
                         continue
-                    # Both stable and random IDs were rejected.  Schedule a
-                    # preferred-connection retry at ~2 minutes from now (long
-                    # enough for the device keepalive, ~90 s, to expire) and
-                    # fall through to the cloud connection.
                     _LOGGER.warning(
                         "Both stable and random client IDs rejected by %s broker; "
-                        "falling back to cloud and retrying local in ~2 minutes",
+                        "falling back to cloud",
                         self._log_serial,
-                    )
-                    # _last_preferred_retry semantics: _should_retry_preferred()
-                    # returns True when (now - _last_preferred_retry) >=
-                    # _preferred_retry_interval.  Setting it to
-                    # (now - interval + 120) makes the condition True after 120 s.
-                    self._last_preferred_retry = (
-                        time.time() - self._preferred_retry_interval + 120
                     )
                     return False
 
@@ -873,12 +983,8 @@ class DysonDevice:
                                 continue
                             _LOGGER.warning(
                                 "Both stable and random client IDs rejected by %s "
-                                "broker via handshake RST; falling back to cloud "
-                                "and retrying local in ~2 minutes",
+                                "broker via handshake RST; falling back to cloud",
                                 self._log_serial,
-                            )
-                            self._last_preferred_retry = (
-                                time.time() - self._preferred_retry_interval + 120
                             )
                             return False
 
@@ -1048,6 +1154,7 @@ class DysonDevice:
                 "Attempting AWS IoT WebSocket connection to %s:%s", host, port
             )
 
+            self._network_attempted = True
             result = await self.hass.async_add_executor_job(
                 mqtt_client.connect, host, port, 60
             )
@@ -1212,6 +1319,7 @@ class DysonDevice:
     async def disconnect(self) -> None:
         """Disconnect from the device."""
         self._cancel_reconnect_task()
+        await self._stop_preferred_retry()
 
         # Stop heartbeat before disconnecting
         await self._stop_heartbeat()
@@ -1241,8 +1349,7 @@ class DysonDevice:
 
     async def _start_heartbeat(self) -> None:
         """Start the heartbeat task to keep device active."""
-        if self._heartbeat_task and not self._heartbeat_task.done():
-            self._heartbeat_task.cancel()
+        await self._stop_heartbeat()
 
         # If Home Assistant is still starting up, wait for it to complete
         if not self.hass.is_running:
@@ -1352,9 +1459,6 @@ class DysonDevice:
         if self._connected:
             await self.disconnect()
 
-        # Reset preferred retry timer to force immediate preferred connection attempt
-        self._last_preferred_retry = 0.0
-
         # Attempt reconnection with full intelligent logic, bypassing retry backoff.
         return await self.connect(force=True)
 
@@ -1362,6 +1466,15 @@ class DysonDevice:
         self, client: mqtt.Client, userdata: Any, flags, rc, properties=None, *args
     ) -> None:
         """Handle MQTT connection callback."""
+        with self._connection_callback_lock:
+            self._handle_connect(client, userdata, flags, rc, properties, *args)
+
+    def _handle_connect(
+        self, client: mqtt.Client, userdata: Any, flags, rc, properties=None, *args
+    ) -> None:
+        """Process a connection callback while holding the callback lock."""
+        if self._mqtt_client is not None and client is not self._mqtt_client:
+            return
         if rc == mqtt.CONNACK_ACCEPTED:
             _LOGGER.info("MQTT connected to device %s", mask_serial(self.serial_number))
             self._connected = True
@@ -1412,6 +1525,21 @@ class DysonDevice:
         properties=None,
         *args,
     ) -> None:
+        """Serialize MQTT disconnection callbacks with client promotion."""
+        with self._connection_callback_lock:
+            self._handle_disconnect(
+                client, userdata, disconnect_flags_or_rc, reason_code, properties, *args
+            )
+
+    def _handle_disconnect(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        disconnect_flags_or_rc,
+        reason_code=None,
+        properties=None,
+        *args,
+    ) -> None:
         """Handle MQTT disconnection callback.
 
         Paho callback API v2 passes ``disconnect_flags`` before ``reason_code``;
@@ -1419,6 +1547,8 @@ class DysonDevice:
         Normalize both forms so we do not mistake a successful/clean v2 reason
         code for the ``DisconnectFlags`` object itself.
         """
+        if self._mqtt_client is not None and client is not self._mqtt_client:
+            return
         disconnect_flags = None
         rc = disconnect_flags_or_rc
         if reason_code is not None:
@@ -1457,29 +1587,14 @@ class DysonDevice:
 
         self._connected = False
         self._current_connection_type = CONNECTION_STATUS_DISCONNECTED
+        self._notify_connection_callbacks()
 
         # Stop heartbeat when disconnected
         self.hass.loop.call_soon_threadsafe(
             lambda: self.hass.async_create_task(self._stop_heartbeat())
         )
 
-        # Apply the 15-minute fallback penalty ONLY when dropping an active,
-        # previously-established connection (was_connected=True).  If
-        # was_connected=False we never got past the CONNACK phase; the retry
-        # loop in _attempt_local_connection will set the appropriate 2-minute
-        # penalty instead of locking local out for 15 minutes.
-        if (
-            rc != mqtt.MQTT_ERR_SUCCESS
-            and was_connected
-            and hasattr(self, "_had_stable_connection")
-            and self._had_stable_connection
-        ):
-            _LOGGER.info(
-                "Unexpected disconnection for %s, will stay on fallback connection for 15 minutes unless manually reconnected",
-                self._log_serial,
-            )
-            self._last_preferred_retry = time.time() + 900  # 15 minutes = 900 seconds
-        elif rc != mqtt.MQTT_ERR_SUCCESS:
+        if rc != mqtt.MQTT_ERR_SUCCESS and not was_connected:
             _LOGGER.debug(
                 "Disconnection during connection attempt for %s, not applying fallback timer",
                 self._log_serial,
@@ -1492,6 +1607,15 @@ class DysonDevice:
         self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage
     ) -> None:
         """Handle MQTT message callback."""
+        with self._connection_callback_lock:
+            self._handle_message(client, userdata, message)
+
+    def _handle_message(
+        self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage
+    ) -> None:
+        """Process an MQTT message while holding the callback lock."""
+        if self._mqtt_client is not None and client is not self._mqtt_client:
+            return
         try:
             topic = message.topic
             payload: str | bytes = message.payload
@@ -4347,3 +4471,93 @@ class DysonDevice:
             power_level,
             self._log_serial,
         )
+
+
+class _PreferredConnectionCandidate(DysonDevice):
+    """Isolate a preferred MQTT handshake from the active fallback client."""
+
+    def __init__(self, owner: DysonDevice) -> None:
+        super().__init__(
+            owner.hass,
+            owner.serial_number,
+            owner.host,
+            owner.credential,
+            owner.mqtt_prefix,
+            owner.capabilities,
+            owner.connection_type,
+            owner.cloud_host,
+            owner.cloud_credential,
+            owner.device_category,
+            owner._mqtt_client_id,
+        )
+        self._owner = owner
+        self._promotion_lock = owner._connection_callback_lock
+        self.promoted = False
+
+    def promote(self) -> mqtt.Client | None:
+        """Transfer a live candidate to its owner and return the old client."""
+        with self._promotion_lock:
+            if (
+                not self._connected
+                or self._mqtt_client is None
+                or not self._owner._connected
+                or not self._owner._using_fallback
+            ):
+                return None
+            old_client = self._owner._mqtt_client
+            if old_client is None:
+                return None
+            self._owner._mqtt_client = self._mqtt_client
+            self.promoted = True
+            self._owner._using_fallback = False
+            self._owner._current_connection_type = (
+                CONNECTION_STATUS_LOCAL
+                if self._owner._preferred_connection_type == "local"
+                else CONNECTION_STATUS_CLOUD
+            )
+            self._owner._end_fallback_episode()
+            self._owner._on_connect(self._mqtt_client, None, {}, mqtt.CONNACK_ACCEPTED)
+            return old_client
+
+    def _on_connect(
+        self, client: mqtt.Client, userdata: Any, flags, rc, properties=None, *args
+    ) -> None:
+        with self._promotion_lock:
+            if self.promoted:
+                self._owner._on_connect(client, userdata, flags, rc, properties, *args)
+            elif client is self._mqtt_client and rc == mqtt.CONNACK_ACCEPTED:
+                self._connected = True
+
+    def _on_disconnect(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        disconnect_flags_or_rc,
+        reason_code=None,
+        properties=None,
+        *args,
+    ) -> None:
+        with self._promotion_lock:
+            if self.promoted:
+                self._owner._on_disconnect(
+                    client,
+                    userdata,
+                    disconnect_flags_or_rc,
+                    reason_code,
+                    properties,
+                    *args,
+                )
+                return
+            if client is not self._mqtt_client:
+                return
+            self._connected = False
+            flags = disconnect_flags_or_rc if reason_code is not None else None
+            if flags is not None and hasattr(flags, "is_disconnect_packet_from_server"):
+                self._rst_during_handshake = not flags.is_disconnect_packet_from_server
+
+    def _on_message(
+        self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage
+    ) -> None:
+        with self._promotion_lock:
+            if self.promoted:
+                self._owner._on_message(client, userdata, message)

@@ -92,7 +92,10 @@ network that filters mDNS, a hostname the cloud never updated.
 
 **How to tell**:
 
-- **Repairs** raises a warning after the fallback has lasted ten minutes, and
+- The integration retries the preferred connection every five minutes while
+  keeping the fallback connection active.
+- **Repairs** raises a warning after at least fifteen minutes on fallback and a
+  subsequent failed local retry, and
   the wording differs depending on whether the failing address was configured or
   discovered. It clears itself once the device connects locally again.
 - The **Connection Status** sensor reads `Cloud` instead of `Local`.

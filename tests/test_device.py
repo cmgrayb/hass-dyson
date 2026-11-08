@@ -192,19 +192,13 @@ class TestDysonDevice:
         # Test unexpected disconnection
         mock_client = MagicMock()
         mock_flags = MagicMock()  # API v2 flags parameter
-        import time
-
-        start_time = time.time()
         device._on_disconnect(
             mock_client, None, mock_flags, 1
         )  # Non-success return code
 
         assert device._connected is False
         assert device._current_connection_type == CONNECTION_STATUS_DISCONNECTED
-        # Should set retry timer to 15 minutes in the future for unexpected disconnection
-        assert (
-            device._last_preferred_retry >= start_time + 899
-        )  # Allow 1 second tolerance
+        assert device.fallback_since is None
 
         # Test normal disconnection
         device._connected = True
@@ -228,9 +222,7 @@ class TestDysonDevice:
         )  # Non-success return code
 
         assert device2._connected is False
-        assert (
-            device2._last_preferred_retry == 0.0
-        )  # Should not set timer for unstable connection
+        assert device2.fallback_since is None
 
     def test_unexpected_disconnect_schedules_reconnect(self, mock_hass):
         """Test unexpected established disconnect queues automatic reconnect."""
@@ -627,7 +619,6 @@ class TestDysonDevice:
             assert result is True
             mock_disconnect.assert_called_once()
             mock_connect.assert_called_once()
-            assert device._last_preferred_retry == 0.0  # Should reset retry timer
 
     @pytest.mark.asyncio
     async def test_connect_no_client(self, mock_hass, sample_device_data):
@@ -725,8 +716,8 @@ class TestDysonDevice:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_preferred_connection_retry_logic(self, mock_hass):
-        """Test retry of preferred connection when using fallback."""
+    async def test_preferred_connection_after_fallback_disconnect(self, mock_hass):
+        """A disconnected fallback tries the preferred connection first."""
         device = DysonDevice(
             hass=mock_hass,
             serial_number="RETRY123",
@@ -737,10 +728,8 @@ class TestDysonDevice:
             cloud_credential='{"client_id":"dyson_12345","custom_authorizer_name":"DysonDeviceAuth","token_key":"token","token_value":"abc123","token_signature":"def456"}',
         )
 
-        # Set up fallback state and old preferred retry time
+        # Set up a disconnected fallback.
         device._using_fallback = True
-        device._last_preferred_retry = time.time() - 400  # Old enough to trigger retry
-        device._preferred_retry_interval = 300  # 5 minutes
 
         # Mock executor job to execute functions
         def mock_executor_job(func, *args):
@@ -1395,38 +1384,6 @@ class TestDysonDeviceConnectionLogic:
         order = device._get_connection_order()
         expected = [("cloud", "cloud.example.com", "cloud_cred")]
         assert order == expected
-
-    def test_should_retry_preferred_true(self, mock_hass):
-        """Test should retry preferred when conditions are met."""
-        device = DysonDevice(
-            hass=mock_hass,
-            serial_number="TEST123",
-            host="192.168.1.100",
-            credential="test_cred",
-        )
-
-        # Set last preferred retry to time beyond retry interval
-        device._last_preferred_retry = time.time() - (
-            device._preferred_retry_interval + 1
-        )
-
-        result = device._should_retry_preferred()
-        assert result is True
-
-    def test_should_retry_preferred_false(self, mock_hass):
-        """Test should retry preferred when still in retry interval."""
-        device = DysonDevice(
-            hass=mock_hass,
-            serial_number="TEST123",
-            host="192.168.1.100",
-            credential="test_cred",
-        )
-
-        # Set last preferred retry to current time
-        device._last_preferred_retry = time.time()
-
-        result = device._should_retry_preferred()
-        assert result is False
 
     @pytest.mark.asyncio
     async def test_connect_with_backoff_active(self, mock_hass):

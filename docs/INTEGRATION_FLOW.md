@@ -520,7 +520,7 @@ sequenceDiagram
 
     MQTT--xDevice: Connection Lost
     Device->>Device: Detect Disconnect
-    Device->>Device: Attempt Reconnection<br/>(30s backoff, 5min preferred retry)
+    Device->>Device: Attempt Reconnection<br/>(30s backoff, 5min preferred retry while fallback remains active)
 
     alt Reconnection Successful
         Device->>MQTT: Reconnect
