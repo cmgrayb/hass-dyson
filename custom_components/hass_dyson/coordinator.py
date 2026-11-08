@@ -76,7 +76,7 @@ _LOGGER = logging.getLogger(__name__)
 # How long the local host may fail, with the cloud fallback in use, before a
 # repair issue is raised. Long enough to ride out a device reboot or a wifi
 # blip, short enough that a stale address is noticed the same day.
-CONFIGURED_HOST_ISSUE_DELAY: Final = 600
+CONFIGURED_HOST_ISSUE_DELAY: Final = 900
 
 # Compiled regex patterns for culture/language normalisation (module-level for efficiency).
 _CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
@@ -293,7 +293,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_SERIAL_NUMBER
         ) or config_entry.data.get("device_serial_number", "unknown")
         self.device: DysonDevice | None = None
-        self._local_fallback_since: float | None = None
         self._host_source: str = HOST_SOURCE_UNKNOWN
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
@@ -1693,6 +1692,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device.add_environmental_callback(self._on_environmental_update)
         # Register for message updates to get real-time state changes
         self.device.add_message_callback(self._on_message_update)
+        self.device.add_connection_callback(self._on_connection_change)
 
     async def _async_setup_manual_device(self) -> None:
         """Set up device configured manually."""
@@ -1783,6 +1783,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Register for message updates to get real-time state changes
             self.device.add_message_callback(self._on_message_update)
+            self.device.add_connection_callback(self._on_connection_change)
 
             _LOGGER.info(
                 "Successfully set up manual device %s", mask_serial(self.serial_number)
@@ -2160,6 +2161,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return f"configured_host_unreachable_{self.config_entry.entry_id}"
 
     @callback
+    def _on_connection_change(self) -> None:
+        """Update Repairs and entities when connection state or retry evidence changes."""
+        self._async_update_configured_host_issue()
+        self.async_update_listeners()
+
+    @callback
     def _async_update_configured_host_issue(self) -> None:
         """Warn in Repairs while the local host fails and cloud is used instead.
 
@@ -2176,20 +2183,22 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         the local connection is back.
         """
         device = self.device
-        on_fallback = (
-            device is not None
-            and device.preferred_connection_type == "local"
-            and device.using_fallback
-        )
-        if not on_fallback:
-            self._local_fallback_since = None
+        if (
+            device is None
+            or device.preferred_connection_type != "local"
+            or device.fallback_since is None
+        ):
             ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
             return
 
-        now = time.monotonic()
-        if self._local_fallback_since is None:
-            self._local_fallback_since = now
-        if now - self._local_fallback_since < CONFIGURED_HOST_ISSUE_DELAY:
+        if not device.is_connected or not device.using_fallback:
+            return
+        failure_at = device.preferred_failure_at
+        if (
+            failure_at is None
+            or failure_at - device.fallback_since < CONFIGURED_HOST_ISSUE_DELAY
+        ):
+            ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
             return
 
         configured = self._host_source == HOST_SOURCE_CONFIGURED
@@ -2223,6 +2232,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.device.remove_environmental_callback(self._on_environmental_update)
             # Remove message callback before disconnecting
             self.device.remove_message_callback(self._on_message_update)
+            self.device.remove_connection_callback(self._on_connection_change)
             await self.device.disconnect()
             self.device = None
 

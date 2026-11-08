@@ -46,12 +46,14 @@ def _coordinator(
     coordinator.config_entry.entry_id = "entry123"
     coordinator.config_entry.title = "Bedroom purifier"
     coordinator.config_entry.data = {CONF_HOSTNAME: hostname}
-    coordinator._local_fallback_since = None
     coordinator._host_source = host_source
     coordinator._serial_number = "TEST-SERIAL"
     coordinator.device = MagicMock()
     coordinator.device.preferred_connection_type = preferred
     coordinator.device.using_fallback = fallback
+    coordinator.device.is_connected = fallback
+    coordinator.device.fallback_since = 1000.0 if fallback else None
+    coordinator.device.preferred_failure_at = None
     coordinator.device.host = hostname if host is _USE_HOSTNAME else host
     return coordinator
 
@@ -68,18 +70,15 @@ def issues():
 
 def test_issue_raised_after_delay(issues) -> None:
     """A configured host on cloud fallback is reported only after the delay."""
+    assert CONFIGURED_HOST_ISSUE_DELAY == 900
     create, delete = issues
     coordinator = _coordinator()
 
-    with patch(f"{COORDINATOR}.time.monotonic", return_value=1000.0):
-        coordinator._async_update_configured_host_issue()
+    coordinator._async_update_configured_host_issue()
     create.assert_not_called()
 
-    with patch(
-        f"{COORDINATOR}.time.monotonic",
-        return_value=1000.0 + CONFIGURED_HOST_ISSUE_DELAY,
-    ):
-        coordinator._async_update_configured_host_issue()
+    coordinator.device.preferred_failure_at = 1000.0 + CONFIGURED_HOST_ISSUE_DELAY
+    coordinator._async_update_configured_host_issue()
 
     create.assert_called_once()
     args, kwargs = create.call_args
@@ -90,21 +89,85 @@ def test_issue_raised_after_delay(issues) -> None:
         "device_name": "Bedroom purifier",
         "hostname": "dyson-host",
     }
+    delete.assert_called_once_with(coordinator.hass, DOMAIN, ISSUE_ID)
+
+
+@pytest.mark.parametrize("failure_at", [None, 1000.0 + 899.999])
+def test_no_issue_without_qualifying_retry(issues, failure_at: float | None) -> None:
+    """Elapsed time and early failures alone do not justify a Repair."""
+    create, _ = issues
+    coordinator = _coordinator()
+    coordinator.device.preferred_failure_at = failure_at
+    coordinator._async_update_configured_host_issue()
+    create.assert_not_called()
+
+
+def test_fallback_interruption_preserves_issue(issues) -> None:
+    """A temporary cloud disconnect does not reset or delete an existing issue."""
+    create, delete = issues
+    coordinator = _coordinator()
+    coordinator.device.is_connected = False
+    coordinator.device.preferred_failure_at = 1900.0
+    coordinator._async_update_configured_host_issue()
+    create.assert_not_called()
     delete.assert_not_called()
+    coordinator.device.is_connected = True
+    coordinator._async_update_configured_host_issue()
+    create.assert_called_once()
+
+
+async def test_failed_retry_notifies_coordinator_and_creates_issue(issues) -> None:
+    """A qualifying retry result reaches Repairs without waiting for a poll."""
+    create, _ = issues
+    coordinator = _coordinator()
+    coordinator.async_update_listeners = MagicMock()
+    coordinator.hass.loop.call_soon_threadsafe.side_effect = lambda callback: callback()
+    device = DysonDevice(
+        coordinator.hass,
+        "TEST-SERIAL",
+        "dyson-host",
+        "credential",
+        cloud_host="cloud.example",
+        cloud_credential="cloud-credential",
+    )
+    device._connected = True
+    device._using_fallback = True
+    device._fallback_since = 1000.0
+    device._mqtt_client = MagicMock()
+    coordinator.device = device
+    device.add_connection_callback(coordinator._on_connection_change)
+    candidate = MagicMock()
+    candidate._attempt_connection = AsyncMock(return_value=False)
+    candidate.disconnect = AsyncMock()
+    candidate.promoted = False
+    candidate._network_attempted = True
+    candidate._local_failure_count = 1
+    candidate._local_connect_block_until = 0.0
+    with (
+        patch(
+            "custom_components.hass_dyson.device._PreferredConnectionCandidate",
+            return_value=candidate,
+        ),
+        patch(
+            "custom_components.hass_dyson.device.time.monotonic", return_value=1900.0
+        ),
+    ):
+        await device._retry_preferred_on_fallback()
+    create.assert_called_once()
+    coordinator.async_update_listeners.assert_called_once()
 
 
 def test_issue_cleared_when_local_returns(issues) -> None:
     """The issue is removed and the timer reset once local works again."""
     create, delete = issues
     coordinator = _coordinator()
-    coordinator._local_fallback_since = 1.0
     coordinator.device.using_fallback = False
+    coordinator.device.fallback_since = None
 
     coordinator._async_update_configured_host_issue()
 
     delete.assert_called_once_with(coordinator.hass, DOMAIN, ISSUE_ID)
     create.assert_not_called()
-    assert coordinator._local_fallback_since is None
 
 
 def test_no_issue_when_cloud_is_preferred(issues) -> None:
@@ -112,11 +175,8 @@ def test_no_issue_when_cloud_is_preferred(issues) -> None:
     create, delete = issues
     coordinator = _coordinator(preferred="cloud")
 
-    with patch(
-        f"{COORDINATOR}.time.monotonic", return_value=CONFIGURED_HOST_ISSUE_DELAY * 10
-    ):
-        coordinator._async_update_configured_host_issue()
-        coordinator._async_update_configured_host_issue()
+    coordinator._async_update_configured_host_issue()
+    coordinator._async_update_configured_host_issue()
 
     create.assert_not_called()
     assert delete.call_count == 2
@@ -137,15 +197,11 @@ def test_discovered_host_also_reported(issues, host_source: str) -> None:
         hostname="", host_source=host_source, host="TEST-SERIAL.local"
     )
 
-    with patch(f"{COORDINATOR}.time.monotonic", return_value=1000.0):
-        coordinator._async_update_configured_host_issue()
+    coordinator._async_update_configured_host_issue()
     create.assert_not_called()
 
-    with patch(
-        f"{COORDINATOR}.time.monotonic",
-        return_value=1000.0 + CONFIGURED_HOST_ISSUE_DELAY,
-    ):
-        coordinator._async_update_configured_host_issue()
+    coordinator.device.preferred_failure_at = 1000.0 + CONFIGURED_HOST_ISSUE_DELAY
+    coordinator._async_update_configured_host_issue()
 
     create.assert_called_once()
     args, kwargs = create.call_args
