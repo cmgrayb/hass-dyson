@@ -33,7 +33,7 @@ Climate Integration:
     - current_temperature: Ambient temperature reading
     - target_temperature: Heating target temperature
     - hvac_mode: Heat/Fan/Off modes
-    - temperature_unit: Celsius
+    - temperature_unit: Home Assistant's configured Celsius or Fahrenheit
 """
 
 from __future__ import annotations
@@ -47,11 +47,17 @@ from typing import Any
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, celsius_to_decikelvin, decikelvin_to_celsius
+from .const import (
+    DOMAIN,
+    HEATER_TEMPERATURE_SETTINGS,
+    decikelvin_to_target_units,
+    decikelvin_to_units,
+    units_to_decikelvin,
+)
 from .coordinator import DysonDataUpdateCoordinator
 from .entity import DysonEntity
 
@@ -127,7 +133,7 @@ class DysonFan(DysonEntity, FanEntity):
     Climate Integration (Hot+Cool models):
         When heating capability is detected, the fan entity provides:
         - current_temperature: Real-time temperature reading
-        - target_temperature: Heating target (1-37°C)
+        - target_temperature: Heating target (1-37°C or 34-98°F)
         - HVAC modes: Heat, Fan Only, Off
         - Automatic heating control based on target temperature
 
@@ -235,11 +241,14 @@ class DysonFan(DysonEntity, FanEntity):
                 self.PRESET_MODE_HEAT,
             ]
             # Add climate-specific attributes for heating devices
-            self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-            self._attr_min_temp = 1
-            self._attr_max_temp = 37
+            self._attr_temperature_unit = coordinator.hass.config.units.temperature_unit
+            (
+                self._attr_min_temp,
+                self._attr_max_temp,
+                self._default_target_temperature,
+            ) = HEATER_TEMPERATURE_SETTINGS[self._attr_temperature_unit]
             self._attr_target_temperature_step = 1
-            self._attr_target_temperature = 20  # Default target temperature
+            self._attr_target_temperature = self._default_target_temperature
             self._attr_current_temperature = None
             self._attr_hvac_modes = [
                 HVACMode.OFF,
@@ -772,7 +781,9 @@ class DysonFan(DysonEntity, FanEntity):
 
                 # Target temperature in Kelvin format for device commands
                 if self._attr_target_temperature is not None:
-                    temp_kelvin = celsius_to_decikelvin(self._attr_target_temperature)
+                    temp_kelvin = units_to_decikelvin(
+                        self._attr_target_temperature, self._attr_temperature_unit
+                    )
                     attributes["target_temperature_kelvin"] = f"{temp_kelvin:04d}"  # type: ignore[assignment]
 
         return attributes if attributes else None
@@ -954,10 +965,12 @@ class DysonFan(DysonEntity, FanEntity):
         current_temp = environmental_data.get("tact")
         if current_temp is not None and current_temp != "OFF":
             try:
-                temp_kelvin = float(current_temp) / 10
-                if temp_kelvin > 0:
+                if float(current_temp) > 0:
                     self._attr_current_temperature = round(
-                        decikelvin_to_celsius(float(current_temp)), 1
+                        decikelvin_to_units(
+                            float(current_temp), self._attr_temperature_unit
+                        ),
+                        1,
                     )
                 else:
                     self._attr_current_temperature = None
@@ -971,15 +984,14 @@ class DysonFan(DysonEntity, FanEntity):
             device_data, "hmax", "0000"
         )
         try:
-            temp_kelvin = int(target_temp) / 10
-            if target_temp != "0000" and temp_kelvin > 0:
-                self._attr_target_temperature = float(
-                    round(decikelvin_to_celsius(int(target_temp)))
+            if int(target_temp) > 0:
+                self._attr_target_temperature = decikelvin_to_target_units(
+                    int(target_temp), self._attr_temperature_unit
                 )
             else:
-                self._attr_target_temperature = 20.0
+                self._attr_target_temperature = self._default_target_temperature
         except (ValueError, TypeError):
-            self._attr_target_temperature = 20.0  # Default to 20°C
+            self._attr_target_temperature = self._default_target_temperature
 
         # HVAC mode based on device state
         heating_mode = self.coordinator.device.get_state_value(
@@ -1009,35 +1021,41 @@ class DysonFan(DysonEntity, FanEntity):
 
         try:
             # Call the device method directly
-            await self.coordinator.device.set_target_temperature(temperature)
+            await self.coordinator.device.set_target_temperature(
+                temperature, self._attr_temperature_unit
+            )
 
             # Update state immediately for responsive UI
             self._attr_target_temperature = temperature
             self.async_write_ha_state()
 
             _LOGGER.debug(
-                "Set target temperature to %s°C for %s",
+                "Set target temperature to %s%s for %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
             )
         except (ConnectionError, TimeoutError) as err:
             _LOGGER.error(
-                "Communication error setting temperature to %s°C for %s: %s",
+                "Communication error setting temperature to %s%s for %s: %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
                 err,
             )
         except ValueError as err:
             _LOGGER.error(
-                "Invalid temperature value %s°C for %s: %s",
+                "Invalid temperature value %s%s for %s: %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
                 err,
             )
         except Exception as err:
             _LOGGER.error(
-                "Unexpected error setting temperature to %s°C for %s: %s",
+                "Unexpected error setting temperature to %s%s for %s: %s",
                 temperature,
+                self._attr_temperature_unit,
                 self.coordinator.serial_number,
                 err,
             )
