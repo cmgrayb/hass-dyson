@@ -32,7 +32,7 @@ dependencies = [
     "cryptography>=50.0.0",
     "libdyson-rest==0.17.2",
     "homeassistant==2026.11.0b1",
-    "paho-mqtt>=2.1.0",
+    "paho-mqtt>=2.2.0",
 ]
 
 [project.optional-dependencies]
