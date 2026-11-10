@@ -9,6 +9,7 @@ import pytest
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.hass_dyson.device import DysonDevice
+from custom_components.hass_dyson.device_utils import uses_jdm_commands
 from custom_components.hass_dyson.select import async_setup_entry
 from custom_components.hass_dyson.services import (
     SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA,
@@ -161,6 +162,36 @@ async def test_cancellation(device):
     assert device._message_callbacks == []
 
 
+@pytest.mark.parametrize(
+    ("prefix", "expected"),
+    [("RB05", True), ("RB07", True), ("277", False), ("N223", False), (None, False)],
+)
+def test_uses_jdm_commands(prefix, expected):
+    """Spot+Scrub models share the JDM gate; Vis Nav and older robots do not."""
+    assert uses_jdm_commands(MagicMock(mqtt_prefix=prefix)) is expected
+    assert uses_jdm_commands(object()) is False
+
+
+@pytest.mark.asyncio
+async def test_rb07_publishes_on_its_own_topic(device):
+    """An RB07 talks JDM on its own prefix, the same way an RB05 does."""
+    device.mqtt_prefix = "RB07"
+
+    def publish(topic, payload):
+        request = json.loads(payload)
+        device._notify_callbacks(
+            topic.replace("command", "status"),
+            dict(request, code=0, data={"result": 0}),
+        )
+        return MagicMock(rc=0)
+
+    device._mqtt_client.publish.side_effect = publish
+    assert await device.send_jdm_command("service.get_map_list", {}) == {"result": 0}
+    assert (
+        device._mqtt_client.publish.call_args.args[0] == "RB07/TEST-SERIAL/command/jdm"
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["disconnected", "wrong_model", "publish"])
 async def test_transport_failures(device, failure):
@@ -253,8 +284,8 @@ async def test_readback_mismatch(selector, preferences):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prefix", ["RB05", "277", "527K"])
-async def test_only_rb05_gets_selector(prefix):
+@pytest.mark.parametrize("prefix", ["RB05", "RB07", "277", "527K"])
+async def test_only_jdm_robots_get_selector(prefix):
     """Vis Nav and air purifiers are not given this control."""
     coordinator = MagicMock()
     coordinator.device.mqtt_prefix = prefix
@@ -266,7 +297,7 @@ async def test_only_rb05_gets_selector(prefix):
     await async_setup_entry(hass, entry, add)
     assert sum(
         isinstance(e, DysonSpotScrubCleaningModeSelect) for e in add.call_args.args[0]
-    ) == (prefix == "RB05")
+    ) == (prefix in ("RB05", "RB07"))
 
 
 def test_room_modes_payload_changes_only_listed_rooms(preferences):

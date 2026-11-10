@@ -90,7 +90,7 @@ from .const import (
     SLEEP_TIMER_MIN,
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
-from .device_utils import mask_email, mask_serial
+from .device_utils import mask_email, mask_serial, uses_jdm_commands
 from .spot_scrub import MODE_CODES, resolve_room_settings
 from .spot_scrub_room_select import (
     SpotScrubInvalidRequestError,
@@ -977,9 +977,9 @@ async def _handle_start_zone_clean(hass: HomeAssistant, call: ServiceCall) -> No
     # never cleaned with a mode the caller did not ask for.
     cleaning_mode: str | None = call.data.get("cleaning_mode")
     if cleaning_mode is not None:
-        if getattr(coordinator.device, "mqtt_prefix", None) != "RB05":
+        if not uses_jdm_commands(coordinator.device):
             raise ServiceValidationError(
-                "cleaning_mode is only supported on Spot+Scrub (RB05)"
+                "cleaning_mode is only supported on Spot+Scrub robots"
             )
         await _rb05_set_room_modes(
             coordinator.device,

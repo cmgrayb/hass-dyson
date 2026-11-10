@@ -16,6 +16,7 @@ from .const import (
     CONNECTION_TYPE_LOCAL_ONLY,
     DISCOVERY_CLOUD,
     DISCOVERY_MANUAL,
+    JDM_MQTT_PREFIXES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -100,6 +101,15 @@ def mask_token(token: str) -> str:
     if not token or len(token) <= 4:
         return "***"
     return token[:4] + "***"
+
+
+def uses_jdm_commands(device: Any) -> bool:
+    """Return True if the device takes JDM commands (Spot+Scrub family).
+
+    Gates the features first built for the RB05, so models that share its
+    protocol, such as the RB07, get them too.
+    """
+    return getattr(device, "mqtt_prefix", None) in JDM_MQTT_PREFIXES
 
 
 def normalize_device_category(category: Any) -> list[str]:

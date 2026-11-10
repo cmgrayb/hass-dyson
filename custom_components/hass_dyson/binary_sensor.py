@@ -25,7 +25,7 @@ from .const import (
     ROBOT_STATES_CHARGING,
 )
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -192,8 +192,8 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
         entities.append(DysonRobotBatteryChargingSensor(coordinator))
-        # RB05 reports flat numeric codes the subsystem sensors cannot read.
-        if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+        # JDM robots report flat numeric codes the subsystem sensors cannot read.
+        if coordinator.device and uses_jdm_commands(coordinator.device):
             entities.append(DysonRobotActionRequiredSensor(coordinator))
         _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
 

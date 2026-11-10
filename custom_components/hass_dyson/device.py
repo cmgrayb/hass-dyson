@@ -64,7 +64,7 @@ from .const import (
     STATE_KEY_LEGACY_FILTER_LIFE,
     units_to_decikelvin,
 )
-from .device_utils import mask_serial, mask_token
+from .device_utils import mask_serial, mask_token, uses_jdm_commands
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -2291,13 +2291,15 @@ class DysonDevice:
     async def send_jdm_command(
         self, method: str, params: dict[str, Any], timeout: float = 15
     ) -> dict[str, Any]:
-        """Send an RB05 request and await its matching acknowledgement.
+        """Send a JDM request and await its matching acknowledgement.
 
         Device message callbacks originate on Paho's thread. Resolve futures on
         the HA loop, ignoring echoed commands, unrelated and late replies.
         """
-        if self.mqtt_prefix != "RB05":
-            raise ValueError("JDM commands are only supported for RB05")
+        if not uses_jdm_commands(self):
+            raise ValueError(
+                f"JDM commands are not supported for {self.mqtt_prefix} devices"
+            )
         if not self._connected or not self._mqtt_client:
             raise RuntimeError("Spot+Scrub is disconnected")
         loop = asyncio.get_running_loop()

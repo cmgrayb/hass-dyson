@@ -570,6 +570,13 @@ ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
 # payload is only {msg, time} — re-fetch the cloud metadata to see what.
 ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
 
+# Robots that speak Dyson's newer JDM protocol: JSON requests on
+# command/jdm, replies and live run detail on status/jdm, flat numeric
+# fault codes. The cloud rarely reports capability strings for robots and
+# entities are created before the robot has necessarily sent anything on
+# status/jdm, so the MQTT prefix is the one reliable signal at setup.
+JDM_MQTT_PREFIXES: Final = frozenset({"RB05", "RB07"})
+
 # Numeric fault codes the Spot+Scrub (RB05) reports in
 # CURRENT-STATE.activeFaults. Names are Dyson's own, transcribed from the
 # per-group pages under support.dyson.com.au -> Spot+Scrub Ai ->
