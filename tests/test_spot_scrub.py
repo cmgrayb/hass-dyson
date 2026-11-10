@@ -84,6 +84,48 @@ def test_unknown_layout_rejected(preferences, change):
         mode_payload(123, preferences, "mop_only")
 
 
+@pytest.fixture
+def rb07_preferences():
+    """RB07 reply shape: prefer_on 0, empty material list, no uv_switch."""
+    return {
+        "material": [],
+        "prefer_on": 0,
+        "room": [
+            [3, '{"type":"bedroom","name":"Room A"}', 0, 0, 0, 0, 0, 0, 1, 0, 1, 0],
+            [5, '{"type":"kitchen","name":"Room B"}', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ],
+    }
+
+
+def test_rb07_payload_matches_mydyson(rb07_preferences):
+    """Write the shape MyDyson sends an RB07: UV on for every room."""
+    payload = room_settings_payload(
+        456, rb07_preferences, {5: {"cleaning_mode": "vacuum_and_mop"}}
+    )
+    assert payload == {
+        "map_id": 456,
+        "prefer_type": 1,
+        "room_preference": [
+            [3, "Room A", 0, 0, 0, 0, 0, 0, 1, 0, 1],
+            [5, "Room B", 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        ],
+        "uv_switch": [[3, 1], [5, 1]],
+    }
+
+
+@pytest.mark.parametrize("change", ["material", "no_material", "tail"])
+def test_rb07_unknown_layout_rejected(rb07_preferences, change):
+    """Only the captured RB07 shape gets the default UV settings."""
+    if change == "material":
+        rb07_preferences["material"] = [[3, 1]]
+    if change == "no_material":
+        rb07_preferences.pop("material")
+    if change == "tail":
+        rb07_preferences["room"][0][11] = 1
+    with pytest.raises(ValueError):
+        mode_payload(456, rb07_preferences, "mop_only")
+
+
 @pytest.mark.asyncio
 async def test_ambiguous_map():
     """Refuse multiple current maps instead of changing the wrong map."""
