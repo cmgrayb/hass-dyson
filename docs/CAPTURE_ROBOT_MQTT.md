@@ -49,6 +49,14 @@ Time   Step
 
 Steps 3 to 9, 15 and 16 work best while the robot is on its dock.
 
+## Screenshots of the app
+
+While you go through the list, take a screenshot of each MyDyson screen for
+the robot: the home screen, the cleaning options, each room's settings, the
+dock options and every settings page, including anything that scrolls or
+opens from a menu. These show the options and wording the integration should
+offer. Crop out anything personal before posting.
+
 ## 3. Download the log
 
 Go back to **Settings > Devices & services > Dyson** and choose **Disable
@@ -64,5 +72,5 @@ Before you post, open the file in a text editor and search for your serial
 number (it's on the robot's label and in the app under the robot's details)
 and your email address. Replace any you find with `SERIAL` or `EMAIL`.
 
-Then drag the log file and your filled-in checklist into a comment on the
-GitHub issue. If the file is over 25 MB, zip it first.
+Then drag the log file, your filled-in checklist and the screenshots into a
+comment on the GitHub issue. If the file is over 25 MB, zip it first.
