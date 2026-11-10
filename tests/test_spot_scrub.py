@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -503,3 +504,17 @@ def test_room_store_timer_follows_listeners(selector):
         unsub.assert_not_called()
         second()
         unsub.assert_called_once()
+
+
+def test_mqtt_debug_line_masks_the_serial(device, caplog):
+    """Each message is logged once, tagged, with the serial masked."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.hass_dyson.device")
+    message = MagicMock(
+        topic="RB07/TEST-SERIAL/status/jdm",
+        payload=b'{"msg": "X", "sn": "TEST-SERIAL"}',
+    )
+    device._on_message(device._mqtt_client, None, message)
+    lines = [r.getMessage() for r in caplog.records if "MQTT RX" in r.getMessage()]
+    assert len(lines) == 1
+    assert "/status/jdm" in lines[0]
+    assert "TEST-SERIAL" not in caplog.text
