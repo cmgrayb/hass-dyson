@@ -64,7 +64,7 @@ from .const import (
     STATE_KEY_LEGACY_FILTER_LIFE,
     units_to_decikelvin,
 )
-from .device_utils import mask_serial, mask_token
+from .device_utils import mask_serial, mask_token, uses_jdm_commands
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1619,22 +1619,18 @@ class DysonDevice:
         try:
             topic = message.topic
             payload: str | bytes = message.payload
-
-            _LOGGER.debug("Received MQTT message on %s: %s", topic, payload[:100])
-            _LOGGER.debug(
-                "MQTT MESSAGE RECEIVED for %s - Topic: %s", self._log_serial, topic
-            )
-
-            # Log the full payload for filter debugging
-            _LOGGER.debug("Full message payload for %s: %s", self._log_serial, payload)
-
-            # Parse JSON payload
             if isinstance(payload, bytes):
                 payload = payload.decode("utf-8")
 
+            # One line per message, serial masked, so a debug log can be shared
+            # as-is when mapping a new model's traffic (grep for "MQTT RX").
+            _LOGGER.debug(
+                "MQTT RX %s %s",
+                topic.replace(self.serial_number, self._log_serial),
+                payload.replace(self.serial_number, self._log_serial),
+            )
+
             data = json.loads(payload)
-            _LOGGER.debug("Parsed message data for %s: %s", self._log_serial, data)
-            _LOGGER.debug("MQTT PARSED DATA for %s: %s", self._log_serial, data)
 
             self._process_message_data(data, topic)
 
@@ -1708,11 +1704,11 @@ class DysonDevice:
             # timer, e.g. mop drying; other properties are ignored.
             self._handle_property_post(data)
         else:
+            # The payload is already in the "MQTT RX" line, serial masked.
             _LOGGER.debug(
-                "Unknown message type '%s' for device %s: %s",
+                "Unknown message type '%s' for device %s",
                 message_type,
                 self._log_serial,
-                data,
             )
 
         # Notify callbacks
@@ -2291,13 +2287,15 @@ class DysonDevice:
     async def send_jdm_command(
         self, method: str, params: dict[str, Any], timeout: float = 15
     ) -> dict[str, Any]:
-        """Send an RB05 request and await its matching acknowledgement.
+        """Send a JDM request and await its matching acknowledgement.
 
         Device message callbacks originate on Paho's thread. Resolve futures on
         the HA loop, ignoring echoed commands, unrelated and late replies.
         """
-        if self.mqtt_prefix != "RB05":
-            raise ValueError("JDM commands are only supported for RB05")
+        if not uses_jdm_commands(self):
+            raise ValueError(
+                f"JDM commands are not supported for {self.mqtt_prefix} devices"
+            )
         if not self._connected or not self._mqtt_client:
             raise RuntimeError("Spot+Scrub is disconnected")
         loop = asyncio.get_running_loop()

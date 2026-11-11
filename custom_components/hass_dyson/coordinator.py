@@ -1020,7 +1020,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mask_serial(self.serial_number),
                 country,
                 culture,
-                credential,
+                mask_email(credential) if credential else credential,
             )
 
             return AsyncDysonClient(

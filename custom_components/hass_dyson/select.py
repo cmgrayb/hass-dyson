@@ -18,6 +18,7 @@ from .const import (
     ROBOT_POWER_OPTIONS_VIS_NAV,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import uses_jdm_commands
 from .entity import DysonEntity
 from .spot_scrub_room_select import async_setup_room_selects
 from .spot_scrub_select import DysonSpotScrubCleaningModeSelect
@@ -49,7 +50,7 @@ async def async_setup_entry(
 
     entities: list[SelectEntity] = []
 
-    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+    if coordinator.device and uses_jdm_commands(coordinator.device):
         entities.append(DysonSpotScrubCleaningModeSelect(coordinator))
 
     # Add additional selects based on capabilities
@@ -110,7 +111,7 @@ async def async_setup_entry(
 
     async_add_entities(entities, True)
 
-    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+    if coordinator.device and uses_jdm_commands(coordinator.device):
         await async_setup_room_selects(hass, coordinator, async_add_entities)
 
 

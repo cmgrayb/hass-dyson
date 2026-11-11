@@ -3,12 +3,14 @@
 import asyncio
 import copy
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.hass_dyson.device import DysonDevice
+from custom_components.hass_dyson.device_utils import uses_jdm_commands
 from custom_components.hass_dyson.select import async_setup_entry
 from custom_components.hass_dyson.services import (
     SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA,
@@ -80,6 +82,48 @@ def test_unknown_layout_rejected(preferences, change):
         preferences["room"][1][1] = '{"type":"hallway"}'
     with pytest.raises(ValueError):
         mode_payload(123, preferences, "mop_only")
+
+
+@pytest.fixture
+def rb07_preferences():
+    """RB07 reply shape: prefer_on 0, empty material list, no uv_switch."""
+    return {
+        "material": [],
+        "prefer_on": 0,
+        "room": [
+            [3, '{"type":"bedroom","name":"Room A"}', 0, 0, 0, 0, 0, 0, 1, 0, 1, 0],
+            [5, '{"type":"kitchen","name":"Room B"}', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ],
+    }
+
+
+def test_rb07_payload_matches_mydyson(rb07_preferences):
+    """Write the shape MyDyson sends an RB07: UV on for every room."""
+    payload = room_settings_payload(
+        456, rb07_preferences, {5: {"cleaning_mode": "vacuum_and_mop"}}
+    )
+    assert payload == {
+        "map_id": 456,
+        "prefer_type": 1,
+        "room_preference": [
+            [3, "Room A", 0, 0, 0, 0, 0, 0, 1, 0, 1],
+            [5, "Room B", 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        ],
+        "uv_switch": [[3, 1], [5, 1]],
+    }
+
+
+@pytest.mark.parametrize("change", ["material", "no_material", "tail"])
+def test_rb07_unknown_layout_rejected(rb07_preferences, change):
+    """Only the captured RB07 shape gets the default UV settings."""
+    if change == "material":
+        rb07_preferences["material"] = [[3, 1]]
+    if change == "no_material":
+        rb07_preferences.pop("material")
+    if change == "tail":
+        rb07_preferences["room"][0][11] = 1
+    with pytest.raises(ValueError):
+        mode_payload(456, rb07_preferences, "mop_only")
 
 
 @pytest.mark.asyncio
@@ -159,6 +203,36 @@ async def test_cancellation(device):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert device._message_callbacks == []
+
+
+@pytest.mark.parametrize(
+    ("prefix", "expected"),
+    [("RB05", True), ("RB07", True), ("277", False), ("N223", False), (None, False)],
+)
+def test_uses_jdm_commands(prefix, expected):
+    """Spot+Scrub models share the JDM gate; Vis Nav and older robots do not."""
+    assert uses_jdm_commands(MagicMock(mqtt_prefix=prefix)) is expected
+    assert uses_jdm_commands(object()) is False
+
+
+@pytest.mark.asyncio
+async def test_rb07_publishes_on_its_own_topic(device):
+    """An RB07 talks JDM on its own prefix, the same way an RB05 does."""
+    device.mqtt_prefix = "RB07"
+
+    def publish(topic, payload):
+        request = json.loads(payload)
+        device._notify_callbacks(
+            topic.replace("command", "status"),
+            dict(request, code=0, data={"result": 0}),
+        )
+        return MagicMock(rc=0)
+
+    device._mqtt_client.publish.side_effect = publish
+    assert await device.send_jdm_command("service.get_map_list", {}) == {"result": 0}
+    assert (
+        device._mqtt_client.publish.call_args.args[0] == "RB07/TEST-SERIAL/command/jdm"
+    )
 
 
 @pytest.mark.asyncio
@@ -253,8 +327,8 @@ async def test_readback_mismatch(selector, preferences):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prefix", ["RB05", "277", "527K"])
-async def test_only_rb05_gets_selector(prefix):
+@pytest.mark.parametrize("prefix", ["RB05", "RB07", "277", "527K"])
+async def test_only_jdm_robots_get_selector(prefix):
     """Vis Nav and air purifiers are not given this control."""
     coordinator = MagicMock()
     coordinator.device.mqtt_prefix = prefix
@@ -266,7 +340,7 @@ async def test_only_rb05_gets_selector(prefix):
     await async_setup_entry(hass, entry, add)
     assert sum(
         isinstance(e, DysonSpotScrubCleaningModeSelect) for e in add.call_args.args[0]
-    ) == (prefix == "RB05")
+    ) == (prefix in ("RB05", "RB07"))
 
 
 def test_room_modes_payload_changes_only_listed_rooms(preferences):
@@ -472,3 +546,17 @@ def test_room_store_timer_follows_listeners(selector):
         unsub.assert_not_called()
         second()
         unsub.assert_called_once()
+
+
+def test_mqtt_debug_line_masks_the_serial(device, caplog):
+    """Each message is logged once, tagged, with the serial masked."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.hass_dyson.device")
+    message = MagicMock(
+        topic="RB07/TEST-SERIAL/status/jdm",
+        payload=b'{"msg": "X", "sn": "TEST-SERIAL"}',
+    )
+    device._on_message(device._mqtt_client, None, message)
+    lines = [r.getMessage() for r in caplog.records if "MQTT RX" in r.getMessage()]
+    assert len(lines) == 1
+    assert "/status/jdm" in lines[0]
+    assert "TEST-SERIAL" not in caplog.text
