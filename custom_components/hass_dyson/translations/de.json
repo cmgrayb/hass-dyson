@@ -183,6 +183,25 @@
     }
   },
   "entity": {
+    "date": {
+      "lightcycle_away_start_date": {
+        "name": "Beginn der Abwesenheit"
+      }
+    },
+    "time": {
+      "lightcycle_sunrise_time": {
+        "name": "Sonnenaufgangszeit"
+      },
+      "lightcycle_sunset_time": {
+        "name": "Sonnenuntergangszeit"
+      },
+      "lightcycle_sleep_start_time": {
+        "name": "Beginn der Schlafenszeit"
+      },
+      "lightcycle_sleep_end_time": {
+        "name": "Ende der Schlafenszeit"
+      }
+    },
     "sensor": {
       "temperature": {
         "name": "Temperatur"
@@ -340,6 +359,27 @@
       }
     },
     "switch": {
+      "lightcycle_auto_brightness": {
+        "name": "Automatische Helligkeitsregelung"
+      },
+      "lightcycle_movement_sensor": {
+        "name": "Bewegungssensor"
+      },
+      "lightcycle_age_adjustment": {
+        "name": "Altersanpassung"
+      },
+      "lightcycle_sleep_mode": {
+        "name": "Schlafmodus"
+      },
+      "lightcycle_away_mode": {
+        "name": "Abwesenheitsmodus"
+      },
+      "lightcycle_personal_daylight": {
+        "name": "Persönliche Tageslichtzeiten"
+      },
+      "lightcycle_wake_up_schedule": {
+        "name": "Weckzeitplan"
+      },
       "auto_mode": {
         "name": "Automatik-Modus"
       },
@@ -372,6 +412,12 @@
       }
     },
     "button": {
+      "lightcycle_sync_location": {
+        "name": "Cloud-Standort synchronisieren"
+      },
+      "lightcycle_reset_daylight_times": {
+        "name": "Tageslichtzeiten zurücksetzen"
+      },
       "find_follow_scan": {
         "name": "Verfolgen Scan"
       },
@@ -383,6 +429,16 @@
       }
     },
     "select": {
+      "lightcycle_lighting_mode": {
+        "name": "Lichtmodus",
+        "state": {
+          "manual": "Manuell",
+          "daylight": "Tageslicht",
+          "study": "Lernen",
+          "relax": "Entspannen",
+          "precision": "Präzision"
+        }
+      },
       "fan_control_mode": {
         "name": "Lüfter-Steuerungsmodus"
       },
@@ -472,6 +528,18 @@
       }
     },
     "number": {
+      "lightcycle_baseline_brightness": {
+        "name": "Helligkeit nach Sonnenuntergang"
+      },
+      "lightcycle_baseline_colour_temperature": {
+        "name": "Farbtemperatur nach Sonnenuntergang"
+      },
+      "lightcycle_wake_up_brightness": {
+        "name": "Weckhelligkeit"
+      },
+      "lightcycle_birth_year": {
+        "name": "Geburtsjahr"
+      },
       "sleep_timer": {
         "name": "Schlaftimer"
       },
@@ -718,11 +786,25 @@
   "issues": {
     "configured_host_unreachable": {
       "title": "{device_name} ist unter der konfigurierten Adresse nicht erreichbar",
-      "description": "Für {device_name} ist in den Verbindungsoptionen eine statische Adresse ({hostname}) festgelegt, aber seit über 10 Minuten antwortet dort kein Gerät. Daher wird stattdessen die Cloud-Verbindung verwendet. Wenn sich die Adresse des Geräts geändert hat, öffnen Sie die Verbindungsoptionen und aktualisieren Sie sie oder löschen Sie das Feld, um die automatische Erkennung zu verwenden. Beim Speichern neuer Verbindungsoptionen oder über die Schaltfläche „Erneut verbinden“ wird die Verbindung neu hergestellt. Diese Warnung wird automatisch ausgeblendet, sobald eine lokale Verbindung besteht."
+      "description": "Für {device_name} ist in den Verbindungsoptionen eine statische Adresse ({hostname}) festgelegt. Lokale Verbindungsversuche schlagen auch nach mindestens 15 Minuten über die Cloud-Ersatzverbindung fehl. Wenn sich die Adresse des Geräts geändert hat, öffnen Sie die Verbindungsoptionen und aktualisieren Sie sie oder löschen Sie das Feld, um die automatische Erkennung zu verwenden. Beim Speichern neuer Verbindungsoptionen oder über die Schaltfläche „Erneut verbinden“ wird die Verbindung neu hergestellt. Diese Warnung wird automatisch ausgeblendet, sobald eine lokale Verbindung besteht."
     },
     "discovered_host_unreachable": {
       "title": "{device_name} ist im lokalen Netzwerk nicht erreichbar",
-      "description": "{device_name} bevorzugt eine lokale Verbindung, aber unter {hostname} antwortet seit über 10 Minuten kein Gerät. Daher wird stattdessen die Cloud-Verbindung verwendet. Das Gerät funktioniert weiterhin, jedoch langsamer und ohne lokale Steuerung. Diese Adresse wurde automatisch erkannt und nicht manuell eingegeben. Daher wird mDNS entweder im Netzwerk gefiltert oder die Adresse hat sich geändert. Legen Sie die IP-Adresse des Geräts in den Verbindungsoptionen fest, um die Erkennung zu umgehen, oder beheben Sie mDNS im Netzwerk. Weitere Informationen finden Sie in der Anleitung zur Fehlerbehebung. Diese Warnung wird automatisch ausgeblendet, sobald eine lokale Verbindung besteht."
+      "description": "{device_name} bevorzugt eine lokale Verbindung, aber lokale Verbindungsversuche zu {hostname} schlagen auch nach mindestens 15 Minuten über die Cloud-Ersatzverbindung fehl. Das Gerät funktioniert weiterhin, jedoch langsamer und ohne lokale Steuerung. Diese Adresse wurde automatisch erkannt und nicht manuell eingegeben. Daher wird mDNS entweder im Netzwerk gefiltert oder die Adresse hat sich geändert. Legen Sie die IP-Adresse des Geräts in den Verbindungsoptionen fest, um die Erkennung zu umgehen, oder beheben Sie mDNS im Netzwerk. Weitere Informationen finden Sie in der Anleitung zur Fehlerbehebung. Diese Warnung wird automatisch ausgeblendet, sobald eine lokale Verbindung besteht."
+    },
+    "temperature_unit_changed": {
+      "title": "{device_name} neu laden, um die Temperatureinheit anzuwenden",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{device_name} neu laden?",
+            "description": "Lade dieses Dyson-Gerät neu, um die Temperatureinheit von Home Assistant anzuwenden. Seine Entitäten werden dabei kurz getrennt."
+          }
+        },
+        "error": {
+          "reload_failed": "Das Gerät konnte nicht neu geladen werden. Prüfe die Verbindung und versuche es erneut."
+        }
+      }
     }
   }
 }

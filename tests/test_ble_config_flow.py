@@ -317,7 +317,14 @@ class TestBleConfigure:
 
 
 class TestFetchLtkFromAccount:
-    """Tests for the _fetch_ltk_from_account helper."""
+    """Preserve the existing executor path for BLE vacuums."""
+
+    @pytest.fixture(autouse=True)
+    def vacuum_family(self, flow):
+        """The light's validated async path has separate account-scope tests."""
+        from custom_components.hass_dyson.const import BLE_DEVICE_KIND_VACUUM
+
+        flow._ble_kind = BLE_DEVICE_KIND_VACUUM
 
     @pytest.mark.asyncio
     async def test_no_cloud_entries_returns_none(self, flow):

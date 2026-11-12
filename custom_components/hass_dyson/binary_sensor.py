@@ -25,7 +25,7 @@ from .const import (
     ROBOT_STATES_CHARGING,
 )
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -192,8 +192,8 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
         entities.append(DysonRobotBatteryChargingSensor(coordinator))
-        # RB05 reports flat numeric codes the subsystem sensors cannot read.
-        if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+        # JDM robots report flat numeric codes the subsystem sensors cannot read.
+        if coordinator.device and uses_jdm_commands(coordinator.device):
             entities.append(DysonRobotActionRequiredSensor(coordinator))
         _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
 
@@ -730,18 +730,18 @@ class DysonRobotBatteryChargingSensor(DysonEntity, BinarySensorEntity):  # type:
 
 
 class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: ignore[misc]
-    """Binary sensor reporting motion detected by a Dyson BLE light.
+    """Compatibility entity for the as-yet undecoded BLE motion state.
 
-    The Dyson Lightcycle Morph (and compatible lamps) expose a motion detection
-    characteristic (11008) that fires a BLE notification whenever occupancy
-    changes.  This sensor surfaces that signal as a standard Home Assistant
-    motion binary sensor.
+    Keep its unique ID for existing installations, but do not enable new
+    entities by default or interpret characteristic 11008 as occupancy.
+    Until a motion decoder is validated, the transport reports unknown.
 
     Attributes:
         _attr_device_class: :attr:`BinarySensorDeviceClass.MOTION`
     """
 
     _attr_device_class = BinarySensorDeviceClass.MOTION
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DysonBLEDataUpdateCoordinator) -> None:
         """Initialise the motion sensor.
@@ -755,11 +755,12 @@ class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: igno
 
     @property
     def is_on(self) -> bool | None:
-        """Return True when motion has been detected."""
+        """Return a decoded Boolean, or unknown when no measurement exists."""
         data = self.coordinator.data
         if data is None:
             return None
-        return bool(data.get("motion_detected", False))
+        value = data.get("motion_detected")
+        return value if isinstance(value, bool) else None
 
 
 #         _LOGGER.debug(

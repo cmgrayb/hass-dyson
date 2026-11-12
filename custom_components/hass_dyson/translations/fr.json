@@ -183,6 +183,25 @@
     }
   },
   "entity": {
+    "date": {
+      "lightcycle_away_start_date": {
+        "name": "Date de début d’absence"
+      }
+    },
+    "time": {
+      "lightcycle_sunrise_time": {
+        "name": "Heure de lever du soleil"
+      },
+      "lightcycle_sunset_time": {
+        "name": "Heure de coucher du soleil"
+      },
+      "lightcycle_sleep_start_time": {
+        "name": "Début du mode sommeil"
+      },
+      "lightcycle_sleep_end_time": {
+        "name": "Fin du mode sommeil"
+      }
+    },
     "sensor": {
       "temperature": {
         "name": "Température"
@@ -340,6 +359,27 @@
       }
     },
     "switch": {
+      "lightcycle_auto_brightness": {
+        "name": "Luminosité automatique"
+      },
+      "lightcycle_movement_sensor": {
+        "name": "Détecteur de mouvement"
+      },
+      "lightcycle_age_adjustment": {
+        "name": "Adaptation à l’âge"
+      },
+      "lightcycle_sleep_mode": {
+        "name": "Mode sommeil"
+      },
+      "lightcycle_away_mode": {
+        "name": "Mode absence"
+      },
+      "lightcycle_personal_daylight": {
+        "name": "Horaires de lumière personnels"
+      },
+      "lightcycle_wake_up_schedule": {
+        "name": "Programme de réveil"
+      },
       "auto_mode": {
         "name": "Mode automatique"
       },
@@ -372,6 +412,12 @@
       }
     },
     "button": {
+      "lightcycle_sync_location": {
+        "name": "Synchroniser le lieu enregistré"
+      },
+      "lightcycle_reset_daylight_times": {
+        "name": "Réinitialiser les horaires solaires"
+      },
       "find_follow_scan": {
         "name": "Scan Suivi"
       },
@@ -383,6 +429,16 @@
       }
     },
     "select": {
+      "lightcycle_lighting_mode": {
+        "name": "Mode d’éclairage",
+        "state": {
+          "manual": "Manuel",
+          "daylight": "Lumière du jour",
+          "study": "Étude",
+          "relax": "Détente",
+          "precision": "Précision"
+        }
+      },
       "fan_control_mode": {
         "name": "Mode de contrôle du ventilateur"
       },
@@ -472,6 +528,18 @@
       }
     },
     "number": {
+      "lightcycle_baseline_brightness": {
+        "name": "Luminosité après le coucher du soleil"
+      },
+      "lightcycle_baseline_colour_temperature": {
+        "name": "Température de couleur après le coucher du soleil"
+      },
+      "lightcycle_wake_up_brightness": {
+        "name": "Luminosité de réveil"
+      },
+      "lightcycle_birth_year": {
+        "name": "Année de naissance"
+      },
       "sleep_timer": {
         "name": "Minuterie de veille"
       },
@@ -718,11 +786,25 @@
   "issues": {
     "configured_host_unreachable": {
       "title": "{device_name} est inaccessible à l'adresse configurée",
-      "description": "{device_name} a une adresse statique ({hostname}) définie dans ses options de connexion, mais aucune réponse n'a été reçue à cette adresse depuis plus de 10 minutes. Il utilise donc la connexion cloud à la place. Si l'adresse de l'appareil a changé, ouvrez ses options de connexion pour la mettre à jour, ou effacez le champ pour utiliser la découverte automatique. L'enregistrement de nouvelles options de connexion, ou l'utilisation du bouton Reconnecter, rétablit la connexion. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
+      "description": "{device_name} a une adresse statique ({hostname}) définie dans ses options de connexion. Les tentatives de connexion locale échouent encore après au moins 15 minutes sur la connexion cloud de secours. Si l'adresse de l'appareil a changé, ouvrez ses options de connexion pour la mettre à jour, ou effacez le champ pour utiliser la découverte automatique. L'enregistrement de nouvelles options de connexion, ou l'utilisation du bouton Reconnecter, rétablit la connexion. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
     },
     "discovered_host_unreachable": {
       "title": "{device_name} est inaccessible sur le réseau local",
-      "description": "{device_name} préfère une connexion locale, mais aucune réponse n'a été reçue à l'adresse {hostname} depuis plus de 10 minutes. Il utilise donc la connexion cloud à la place. L'appareil continue de fonctionner ainsi, mais plus lentement et sans contrôle local. Cette adresse a été découverte automatiquement et non saisie manuellement : mDNS est donc peut-être filtré sur le réseau ou l'adresse a changé. Définissez l'adresse IP de l'appareil dans ses options de connexion pour contourner la découverte, ou corrigez mDNS sur le réseau ; consultez le guide de dépannage. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
+      "description": "{device_name} préfère une connexion locale, mais les tentatives de connexion locale à {hostname} échouent encore après au moins 15 minutes sur la connexion cloud de secours. L'appareil continue de fonctionner ainsi, mais plus lentement et sans contrôle local. Cette adresse a été découverte automatiquement et non saisie manuellement : mDNS est donc peut-être filtré sur le réseau ou l'adresse a changé. Définissez l'adresse IP de l'appareil dans ses options de connexion pour contourner la découverte, ou corrigez mDNS sur le réseau ; consultez le guide de dépannage. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."
+    },
+    "temperature_unit_changed": {
+      "title": "Recharger {device_name} pour appliquer l’unité de température",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Recharger {device_name} ?",
+            "description": "Rechargez cet appareil Dyson pour appliquer l’unité de température de Home Assistant. Ses entités seront brièvement déconnectées pendant le rechargement."
+          }
+        },
+        "error": {
+          "reload_failed": "Impossible de recharger l’appareil. Vérifiez sa connexion et réessayez."
+        }
+      }
     }
   }
 }

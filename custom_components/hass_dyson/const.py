@@ -3,6 +3,8 @@
 from typing import Final
 
 from homeassistant.components.vacuum import VacuumActivity
+from homeassistant.const import UnitOfTemperature
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 # Type alias for AQI ranges: (low, high, aqi_low, aqi_high, category)
 # First two can be int or float depending on pollutant measurement units
@@ -10,6 +12,12 @@ AQIRange = tuple[float | int, float | int, int, int, str]
 
 # Integration domain
 DOMAIN: Final = "hass_dyson"
+
+# Whole-degree heater limits and default target, in each entity unit.
+HEATER_TEMPERATURE_SETTINGS: Final[dict[str, tuple[int, int, int]]] = {
+    UnitOfTemperature.CELSIUS: (1, 37, 20),
+    UnitOfTemperature.FAHRENHEIT: (34, 98, 68),
+}
 
 # Default values
 DEFAULT_CLOUD_POLLING_INTERVAL: Final = 60  # 1 minute in seconds
@@ -360,6 +368,8 @@ SERVICE_GET_CLOUD_DEVICES: Final = "get_cloud_devices"
 SERVICE_START_ZONE_CLEAN: Final = "start_zone_clean"
 SERVICE_SET_ZONE_BEHAVIOUR: Final = "set_zone_behaviour"
 SERVICE_SET_ROOM_CLEANING_MODES: Final = "set_room_cleaning_modes"
+SERVICE_SET_ROBOT_SCHEDULE: Final = "set_robot_schedule"
+SERVICE_DELETE_ROBOT_SCHEDULE: Final = "delete_robot_schedule"
 
 # Event types
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
@@ -561,6 +571,13 @@ ROBOT_MSG_STATE_CHANGE: Final = "STATE-CHANGE"
 # edits in the MyDyson app, or the robot's own post-clean map update);
 # payload is only {msg, time} — re-fetch the cloud metadata to see what.
 ROBOT_MSG_MAP_MANIFEST_UPDATED: Final = "PERSISTENT-MAP-MANIFEST-UPDATED"
+
+# Robots that speak Dyson's newer JDM protocol: JSON requests on
+# command/jdm, replies and live run detail on status/jdm, flat numeric
+# fault codes. The cloud rarely reports capability strings for robots and
+# entities are created before the robot has necessarily sent anything on
+# status/jdm, so the MQTT prefix is the one reliable signal at setup.
+JDM_MQTT_PREFIXES: Final = frozenset({"RB05", "RB07"})
 
 # Numeric fault codes the Spot+Scrub (RB05) reports in
 # CURRENT-STATE.activeFaults. Names are Dyson's own, transcribed from the
@@ -823,7 +840,8 @@ BLE_CHAR_11006_UUID: Final = (
 )
 BLE_CHAR_11007_UUID: Final = "2dd11007-1c37-452d-8979-d1b4a787d0a4"  # movement sensor (MOVEMENT_SENSOR_UUID in Android)
 
-# Motion detection characteristic — notify; non-zero payload = motion detected
+# Undecoded status characteristic. Retain the public constant for compatibility;
+# nonzero bytes are not a validated movement measurement.
 BLE_MOTION_UUID: Final = "2dd11008-1c37-452d-8979-d1b4a787d0a4"
 
 # Additional probe UUIDs read post-auth during device discovery
@@ -832,10 +850,11 @@ BLE_CHAR_10021_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 
 # Write-Attribute protocol (service 0020, characteristic 0021)
 # Used to configure lamp operating modes on Dyson Lightcycle Morph (CF06).
-# Protocol: write a 5-byte packet to characteristic 0021 —
-#   bytes 0-1 = attribute ID (little-endian)
-#   bytes 2-3 = length of value field (uint16 LE)
-#   bytes 4..  = value
+# Protocol: a DBP-framed write-attribute request on characteristic 0021.
+#   bytes 0-1 = 0x80 (single fragment), 0x93 (write request)
+#   bytes 2-3 = attribute ID (little-endian)
+#   bytes 4-5 = value length (uint16 LE)
+#   bytes 6.. = value
 #
 # DAYLIGHT_MODE (attribute 0x2013 = {0x13, 0x20}):
 #   When enabled the lamp controls its own brightness/colour-temperature via its
@@ -844,9 +863,13 @@ BLE_CHAR_10021_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 #   colour-temperature commands (source: q90.C30554a / ga0.C15075x2).
 BLE_WRITE_ATTR_CHAR_UUID: Final = "2dd10021-1c37-452d-8979-d1b4a787d0a4"
 # Packet: DAYLIGHT_MODE attribute = false  →  lamp enters manual control mode
-BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD: Final = bytes([0x13, 0x20, 0x01, 0x00, 0x00])
+BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD: Final = bytes(
+    [0x80, 0x93, 0x13, 0x20, 0x01, 0x00, 0x00]
+)
 # Packet: DAYLIGHT_MODE attribute = true  →  lamp enters daylight/auto mode
-BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD: Final = bytes([0x13, 0x20, 0x01, 0x00, 0x01])
+BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD: Final = bytes(
+    [0x80, 0x93, 0x13, 0x20, 0x01, 0x00, 0x01]
+)
 
 # Dyson device capability strings for daylight-capable BLE lights (CF06/CD06).
 # Used to gate the daylight-mode switch entity.
@@ -913,6 +936,16 @@ BLE_MSG_TYPE_PUSH_ATTRIBUTE_REQUEST: Final = 0x96
 BLE_MSG_TYPE_PUSH_ATTRIBUTE: Final = 0x97
 BLE_MSG_TYPE_PUSH_ATTRIBUTE_ACK: Final = 0x98
 BLE_MSG_TYPE_APP_ACTIVE_STATUS: Final = 0x30
+
+# Additional platforms for the verified daylight-capable BLE light protocol.
+BLE_LIGHT_SETTINGS_PLATFORMS: Final = (
+    "switch",
+    "select",
+    "number",
+    "time",
+    "date",
+    "button",
+)
 
 # AppActiveStatus payload values — the app sends these to tell the machine
 # whether a foreground client is attached.  Always send ACTIVE on connect and
@@ -1096,3 +1129,23 @@ def celsius_to_decikelvin(celsius: float) -> int:
     setpoint downwards.
     """
     return round((celsius + ZERO_CELSIUS_IN_KELVIN) * 10)
+
+
+def decikelvin_to_units(decikelvin: float, temperature_unit: str) -> float:
+    """Convert Dyson Kelvin x 10 directly to the requested temperature unit."""
+    return TemperatureConverter.convert(
+        decikelvin / 10, UnitOfTemperature.KELVIN, temperature_unit
+    )
+
+
+def decikelvin_to_target_units(decikelvin: float, temperature_unit: str) -> float:
+    """Return a device setpoint rounded to a whole degree in the requested unit."""
+    return float(round(decikelvin_to_units(decikelvin, temperature_unit)))
+
+
+def units_to_decikelvin(temperature: float, temperature_unit: str) -> int:
+    """Convert a temperature directly to the nearest Dyson Kelvin x 10 value."""
+    kelvin = TemperatureConverter.convert(
+        temperature, temperature_unit, UnitOfTemperature.KELVIN
+    )
+    return round(kelvin * 10)

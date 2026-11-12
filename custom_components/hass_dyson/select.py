@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
@@ -18,6 +19,7 @@ from .const import (
     ROBOT_POWER_OPTIONS_VIS_NAV,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import uses_jdm_commands
 from .entity import DysonEntity
 from .spot_scrub_room_select import async_setup_room_selects
 from .spot_scrub_select import DysonSpotScrubCleaningModeSelect
@@ -39,11 +41,17 @@ async def async_setup_entry(
     ):
         return None
 
-    coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        from .ble_light_entities import DysonBLELightModeSelect
+
+        async_add_entities([DysonBLELightModeSelect(entry_data["ble_coordinator"])])
+        return
+    coordinator: DysonDataUpdateCoordinator = entry_data
 
     entities: list[SelectEntity] = []
 
-    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+    if coordinator.device and uses_jdm_commands(coordinator.device):
         entities.append(DysonSpotScrubCleaningModeSelect(coordinator))
 
     # Add additional selects based on capabilities
@@ -104,7 +112,7 @@ async def async_setup_entry(
 
     async_add_entities(entities, True)
 
-    if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+    if coordinator.device and uses_jdm_commands(coordinator.device):
         await async_setup_room_selects(hass, coordinator, async_add_entities)
 
 
@@ -279,8 +287,11 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
         ideal_lower = sweep_midpoint - half_span
         ideal_upper = sweep_midpoint + half_span
 
-        lower = int(round(ideal_lower))
-        upper = int(round(ideal_upper))
+        # Round half up.  Python's round() rounds .5 to the even number, so
+        # with an odd preset span (45°) an odd lower angle lost 1° and the
+        # window moved every time the same preset was selected again.
+        lower = math.floor(ideal_lower + 0.5)
+        upper = math.floor(ideal_upper + 0.5)
 
         # Ensure the span is exactly the preset angle
         if upper - lower != preset_angle:
@@ -394,6 +405,35 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
 
         super()._handle_coordinator_update()
 
+    def _sweep_matches_preset(self, preset_angle: int) -> bool:
+        """Return True when the current osal/osau sweep already is *preset_angle*.
+
+        Requires ``ancp`` to be ``CUST`` or the code of this preset, so a
+        stale osal/osau pair after a change to another preset (or Breeze) is
+        never trusted.
+        """
+        if not self.coordinator.device:
+            return False
+
+        product_state = self.coordinator.data.get("product-state", {})
+        ancp = self.coordinator.device.get_state_value(product_state, "ancp", "")
+        if ancp not in ("CUST", f"{preset_angle:04d}"):
+            return False
+
+        try:
+            lower_str = self.coordinator.device.get_state_value(
+                product_state, "osal", "0000"
+            )
+            upper_str = self.coordinator.device.get_state_value(
+                product_state, "osau", "0350"
+            )
+            lower = int(lower_str.lstrip("0") or "0")
+            upper = int(upper_str.lstrip("0") or "350")
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+        return upper - lower == preset_angle
+
     async def async_select_option(self, option: str) -> None:
         """Select the oscillation mode with center-point preservation."""
         if not self.coordinator.device:
@@ -427,6 +467,23 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             # are centred on the current sweep midpoint so the fan keeps facing
             # roughly the same direction.
             preset_angle = int(option.replace("°", ""))
+
+            # If the current sweep already has the span of the requested
+            # preset (the same preset is selected again, or the span snapped
+            # to it after a center move), only make sure oscillation is on and
+            # leave osal/osau alone.  Re-sending computed angles moved the
+            # window on every call: some devices store the angles 1° lower
+            # than sent.  Only done when ancp is CUST or already this preset,
+            # because osal/osau are not always echoed after a preset change.
+            if self._sweep_matches_preset(preset_angle):
+                await self.coordinator.device.set_oscillation(True)
+                _LOGGER.debug(
+                    "Oscillation already uses a %s° sweep for %s, keeping angles",
+                    preset_angle,
+                    self.coordinator.serial_number,
+                )
+                return
+
             sweep_midpoint = self._calculate_sweep_midpoint()
             lower, upper = self._calculate_angles_for_preset(
                 preset_angle, sweep_midpoint

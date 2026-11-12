@@ -76,7 +76,7 @@ _LOGGER = logging.getLogger(__name__)
 # How long the local host may fail, with the cloud fallback in use, before a
 # repair issue is raised. Long enough to ride out a device reboot or a wifi
 # blip, short enough that a stale address is noticed the same day.
-CONFIGURED_HOST_ISSUE_DELAY: Final = 600
+CONFIGURED_HOST_ISSUE_DELAY: Final = 900
 
 # Compiled regex patterns for culture/language normalisation (module-level for efficiency).
 _CULTURE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
@@ -293,7 +293,6 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_SERIAL_NUMBER
         ) or config_entry.data.get("device_serial_number", "unknown")
         self.device: DysonDevice | None = None
-        self._local_fallback_since: float | None = None
         self._host_source: str = HOST_SOURCE_UNKNOWN
         self._device_capabilities: list[str] = []
         self._device_category: list[str] = []
@@ -1021,7 +1020,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mask_serial(self.serial_number),
                 country,
                 culture,
-                credential,
+                mask_email(credential) if credential else credential,
             )
 
             return AsyncDysonClient(
@@ -1693,6 +1692,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device.add_environmental_callback(self._on_environmental_update)
         # Register for message updates to get real-time state changes
         self.device.add_message_callback(self._on_message_update)
+        self.device.add_connection_callback(self._on_connection_change)
 
     async def _async_setup_manual_device(self) -> None:
         """Set up device configured manually."""
@@ -1783,6 +1783,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Register for message updates to get real-time state changes
             self.device.add_message_callback(self._on_message_update)
+            self.device.add_connection_callback(self._on_connection_change)
 
             _LOGGER.info(
                 "Successfully set up manual device %s", mask_serial(self.serial_number)
@@ -2160,6 +2161,12 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return f"configured_host_unreachable_{self.config_entry.entry_id}"
 
     @callback
+    def _on_connection_change(self) -> None:
+        """Update Repairs and entities when connection state or retry evidence changes."""
+        self._async_update_configured_host_issue()
+        self.async_update_listeners()
+
+    @callback
     def _async_update_configured_host_issue(self) -> None:
         """Warn in Repairs while the local host fails and cloud is used instead.
 
@@ -2176,20 +2183,22 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         the local connection is back.
         """
         device = self.device
-        on_fallback = (
-            device is not None
-            and device.preferred_connection_type == "local"
-            and device.using_fallback
-        )
-        if not on_fallback:
-            self._local_fallback_since = None
+        if (
+            device is None
+            or device.preferred_connection_type != "local"
+            or device.fallback_since is None
+        ):
             ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
             return
 
-        now = time.monotonic()
-        if self._local_fallback_since is None:
-            self._local_fallback_since = now
-        if now - self._local_fallback_since < CONFIGURED_HOST_ISSUE_DELAY:
+        if not device.is_connected or not device.using_fallback:
+            return
+        failure_at = device.preferred_failure_at
+        if (
+            failure_at is None
+            or failure_at - device.fallback_since < CONFIGURED_HOST_ISSUE_DELAY
+        ):
+            ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
             return
 
         configured = self._host_source == HOST_SOURCE_CONFIGURED
@@ -2223,6 +2232,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.device.remove_environmental_callback(self._on_environmental_update)
             # Remove message callback before disconnecting
             self.device.remove_message_callback(self._on_message_update)
+            self.device.remove_connection_callback(self._on_connection_change)
             await self.device.disconnect()
             self.device = None
 
@@ -3012,7 +3022,7 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device_serial,
         )
         try:
-            result = await self.hass.async_create_task(
+            await self.hass.async_create_task(
                 self.hass.config_entries.flow.async_init(
                     DOMAIN,
                     context={
@@ -3028,10 +3038,33 @@ class DysonCloudAccountCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "auth_token": self._auth_token,
                         "email": self._email,
                         "parent_entry_id": self.config_entry.entry_id,
+                        **(
+                            {
+                                "ble_auto_add": self.config_entry.data.get(
+                                    CONF_AUTO_ADD_DEVICES, DEFAULT_AUTO_ADD_DEVICES
+                                ),
+                                "capabilities": [
+                                    getattr(capability, "value", capability)
+                                    for capability in (
+                                        getattr(device, "capabilities", []) or []
+                                    )
+                                ],
+                                "country": self.config_entry.data.get(CONF_COUNTRY),
+                            }
+                            if getattr(
+                                getattr(device, "category", None),
+                                "value",
+                                getattr(device, "category", None),
+                            )
+                            in ("light", ["light"])
+                            else {}
+                        ),
                     },
                 )
             )
-            _LOGGER.info("BLE discovery flow created for %s: %s", device_name, result)
+            _LOGGER.info(
+                "BLE discovery flow created for %s", mask_serial(device_serial)
+            )
         except Exception as e:
             _LOGGER.error(
                 "Failed to create BLE discovery flow for %s: %s", device_name, e
@@ -3063,6 +3096,7 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ``CONF_BLE_MAC``, ``CONF_LTK``, and optionally ``CONF_BLE_PROXY``.
         """
         self.serial_number: str = config_entry.data[CONF_SERIAL_NUMBER]
+        self._light_location: Any | None = None
         self.ble_device: DysonBLEDevice | None = None
         self._config_entry = config_entry
         self._unsub_event: Any | None = None
@@ -3179,6 +3213,9 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         on every exit path.
         """
         self._stop_event.set()
+        location = getattr(self, "_light_location", None)
+        if location is not None:
+            await location.close()
         task, self._ble_task = self._ble_task, None
         try:
             if task is not None and not task.done():
@@ -3229,6 +3266,11 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             try:
                 await self.ble_device.connect_and_authenticate()
+                if getattr(self, "_light_location", None) is None:
+                    from .ble_light_location import BLELightLocation
+
+                    self._light_location = BLELightLocation(self)
+                self._light_location.start()
                 attempt = 0  # Reset backoff on successful connect
                 _LOGGER.info(
                     "BLE lifecycle task: %s connected — entering keepalive loop",
@@ -3277,6 +3319,14 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return  # Stop event set during sleep
             except asyncio.TimeoutError:
                 pass
+
+    async def async_sync_light_location(self) -> None:
+        """Explicitly refresh this lamp's saved location from its owning account."""
+        if getattr(self, "_light_location", None) is None:
+            from .ble_light_location import BLELightLocation
+
+            self._light_location = BLELightLocation(self)
+        await self._light_location.sync()
 
     async def _handle_ble_event(self, event: Any) -> None:
         """Handle ``EVENT_BLE_STATE_CHANGE`` and push data to entities.

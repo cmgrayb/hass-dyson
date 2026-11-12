@@ -85,7 +85,7 @@ from .const import (
     ROBOT_NUMERIC_FAULT_NAMES,
 )
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .entity import DysonEntity
 from .spot_scrub_coverage import get_coverage_recorder, zone_at
 from .vacuum import _clean_maps_cache, fetch_clean_maps
@@ -1533,7 +1533,7 @@ async def async_setup_entry(  # noqa: C901
             )
             entities.append(DysonRobotBatterySensor(coordinator))
             # Spot+Scrub reports run detail the other robots do not send.
-            if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+            if coordinator.device and uses_jdm_commands(coordinator.device):
                 entities.append(DysonRobotCleanDurationSensor(coordinator))
                 entities.append(DysonRobotCleanActionSensor(coordinator))
                 entities.append(DysonRobotDockStateSensor(coordinator))
@@ -1541,6 +1541,14 @@ async def async_setup_entry(  # noqa: C901
                 for detail in ("stage", "room", "programme", "progress"):
                     entities.append(DysonRobotCleanDetailSensor(coordinator, detail))
                 entities.append(DysonRobotActiveFaultSensor(coordinator))
+                from .spot_scrub_schedule import get_schedule_manager
+                from .spot_scrub_schedule_entities import DysonJdmSchedulesSensor
+
+                entities.append(
+                    DysonJdmSchedulesSensor(
+                        coordinator, get_schedule_manager(hass, coordinator)
+                    )
+                )
             # Cloud-fetched cleaning history + Dyson's recommended-next-room
             # sensor. Both gated on cloud auth.
             if coordinator.config_entry.data.get("auth_token"):
@@ -1548,7 +1556,7 @@ async def async_setup_entry(  # noqa: C901
                     entities.append(DysonLastCleanSensor(coordinator, slot=i))
                 entities.append(DysonRecommendedCleanSensor(coordinator))
                 entities.append(DysonCurrentMapSensor(coordinator))
-                if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+                if coordinator.device and uses_jdm_commands(coordinator.device):
                     entities.append(DysonRobotCurrentRoomSensor(coordinator))
                 _register_end_of_clean_listener(hass, config_entry, coordinator)
 

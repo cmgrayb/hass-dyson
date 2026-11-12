@@ -9,6 +9,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.const import UnitOfTemperature
 
 from custom_components.hass_dyson.fan import DysonFan
 
@@ -18,6 +19,7 @@ def mock_hass():
     """Create a mock Home Assistant instance."""
     hass = MagicMock()
     hass.data = {}
+    hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     return hass
 
 
@@ -28,6 +30,7 @@ def mock_coordinator(mock_hass):
     coordinator.hass = mock_hass
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_category = "ec"
+    coordinator.device_capabilities = []
 
     # Mock device with all control methods
     device = MagicMock()
@@ -202,8 +205,8 @@ class TestAsyncSetPresetModeErrorHandling:
     async def test_async_set_preset_mode_heat_connection_error(self, mock_coordinator):
         """Test async_set_preset_mode Heat handles ConnectionError."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_heating_mode.side_effect = ConnectionError(
             "Connection lost"
         )
@@ -411,8 +414,8 @@ class TestAsyncSetTemperatureErrorHandling:
     async def test_async_set_temperature_connection_error(self, mock_coordinator):
         """Test async_set_temperature handles ConnectionError."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_target_temperature.side_effect = ConnectionError(
             "Connection lost"
         )
@@ -422,14 +425,16 @@ class TestAsyncSetTemperatureErrorHandling:
             await fan.async_set_temperature(temperature=22.0)
 
         # Assert
-        mock_coordinator.device.set_target_temperature.assert_called_once_with(22.0)
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(
+            22.0, UnitOfTemperature.CELSIUS
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_timeout_error(self, mock_coordinator):
         """Test async_set_temperature handles TimeoutError."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_target_temperature.side_effect = TimeoutError(
             "Command timeout"
         )
@@ -439,14 +444,16 @@ class TestAsyncSetTemperatureErrorHandling:
             await fan.async_set_temperature(temperature=24.5)
 
         # Assert
-        mock_coordinator.device.set_target_temperature.assert_called_once_with(24.5)
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(
+            24.5, UnitOfTemperature.CELSIUS
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_value_error(self, mock_coordinator):
         """Test async_set_temperature handles ValueError for invalid temperature."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_target_temperature.side_effect = ValueError(
             "Temperature out of range"
         )
@@ -456,14 +463,16 @@ class TestAsyncSetTemperatureErrorHandling:
             await fan.async_set_temperature(temperature=50.0)
 
         # Assert
-        mock_coordinator.device.set_target_temperature.assert_called_once_with(50.0)
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(
+            50.0, UnitOfTemperature.CELSIUS
+        )
 
     @pytest.mark.asyncio
     async def test_async_set_temperature_generic_exception(self, mock_coordinator):
         """Test async_set_temperature handles generic Exception."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_target_temperature.side_effect = Exception(
             "Unexpected error"
         )
@@ -473,7 +482,9 @@ class TestAsyncSetTemperatureErrorHandling:
             await fan.async_set_temperature(temperature=20.0)
 
         # Assert
-        mock_coordinator.device.set_target_temperature.assert_called_once_with(20.0)
+        mock_coordinator.device.set_target_temperature.assert_called_once_with(
+            20.0, UnitOfTemperature.CELSIUS
+        )
 
 
 class TestAsyncSetHvacModeErrorHandling:
@@ -485,8 +496,8 @@ class TestAsyncSetHvacModeErrorHandling:
         # Arrange
         from homeassistant.components.climate import HVACMode
 
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_fan_state.side_effect = ConnectionError(
             "Connection lost"
         )
@@ -504,8 +515,8 @@ class TestAsyncSetHvacModeErrorHandling:
         # Arrange
         from homeassistant.components.climate import HVACMode
 
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_heating_mode.side_effect = TimeoutError(
             "Command timeout"
         )
@@ -523,8 +534,8 @@ class TestAsyncSetHvacModeErrorHandling:
         # Arrange
         from homeassistant.components.climate import HVACMode
 
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_fan_state.side_effect = ValueError(
             "Invalid fan state"
         )
@@ -542,8 +553,8 @@ class TestAsyncSetHvacModeErrorHandling:
         # Arrange
         from homeassistant.components.climate import HVACMode
 
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_auto_mode.side_effect = KeyError("auto")
 
         # Act
@@ -559,8 +570,8 @@ class TestAsyncSetHvacModeErrorHandling:
         # Arrange
         from homeassistant.components.climate import HVACMode
 
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.device.set_heating_mode.side_effect = Exception(
             "Unexpected error"
         )
@@ -674,8 +685,8 @@ class TestUpdateHeatingDataErrorHandling:
     ):
         """Test _update_heating_data handles ValueError for invalid current temperature."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.data["environmental-data"] = {"tact": "INVALID"}
         product_state = {"tmp": "INVALID", "hmax": "2931", "hmod": "HEAT", "fpwr": "ON"}
 
@@ -690,8 +701,8 @@ class TestUpdateHeatingDataErrorHandling:
     ):
         """Do not use product-state tmp when environmental data is missing."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         product_state = {"tmp": None, "hmax": "2931", "hmod": "HEAT", "fpwr": "ON"}
 
         # Act
@@ -705,8 +716,8 @@ class TestUpdateHeatingDataErrorHandling:
     ):
         """Test _update_heating_data handles ValueError for invalid target temperature."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         product_state = {"tmp": "2981", "hmax": "INVALID", "hmod": "HEAT", "fpwr": "ON"}
 
         # Act
@@ -728,8 +739,8 @@ class TestUpdateHeatingDataTemperatures:
 
     def test_update_heating_data_uses_environmental_temperature(self, mock_coordinator):
         """Use tact rather than the product-state tmp value for current temperature."""
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.data["environmental-data"] = {"tact": "2970"}
         self.set_product_state(mock_coordinator, tmp="2900", hmax="2890")
 
@@ -743,8 +754,8 @@ class TestUpdateHeatingDataTemperatures:
         self, mock_coordinator, current_temp
     ):
         """Treat absent, off, and zero environmental readings as unavailable."""
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         mock_coordinator.data["environmental-data"] = {"tact": current_temp}
         self.set_product_state(mock_coordinator, hmax="2932")
 
@@ -754,8 +765,8 @@ class TestUpdateHeatingDataTemperatures:
 
     def test_update_heating_data_zero_target_uses_default(self, mock_coordinator):
         """Treat a zero target sentinel as unavailable."""
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         self.set_product_state(mock_coordinator, hmax="0000")
 
         fan._update_heating_data({"hmax": "0000"})
@@ -777,8 +788,8 @@ class TestUpdateHeatingDataTemperatures:
     def test_update_heating_data_target_temp_type_error(self, mock_coordinator):
         """Test _update_heating_data handles TypeError for None target temperature."""
         # Arrange
+        mock_coordinator.device_capabilities = ["Heating"]
         fan = DysonFan(mock_coordinator)
-        fan._has_heating = True
         product_state = {"tmp": "2981", "hmax": None, "hmod": "HEAT", "fpwr": "ON"}
         mock_coordinator.device.get_state_value.side_effect = (
             lambda data, key, default: None if key == "hmax" else default

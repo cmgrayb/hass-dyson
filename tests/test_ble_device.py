@@ -558,7 +558,7 @@ class TestDysonBLEDevice:
                 response=True,
             ),
         ]
-        sleep.assert_awaited_once_with(0.2)
+        sleep.assert_any_await(0.2)
         assert dev.state.daylight_mode is False
 
     @pytest.mark.asyncio
@@ -682,7 +682,7 @@ class TestDysonBLEDevice:
                 response=True,
             ),
         ]
-        sleep.assert_awaited_once_with(0.2)
+        sleep.assert_any_await(0.2)
 
     def _client_advertising(self, properties, *, read_value=b"\xa0\x0f"):
         """Mock BleakClient whose characteristics advertise "properties"."""
@@ -818,17 +818,38 @@ class TestDysonBLEDevice:
             response=True,
         )
 
-    def test_on_motion_notification_sets_motion_detected(self):
-        """Motion notification handler sets motion_detected appropriately."""
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            b"",
+            b"\x00",
+            b"\x01",
+            bytes(8),
+            bytes.fromhex("0000100000000000"),
+            bytes.fromhex("2000100000000000"),
+        ],
+    )
+    def test_undecoded_notification_does_not_report_motion(self, raw):
+        """Status bytes do not establish either motion or absence of motion."""
         hass = MagicMock()
         hass.bus.async_fire = MagicMock()
         dev = self._make_device(hass)
-        # Non-zero bytes → motion detected
-        dev._on_motion_notification(None, bytearray([0x01]))
-        assert dev.state.motion_detected is True
-        # All-zero bytes → no motion
-        dev._on_motion_notification(None, bytearray([0x00]))
-        assert dev.state.motion_detected is False
+        assert dev.state.motion_detected is None
+        dev._on_motion_notification(None, bytearray(raw))
+        assert dev.state.motion_detected is None
+        assert dev.state.char_11008_hex == raw.hex()
+        assert dev.state.last_motion_at == 0.0
+        event, payload = hass.bus.async_fire.call_args.args
+        assert event == EVENT_BLE_STATE_CHANGE
+        assert payload["motion_detected"] is None
+        assert payload["char_11008_hex"] == raw.hex()
+
+    def test_unknown_notification_clears_a_stale_motion_state(self):
+        """An old cached guess must not survive the corrected decoder."""
+        dev = self._make_device()
+        dev.state.motion_detected = True
+        dev._on_motion_notification(None, bytearray.fromhex("0000100000000000"))
+        assert dev.state.motion_detected is None
 
     def test_device_info_structure(self):
         """device_info dict has required HA device registry keys."""

@@ -129,7 +129,7 @@ def test_sensors_without_a_device(pure_mock_sensor_entity, sensor_coordinator):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prefix", ["RB05", "277", "527K"])
+@pytest.mark.parametrize("prefix", ["RB05", "RB07", "277", "527K"])
 async def test_only_spot_scrub_gets_dock_sensors(prefix):
     """Vis Nav and the older robots have no washing dock."""
     coordinator = MagicMock()
@@ -146,6 +146,6 @@ async def test_only_spot_scrub_gets_dock_sensors(prefix):
     await async_setup_entry(hass, entry, add)
 
     added = add.call_args.args[0]
-    expected = 1 if prefix == "RB05" else 0
+    expected = 1 if prefix in ("RB05", "RB07") else 0
     assert sum(isinstance(e, DysonRobotDockStateSensor) for e in added) == expected
     assert sum(isinstance(e, DysonRobotDockTimerEndSensor) for e in added) == expected

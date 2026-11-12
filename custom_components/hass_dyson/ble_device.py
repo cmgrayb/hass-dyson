@@ -42,6 +42,7 @@ from uuid import UUID
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+from .ble_light_attributes import BLELightAttributes
 from .const import (
     BLE_AUTH_CHAR_UUID,
     BLE_BRIGHTNESS_LUMENS_MAX,
@@ -80,6 +81,7 @@ _RECONNECT_DELAYS = [5, 15, 30, 60]
 
 # Keepalive poll interval in seconds
 _KEEPALIVE_INTERVAL = 20.0
+_LIGHT_WRITE_INTERVAL = 0.25
 
 # Treat consecutive manual light adjustments as one interaction. The lamp does
 # not expose a decoded daylight-mode notification, so a later interaction must
@@ -162,6 +164,9 @@ class DysonFragmentAssembler:
             self._buffer.extend(fragment[2:])
         else:
             if self._expected_fragments == 0:
+                return None
+            if (header & 0x7F) != self._received_fragments:
+                self.reset()
                 return None
             self._received_fragments = (header & 0x7F) + 1
             self._buffer.extend(fragment[1:])
@@ -455,10 +460,14 @@ class BLELightState:
     color_temp_kelvin: int | None = None
     color_temp_mired: int | None = None
     daylight_mode: bool | None = None  # None = unknown, True = auto, False = manual
-    motion_detected: bool = False
+    auto_brightness: bool | None = None
+    movement_sensor: bool | None = None
+    lighting_revision: int = 0
+    motion_detected: bool | None = None
     last_motion_at: float = 0.0
     char_11006_hex: str | None = None
     char_11007_hex: str | None = None
+    char_11008_hex: str | None = None
     last_error: str = ""
     firmware_major: int | None = None
     firmware_minor: int | None = None
@@ -526,12 +535,14 @@ class DysonBLEDevice:
         self._daylight_capable = daylight_capable
         self._on_mac_resolved = on_mac_resolved
         self._manual_mode_valid_until = 0.0
+        self._last_light_write: float | None = None
 
         self.state = BLELightState()
         self._client: Any | None = None  # BleakClient at runtime
         self._assembler = DysonFragmentAssembler()
         self._message_queue: asyncio.Queue[DysonMessage] = asyncio.Queue()
         self._lock = asyncio.Lock()
+        self.lighting = BLELightAttributes(self)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -569,14 +580,14 @@ class DysonBLEDevice:
             self._message_queue.put_nowait(message)
 
     def _on_motion_notification(self, _characteristic: Any, data: bytearray) -> None:
-        """Handle notification from the motion characteristic (11008)."""
-        raw = bytes(data)
-        motion = raw != bytes(len(raw))
-        import time
+        """Retain undecoded 11008 data without inventing occupancy events.
 
-        if motion:
-            self.state.last_motion_at = time.time()
-        self.state.motion_detected = motion
+        Controlled Lightcycle Morph tests observed the nonzero value
+        0000100000000000 both at rest and during movement. Neither nonzero
+        nor all-zero bytes have an established motion meaning.
+        """
+        self.state.char_11008_hex = bytes(data).hex()
+        self.state.motion_detected = None
         self._fire_state_change()
 
     def _on_power_notification(self, _characteristic: Any, data: bytearray) -> None:
@@ -657,6 +668,8 @@ class DysonBLEDevice:
         )
         if len(raw) >= 2:  # noqa: PLR2004
             kelvin = int.from_bytes(raw[:2], byteorder="little")
+            if not BLE_MIN_KELVIN <= kelvin <= BLE_MAX_KELVIN:
+                return
             _LOGGER.debug(
                 "Color temp update for %s: %d K",
                 self.serial_number,
@@ -679,6 +692,13 @@ class DysonBLEDevice:
         def _handler(_characteristic: Any, data: bytearray) -> None:
             hex_value = bytes(data).hex()
             setattr(self.state, f"char_{short_id}_hex", hex_value)
+            key = {"11006": "auto_brightness", "11007": "movement_sensor"}.get(short_id)
+            if key is not None:
+                setattr(
+                    self.state,
+                    key,
+                    bool(data[0]) if bytes(data) in (b"\0", b"\1") else None,
+                )
             self._fire_state_change()
 
         return _handler
@@ -699,6 +719,7 @@ class DysonBLEDevice:
         self.state.connected = False
         self.state.authenticated = False
         self.state.daylight_mode = None
+        self.lighting.reset()
         self._manual_mode_valid_until = 0.0
         self._client = None
         self._fire_state_change()
@@ -1025,32 +1046,22 @@ class DysonBLEDevice:
         #   [0:2]   reserved 0x00 0x00
         #   [2:18]  IV (16 bytes)
         #   [18:50] CT (32 bytes) — AES-CBC(nonce_echo || device_challenge)
-        #   [50:82] MAC (32 bytes, optional — may be absent on some firmware)
-        # We verify the MAC when present for early LTK mismatch detection,
-        # then decrypt and take the second 16-byte block as the device challenge.
-        if len(payload_b_msg.payload) < 50:
-            raise RuntimeError(
-                f"PayloadB from {self.serial_number} is too short "
-                f"({len(payload_b_msg.payload)} bytes, need >= 50) — "
-                "possible auth rejection or firmware mismatch"
-            )
+        #   [50:82] MAC (32 bytes). Reject missing authentication data rather
+        # than treating a truncated response as an authenticated challenge.
+        if len(payload_b_msg.payload) != 82:
+            raise RuntimeError("Invalid lamp authentication response length")
         iv = payload_b_msg.payload[2:18]
         ct = payload_b_msg.payload[18:50]
         mac = payload_b_msg.payload[50:82]
-        if len(mac) == 32:
-            expected_mac = hmac.new(enc_key, ct, hashlib.sha256).digest()
-            if not hmac.compare_digest(mac, expected_mac):
-                raise RuntimeError(
-                    f"PayloadB from {self.serial_number} failed HMAC verification — "
-                    "LTK may be incorrect or corrupted"
-                )
+        expected_mac = hmac.new(enc_key, ct, hashlib.sha256).digest()
+        if payload_b_msg.payload[:2] != b"\0\0" or not hmac.compare_digest(
+            mac, expected_mac
+        ):
+            raise RuntimeError("Lamp authentication response verification failed")
         dec = _aes_cbc_decrypt(enc_key, iv, ct)
+        if not hmac.compare_digest(dec[:16], nonce):
+            raise RuntimeError("Lamp authentication challenge verification failed")
         device_nonce = dec[16:32]  # second 16-byte block = device's challenge
-        _LOGGER.debug(
-            "Decoded device challenge from %s (nonce: %s...)",
-            self.serial_number,
-            device_nonce.hex()[:8],
-        )
 
         _LOGGER.debug("Sending PayloadC (0x08) to %s", self.serial_number)
         payload_c = build_reauth_payload_c(enc_key, device_nonce)
@@ -1157,10 +1168,9 @@ class DysonBLEDevice:
             )
             if len(color_temp_raw) >= 2:  # noqa: PLR2004
                 kelvin = int.from_bytes(color_temp_raw[:2], byteorder="little")
-                self.state.color_temp_kelvin = kelvin
-                self.state.color_temp_mired = (
-                    kelvin_to_mired(kelvin) if kelvin > 0 else None
-                )
+                if BLE_MIN_KELVIN <= kelvin <= BLE_MAX_KELVIN:
+                    self.state.color_temp_kelvin = kelvin
+                    self.state.color_temp_mired = kelvin_to_mired(kelvin)
                 _LOGGER.debug(
                     "Initial color temp for %s: %d K",
                     self.serial_number,
@@ -1325,17 +1335,14 @@ class DysonBLEDevice:
             self._message_queue = asyncio.Queue()
             self._assembler.reset()
 
-            # Subscribe to auth characteristic notifications
-            await self._client.start_notify(
-                BLE_AUTH_CHAR_UUID, self._on_auth_notification
-            )
-            _LOGGER.debug(
-                "Auth characteristic notification subscription active for %s",
-                self.serial_number,
-            )
-
-            # LTK re-auth
             try:
+                await self._client.start_notify(
+                    BLE_AUTH_CHAR_UUID, self._on_auth_notification
+                )
+                _LOGGER.debug(
+                    "Auth characteristic notification subscription active for %s",
+                    self.serial_number,
+                )
                 await self._reauth_with_ltk()
             except Exception as exc:
                 _LOGGER.error(
@@ -1361,10 +1368,12 @@ class DysonBLEDevice:
             # keep state current so we proceed even if the initial read fails.
             await self._read_initial_state()
             await self._subscribe_notifications()
+            self.lighting.start()
             self._fire_state_change()
 
     async def _disconnect_client(self) -> None:
         """Disconnect the BleakClient, suppressing errors."""
+        self.lighting.reset()
         client = self._client
         self._client = None
         if client is not None:
@@ -1387,6 +1396,7 @@ class DysonBLEDevice:
 
     async def disconnect(self) -> None:
         """Deliberately disconnect from the lamp."""
+        await self.lighting.close()
         async with self._lock:
             await self._disconnect_client()
 
@@ -1400,6 +1410,26 @@ class DysonBLEDevice:
         )
 
     # ── Command API ───────────────────────────────────────────────────────────
+
+    async def _wait_for_light_write(self) -> None:
+        """Share Morph MCU pacing across direct and attribute command paths."""
+        loop = asyncio.get_running_loop()
+        if self._daylight_capable and self._last_light_write is not None:
+            remaining = _LIGHT_WRITE_INTERVAL - (loop.time() - self._last_light_write)
+            if remaining > 0:
+                # ATT completion precedes the lamp MCU applying the value.
+                # Back-to-back brightness/temperature writes can drop the latter.
+                await asyncio.sleep(remaining)
+
+    async def _write_light_characteristic(
+        self, uuid: str, payload: bytes, *, response: bool
+    ) -> None:
+        """Pace Morph commands while the caller holds the shared command lock."""
+        if self._client is None:
+            raise RuntimeError("Lamp disconnected")
+        await self._wait_for_light_write()
+        await self._client.write_gatt_char(uuid, payload, response=response)
+        self._last_light_write = asyncio.get_running_loop().time()
 
     async def set_power(self, on: bool) -> None:
         """Turn the lamp on or off.
@@ -1420,7 +1450,9 @@ class DysonBLEDevice:
                 self.serial_number,
                 payload.hex(),
             )
-            await self._client.write_gatt_char(BLE_POWER_UUID, payload, response=False)
+            await self._write_light_characteristic(
+                BLE_POWER_UUID, payload, response=False
+            )
             # Update state optimistically from the written value.
             # GATT reads via a BLE proxy can take several seconds each;
             # BLE notifications will keep state current.
@@ -1485,13 +1517,20 @@ class DysonBLEDevice:
             self.serial_number,
             BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD.hex(),
         )
-        await self._client.write_gatt_char(
-            BLE_WRITE_ATTR_CHAR_UUID,
-            BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
-            # Manual controls depend on this mode change, so only race the
-            # following value write when the lamp accepts a Write Request.
-            response=self._wants_write_request(BLE_WRITE_ATTR_CHAR_UUID),
-        )
+        from .ble_light_protocol import LightAttribute
+
+        if self.lighting.available and self.lighting.attributes.get(
+            LightAttribute.DAYLIGHT_MODE
+        ) in (b"\0", b"\1"):
+            # Both callers already hold the shared command lock. Reuse the
+            # framed request/readback primitive without acquiring it twice.
+            await self.lighting._write(LightAttribute.DAYLIGHT_MODE, b"\0")
+        else:
+            await self._write_light_characteristic(
+                BLE_WRITE_ATTR_CHAR_UUID,
+                BLE_DAYLIGHT_MODE_DISABLE_PAYLOAD,
+                response=self._wants_write_request(BLE_WRITE_ATTR_CHAR_UUID),
+            )
         self.state.daylight_mode = False
         # The acknowledgement confirms receipt, but the lamp applies the mode
         # transition asynchronously.  Allow it to enter manual mode before the
@@ -1521,6 +1560,17 @@ class DysonBLEDevice:
         """
         if not self.is_connected or self._client is None:
             raise RuntimeError(f"{self.serial_number} is not connected")
+        if self.lighting.available:
+            from .ble_light_protocol import LightAttribute
+
+            if self.lighting.attributes.get(LightAttribute.DAYLIGHT_MODE) in (
+                b"\0",
+                b"\1",
+            ):
+                await self.lighting.set_attribute(
+                    LightAttribute.DAYLIGHT_MODE, bytes((enabled,))
+                )
+                return
         async with self._lock:
             payload = (
                 BLE_DAYLIGHT_MODE_ENABLE_PAYLOAD
@@ -1533,7 +1583,7 @@ class DysonBLEDevice:
                 self.serial_number,
                 payload.hex(),
             )
-            await self._client.write_gatt_char(
+            await self._write_light_characteristic(
                 BLE_WRITE_ATTR_CHAR_UUID,
                 payload,
                 response=self._wants_write_request(BLE_WRITE_ATTR_CHAR_UUID),
@@ -1554,9 +1604,6 @@ class DysonBLEDevice:
         Daylight-capable devices use characteristic 11009 as uint16
         little-endian lumens (100–1000). Other devices retain characteristic
         11000 as a one-byte percentage (0–100).
-
-        Daylight mode is disabled first (char 0021) so the lamp accepts the
-        manual brightness write rather than ignoring it.
 
         Daylight mode is disabled first (char 0021) so the lamp accepts the
         manual brightness write rather than ignoring it.
@@ -1588,7 +1635,7 @@ class DysonBLEDevice:
                 self._brightness_uuid,
                 payload.hex(),
             )
-            await self._client.write_gatt_char(
+            await self._write_light_characteristic(
                 self._brightness_uuid,
                 payload,
                 # Verified on the Morph family: 11009 applies an unacknowledged
@@ -1638,7 +1685,7 @@ class DysonBLEDevice:
                 BLE_COLOR_TEMP_UUID,
                 payload.hex(),
             )
-            await self._client.write_gatt_char(
+            await self._write_light_characteristic(
                 BLE_COLOR_TEMP_UUID,
                 payload,
                 # As with brightness: follow the advertised property, because the

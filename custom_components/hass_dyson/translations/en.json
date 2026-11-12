@@ -183,6 +183,25 @@
     }
   },
   "entity": {
+    "date": {
+      "lightcycle_away_start_date": {
+        "name": "Away start date"
+      }
+    },
+    "time": {
+      "lightcycle_sunrise_time": {
+        "name": "Sunrise time"
+      },
+      "lightcycle_sunset_time": {
+        "name": "Sunset time"
+      },
+      "lightcycle_sleep_start_time": {
+        "name": "Sleep start time"
+      },
+      "lightcycle_sleep_end_time": {
+        "name": "Sleep end time"
+      }
+    },
     "sensor": {
       "robot_active_fault": {
         "name": "Active fault"
@@ -337,9 +356,33 @@
       },
       "robot_current_room": {
         "name": "Current room"
+      },
+      "jdm_schedules": {
+        "name": "Schedules"
       }
     },
     "switch": {
+      "lightcycle_auto_brightness": {
+        "name": "Auto-brightness sensor"
+      },
+      "lightcycle_movement_sensor": {
+        "name": "Movement sensor"
+      },
+      "lightcycle_age_adjustment": {
+        "name": "Age adjustment"
+      },
+      "lightcycle_sleep_mode": {
+        "name": "Sleep mode"
+      },
+      "lightcycle_away_mode": {
+        "name": "Away mode"
+      },
+      "lightcycle_personal_daylight": {
+        "name": "Personal daylight times"
+      },
+      "lightcycle_wake_up_schedule": {
+        "name": "Wake-up schedule"
+      },
       "ble_vacuum_task_detection_switch": {
         "name": "Task Detection"
       },
@@ -372,6 +415,12 @@
       }
     },
     "button": {
+      "lightcycle_sync_location": {
+        "name": "Sync cloud location"
+      },
+      "lightcycle_reset_daylight_times": {
+        "name": "Reset daylight times"
+      },
       "find_follow_scan": {
         "name": "Find+Follow Scan"
       },
@@ -383,6 +432,16 @@
       }
     },
     "select": {
+      "lightcycle_lighting_mode": {
+        "name": "Lighting mode",
+        "state": {
+          "manual": "Manual",
+          "daylight": "Daylight",
+          "study": "Study",
+          "relax": "Relax",
+          "precision": "Precision"
+        }
+      },
       "fan_control_mode": {
         "name": "Fan Control Mode"
       },
@@ -472,6 +531,18 @@
       }
     },
     "number": {
+      "lightcycle_baseline_brightness": {
+        "name": "After-sunset brightness"
+      },
+      "lightcycle_baseline_colour_temperature": {
+        "name": "After-sunset colour temperature"
+      },
+      "lightcycle_wake_up_brightness": {
+        "name": "Wake-up brightness"
+      },
+      "lightcycle_birth_year": {
+        "name": "Year of birth"
+      },
       "sleep_timer": {
         "name": "Sleep Timer"
       },
@@ -713,16 +784,43 @@
     },
     "spot_scrub_request_failed": {
       "message": "Unable to confirm the cleaning mode. Check the robot connection and room settings in MyDyson, then try again."
+    },
+    "jdm_schedule_failed": {
+      "message": "Unable to change the robot schedule. Check the robot connection, then try again."
+    },
+    "jdm_schedule_unknown": {
+      "message": "Schedule {schedule_id} is not known to Home Assistant. If it was made in MyDyson while Home Assistant was not running, switch it off and on again in MyDyson so Home Assistant learns it."
+    },
+    "jdm_schedule_unsupported": {
+      "message": "Robot schedules are only available for Dyson Spot+Scrub robots."
     }
   },
   "issues": {
     "configured_host_unreachable": {
       "title": "{device_name} is not reachable at its configured address",
-      "description": "{device_name} has a static address ({hostname}) set in its connection options, but nothing has answered there for over 10 minutes, so it is running on the cloud connection instead. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. Saving new connection options reconnects the device, as does its Reconnect button; this warning clears itself once it connects locally."
+      "description": "{device_name} has a static address ({hostname}) set in its connection options. Local connection attempts are still failing after at least 15 minutes on the cloud fallback. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. Saving new connection options reconnects the device, as does its Reconnect button; this warning clears itself once it connects locally."
     },
     "discovered_host_unreachable": {
       "title": "{device_name} is not reachable on the local network",
-      "description": "{device_name} prefers a local connection, but nothing has answered at {hostname} for over 10 minutes, so it is running on the cloud connection instead. The device keeps working this way, only slower and without local control. This address was discovered rather than entered by hand, so either mDNS is being filtered on the network or the address has changed. Set the device's IP address in its connection options to bypass discovery, or fix mDNS on the network; see the troubleshooting guide. This warning clears itself once the device connects locally."
+      "description": "{device_name} prefers a local connection, but local connection attempts to {hostname} are still failing after at least 15 minutes on the cloud fallback. The device keeps working this way, only slower and without local control. This address was discovered rather than entered by hand, so either mDNS is being filtered on the network or the address has changed. Set the device's IP address in its connection options to bypass discovery, or fix mDNS on the network; see the troubleshooting guide. This warning clears itself once the device connects locally."
+    },
+    "temperature_unit_changed": {
+      "title": "Reload {device_name} to apply temperature units",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Reload {device_name}?",
+            "description": "Reload this Dyson device to apply Home Assistant’s temperature unit. Its entities will briefly disconnect while it reloads."
+          }
+        },
+        "error": {
+          "reload_failed": "The device could not be reloaded. Check its connection and try again."
+        }
+      }
+    },
+    "jdm_schedules_out_of_sync": {
+      "title": "{device_name} schedules are out of sync",
+      "description": "The robot reports {robot_total} schedule(s) but Home Assistant knows {known_total}, or a schedule changed while Home Assistant was not watching (for example while it was restarting). Home Assistant learns a schedule whenever it is saved. In MyDyson, switch each schedule off and on again (or edit and save it); this warning clears itself once the robot and Home Assistant match. If Home Assistant still lists a schedule that MyDyson no longer has, delete it with the Delete Robot Schedule action."
     }
   }
 }

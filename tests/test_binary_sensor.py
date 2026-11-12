@@ -745,10 +745,21 @@ class TestDysonMotionBinarySensor:
         sensor = self._make_sensor()
         assert sensor._attr_unique_id == "CD06-GB-HAA0001A_motion"
 
-    def test_motion_false_missing_key(self):
-        """is_on returns False when motion_detected key is absent."""
+    def test_motion_unknown_missing_key(self):
+        """Missing data must not masquerade as confirmed absence of motion."""
         sensor = self._make_sensor(data={"power": True})
-        assert sensor.is_on is False
+        assert sensor.is_on is None
+
+    @pytest.mark.parametrize("value", [None, 0, 1, "false", "0000100000000000"])
+    def test_motion_unknown_for_undecoded_values(self, value):
+        """Only actual Boolean values are a decoded measurement."""
+        sensor = self._make_sensor(data={"motion_detected": value})
+        assert sensor.is_on is None
+
+    def test_unverified_motion_sensor_is_not_enabled_by_default(self):
+        """New installations must not advertise unverified motion detection."""
+        sensor = self._make_sensor()
+        assert sensor.entity_registry_enabled_default is False
 
 
 class TestBLEBinarySensorSetup:
