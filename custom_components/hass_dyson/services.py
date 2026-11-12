@@ -78,10 +78,12 @@ from .const import (
     DISCOVERY_CLOUD,
     DOMAIN,
     SERVICE_CANCEL_SLEEP_TIMER,
+    SERVICE_DELETE_ROBOT_SCHEDULE,
     SERVICE_GET_CLOUD_DEVICES,
     SERVICE_REFRESH_ACCOUNT_DATA,
     SERVICE_RESET_FILTER,
     SERVICE_SET_OSCILLATION_ANGLES,
+    SERVICE_SET_ROBOT_SCHEDULE,
     SERVICE_SET_ROOM_CLEANING_MODES,
     SERVICE_SET_SLEEP_TIMER,
     SERVICE_SET_ZONE_BEHAVIOUR,
@@ -96,6 +98,13 @@ from .spot_scrub_room_select import (
     SpotScrubInvalidRequestError,
     SpotScrubNotIdleError,
     get_room_store,
+)
+from .spot_scrub_schedule import (
+    DAYS,
+    ScheduleNotFoundError,
+    SpotScrubScheduleManager,
+    describe_order,
+    get_schedule_manager,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -130,6 +139,8 @@ DEVICE_CATEGORY_SERVICES = {
         SERVICE_START_ZONE_CLEAN,  # Vis Nav zone cleaning via cleaningProgramme
         SERVICE_SET_ZONE_BEHAVIOUR,  # Vis Nav per-zone power/strategy overrides
         SERVICE_SET_ROOM_CLEANING_MODES,  # Spot+Scrub per-room vacuum/mop modes
+        SERVICE_SET_ROBOT_SCHEDULE,  # Spot+Scrub schedules kept on the robot
+        SERVICE_DELETE_ROBOT_SCHEDULE,
     ],
     "vacuum": [  # Vacuum devices
         SERVICE_RESET_FILTER,
@@ -215,6 +226,40 @@ SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA = vol.Schema(
             {vol.Coerce(str): vol.Any(vol.In(tuple(MODE_CODES)), dict)},
             vol.Length(min=1),
         ),
+    }
+)
+
+
+def _day_name(value: Any) -> str:
+    """Accept mon ... sun or full day names, any case."""
+    day = str(value).strip().lower()[:3]
+    if day not in DAYS:
+        raise vol.Invalid(f"Unknown day: {value}")
+    return day
+
+
+# Spot+Scrub schedules kept on the robot. Without schedule_id a new schedule is
+# created (days and time required) using the robot's current room settings,
+# changed by room_modes (same shape as set_room_cleaning_modes) when given.
+# With schedule_id, only the listed fields change.
+SERVICE_SET_ROBOT_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Optional("schedule_id"): vol.Coerce(int),
+        vol.Optional("days"): vol.All(cv.ensure_list, [_day_name], vol.Length(min=1)),
+        vol.Optional("time"): cv.time,
+        vol.Optional("enabled"): cv.boolean,
+        vol.Optional("room_modes"): vol.All(
+            {vol.Coerce(str): vol.Any(vol.In(tuple(MODE_CODES)), dict)},
+            vol.Length(min=1),
+        ),
+    }
+)
+
+SERVICE_DELETE_ROBOT_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): str,
+        vol.Required("schedule_id"): vol.Coerce(int),
     }
 )
 
@@ -1105,6 +1150,71 @@ async def _handle_set_room_cleaning_modes(
         mask_serial(coordinator.serial_number),
         changes,
     )
+
+
+async def _schedule_manager_for_call(
+    hass: HomeAssistant, call: ServiceCall
+) -> SpotScrubScheduleManager:
+    """The schedule manager of the Spot+Scrub robot named in a call."""
+    coordinator = await _get_coordinator_from_device_id(hass, call.data["device_id"])
+    if not coordinator:
+        raise ServiceValidationError(f"Device {call.data['device_id']} not found")
+    if not coordinator.device or not uses_jdm_commands(coordinator.device):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="jdm_schedule_unsupported"
+        )
+    return get_schedule_manager(hass, coordinator)
+
+
+def _schedule_error(err: Exception, schedule_id: Any) -> HomeAssistantError:
+    if isinstance(err, ScheduleNotFoundError):
+        return ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="jdm_schedule_unknown",
+            translation_placeholders={"schedule_id": str(schedule_id)},
+        )
+    if isinstance(err, ValueError):
+        return ServiceValidationError(str(err))
+    _LOGGER.debug("Spot+Scrub schedule request failed: %s", err)
+    return HomeAssistantError(
+        translation_domain=DOMAIN, translation_key="jdm_schedule_failed"
+    )
+
+
+async def _handle_set_robot_schedule(
+    hass: HomeAssistant, call: ServiceCall
+) -> dict[str, Any]:
+    """Create or change a schedule on a Spot+Scrub robot."""
+    manager = await _schedule_manager_for_call(hass, call)
+    schedule_id = call.data.get("schedule_id")
+    at = call.data.get("time")
+    try:
+        order = await manager.async_set_schedule(
+            schedule_id,
+            days=call.data.get("days"),
+            hour=at.hour if at else None,
+            minute=at.minute if at else None,
+            enabled=call.data.get("enabled"),
+            room_modes=call.data.get("room_modes"),
+        )
+    except (RuntimeError, ValueError, TimeoutError) as err:
+        raise _schedule_error(err, schedule_id) from err
+    _LOGGER.info(
+        "Set schedule %s on %s",
+        order["id"],
+        mask_serial(manager.coordinator.serial_number),
+    )
+    return describe_order(order)
+
+
+async def _handle_delete_robot_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Delete a schedule from a Spot+Scrub robot."""
+    manager = await _schedule_manager_for_call(hass, call)
+    schedule_id = call.data["schedule_id"]
+    try:
+        await manager.async_delete_schedule(schedule_id)
+    except (RuntimeError, ValueError, TimeoutError) as err:
+        raise _schedule_error(err, schedule_id) from err
 
 
 async def _handle_get_cloud_devices(
@@ -2109,6 +2219,31 @@ async def _register_services(
             SERVICE_SET_ROOM_CLEANING_MODES_SCHEMA
         )
 
+    service_extra: dict[str, dict[str, Any]] = {}
+
+    if SERVICE_SET_ROBOT_SCHEDULE in services_to_register:
+
+        async def async_handle_set_robot_schedule(call: ServiceCall) -> dict[str, Any]:
+            return await _handle_set_robot_schedule(hass, call)
+
+        service_handlers[SERVICE_SET_ROBOT_SCHEDULE] = async_handle_set_robot_schedule
+        service_schemas[SERVICE_SET_ROBOT_SCHEDULE] = SERVICE_SET_ROBOT_SCHEDULE_SCHEMA
+        service_extra[SERVICE_SET_ROBOT_SCHEDULE] = {
+            "supports_response": SupportsResponse.OPTIONAL
+        }
+
+    if SERVICE_DELETE_ROBOT_SCHEDULE in services_to_register:
+
+        async def async_handle_delete_robot_schedule(call: ServiceCall) -> None:
+            await _handle_delete_robot_schedule(hass, call)
+
+        service_handlers[SERVICE_DELETE_ROBOT_SCHEDULE] = (
+            async_handle_delete_robot_schedule
+        )
+        service_schemas[SERVICE_DELETE_ROBOT_SCHEDULE] = (
+            SERVICE_DELETE_ROBOT_SCHEDULE_SCHEMA
+        )
+
     # Register services that aren't already registered
     registered_services = []
     for service_name, handler in service_handlers.items():
@@ -2121,6 +2256,7 @@ async def _register_services(
                 description_placeholders={
                     "docs_url": "https://github.com/cmgrayb/hass-dyson/blob/main/docs/ACTIONS.md"
                 },
+                **service_extra.get(service_name, {}),
             )
             registered_services.append(service_name)
 

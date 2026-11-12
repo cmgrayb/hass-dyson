@@ -76,7 +76,7 @@ from .coordinator import (
     DysonCloudAccountCoordinator,
     DysonDataUpdateCoordinator,
 )
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .services import (
     async_remove_cloud_services,
     async_remove_device_services_for_coordinator,
@@ -1043,6 +1043,11 @@ def _get_platforms_for_device(coordinator: DysonDataUpdateCoordinator) -> list[s
         cat in {"robot", "vacuum", "flrc"} for cat in device_category
     ) and coordinator.config_entry.data.get("auth_token"):
         platforms.append("calendar")
+
+    # Spot+Scrub robots keep schedules on the robot: a calendar and one switch
+    # per schedule, with or without cloud auth.
+    if coordinator.device and uses_jdm_commands(coordinator.device):
+        platforms.extend(["calendar", "switch"])
 
     # Remove duplicates and return
     return list(set(platforms))
