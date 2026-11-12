@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CAPABILITY_ENVIRONMENTAL_DATA, DOMAIN
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +50,15 @@ async def async_setup_entry(
 
     # MQTT / cloud-connected devices
     coordinator: DysonDataUpdateCoordinator = entry_data
+
+    if coordinator.device and uses_jdm_commands(coordinator.device):
+        # Spot+Scrub robots: one switch per schedule kept on the robot.
+        from .spot_scrub_schedule_entities import async_setup_schedule_switches
+
+        await async_setup_schedule_switches(
+            hass, coordinator, async_add_entities, config_entry.async_on_unload
+        )
+        return True
 
     entities: list[SwitchEntity] = []
 

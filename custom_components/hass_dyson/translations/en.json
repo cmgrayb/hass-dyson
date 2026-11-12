@@ -356,6 +356,9 @@
       },
       "robot_current_room": {
         "name": "Current room"
+      },
+      "jdm_schedules": {
+        "name": "Schedules"
       }
     },
     "switch": {
@@ -781,6 +784,15 @@
     },
     "spot_scrub_request_failed": {
       "message": "Unable to confirm the cleaning mode. Check the robot connection and room settings in MyDyson, then try again."
+    },
+    "jdm_schedule_failed": {
+      "message": "Unable to change the robot schedule. Check the robot connection, then try again."
+    },
+    "jdm_schedule_unknown": {
+      "message": "Schedule {schedule_id} is not known to Home Assistant. If it was made in MyDyson while Home Assistant was not running, switch it off and on again in MyDyson so Home Assistant learns it."
+    },
+    "jdm_schedule_unsupported": {
+      "message": "Robot schedules are only available for Dyson Spot+Scrub robots."
     }
   },
   "issues": {
@@ -805,6 +817,10 @@
           "reload_failed": "The device could not be reloaded. Check its connection and try again."
         }
       }
+    },
+    "jdm_schedules_out_of_sync": {
+      "title": "{device_name} schedules are out of sync",
+      "description": "The robot reports {robot_total} schedule(s) but Home Assistant knows {known_total}, or a schedule changed while Home Assistant was not watching (for example while it was restarting). Home Assistant learns a schedule whenever it is saved. In MyDyson, switch each schedule off and on again (or edit and save it); this warning clears itself once the robot and Home Assistant match. If Home Assistant still lists a schedule that MyDyson no longer has, delete it with the Delete Robot Schedule action."
     }
   }
 }

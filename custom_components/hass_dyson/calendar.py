@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import uses_jdm_commands
 from .entity import DysonEntity
 from .sensor import _device_product_type, _schedule_cache
 
@@ -52,6 +53,21 @@ async def async_setup_entry(
 ) -> None:
     """Set up Dyson calendar entities from a config entry."""
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+
+    if coordinator.device and uses_jdm_commands(coordinator.device):
+        # Spot+Scrub robots keep schedules on the robot; the cloud scheduler
+        # returns 404 for them.
+        from .spot_scrub_schedule import get_schedule_manager
+        from .spot_scrub_schedule_entities import DysonJdmScheduleCalendar
+
+        async_add_entities(
+            [
+                DysonJdmScheduleCalendar(
+                    coordinator, get_schedule_manager(hass, coordinator)
+                )
+            ]
+        )
+        return
 
     device_category: list[str] = coordinator.device_category
     _CALENDAR_CATEGORIES: set[str] = {"ec", "robot", "vacuum", "flrc"}

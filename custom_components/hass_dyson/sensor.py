@@ -1541,6 +1541,14 @@ async def async_setup_entry(  # noqa: C901
                 for detail in ("stage", "room", "programme", "progress"):
                     entities.append(DysonRobotCleanDetailSensor(coordinator, detail))
                 entities.append(DysonRobotActiveFaultSensor(coordinator))
+                from .spot_scrub_schedule import get_schedule_manager
+                from .spot_scrub_schedule_entities import DysonJdmSchedulesSensor
+
+                entities.append(
+                    DysonJdmSchedulesSensor(
+                        coordinator, get_schedule_manager(hass, coordinator)
+                    )
+                )
             # Cloud-fetched cleaning history + Dyson's recommended-next-room
             # sensor. Both gated on cloud auth.
             if coordinator.config_entry.data.get("auth_token"):
