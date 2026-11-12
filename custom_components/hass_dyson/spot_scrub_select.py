@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
@@ -38,7 +37,8 @@ class DysonSpotScrubCleaningModeSelect(DysonEntity, SelectEntity):
         self._attr_options = list(MODE_CODES)
         self._attr_current_option = None
         self._preferences: dict[str, Any] | None = None
-        self._lock = asyncio.Lock()
+        # Shared with room writes, so a start can wait for a mode change.
+        self._lock = get_room_store(coordinator).lock
 
     @property
     def available(self) -> bool:

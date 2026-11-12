@@ -38,6 +38,8 @@ from .spot_scrub import (
 _LOGGER = logging.getLogger(__name__)
 
 REFRESH_INTERVAL = timedelta(seconds=60)
+# How long a start waits for a mode change sent with it to begin writing.
+START_SETTLE_SECONDS = 2.0
 
 SETTING_LABELS = {
     "cleaning_mode": "cleaning mode",
@@ -64,6 +66,23 @@ class SpotScrubRoomStore:
         self._lock = asyncio.Lock()
         self._listeners: list[Callable[[], None]] = []
         self._unsub_timer: Callable[[], None] | None = None
+
+    @property
+    def lock(self) -> asyncio.Lock:
+        """Serialise every preference read and write for this robot."""
+        return self._lock
+
+    async def async_wait_before_start(self) -> None:
+        """Let a mode change sent alongside a start reach the robot first.
+
+        Controllers such as Apple Home send the cleaning mode and the start
+        within a few hundred milliseconds. Preferences are only written while
+        the robot is docked, so START waits briefly for a write to begin, then
+        for any write in progress to finish.
+        """
+        await asyncio.sleep(START_SETTLE_SECONDS)
+        async with self._lock:
+            pass
 
     @property
     def rows(self) -> dict[int, list[Any]]:
