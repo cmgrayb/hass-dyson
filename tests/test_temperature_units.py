@@ -35,13 +35,15 @@ async def test_entity_setpoints_survive_repeated_readback(unit, target):
     coordinator.serial_number = "test-heater"
     coordinator.data = {"product-state": {}, "environmental-data": {"tact": "2987"}}
 
-    for entity_type, update in (
-        (DysonClimateEntity, "_update_temperatures"),
-        (DysonFan, "_update_heating_data"),
+    # The climate entity reports through the native_* members (HA Core
+    # 2026.11, #550); the fan keeps its own plain attributes.
+    for entity_type, update, attr in (
+        (DysonClimateEntity, "_update_temperatures", "_attr_native_"),
+        (DysonFan, "_update_heating_data", "_attr_"),
     ):
         entity = entity_type(coordinator)
         entity.async_write_ha_state = MagicMock()
-        assert entity._attr_temperature_unit == unit
+        assert getattr(entity, f"{attr}temperature_unit") == unit
         assert entity._attr_target_temperature_step == 1
         for _ in range(10):
             device.send_command.reset_mock()
@@ -52,8 +54,8 @@ async def test_entity_setpoints_survive_repeated_readback(unit, target):
             )
             raw = device.send_command.call_args.args[1]["hmax"]
             getattr(entity, update)({"hmax": raw})
-            assert entity._attr_target_temperature == target
-            assert entity._attr_current_temperature == round(
+            assert getattr(entity, f"{attr}target_temperature") == target
+            assert getattr(entity, f"{attr}current_temperature") == round(
                 decikelvin_to_units(2987, unit), 1
             )
             attrs = entity.extra_state_attributes
@@ -88,7 +90,7 @@ def test_limits_and_invalid_reading_defaults(unit, minimum, maximum, default):
     for raw in ("0000", "OFF", None):
         climate._update_temperatures({"hmax": raw})
         fan._update_heating_data({"hmax": raw})
-        assert climate._attr_target_temperature == default
+        assert climate._attr_native_target_temperature == default
         assert fan._attr_target_temperature == default
 
 
