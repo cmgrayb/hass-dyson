@@ -560,3 +560,83 @@ def test_mqtt_debug_line_masks_the_serial(device, caplog):
     assert len(lines) == 1
     assert "/status/jdm" in lines[0]
     assert "TEST-SERIAL" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["RB05", "RB07"])
+async def test_start_waits_for_mode_write(selector, prefix):
+    """A start sent right after a mode change goes out only once it is written."""
+    from custom_components.hass_dyson import spot_scrub_room_select as rs
+    from custom_components.hass_dyson.vacuum import DysonVacuumEntity
+
+    coordinator = selector.coordinator
+    coordinator.device.mqtt_prefix = prefix
+    events = []
+    request = coordinator.device.send_jdm_command.side_effect
+
+    async def slow_request(method, params):
+        await asyncio.sleep(0.05)
+        events.append(method)
+        return await request(method, params)
+
+    async def start_clean(**kwargs):
+        events.append("START")
+
+    coordinator.device.send_jdm_command.side_effect = slow_request
+    coordinator.device.robot_start_clean = AsyncMock(side_effect=start_clean)
+    vacuum = DysonVacuumEntity(coordinator)
+
+    with patch.object(rs, "START_SETTLE_SECONDS", 0.01):
+        # Apple Home sends the mode first and the start ~200 ms later.
+        await asyncio.gather(
+            selector.async_select_option("vacuum_only"),
+            vacuum.async_start(),
+        )
+
+    assert events[-1] == "START"
+    assert "service.set_preference" in events
+    assert selector.current_option == "vacuum_only"
+
+
+@pytest.mark.asyncio
+async def test_start_does_not_wait_for_other_robots(selector):
+    """Robots without JDM room settings start without the settle delay."""
+    from custom_components.hass_dyson import spot_scrub_room_select as rs
+    from custom_components.hass_dyson.vacuum import DysonVacuumEntity
+
+    selector.coordinator.device.mqtt_prefix = "276"
+    vacuum = DysonVacuumEntity(selector.coordinator)
+    with patch.object(
+        rs.SpotScrubRoomStore, "async_wait_before_start", AsyncMock()
+    ) as wait:
+        await vacuum._async_wait_for_room_settings()
+    wait.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_waits_for_room_service(selector):
+    """The room-settings action shares the wait, so automations are covered."""
+    from custom_components.hass_dyson import spot_scrub_room_select as rs
+
+    store = rs.get_room_store(selector.coordinator)
+    events = []
+
+    async def slow_resolve_write():
+        async with store.lock:
+            await asyncio.sleep(0.05)
+            events.append("write")
+
+    async def start():
+        await store.async_wait_before_start()
+        events.append("START")
+
+    with patch.object(rs, "START_SETTLE_SECONDS", 0.01):
+        # The write begins after the start was requested, inside the settle time.
+        await asyncio.gather(start(), _after(0.005, slow_resolve_write))
+
+    assert events[-2:] == ["write", "START"]
+
+
+async def _after(delay, factory):
+    await asyncio.sleep(delay)
+    await factory()
