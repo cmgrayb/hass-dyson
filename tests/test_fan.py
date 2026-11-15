@@ -339,12 +339,13 @@ class TestDysonFan:
         assert fan._attr_percentage == 0
 
     def test_handle_coordinator_update_auto_mode(self, mock_coordinator):
-        """Test _handle_coordinator_update with auto mode."""
+        """Auto mode with the fan running: the live speed is unknown (#552)."""
         # Arrange
         fan = DysonFan(mock_coordinator)
         mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "FAN"
         mock_coordinator.device.fan_speed_setting = "AUTO"
-        mock_coordinator.device.fan_speed = 7  # Actual speed
+        mock_coordinator.device.fan_speed = 4  # nmdv: night mode limit, not the speed
         mock_coordinator.device.get_state_value.return_value = "ON"  # Auto mode
 
         # Act
@@ -353,7 +354,26 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_percentage == 70  # 7 * 10
+        assert fan._attr_percentage is None
+        assert fan._attr_preset_mode == "auto"
+
+    def test_handle_coordinator_update_auto_mode_fan_paused(self, mock_coordinator):
+        """Auto mode with the fan paused (fnst OFF) reports 0 %, not nmdv (#552)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "OFF"
+        mock_coordinator.device.fan_speed_setting = "AUTO"
+        mock_coordinator.device.fan_speed = 4  # nmdv: night mode limit
+        mock_coordinator.device.get_state_value.return_value = "ON"  # Auto mode
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_is_on is True
+        assert fan._attr_percentage == 0
         assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_invalid_speed(self, mock_coordinator):

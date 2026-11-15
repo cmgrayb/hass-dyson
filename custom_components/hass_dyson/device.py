@@ -2681,7 +2681,7 @@ class DysonDevice:
 
     @property
     def fan_speed(self) -> int:
-        """Return fan speed (nmdv)."""
+        """Return the night mode speed limit (nmdv), not the live fan speed."""
         try:
             product_state = self._state_data.get("product-state", {})
             nmdv = self.get_state_value(product_state, "nmdv", "0000")

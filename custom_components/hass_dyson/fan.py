@@ -306,9 +306,12 @@ class DysonFan(DysonEntity, FanEntity):
 
         # Update speed percentage based on fan speed setting (fnsp)
         if fan_speed_setting == "AUTO":
-            # In auto mode, use the actual fan speed (nmdv) for display
-            actual_speed = self.coordinator.device.fan_speed
-            self._attr_percentage = min(100, max(0, actual_speed * 10))
+            # In auto mode the device does not report its live speed. nmdv is
+            # the night mode speed limit and stays the same whether the fan
+            # runs or not, so it must not be shown as the current speed (#552).
+            # fnst tells whether the fan is moving: OFF means auto mode has
+            # paused it, otherwise the speed is unknown.
+            self._attr_percentage = 0 if fan_state == "OFF" else None
         else:
             try:
                 # Convert fnsp (0001-0010) to percentage (10-100%)
