@@ -560,6 +560,9 @@
       "robot_action_required": {
         "name": "Action requise"
       },
+      "product_error": {
+        "name": "Erreur de l'appareil"
+      },
       "filter_replacement": {
         "name": "Remplacement du filtre"
       },
@@ -787,6 +790,10 @@
     }
   },
   "issues": {
+    "product_error": {
+      "title": "{device_name} signale un défaut de l'appareil",
+      "description": "{device_name} signale des autotests en échec : {errors}. La plupart de ces défauts nécessitent une intervention sur l'appareil. Le débrancher pendant une minute peut effacer un défaut temporaire. Ce problème disparaît de lui-même dès que tous les tests réussissent à nouveau. Un capteur binaire de diagnostic « Erreur de l'appareil » avec les entrées en échec peut être activé pour les automatisations."
+    },
     "configured_host_unreachable": {
       "title": "{device_name} est inaccessible à l'adresse configurée",
       "description": "{device_name} a une adresse statique ({hostname}) définie dans ses options de connexion. Les tentatives de connexion locale échouent encore après au moins 15 minutes sur la connexion cloud de secours. Si l'adresse de l'appareil a changé, ouvrez ses options de connexion pour la mettre à jour, ou effacez le champ pour utiliser la découverte automatique. L'enregistrement de nouvelles options de connexion, ou l'utilisation du bouton Reconnecter, rétablit la connexion. Cet avertissement disparaît automatiquement dès que la connexion locale est rétablie."

@@ -54,6 +54,7 @@ from .const import (
     DEFAULT_CLOUD_POLLING_INTERVAL,
     DEFAULT_DEVICE_POLLING_INTERVAL,
     DEFAULT_POLL_FOR_DEVICES,
+    DEVICE_CATEGORY_EC,
     DISCOVERY_CLOUD,
     DISCOVERY_MANUAL,
     DISCOVERY_STICKER,
@@ -820,6 +821,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             # Use async_set_updated_data to properly notify Home Assistant framework
             self.async_set_updated_data(fresh_state)
+            self._async_update_product_error_issue()
         except Exception as e:
             _LOGGER.warning("Error getting fresh state for STATE-CHANGE: %s", e)
             # Still notify even if data update failed
@@ -1928,6 +1930,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
             self._async_update_configured_host_issue()
+            self._async_update_product_error_issue()
 
             return device_state
 
@@ -2221,11 +2224,49 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             },
         )
 
+    @property
+    def _product_error_issue_id(self) -> str:
+        """Return the repair issue id for failed self-checks of this entry."""
+        return f"product_error_{self.config_entry.entry_id}"
+
+    @callback
+    def _async_update_product_error_issue(self) -> None:
+        """Raise a repair issue while a self-check in CURRENT-FAULTS fails.
+
+        Most of these faults need someone at the device, so they belong in
+        Repairs rather than only in a sensor (#553). The issue lists the
+        failing keys and clears itself once every check passes again, for
+        example after the device was unplugged for a minute.
+        """
+        device = self.device
+        if device is None or DEVICE_CATEGORY_EC not in self.device_category:
+            return
+        errors = device.product_errors
+        if errors is None:
+            # No CURRENT-FAULTS message yet; keep whatever was raised before
+            return
+        if not errors:
+            ir.async_delete_issue(self.hass, DOMAIN, self._product_error_issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self._product_error_issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="product_error",
+            translation_placeholders={
+                "device_name": self.config_entry.title,
+                "errors": ", ".join(f"{key}: {value}" for key, value in errors.items()),
+            },
+        )
+
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator and cleanup connections."""
         _LOGGER.debug("Shutting down coordinator for device %s", self.serial_number)
 
         ir.async_delete_issue(self.hass, DOMAIN, self._configured_host_issue_id)
+        ir.async_delete_issue(self.hass, DOMAIN, self._product_error_issue_id)
 
         if self.device:
             # Remove environmental callback before disconnecting

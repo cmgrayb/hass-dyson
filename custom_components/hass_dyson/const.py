@@ -375,6 +375,10 @@ SERVICE_DELETE_ROBOT_SCHEDULE: Final = "delete_robot_schedule"
 EVENT_DEVICE_FAULT: Final = "dyson_device_fault"
 EVENT_BLE_STATE_CHANGE: Final = "dyson_ble_state_change"
 
+# Values of a CURRENT-FAULTS entry that mean the check passed. Anything else
+# (usually FAIL) counts as an error for the product error sensor.
+PRODUCT_ERROR_OK_VALUES: Final = frozenset({"OK", "NONE", "PASS", "GOOD"})
+
 # Fault code translations
 # Based on Dyson device fault codes - only non-OK values represent actual faults
 # To do: investigate moving these to localization files for translation support
