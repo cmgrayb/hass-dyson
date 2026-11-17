@@ -26,6 +26,7 @@ from .const import (
     units_to_decikelvin,
 )
 from .coordinator import DysonDataUpdateCoordinator
+from .device_utils import humidifier_target_humidity
 from .entity import DysonEntity
 from .repairs import async_watch_temperature_unit
 
@@ -269,17 +270,9 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
         except ValueError, TypeError:
             self._attr_current_humidity = None
 
-        target_humidity = self.coordinator.device.get_state_value(
-            device_data, "humt", "0040"
-        )
-        try:
-            humidity_percent = int(target_humidity)
-            if target_humidity != "0000" and humidity_percent > 0:
-                self._attr_target_humidity = humidity_percent
-            else:
-                self._attr_target_humidity = 40
-        except ValueError, TypeError:
-            self._attr_target_humidity = 40
+        # Same target as the humidifier entity: rect in auto mode, humt otherwise
+        target_humidity = humidifier_target_humidity(device_data)
+        self._attr_target_humidity = 40 if target_humidity is None else target_humidity
 
     def _update_fan_mode(self, device_data: dict[str, Any]) -> None:
         """Update focus/diffuse fan mode from device data (FocusMode-capable devices only)."""

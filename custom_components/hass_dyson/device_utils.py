@@ -703,3 +703,21 @@ def create_cloud_device_config(
         country=country,
         culture=culture,
     )
+
+
+def humidifier_target_humidity(product_state: dict[str, Any]) -> int | None:
+    """Return the humidity a humidifier aims for, in percent.
+
+    In auto mode (haut ON) the device picks its own target and reports it as
+    rect; humt is then only the manual setpoint for when auto mode is turned
+    off. Returns None when the device reports no valid value.
+    """
+    keys = ("rect", "humt") if product_state.get("haut") == "ON" else ("humt",)
+    for key in keys:
+        try:
+            value = int(product_state.get(key, "0000"))
+        except ValueError, TypeError:
+            continue
+        if value > 0:
+            return value
+    return None

@@ -274,6 +274,31 @@ class TestDysonClimateEntity:
         assert entity._attr_current_humidity == 45
         assert entity._attr_target_humidity == 40
 
+    def test_target_humidity_follows_rect_in_auto_mode(self, mock_coordinator):
+        """In auto mode the climate entity shows rect, like the humidifier (#553)."""
+        mock_coordinator.device_capabilities = ["Humidifier"]
+        state = {
+            "humi": "0045",
+            "humt": "0050",
+            "rect": "0035",
+            "hume": "HUMD",
+            "haut": "ON",
+        }
+        mock_coordinator.data = {"product-state": state, "environmental-data": {}}
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: str(data.get(key, default))
+        )
+        entity = DysonClimateEntity(mock_coordinator)
+
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+        assert entity._attr_target_humidity == 35
+
+        state["haut"] = "OFF"
+        with patch.object(entity, "async_write_ha_state"):
+            entity._handle_coordinator_update()
+        assert entity._attr_target_humidity == 50
+
     def test_update_humidity_with_invalid_data(self, mock_coordinator):
         """Test humidity update with invalid sensor data."""
         # Arrange
