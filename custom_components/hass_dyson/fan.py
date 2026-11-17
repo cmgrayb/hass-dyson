@@ -402,6 +402,10 @@ class DysonFan(DysonEntity, FanEntity):
                         self.coordinator.serial_number,
                     )
                     self._saved_oscillation_mode_for_restore = None
+                # oson is the setting and stays ON while the fan is off; a fan
+                # that is off does not oscillate (#553)
+                if not fan_power:
+                    self._attr_oscillating = False
             else:
                 # Device doesn't support oscillation
                 self._attr_oscillating = False

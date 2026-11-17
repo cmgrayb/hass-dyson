@@ -1,5 +1,6 @@
 """Tests for the climate platform."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -152,7 +153,7 @@ class TestDysonClimateEntity:
         assert entity._attr_supported_features == expected_features
 
         # Temperature settings
-        assert entity._attr_temperature_unit == UnitOfTemperature.CELSIUS
+        assert entity._attr_native_temperature_unit == UnitOfTemperature.CELSIUS
         assert entity._attr_min_temp == 1
         assert entity._attr_max_temp == 37
         assert entity._attr_target_temperature_step == 1
@@ -243,12 +244,12 @@ class TestDysonClimateEntity:
             entity._handle_coordinator_update()
 
         # Assert
-        assert entity._attr_current_temperature is not None
-        assert entity._attr_target_temperature is not None
+        assert entity._attr_native_current_temperature is not None
+        assert entity._attr_native_target_temperature is not None
         assert (
-            abs(entity._attr_current_temperature - 0.0) < 0.2
+            abs(entity._attr_native_current_temperature - 0.0) < 0.2
         )  # Allow for floating point precision
-        assert abs(entity._attr_target_temperature - 19.85) < 0.2
+        assert abs(entity._attr_native_target_temperature - 19.85) < 0.2
 
     def test_handle_coordinator_update_with_humidifier_data(self, mock_coordinator):
         """Test coordinator update handling for humidifier device."""
@@ -366,11 +367,11 @@ class TestDysonClimateEntity:
         entity._update_temperatures(device_data)
 
         # Assert
-        assert entity._attr_current_temperature is not None
-        assert entity._attr_target_temperature is not None
+        assert entity._attr_native_current_temperature is not None
+        assert entity._attr_native_target_temperature is not None
         # 298.0K = 24.85°C, rounded to 1 decimal = 24.9°C
-        assert entity._attr_current_temperature == 24.9
-        assert entity._attr_target_temperature == 27.0
+        assert entity._attr_native_current_temperature == 24.9
+        assert entity._attr_native_target_temperature == 27.0
 
     def test_update_temperatures_invalid_values(self, mock_coordinator):
         """Test temperature update with invalid device values."""
@@ -395,8 +396,8 @@ class TestDysonClimateEntity:
         entity._update_temperatures(device_data)
 
         # Assert
-        assert entity._attr_current_temperature is None
-        assert entity._attr_target_temperature == 20  # Default value
+        assert entity._attr_native_current_temperature is None
+        assert entity._attr_native_target_temperature == 20  # Default value
 
     def test_update_hvac_mode_off(self, mock_coordinator):
         """Test HVAC mode update when device is off."""
@@ -683,7 +684,7 @@ class TestDysonClimateEntity:
             22.5, UnitOfTemperature.CELSIUS
         )
         # Should update local state immediately
-        assert entity._attr_target_temperature == 22.5
+        assert entity._attr_native_target_temperature == 22.5
         entity.async_write_ha_state.assert_called()
 
     @pytest.mark.asyncio
@@ -749,7 +750,7 @@ class TestDysonClimateEntity:
         """Test extra state attributes when device is available."""
         # Arrange
         entity = DysonClimateEntity(mock_coordinator)
-        entity._attr_target_temperature = 21.5
+        entity._attr_native_target_temperature = 21.5
         entity._attr_hvac_mode = HVACMode.HEAT
 
         mock_coordinator.device.get_state_value.side_effect = (
@@ -869,14 +870,14 @@ class TestClimateIntegration:
         entity._update_temperatures(device_data)
 
         # Assert - current temperature should be set from environmental data
-        assert entity._attr_current_temperature is not None
-        assert entity._attr_current_temperature == 21.9  # Rounded to 1 decimal
-        assert entity._attr_target_temperature is not None
-        assert entity._attr_target_temperature == 27.0
+        assert entity._attr_native_current_temperature is not None
+        assert entity._attr_native_current_temperature == 21.9  # Rounded to 1 decimal
+        assert entity._attr_native_target_temperature is not None
+        assert entity._attr_native_target_temperature == 27.0
 
         # Verify that the temperature is suitable for display on thermostat card
-        assert isinstance(entity._attr_current_temperature, float)
-        assert entity.temperature_unit == UnitOfTemperature.CELSIUS
+        assert isinstance(entity._attr_native_current_temperature, float)
+        assert entity.native_temperature_unit == UnitOfTemperature.CELSIUS
 
 
 class TestFocusDiffuseMode:
@@ -1042,3 +1043,35 @@ class TestFocusDiffuseMode:
             entity._handle_coordinator_update()
 
         assert entity._attr_fan_mode == FAN_DIFFUSE
+
+
+class TestNativeTemperatureCompatibility:
+    """The climate entity serves both temperature APIs (#550)."""
+
+    def test_old_names_return_the_native_values(self, mock_coordinator):
+        """Home Assistant before 2026.11 reads the old names."""
+        entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_native_current_temperature = 21.4
+        entity._attr_native_target_temperature = 22.0
+
+        assert entity.temperature_unit == UnitOfTemperature.CELSIUS
+        assert entity.native_temperature_unit == UnitOfTemperature.CELSIUS
+        assert entity.current_temperature == 21.4
+        assert entity.native_current_temperature == 21.4
+        assert entity.target_temperature == entity.native_target_temperature == 22.0
+
+    def test_temperatures_are_none_before_the_first_update(self, mock_coordinator):
+        """The old names must not raise before the first device update."""
+        entity = DysonClimateEntity(mock_coordinator)
+
+        assert entity.current_temperature is None
+        assert entity.target_temperature is None
+
+    def test_no_deprecation_warning(self, caplog):
+        """A class providing both names is not reported by Home Assistant 2026.11."""
+        with caplog.at_level(logging.WARNING):
+
+            class _Subclass(DysonClimateEntity):
+                pass
+
+        assert "deprecated" not in caplog.text

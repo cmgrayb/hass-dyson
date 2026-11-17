@@ -159,6 +159,11 @@ async def async_setup_entry(
     if DEVICE_CATEGORY_EC in coordinator.device_category:
         entities.append(DysonProductErrorSensor(coordinator))
 
+    # Live oscillation state, for devices that report oscs (#553)
+    product_state = (coordinator.data or {}).get("product-state", {})
+    if isinstance(product_state, dict) and "oscs" in product_state:
+        entities.append(DysonOscillationActiveSensor(coordinator))
+
     # Add firmware update available sensor for cloud-discovered devices only
     # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
     # Will be re-enabled when libdyson-rest properly supports firmware update availability
@@ -673,6 +678,32 @@ class DysonCleaningSolutionSensor(DysonEntity, BinarySensorEntity):  # type: ign
             if device
             else None
         )
+        super()._handle_coordinator_update()
+
+
+class DysonOscillationActiveSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Whether the device oscillates right now (oscs).
+
+    The fan entity's oscillating attribute follows the oson setting. oscs is
+    the live state: ON while the head moves, IDLE while the fan is paused or
+    off, OFF otherwise.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the oscillation active sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_active"
+        self._attr_translation_key = "oscillation_active"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:arrow-oscillating"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        product_state = (self.coordinator.data or {}).get("product-state", {})
+        state = product_state.get("oscs") if isinstance(product_state, dict) else None
+        self._attr_is_on = None if state is None else state == "ON"
         super()._handle_coordinator_update()
 
 

@@ -1265,3 +1265,68 @@ class TestDeviceProductErrors:
             {"product-errors": {"prot": "OK"}, "module-errors": {"szme": "PASS"}}
         )
         assert device.product_errors == {}
+
+
+class TestDysonOscillationActiveSensor:
+    """Live oscillation state from oscs (#553)."""
+
+    def _sensor(self, coordinator):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonOscillationActiveSensor,
+        )
+
+        sensor = DysonOscillationActiveSensor(coordinator)
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_init(self, pure_mock_coordinator):
+        from homeassistant.const import EntityCategory
+
+        sensor = self._sensor(pure_mock_coordinator)
+        assert (
+            sensor._attr_unique_id
+            == f"{pure_mock_coordinator.serial_number}_oscillation_active"
+        )
+        assert sensor._attr_translation_key == "oscillation_active"
+        assert sensor._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+    @pytest.mark.parametrize(
+        ("oscs", "expected"),
+        [("ON", True), ("IDLE", False), ("OFF", False), (None, None)],
+    )
+    def test_state_from_oscs(self, pure_mock_coordinator, oscs, expected):
+        product_state = {"oson": "ON"}
+        if oscs is not None:
+            product_state["oscs"] = oscs
+        pure_mock_coordinator.data = {"product-state": product_state}
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is expected
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reported", [True, False])
+    async def test_setup_only_when_oscs_reported(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator, reported
+    ):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonOscillationActiveSensor,
+        )
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
+        pure_mock_coordinator.device_capabilities = []
+        product_state = {"oson": "ON"}
+        if reported:
+            product_state["oscs"] = "IDLE"
+        pure_mock_coordinator.data = {"product-state": product_state}
+
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        entities = mock_add_entities.call_args[0][0]
+        found = [e for e in entities if isinstance(e, DysonOscillationActiveSensor)]
+        assert len(found) == (1 if reported else 0)

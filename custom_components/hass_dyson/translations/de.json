@@ -569,6 +569,9 @@
       "robot_battery_charging": {
         "name": "Lädt"
       },
+      "oscillation_active": {
+        "name": "Oszillation aktiv"
+      },
       "cleaning_solution_refill_needed": {
         "name": "Reinigungslösung"
       },
