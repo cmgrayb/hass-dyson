@@ -154,6 +154,11 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
 
+    # Product error sensor — catches every self-check in CURRENT-FAULTS, including
+    # the ones without a named fault sensor (e.g. prot, iuw0).
+    if DEVICE_CATEGORY_EC in coordinator.device_category:
+        entities.append(DysonProductErrorSensor(coordinator))
+
     # Add firmware update available sensor for cloud-discovered devices only
     # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
     # Will be re-enabled when libdyson-rest properly supports firmware update availability
@@ -331,6 +336,41 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
             )
             self._attr_is_on = False
 
+        super()._handle_coordinator_update()
+
+
+class DysonProductErrorSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """On while any product or module self-check of the device fails.
+
+    The named fault sensors only cover the codes in FAULT_TRANSLATIONS. A
+    blocked machine can fail other checks: a PH04 whose fan would not start at
+    any speed reported prot and iuw0 as FAIL while every named sensor was off.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the product error sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_product_error"
+        # The repair issue is the main signal; this sensor is for automations
+        self._attr_entity_registry_enabled_default = False
+        self._attr_translation_key = "product_error"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:alert-circle-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        errors = getattr(device, "product_errors", None) if device else None
+        if not isinstance(errors, dict):
+            # No CURRENT-FAULTS message yet
+            self._attr_is_on = None
+            self._attr_extra_state_attributes = {}
+        else:
+            self._attr_is_on = bool(errors)
+            self._attr_extra_state_attributes = {"errors": errors}
         super()._handle_coordinator_update()
 
 

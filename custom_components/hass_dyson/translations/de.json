@@ -560,6 +560,9 @@
       "robot_action_required": {
         "name": "Aktion erforderlich"
       },
+      "product_error": {
+        "name": "Gerätefehler"
+      },
       "filter_replacement": {
         "name": "Filterwechsel"
       },
@@ -784,6 +787,10 @@
     }
   },
   "issues": {
+    "product_error": {
+      "title": "{device_name} meldet einen Gerätefehler",
+      "description": "{device_name} meldet fehlgeschlagene Selbsttests: {errors}. Die meisten dieser Fehler erfordern einen Eingriff am Gerät. Den Stecker für eine Minute zu ziehen, kann einen vorübergehenden Fehler beheben. Diese Meldung verschwindet von selbst, sobald alle Tests wieder bestehen. Für Automationen lässt sich der Diagnose-Sensor „Gerätefehler“ mit den fehlerhaften Einträgen aktivieren."
+    },
     "configured_host_unreachable": {
       "title": "{device_name} ist unter der konfigurierten Adresse nicht erreichbar",
       "description": "Für {device_name} ist in den Verbindungsoptionen eine statische Adresse ({hostname}) festgelegt. Lokale Verbindungsversuche schlagen auch nach mindestens 15 Minuten über die Cloud-Ersatzverbindung fehl. Wenn sich die Adresse des Geräts geändert hat, öffnen Sie die Verbindungsoptionen und aktualisieren Sie sie oder löschen Sie das Feld, um die automatische Erkennung zu verwenden. Beim Speichern neuer Verbindungsoptionen oder über die Schaltfläche „Erneut verbinden“ wird die Verbindung neu hergestellt. Diese Warnung wird automatisch ausgeblendet, sobald eine lokale Verbindung besteht."

@@ -59,6 +59,7 @@ from .const import (
     FAULT_TRANSLATIONS,
     LEGACY_FILTER_LIFE_MAX_HOURS,
     MQTT_CMD_REQUEST_ENVIRONMENT,
+    PRODUCT_ERROR_OK_VALUES,
     ROBOT_FAULT_ACTION_LOG_ONLY,
     ROBOT_FAULT_SUBSYSTEMS,
     STATE_KEY_LEGACY_FILTER_LIFE,
@@ -2973,6 +2974,29 @@ class DysonDevice:
             return int(rssi)
         except (ValueError, TypeError):
             return -99
+
+    @property
+    def product_errors(self) -> dict[str, str] | None:
+        """Return the failing keys of the product and module error lists.
+
+        CURRENT-FAULTS lists every self-check of the machine with OK or a
+        failure value such as FAIL. Only the entries that are not OK are
+        returned, so an empty dict means all checks pass. None means the device
+        has not reported its faults yet.
+        """
+        sections = [
+            self._faults_data.get(name)
+            for name in ("product-errors", "module-errors")
+            if isinstance(self._faults_data.get(name), dict)
+        ]
+        if not sections:
+            return None
+        failing: dict[str, str] = {}
+        for section in sections:
+            for key, value in section.items():
+                if str(value).upper() not in PRODUCT_ERROR_OK_VALUES:
+                    failing[key] = str(value)
+        return dict(sorted(failing.items()))
 
     @property
     def filter_status(self) -> str:

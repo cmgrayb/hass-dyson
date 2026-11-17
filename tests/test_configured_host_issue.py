@@ -224,7 +224,8 @@ async def test_shutdown_removes_issue(issues) -> None:
     await coordinator.async_shutdown()
 
     device.disconnect.assert_awaited_once()
-    delete.assert_called_with(coordinator.hass, DOMAIN, ISSUE_ID)
+    delete.assert_any_call(coordinator.hass, DOMAIN, ISSUE_ID)
+    delete.assert_any_call(coordinator.hass, DOMAIN, "product_error_entry123")
 
 
 def test_device_exposes_fallback_state() -> None:

@@ -563,6 +563,9 @@
       "robot_action_required": {
         "name": "Action required"
       },
+      "product_error": {
+        "name": "Product Error"
+      },
       "filter_replacement": {
         "name": "Filter Replacement"
       },
@@ -796,6 +799,10 @@
     }
   },
   "issues": {
+    "product_error": {
+      "title": "{device_name} reports a device fault",
+      "description": "{device_name} reports failed self-checks: {errors}. Most of these faults need attention at the device. Unplugging it for a minute can clear a temporary fault. This issue clears itself once all checks pass again. A diagnostic \"Product Error\" binary sensor with the failing keys can be enabled for automations."
+    },
     "configured_host_unreachable": {
       "title": "{device_name} is not reachable at its configured address",
       "description": "{device_name} has a static address ({hostname}) set in its connection options. Local connection attempts are still failing after at least 15 minutes on the cloud fallback. If the device's address changed, open the device's connection options and update it, or clear the field to use automatic discovery. Saving new connection options reconnects the device, as does its Reconnect button; this warning clears itself once it connects locally."
