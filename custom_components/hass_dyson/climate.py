@@ -57,6 +57,42 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
 
     coordinator: DysonDataUpdateCoordinator
 
+    _attr_native_current_temperature: float | None = None
+    _attr_native_target_temperature: float | None = None
+
+    @property
+    def native_temperature_unit(self) -> str:
+        """Return the unit the device values are in."""
+        return self._attr_native_temperature_unit
+
+    @property
+    def native_current_temperature(self) -> float | None:
+        """Return the current temperature in the native unit."""
+        return self._attr_native_current_temperature
+
+    @property
+    def native_target_temperature(self) -> float | None:
+        """Return the target temperature in the native unit."""
+        return self._attr_native_target_temperature
+
+    # TODO: Remove once the minimum Home Assistant version is 2026.11.0.
+    # Older versions only read these names. A class providing both the old and
+    # the native_ member does not trigger the deprecation warning of 2026.11.
+    @property  # type: ignore[misc]
+    def temperature_unit(self) -> str:
+        """Return the unit of measurement."""
+        return self.native_temperature_unit
+
+    @property  # type: ignore[misc]
+    def current_temperature(self) -> float | None:
+        """Return the current temperature."""
+        return self.native_current_temperature
+
+    @property  # type: ignore[misc]
+    def target_temperature(self) -> float | None:
+        """Return the temperature we try to reach."""
+        return self.native_target_temperature
+
     def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
         """Initialize the climate entity."""
         super().__init__(coordinator)

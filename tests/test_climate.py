@@ -1,5 +1,6 @@
 """Tests for the climate platform."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1042,3 +1043,35 @@ class TestFocusDiffuseMode:
             entity._handle_coordinator_update()
 
         assert entity._attr_fan_mode == FAN_DIFFUSE
+
+
+class TestNativeTemperatureCompatibility:
+    """The climate entity serves both temperature APIs (#550)."""
+
+    def test_old_names_return_the_native_values(self, mock_coordinator):
+        """Home Assistant before 2026.11 reads the old names."""
+        entity = DysonClimateEntity(mock_coordinator)
+        entity._attr_native_current_temperature = 21.4
+        entity._attr_native_target_temperature = 22.0
+
+        assert entity.temperature_unit == UnitOfTemperature.CELSIUS
+        assert entity.native_temperature_unit == UnitOfTemperature.CELSIUS
+        assert entity.current_temperature == 21.4
+        assert entity.native_current_temperature == 21.4
+        assert entity.target_temperature == entity.native_target_temperature == 22.0
+
+    def test_temperatures_are_none_before_the_first_update(self, mock_coordinator):
+        """The old names must not raise before the first device update."""
+        entity = DysonClimateEntity(mock_coordinator)
+
+        assert entity.current_temperature is None
+        assert entity.target_temperature is None
+
+    def test_no_deprecation_warning(self, caplog):
+        """A class providing both names is not reported by Home Assistant 2026.11."""
+        with caplog.at_level(logging.WARNING):
+
+            class _Subclass(DysonClimateEntity):
+                pass
+
+        assert "deprecated" not in caplog.text
