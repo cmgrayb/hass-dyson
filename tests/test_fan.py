@@ -1081,6 +1081,42 @@ class TestFanCoverageEnhancement:
 
         assert fan._attr_oscillating is True
 
+    def test_handle_coordinator_update_fan_off_is_not_oscillating(
+        self, mock_coordinator
+    ):
+        """oson stays ON while the fan is off; the entity must not oscillate (#553)."""
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "OFF",
+                "fnst": "OFF",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "ON",
+                "oscs": "IDLE",
+            }
+        }
+        mock_coordinator.device.fan_power = False
+        fan = DysonFan(mock_coordinator)
+
+        def mockget_state_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
+
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_is_on is False
+        assert fan._attr_oscillating is False
+
+        # Turning the fan back on reports the setting again
+        mock_coordinator.data["product-state"]["fpwr"] = "ON"
+        mock_coordinator.device.fan_power = True
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_oscillating is True
+
     def test_handle_coordinator_update_clears_stale_saved_oscillation_mode(
         self, mock_coordinator
     ):
