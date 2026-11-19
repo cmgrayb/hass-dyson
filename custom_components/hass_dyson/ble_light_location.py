@@ -65,7 +65,7 @@ class BLELightLocation:
                         return
                     await asyncio.sleep(0.1)
                 await self.sync(use_cache=True)
-        except (HomeAssistantError, TimeoutError, OSError):
+        except HomeAssistantError, TimeoutError, OSError:
             # Optional cloud metadata must not stop the connection lifecycle.
             return
 
@@ -125,7 +125,7 @@ class BLELightLocation:
                     bytes.fromhex(location["dst"])
                 ),
             }
-        except (ValueError, KeyError, TypeError, OverflowError):
+        except ValueError, KeyError, TypeError, OverflowError:
             raise HomeAssistantError("Invalid saved lamp location") from None
         device = coordinator.ble_device
         if device is None or not device.is_connected:

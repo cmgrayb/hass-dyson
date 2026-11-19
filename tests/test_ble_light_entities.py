@@ -1,7 +1,7 @@
 """BLE lamp entity tests using the project's HA mocks, never real accounts."""
 
 import json
-from datetime import date, time, timezone
+from datetime import UTC, date, time
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
@@ -197,7 +197,7 @@ async def test_unset_times_and_dates_remain_editable(coordinator):
     settings.set_attribute.assert_awaited_with(
         LightAttribute.SUNRISE_TIME, (390).to_bytes(2, "little")
     )
-    for invalid in (time(6, 30, 1), time(6, 30, tzinfo=timezone.utc)):
+    for invalid in (time(6, 30, 1), time(6, 30, tzinfo=UTC)):
         with pytest.raises(ValueError):
             await entity.async_set_value(invalid)
     away = DysonBLELightAwayDate(coordinator)

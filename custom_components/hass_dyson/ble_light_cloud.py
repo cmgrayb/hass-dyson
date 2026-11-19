@@ -124,7 +124,7 @@ def _coordinate(value: object, limit: float) -> float:
         raise _invalid("location coordinates")
     try:
         coordinate = float(value)
-    except (ValueError, OverflowError):
+    except ValueError, OverflowError:
         raise _invalid("location coordinates") from None
     if not math.isfinite(coordinate) or not -limit <= coordinate <= limit:
         raise _invalid("location coordinates")
