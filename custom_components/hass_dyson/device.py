@@ -2560,7 +2560,7 @@ class DysonDevice:
             product_state = self._state_data.get("product-state", {})
             nmdv = self.get_state_value(product_state, "nmdv", "0000")
             return int(nmdv)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return 0
 
     @property
@@ -2621,7 +2621,7 @@ class DysonDevice:
             product_state = self._state_data.get("product-state", {})
             bril = self.get_state_value(product_state, "bril", "0002")
             return int(bril)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return 2
 
     # Environmental sensor properties (from our MQTT test)
@@ -2845,7 +2845,7 @@ class DysonDevice:
         try:
             rssi = self._state_data.get("rssi", "-99")
             return int(rssi)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return -99
 
     @property
@@ -2880,7 +2880,7 @@ class DysonDevice:
                         result = int(fflr)
                         _LOGGER.debug("  Converted fflr to int: %s", result)
                         return result
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         _LOGGER.warning("  Failed to convert fflr value: %s", fflr)
 
             # Prefer the standard percentage field when it is available.
@@ -2924,7 +2924,7 @@ class DysonDevice:
             if cflr == "INV":  # No filter installed
                 return None
             return int(cflr)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return 0
 
     @property

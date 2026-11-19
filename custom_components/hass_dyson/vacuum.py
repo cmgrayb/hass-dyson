@@ -165,7 +165,7 @@ async def fetch_clean_maps(coordinator: DysonDataUpdateCoordinator) -> list:
             return 0.0
         try:
             return datetime.fromisoformat(min(times).replace("Z", "+00:00")).timestamp()
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return 0.0
 
     records.sort(key=_sort_epoch, reverse=True)

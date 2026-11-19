@@ -495,7 +495,7 @@ class DysonBleVacuumDevice:
                 tag_, message = await asyncio.wait_for(
                     self._queue.get(), timeout=poll_timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if self._client is None or not getattr(
                     self._client, "is_connected", True
                 ):
