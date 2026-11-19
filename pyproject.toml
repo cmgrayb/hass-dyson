@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: Home Automation",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.14.2"
 dependencies = [
     "cryptography>=50.0.0",
     "libdyson-rest==0.17.2",
@@ -83,7 +83,7 @@ extend-exclude = '''
 [tool.ruff]
 # Home Assistant Core compliance settings
 line-length = 88  # Home Assistant standard
-target-version = "py39"  # Must match minimum supported version. Python 3.14 reintroduces the Python 2 multi-exception syntax (except A, B:), which Ruff correctly formats when targeting py314 — but that output is incompatible with Python 3.9–3.13.
+target-version = "py314"  # Must match minimum supported version. Python 3.14 reintroduces the Python 2 multi-exception syntax (except A, B:), which Ruff correctly formats when targeting py314 — but that output is incompatible with Python 3.9–3.13.
 
 [tool.ruff.format]
 # Use double quotes for strings
