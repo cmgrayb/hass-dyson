@@ -170,7 +170,7 @@ def _get_default_country_culture_for_coordinator(hass) -> tuple[str, str]:
             culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
-    except (AttributeError, TypeError):
+    except AttributeError, TypeError:
         # Fallback for any unexpected issues (e.g., during testing)
         return "US", "en-US"
 
@@ -1341,7 +1341,7 @@ class DysonDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Even if local MQTT credentials are empty (e.g., 360 robot vacuums)
             return True
 
-        except (AttributeError, TypeError):
+        except AttributeError, TypeError:
             return False
 
     async def _extract_mqtt_credentials(self, cloud_client, device_info) -> dict:
@@ -3358,7 +3358,7 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 return  # Stop event set during sleep
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     async def async_sync_light_location(self) -> None:
@@ -3652,7 +3652,7 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 return
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     def _candidate_account_entries(self) -> list[Any]:

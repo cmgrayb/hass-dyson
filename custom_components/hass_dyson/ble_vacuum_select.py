@@ -105,7 +105,7 @@ class _BleVacuumSelectBase(CoordinatorEntity, SelectEntity):
             return value
         try:
             return self._options_map.get(int(value))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
 
     async def async_select_option(self, option: str) -> None:

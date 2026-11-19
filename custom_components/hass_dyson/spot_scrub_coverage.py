@@ -56,7 +56,7 @@ def parse_cur_path(values: Any) -> list[tuple[int, float, float, float, int]]:
     try:
         first = int(values[0])
         body = [float(value) for value in values[1:-1]]
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return []
     return [
         (
@@ -83,7 +83,7 @@ def parse_global_position(value: Any) -> tuple[int, float, float, float, int] | 
             float(point.get("angle") or 0.0),
             int(point.get("update") or 0),
         )
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         return None
 
 
@@ -112,12 +112,12 @@ def parse_geometry(data: dict[str, Any]) -> dict[str, Any] | None:
                         float(end["y"]),
                     )
                 )
-            except (KeyError, TypeError, ValueError):
+            except KeyError, TypeError, ValueError:
                 continue
         label = zone.get("nameLocation") or {}
         try:
             label_xy = (float(label["x"]), float(label["y"]))
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             label_xy = None
         zones.append(
             {
@@ -131,7 +131,7 @@ def parse_geometry(data: dict[str, Any]) -> dict[str, Any] | None:
     dock = data.get("dockLocation") or {}
     try:
         dock_xy = (float(dock["x"]), float(dock["y"]))
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         dock_xy = None
     # The robot's path as the cloud recorded it, used when no live run exists.
     path = []
@@ -140,7 +140,7 @@ def parse_geometry(data: dict[str, Any]) -> dict[str, Any] | None:
             path.append(
                 (float(point["x"]), float(point["y"]), int(point.get("update") or 0))
             )
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             continue
     if not zones:
         return None

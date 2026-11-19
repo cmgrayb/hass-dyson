@@ -1110,7 +1110,7 @@ class TestIconNames:
                 # Icon chunks are dictionaries; metadata files can be lists.
                 if isinstance(icons, dict):
                     names.update(icons)
-            except (OSError, ValueError):  # pragma: no cover - defensive
+            except OSError, ValueError:  # pragma: no cover - defensive
                 continue
         if not names:  # pragma: no cover - frontend layout changed
             pytest.skip("could not read the MDI icon set")

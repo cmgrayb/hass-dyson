@@ -195,7 +195,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                     )
                 else:
                     self._attr_native_current_temperature = None
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 self._attr_native_current_temperature = None
         else:
             self._attr_native_current_temperature = None
@@ -213,7 +213,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 )
             else:
                 self._attr_native_target_temperature = self._default_target_temperature
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self._attr_native_target_temperature = self._default_target_temperature
 
     def _update_humidity(self, device_data: dict[str, Any]) -> None:
@@ -266,7 +266,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 self._attr_current_humidity = humidity_percent
             else:
                 self._attr_current_humidity = None
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self._attr_current_humidity = None
 
         target_humidity = self.coordinator.device.get_state_value(
@@ -278,7 +278,7 @@ class DysonClimateEntity(DysonEntity, ClimateEntity):  # type: ignore[misc]
                 self._attr_target_humidity = humidity_percent
             else:
                 self._attr_target_humidity = 40
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             self._attr_target_humidity = 40
 
     def _update_fan_mode(self, device_data: dict[str, Any]) -> None:

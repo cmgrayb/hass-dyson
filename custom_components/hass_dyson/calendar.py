@@ -89,7 +89,7 @@ def _parse_hhmm(time_str: str | None) -> time | None:
     try:
         parts = time_str.split(":")
         return time(int(parts[0]), int(parts[1]))
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         return None
 
 
@@ -221,7 +221,7 @@ def expand_schedule_to_calendar_events(
             for d in ev.days:
                 try:
                     weekdays.add((int(d) - 1) % 7)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
         if not weekdays:
             weekdays = set(range(7))

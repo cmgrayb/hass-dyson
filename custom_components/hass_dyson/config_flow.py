@@ -142,7 +142,7 @@ def _get_default_country_culture(hass) -> tuple[str, str]:
             culture = f"{lang_code}-{country.upper()}"
 
         return country, culture
-    except (AttributeError, TypeError):
+    except AttributeError, TypeError:
         # Fallback for any unexpected issues (e.g., during testing)
         return "US", "en-US"
 
@@ -1309,7 +1309,7 @@ class DysonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     client=get_async_client(self.hass),
                 )
                 ltk = await cloud.fetch_ltk(serial)
-            except (ValueError, DysonBLELightCloudError):
+            except ValueError, DysonBLELightCloudError:
                 continue
             self._ble_parent_entry_id = entry.entry_id
             return ltk, account_uuid

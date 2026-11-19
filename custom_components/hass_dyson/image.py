@@ -42,7 +42,7 @@ import hashlib
 import io
 import logging
 import zlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
@@ -868,7 +868,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                 return None
             self._render_cache_key = ("v2", clean_id)
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
             return png
 
         # -------------------------------------------------------------------
@@ -883,7 +883,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         # cleanId alone cannot tell a mid-clean snapshot from the final map.
         try:
             dust_blob = dust_map_model.dust_data[0].get("data") or ""
-        except (AttributeError, IndexError, TypeError):
+        except AttributeError, IndexError, TypeError:
             dust_blob = ""
         dust_fp = hashlib.sha1(dust_blob.encode()).hexdigest() if dust_blob else None
 
@@ -920,7 +920,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
             if pmap.presentation_map_data:
                 try:
                     presentation_png = base64.b64decode(pmap.presentation_map_data)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     presentation_png = None
             rotation_deg = pmap.display_orientation
             if pmap.offset_x is not None and pmap.offset_y is not None:
@@ -930,7 +930,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if latest.cleaned_footprint and latest.cleaned_footprint.data:
             try:
                 cleaned_fp_png = base64.b64decode(latest.cleaned_footprint.data)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 cleaned_fp_png = None
 
         # The renderer is pure-Python pixel loops over the full bitmap —
@@ -950,7 +950,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if png:
             self._render_cache_key = render_key
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
         return png
 
     async def async_image(self) -> bytes | None:
@@ -1049,7 +1049,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
                     return None
             self._render_cache_key = render_key
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
             return png
 
         # The map UUID never changes across map versions — fingerprint the
@@ -1073,7 +1073,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         if png:
             self._render_cache_key = render_key
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
         return png
 
     async def async_image(self) -> bytes | None:
@@ -1179,7 +1179,7 @@ class DysonCleanCoverageImage(DysonEntity, ImageEntity):
         self._cached_png, self._areas = result
         self._source = source
         self._rendered = key
-        self._attr_image_last_updated = datetime.now(timezone.utc)
+        self._attr_image_last_updated = datetime.now(UTC)
         return self._cached_png
 
     async def async_image(self) -> bytes | None:
@@ -1193,4 +1193,4 @@ class DysonCleanCoverageImage(DysonEntity, ImageEntity):
 def _iso(timestamp: float | None) -> str | None:
     if timestamp is None:
         return None
-    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+    return datetime.fromtimestamp(timestamp, UTC).isoformat()
