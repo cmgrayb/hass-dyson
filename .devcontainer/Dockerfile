@@ -37,12 +37,13 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /workspaces
 WORKDIR /workspaces
 
-# Install the locked dependencies into the image's system Python.
+# Install dependencies into the image's system Python.
+# Allow uv to refresh the lockfile for container validation builds.
 # The project source is mounted into the container at runtime.
 COPY pyproject.toml uv.lock /tmp/hass-dyson/
 RUN cd /tmp/hass-dyson && \
     UV_PROJECT_ENVIRONMENT="$(/usr/local/bin/python -c 'import sys; print(sys.prefix)')" \
-      uv sync --locked --extra dev \
+      uv sync --extra dev \
       --no-install-project --inexact
 
 # Switch to vscode user (created by base image)

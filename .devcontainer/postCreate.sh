@@ -8,7 +8,7 @@ echo "📁 Working in workspace: $WORKSPACE_DIR"
 
 # Dependencies are installed from uv.lock during the image build.
 # The mounted workspace is importable through PYTHONPATH.
-echo "📦 Using locked dependencies from the devcontainer image..."
+echo "📦 Using dependencies from the devcontainer image..."
 
 # Set up git hooks (if pre-commit is available)
 if command -v pre-commit &> /dev/null; then
