@@ -3275,7 +3275,7 @@ class DysonBLEDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 return  # Stop event set during sleep
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     async def _handle_ble_event(self, event: Any) -> None:
@@ -3561,7 +3561,7 @@ class DysonBLEVacuumDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]])
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 return
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     def _candidate_account_entries(self) -> list[Any]:

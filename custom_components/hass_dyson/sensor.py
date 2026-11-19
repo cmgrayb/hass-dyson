@@ -3618,9 +3618,9 @@ def _extract_start_time(clean) -> str | None:
     """
     epoch = getattr(clean, "start_time_epoch", None)
     if epoch is not None:
-        from datetime import datetime, timezone
+        from datetime import UTC, datetime
 
-        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
     times = [e.time for e in (getattr(clean, "timeline", None) or []) if e.time]
     return min(times) if times else None
 
@@ -3629,9 +3629,9 @@ def _extract_end_time(clean) -> str | None:
     """Pull the end timestamp from a CleanRecord (v1 or v2 schema)."""
     epoch = getattr(clean, "end_time_epoch", None)
     if epoch is not None:
-        from datetime import datetime, timezone
+        from datetime import UTC, datetime
 
-        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
     times = [e.time for e in (getattr(clean, "timeline", None) or []) if e.time]
     return max(times) if times else None
 

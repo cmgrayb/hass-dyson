@@ -42,7 +42,7 @@ import hashlib
 import io
 import logging
 import zlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
@@ -867,7 +867,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
                 return None
             self._render_cache_key = ("v2", clean_id)
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
             return png
 
         # -------------------------------------------------------------------
@@ -949,7 +949,7 @@ class DysonDustMapImage(DysonEntity, ImageEntity):
         if png:
             self._render_cache_key = render_key
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
         return png
 
     async def async_image(self) -> bytes | None:
@@ -1048,7 +1048,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
                     return None
             self._render_cache_key = render_key
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
             return png
 
         # The map UUID never changes across map versions — fingerprint the
@@ -1072,7 +1072,7 @@ class DysonFloorPlanImage(DysonEntity, ImageEntity):
         if png:
             self._render_cache_key = render_key
             self._cached_png = png
-            self._attr_image_last_updated = datetime.now(timezone.utc)
+            self._attr_image_last_updated = datetime.now(UTC)
         return png
 
     async def async_image(self) -> bytes | None:
@@ -1178,7 +1178,7 @@ class DysonCleanCoverageImage(DysonEntity, ImageEntity):
         self._cached_png, self._areas = result
         self._source = source
         self._rendered = key
-        self._attr_image_last_updated = datetime.now(timezone.utc)
+        self._attr_image_last_updated = datetime.now(UTC)
         return self._cached_png
 
     async def async_image(self) -> bytes | None:
@@ -1192,4 +1192,4 @@ class DysonCleanCoverageImage(DysonEntity, ImageEntity):
 def _iso(timestamp: float | None) -> str | None:
     if timestamp is None:
         return None
-    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+    return datetime.fromtimestamp(timestamp, UTC).isoformat()
