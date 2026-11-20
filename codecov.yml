@@ -1,6 +1,8 @@
 # configuration related to pull request comments
 coverage:
-  range: 75..75 # coverage lower than 75 is red, higher than 75 is green
+  range: 75..80
+  round: down
+  precision: 2
 
   status:
     project: # settings affecting project coverage
