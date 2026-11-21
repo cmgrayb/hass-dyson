@@ -488,6 +488,10 @@ class DysonOscillationModeSelect(DysonEntity, SelectEntity):
             lower, upper = self._calculate_angles_for_preset(
                 preset_angle, sweep_midpoint
             )
+            # Compensation for custom 45 degree preset rounding.
+            if preset_angle == 45 and upper < 350:
+                lower += 1
+                upper += 1
             await self.coordinator.device.set_oscillation_preset(
                 preset_angle, lower, upper
             )

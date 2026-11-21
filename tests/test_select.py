@@ -1,6 +1,6 @@
 """Tests for the Dyson select platform."""
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
 import pytest
 from homeassistant.components.select import SelectEntity
@@ -991,9 +991,9 @@ class TestDysonOscillationModeSelectCoverage:
         select = DysonOscillationModeSelect(mock_coordinator)
         await select.async_select_option("45°")
 
-        # center falls back to 175 → 152.5/197.5, rounded half up → 153/198
+        # The 45° command is shifted 1° right to test the device offset.
         mock_coordinator.device.set_oscillation_preset.assert_called_once_with(
-            45, 153, 198
+            45, 154, 199
         )
 
     @pytest.mark.asyncio
@@ -1083,7 +1083,61 @@ class TestDysonOscillationModeSelectCoverage:
 
         mock_coordinator.device.set_oscillation.assert_not_called()
         mock_coordinator.device.set_oscillation_preset.assert_called_once_with(
-            45, 145, 190
+            45, 146, 191
+        )
+
+    @pytest.mark.asyncio
+    async def test_switching_45_and_90_compensates_reported_offset(
+        self, mock_coordinator
+    ):
+        """The observed 45° response offset does not move the displayed center."""
+        state = {"osal": "0128", "osau": "0218", "ancp": "CUST"}
+        mock_coordinator.data = {"product-state": state}
+        mock_coordinator.device.get_state_value.side_effect = (
+            lambda data, key, default: data.get(key, default)
+        )
+        mock_coordinator.device.set_oscillation = AsyncMock()
+
+        async def report_preset(angle, lower, upper):
+            offset = 1 if angle == 45 else 0
+            state["osal"] = f"{lower - offset:04d}"
+            state["osau"] = f"{upper - offset:04d}"
+
+        mock_coordinator.device.set_oscillation_preset = AsyncMock(
+            side_effect=report_preset
+        )
+        select = DysonOscillationModeSelect(mock_coordinator)
+
+        for option in ("45°", "90°", "45°", "90°"):
+            await select.async_select_option(option)
+            assert (int(state["osal"]) + int(state["osau"])) // 2 == 173
+
+        assert mock_coordinator.device.set_oscillation_preset.await_args_list == [
+            call(45, 152, 197),
+            call(90, 128, 218),
+            call(45, 152, 197),
+            call(90, 128, 218),
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("lower", "upper", "expected"),
+        [("0000", "0010", (1, 46)), ("0340", "0350", (305, 350))],
+    )
+    async def test_45_degree_compensation_stays_within_bounds(
+        self, mock_coordinator, lower, upper, expected
+    ):
+        """Compensation preserves the requested span within device limits."""
+        mock_coordinator.device.get_state_value.side_effect = self._state(
+            lower, upper, "CUST"
+        )
+        mock_coordinator.device.set_oscillation_preset = AsyncMock()
+
+        select = DysonOscillationModeSelect(mock_coordinator)
+        await select.async_select_option("45°")
+
+        mock_coordinator.device.set_oscillation_preset.assert_awaited_once_with(
+            45, *expected
         )
 
     @pytest.mark.asyncio
