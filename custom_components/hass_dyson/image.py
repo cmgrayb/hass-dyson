@@ -53,6 +53,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DEVICE_CATEGORY_ROBOT, DOMAIN
 from .coordinator import DysonDataUpdateCoordinator, TTLCache
+from .device_utils import uses_jdm_commands
 from .entity import DysonEntity
 from .spot_scrub import IDLE_STATES
 from .spot_scrub_coverage import (
@@ -109,7 +110,7 @@ async def async_setup_entry(
     ]
     # Spot+Scrub streams its path live; draw what it vacuumed and mopped.
     device = coordinator.device
-    if device is not None and getattr(device, "mqtt_prefix", None) == "RB05":
+    if device is not None and uses_jdm_commands(device):
         recorder = get_coverage_recorder(hass, coordinator)
         await recorder.async_start()
         config_entry.async_on_unload(recorder.async_stop)

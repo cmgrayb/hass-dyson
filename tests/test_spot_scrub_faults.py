@@ -189,7 +189,7 @@ def _setup_coordinator(prefix):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prefix", ["RB05", "277"])
+@pytest.mark.parametrize("prefix", ["RB05", "RB07", "277"])
 async def test_only_spot_scrub_gets_the_fault_sensor(prefix):
     """Other robots keep using the per-subsystem sensors."""
     coordinator = _setup_coordinator(prefix)
@@ -200,12 +200,12 @@ async def test_only_spot_scrub_gets_the_fault_sensor(prefix):
     await sensor_platform.async_setup_entry(hass, entry, add)
 
     added = add.call_args.args[0]
-    expected = 1 if prefix == "RB05" else 0
+    expected = 1 if prefix in ("RB05", "RB07") else 0
     assert sum(isinstance(e, DysonRobotActiveFaultSensor) for e in added) == expected
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prefix", ["RB05", "277"])
+@pytest.mark.parametrize("prefix", ["RB05", "RB07", "277"])
 async def test_only_spot_scrub_gets_the_problem_sensor(prefix):
     """The problem sensor is gated the same way."""
     coordinator = _setup_coordinator(prefix)
@@ -216,7 +216,7 @@ async def test_only_spot_scrub_gets_the_problem_sensor(prefix):
     await binary_sensor_platform.async_setup_entry(hass, entry, add)
 
     added = add.call_args.args[0]
-    expected = 1 if prefix == "RB05" else 0
+    expected = 1 if prefix in ("RB05", "RB07") else 0
     assert sum(isinstance(e, DysonRobotActionRequiredSensor) for e in added) == expected
 
 

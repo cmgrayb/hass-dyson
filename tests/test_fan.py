@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from homeassistant.components.fan import FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTemperature
 
 from custom_components.hass_dyson.const import DOMAIN
 from custom_components.hass_dyson.fan import DysonFan, async_setup_entry
@@ -14,6 +15,7 @@ from custom_components.hass_dyson.fan import DysonFan, async_setup_entry
 def mock_coordinator():
     """Create a mock coordinator."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device_category = "ec"  # Environment Cleaner
@@ -51,6 +53,7 @@ def mock_coordinator():
 def mock_coordinator_heating():
     """Create a mock coordinator for a heating-capable device (Hot+Cool series)."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device_category = "ec"
@@ -84,6 +87,7 @@ def mock_coordinator_heating():
 def mock_coordinator_no_direction():
     """Create a mock coordinator without direction support."""
     coordinator = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-SERIAL-123"
     coordinator.device_name = "Test Device"
     coordinator.device_category = "ec"  # Environment Cleaner
@@ -335,12 +339,13 @@ class TestDysonFan:
         assert fan._attr_percentage == 0
 
     def test_handle_coordinator_update_auto_mode(self, mock_coordinator):
-        """Test _handle_coordinator_update with auto mode."""
+        """Auto mode with the fan running: the live speed is unknown (#552)."""
         # Arrange
         fan = DysonFan(mock_coordinator)
         mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "FAN"
         mock_coordinator.device.fan_speed_setting = "AUTO"
-        mock_coordinator.device.fan_speed = 7  # Actual speed
+        mock_coordinator.device.fan_speed = 4  # nmdv: night mode limit, not the speed
         mock_coordinator.device.get_state_value.return_value = "ON"  # Auto mode
 
         # Act
@@ -349,7 +354,26 @@ class TestDysonFan:
 
         # Assert
         assert fan._attr_is_on is True
-        assert fan._attr_percentage == 70  # 7 * 10
+        assert fan._attr_percentage is None
+        assert fan._attr_preset_mode == "auto"
+
+    def test_handle_coordinator_update_auto_mode_fan_paused(self, mock_coordinator):
+        """Auto mode with the fan paused (fnst OFF) reports 0 %, not nmdv (#552)."""
+        # Arrange
+        fan = DysonFan(mock_coordinator)
+        mock_coordinator.device.fan_power = True
+        mock_coordinator.device.fan_state = "OFF"
+        mock_coordinator.device.fan_speed_setting = "AUTO"
+        mock_coordinator.device.fan_speed = 4  # nmdv: night mode limit
+        mock_coordinator.device.get_state_value.return_value = "ON"  # Auto mode
+
+        # Act
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        # Assert
+        assert fan._attr_is_on is True
+        assert fan._attr_percentage == 0
         assert fan._attr_preset_mode == "auto"
 
     def test_handle_coordinator_update_invalid_speed(self, mock_coordinator):
@@ -1052,6 +1076,42 @@ class TestFanCoverageEnhancement:
 
         mock_coordinator.device.get_state_value.side_effect = mockget_state_value
 
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_oscillating is True
+
+    def test_handle_coordinator_update_fan_off_is_not_oscillating(
+        self, mock_coordinator
+    ):
+        """oson stays ON while the fan is off; the entity must not oscillate (#553)."""
+        mock_coordinator.data = {
+            "product-state": {
+                "fpwr": "OFF",
+                "fnst": "OFF",
+                "fnsp": "0005",
+                "auto": "OFF",
+                "oson": "ON",
+                "oscs": "IDLE",
+            }
+        }
+        mock_coordinator.device.fan_power = False
+        fan = DysonFan(mock_coordinator)
+
+        def mockget_state_value(state, key, default):
+            return state.get(key, default)
+
+        mock_coordinator.device.get_state_value.side_effect = mockget_state_value
+
+        with patch.object(fan, "async_write_ha_state"):
+            fan._handle_coordinator_update()
+
+        assert fan._attr_is_on is False
+        assert fan._attr_oscillating is False
+
+        # Turning the fan back on reports the setting again
+        mock_coordinator.data["product-state"]["fpwr"] = "ON"
+        mock_coordinator.device.fan_power = True
         with patch.object(fan, "async_write_ha_state"):
             fan._handle_coordinator_update()
 

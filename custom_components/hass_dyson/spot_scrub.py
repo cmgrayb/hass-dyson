@@ -143,13 +143,21 @@ def room_settings_payload(
 ) -> dict[str, Any]:
     """Change listed settings of listed rooms; everything else is preserved."""
     rows = copy.deepcopy(validate_preferences(preferences))
-    if preferences.get("prefer_on") != 1 or any(row[11] != 0 for row in rows):
+    if any(row[11] != 0 for row in rows):
         raise ValueError("Unsupported RB05 preference flags")
-    uv = preferences.get("uv_switch")
-    if not isinstance(uv, list) or any(
-        not isinstance(item, list) or len(item) != 2 for item in uv
-    ):
-        raise ValueError("Missing or malformed UV preferences")
+    if "uv_switch" not in preferences and preferences.get("material") == []:
+        # The RB07 reports prefer_on 0, an empty material list and no UV
+        # settings. MyDyson still writes prefer_type 1 with UV on for every
+        # room (captured 2026-11), so write what the app writes.
+        uv = [[row[0], 1] for row in rows]
+    else:
+        if preferences.get("prefer_on") != 1:
+            raise ValueError("Unsupported RB05 preference flags")
+        uv = preferences.get("uv_switch")
+        if not isinstance(uv, list) or any(
+            not isinstance(item, list) or len(item) != 2 for item in uv
+        ):
+            raise ValueError("Missing or malformed UV preferences")
     if unknown := set(changes) - {row[0] for row in rows}:
         raise ValueError(f"Unknown room ids: {sorted(unknown)}")
     for row in rows:

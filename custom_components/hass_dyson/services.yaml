@@ -239,3 +239,87 @@ set_room_cleaning_modes:
       example: '{"Kitchen": "mop_only", "10": {"hydration": "high", "wash_repetitions": 2}}'
       selector:
         object:
+
+set_robot_schedule:
+  name: Set Robot Schedule (Spot+Scrub)
+  description: >-
+    Create or change a cleaning schedule stored on a Dyson Spot+Scrub robot.
+    MyDyson shows schedules written here. Without a schedule ID a new
+    schedule is created from the robot's current room settings (days and
+    time are required); with a schedule ID only the fields given change.
+    The schedule ID is returned, and shown on the robot's Schedules sensor.
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson Spot+Scrub robot.
+      required: true
+      selector:
+        device:
+          integration: hass_dyson
+    schedule_id:
+      name: Schedule ID
+      description: Schedule to change. Leave empty to create a new schedule.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 9223372036854775807
+          mode: box
+    days:
+      name: Days
+      description: Days the schedule runs.
+      required: false
+      selector:
+        select:
+          multiple: true
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
+    time:
+      name: Time
+      description: Local start time.
+      required: false
+      selector:
+        time:
+    enabled:
+      name: Enabled
+      description: Whether the schedule is switched on. New schedules default to on.
+      required: false
+      selector:
+        boolean:
+    room_modes:
+      name: Room Modes
+      description: >-
+        Optional room settings for this schedule, in the same form as
+        set_room_cleaning_modes. Rooms not listed use the robot's current
+        settings.
+      required: false
+      example: '{"Kitchen": "mop_only"}'
+      selector:
+        object:
+
+delete_robot_schedule:
+  name: Delete Robot Schedule (Spot+Scrub)
+  description: Delete a cleaning schedule stored on a Dyson Spot+Scrub robot.
+  fields:
+    device_id:
+      name: Device
+      description: The Dyson Spot+Scrub robot.
+      required: true
+      selector:
+        device:
+          integration: hass_dyson
+    schedule_id:
+      name: Schedule ID
+      description: Schedule to delete, as shown on the robot's Schedules sensor.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9223372036854775807
+          mode: box

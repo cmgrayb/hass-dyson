@@ -211,7 +211,7 @@ def test_duration_survives_an_unexpected_state_shape(device):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prefix", ["RB05", "277", "527K"])
+@pytest.mark.parametrize("prefix", ["RB05", "RB07", "277", "527K"])
 async def test_only_spot_scrub_gets_run_detail_sensors(prefix):
     """Vis Nav and the older robots do not report these fields."""
     coordinator = MagicMock()
@@ -228,6 +228,6 @@ async def test_only_spot_scrub_gets_run_detail_sensors(prefix):
     await async_setup_entry(hass, entry, add)
 
     added = add.call_args.args[0]
-    expected = 1 if prefix == "RB05" else 0
+    expected = 1 if prefix in ("RB05", "RB07") else 0
     assert sum(isinstance(e, DysonRobotCleanDurationSensor) for e in added) == expected
     assert sum(isinstance(e, DysonRobotCleanActionSensor) for e in added) == expected

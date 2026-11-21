@@ -24,6 +24,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Dyson number platform."""
+    entry_data = hass.data[DOMAIN][config_entry.entry_id]
+    if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        from .ble_light_entities import lightcycle_numbers
+
+        async_add_entities(lightcycle_numbers(entry_data["ble_coordinator"]))
+        return
     coordinator: DysonDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     entities: list[NumberEntity] = []

@@ -199,3 +199,57 @@ data:
 #### Mode Presets for Voice Assistants and Matter Bridges
 
 Map a small set of presets (for example a dropdown helper exposed through a Matter bridge) to full per-room plans with an automation.
+
+## Set Robot Schedule Action
+
+### Description
+
+The Set Robot Schedule Action is available for Dyson Spot+Scrub robots (RB05 and RB07). These robots keep their cleaning schedules on the robot itself, and the MyDyson app shows whatever the robot holds.
+
+Parameters:
+
+1. Device ID (required): the device identifier for the target robot
+2. Schedule ID (optional): the schedule to change. Leave it out to create a new schedule.
+3. Days: any of "mon", "tue", "wed", "thu", "fri", "sat", "sun" (full day names also work). Required for a new schedule.
+4. Time: local start time. Required for a new schedule.
+5. Enabled: whether the schedule is switched on. New schedules default to on.
+6. Room Modes: optional per-room settings for this schedule, in the same form as the Set Room Cleaning Modes Action. Rooms not listed use the robot's current settings.
+
+When changing an existing schedule only the fields given are changed. The action returns the schedule (`schedule_id`, `enabled`, `days`, `time`, `repeat`, `rooms`).
+
+Each schedule also gets a switch entity to turn it on or off, the robot's Schedules sensor lists every schedule, and the Schedule calendar shows the enabled ones.
+
+Home Assistant keeps its own copy of the schedules: the robot only reports a summary (count and checksum). Schedules created or changed in MyDyson while Home Assistant is connected are picked up automatically. If one was changed while Home Assistant was not running, a repair issue appears and the Schedules sensor's `in_sync` attribute turns false; switching that schedule off and on again in MyDyson resyncs it.
+
+### Purpose
+
+Create, change, enable/disable and delete robot schedules from Home Assistant, as the MyDyson app does.
+
+### Intended Use Cases
+
+#### Weekday Morning Clean
+
+```yaml
+action: hass_dyson.set_robot_schedule
+data:
+  device_id: <robot device id>
+  days: [mon, tue, wed, thu, fri]
+  time: "08:15"
+  room_modes:
+    Kitchen: vacuum_then_mop
+response_variable: schedule
+```
+
+#### Pause Schedules While Away
+
+Turn the schedule switches off from a presence automation, and back on when someone is home.
+
+## Delete Robot Schedule Action
+
+### Description
+
+The Delete Robot Schedule Action is available for Dyson Spot+Scrub robots (RB05 and RB07). It has two required parameters: Device ID and Schedule ID (shown on the robot's Schedules sensor and on each schedule switch). MyDyson no longer shows the schedule afterwards.
+
+### Purpose
+
+Remove a robot schedule from Home Assistant. If Home Assistant still lists a schedule that was already deleted in MyDyson while Home Assistant was not running, this action also removes Home Assistant's stale copy.

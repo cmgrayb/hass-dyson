@@ -242,8 +242,9 @@ class TestStartZoneCleanCleaningMode:
         return mock_set
 
     @pytest.mark.asyncio
-    async def test_sets_modes_before_start(self):
-        coordinator = _coordinator("RB05")
+    @pytest.mark.parametrize("prefix", ["RB05", "RB07"])
+    async def test_sets_modes_before_start(self, prefix):
+        coordinator = _coordinator(prefix)
         mock_set = await self._run(
             coordinator,
             {
