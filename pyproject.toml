@@ -48,7 +48,7 @@ dev = [
     "pytest-mock==3.17.0",
     "pytest-xdist==3.8.0",
     "responses==0.26.3",
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     "types-cryptography==3.3.23.2",
     "coverage[toml]"
 ]
