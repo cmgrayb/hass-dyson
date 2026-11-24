@@ -178,9 +178,23 @@ async def async_fetch_geometry(
     from .vacuum import fetch_clean_maps
 
     cleans = await fetch_clean_maps(coordinator)
-    if not cleans or not getattr(cleans[0], "clean_id", None):
+    if not cleans:
         return None
-    clean_id = cleans[0].clean_id
+    clean = cleans[0]
+    current_map = getattr(coordinator.device, "robot_current_map_id", None)
+    if current_map and str(current_map) != "0":
+        same_map = [
+            c
+            for c in cleans
+            if str(getattr(c, "persistent_map_id", None) or "") == str(current_map)
+        ]
+        if same_map:
+            clean = same_map[0]
+        elif any(getattr(c, "persistent_map_id", None) for c in cleans):
+            return (f"nomap:{current_map}", {})
+    clean_id = getattr(clean, "clean_id", None)
+    if not clean_id:
+        return None
     key = f"{coordinator.serial_number}:geometry:{clean_id}"
     cached = _geometry_cache.get(key)
     if cached is not None:
@@ -257,7 +271,7 @@ class CoverageRecorder:
         result = await async_fetch_geometry(self.coordinator)
         if result is None or result[0] == self.geometry_clean_id:
             return False
-        self.geometry_clean_id, self.geometry = result
+        self.geometry_clean_id, self.geometry = result[0], result[1] or None
         return True
 
     def _on_message(self, topic: str, data: dict[str, Any]) -> None:
