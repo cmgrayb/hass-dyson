@@ -267,7 +267,7 @@
         "name": "Connection Status"
       },
       "ip_address": {
-        "name": "IP Address"
+        "name": "Device Address"
       },
       "filter_life": {
         "name": "{filter_type} Filter Life"

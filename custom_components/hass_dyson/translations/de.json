@@ -240,7 +240,7 @@
         "name": "Verbindungsstatus"
       },
       "ip_address": {
-        "name": "IP-Adresse"
+        "name": "Geräteadresse"
       },
       "filter_life": {
         "name": "{filter_type}-Filter Lebensdauer"
