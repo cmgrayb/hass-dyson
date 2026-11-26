@@ -219,8 +219,9 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
         if not self.coordinator.device:
             return
 
-        # Round to nearest 10% increment (30, 40, 50, 60, 70) to match Dyson app behavior
-        rounded_humidity = round(humidity / 10) * 10
+        # Round to nearest 10% increment (30, 40, 50, 60, 70) to match Dyson app behavior.
+        # Halves round up: round() rounds them to even, which turned 45 into 40.
+        rounded_humidity = (int(humidity) + 5) // 10 * 10
         rounded_humidity = max(30, min(70, rounded_humidity))
 
         if rounded_humidity != humidity:

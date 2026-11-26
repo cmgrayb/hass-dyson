@@ -273,6 +273,27 @@ class TestDysonHumidifierEntity:
         assert humidifier._attr_target_humidity == 40
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("requested", "expected"),
+        [(25, 30), (35, 40), (44, 40), (45, 50), (55, 60), (65, 70), (75, 70)],
+    )
+    async def test_set_humidity_rounds_halves_up(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, requested, expected
+    ):
+        """Test that a value halfway between two steps rounds up."""
+        pure_mock_coordinator.device.set_target_humidity = AsyncMock()
+        humidifier = pure_mock_sensor_entity(
+            DysonHumidifierEntity, pure_mock_coordinator
+        )
+
+        await humidifier.async_set_humidity(requested)
+
+        pure_mock_coordinator.device.set_target_humidity.assert_called_once_with(
+            expected
+        )
+        assert humidifier._attr_target_humidity == expected
+
+    @pytest.mark.asyncio
     async def test_set_mode_normal(
         self, pure_mock_coordinator, pure_mock_sensor_entity
     ):
