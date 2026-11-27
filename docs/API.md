@@ -60,6 +60,47 @@ manual_config = {
 
 ## Device Management
 
+### BLE Light Settings
+
+BLE lights retain the existing `DysonBLEDevice`,
+`DysonBLEDataUpdateCoordinator` and `DysonBLEEntity` architecture. Their optional
+settings use `BLELightAttributes` on the **same** authenticated client and
+command lock; they do not use MQTT or create another connection.
+
+```python
+device = coordinator.ble_device
+if device is not None and device.lighting.available:
+    await device.lighting.set_mode("study")
+    await device.lighting.set_sensor("auto_brightness", True)
+
+# Optional explicit cloud refresh. Uses the linked account's current token.
+await coordinator.async_sync_light_location()
+```
+
+The attribute service owns confirmation reads, subscription state, refresh
+tasks and cancellation. It reuses the existing fragment codec. Late or truncated
+fragments are not accepted as complete replies. Attribute values remain private
+to the device; `lighting_revision` in the existing state-change event signals
+an update without exposing coordinates, encrypted settings or birth year.
+Entities validate each attribute's type, length and range independently.
+
+`DysonBLELightCloudClient` is a read-only service using Home Assistant's managed
+HTTP client and the library's regional API routing. It exposes `fetch_ltk`,
+`fetch_location`, `fetch_timezone` and `fetch_dst`. Requests use HTTPS and do not
+follow redirects. Exceptions contain static labels/status codes, not response
+bodies, keys, tokens or account URLs. No additional login or OTP implementation
+is introduced. A key is fetched only for the selected/owning account.
+Managed clients from both the `httpx` and `httpx2` Home Assistant generations
+are accepted; transport exceptions from either family are sanitized.
+
+`BLELightLocation` owns optional startup synchronization and its offline cache;
+it never changes the location stored in the cloud. Its background task is
+cancelled on unload. A cloud error does not prevent normal Bluetooth control.
+
+Raw lux/occupancy telemetry and wake-up schedule-file transfer are not decoded.
+Sensor enablement must not be presented as a physical measurement. The legacy
+motion entity remains unknown until a validated decoder exists.
+
 ### DysonDevice Class
 
 The `DysonDevice` class handles direct MQTT communication with Dyson devices.

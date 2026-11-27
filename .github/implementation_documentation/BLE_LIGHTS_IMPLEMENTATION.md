@@ -22,7 +22,7 @@ DysonBLEDataUpdateCoordinator   ← asyncio.Task "dyson-ble-<serial>"
         │                        DysonBLEDevice
         │                          (ble_device.py)
         ├──► DysonLightEntity (light.py)
-        └──► DysonMotionBinarySensor (binary_sensor.py)
+        └──► DysonMotionBinarySensor (legacy, unknown state)
 ```
 
 State flows *up* via events:
@@ -101,7 +101,7 @@ The coordinator starts a named `asyncio.Task("dyson-ble-<serial>")` that:
 3. Subscribes to auth-char notifications.
 4. Performs LTK re-auth.
 5. Reads initial state.
-6. Subscribes to motion/flag notifications.
+6. Subscribes to light-control and undecoded runtime notifications.
 7. Polls state every 20 s while connected.
 8. On disconnect, reconnects with backoff (5 / 15 / 30 / 60 s).
 
@@ -173,7 +173,7 @@ coord.data = {
     "power": True,
     "brightness": 200,
     "color_temp_kelvin": 4000,
-    "motion_detected": False,
+    "motion_detected": None,  # No validated motion decoder yet
 }
 ```
 
@@ -186,6 +186,12 @@ python -m pytest tests/test_ble_device.py tests/test_light.py tests/test_binary_
 ---
 
 ## Known Limitations
+
+- **Motion telemetry**: Characteristic 11008 is undecoded. Its nonzero payload
+  has been observed on a stationary lamp, so it cannot be treated as occupancy.
+  Raw status is retained in `char_11008_hex`; the legacy motion entity remains
+  unknown and is disabled by default for new installations. See the protocol
+  reference for the controlled-test observations.
 
 - **Button press required for fresh pairing**: First-time pairing via Dyson cloud
   requires the user to press the lamp's pairing button.  This is a one-time step.

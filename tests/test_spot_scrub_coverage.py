@@ -316,3 +316,54 @@ def test_current_room_sensor(pure_mock_sensor_entity, recorder):
     coordinator.device.robot_global_position = [1.0, 1.0]
     sensor._handle_coordinator_update()
     assert sensor.native_value == "Kitchen"
+
+
+def _clean(clean_id, map_id):
+    return MagicMock(clean_id=clean_id, persistent_map_id=map_id)
+
+
+@pytest.fixture
+def cloud(recorder):
+    client = MagicMock()
+    client.get_clean_map_data = AsyncMock(return_value=CLEAN_MAP_DATA)
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=client)
+    context.__aexit__ = AsyncMock(return_value=False)
+    recorder.coordinator.async_cloud_client = MagicMock(return_value=context)
+    with patch.object(coverage, "_geometry_cache", type(coverage._geometry_cache)(60)):
+        yield client
+
+
+def _patch_cleans(cleans):
+    return patch(
+        "custom_components.hass_dyson.vacuum.fetch_clean_maps",
+        AsyncMock(return_value=cleans),
+    )
+
+
+async def test_geometry_comes_from_the_current_map(recorder, cloud):
+    recorder.coordinator.device.robot_current_map_id = "111"
+    with _patch_cleans([_clean("clean-b", 222), _clean("clean-a", 111)]):
+        assert await recorder.async_refresh_geometry()
+
+    cloud.get_clean_map_data.assert_awaited_once_with("TEST-SERIAL", "clean-a")
+    assert recorder.geometry_clean_id == "clean-a"
+
+
+async def test_no_clean_on_the_current_map_clears_geometry(recorder, cloud):
+    recorder.coordinator.device.robot_current_map_id = "333"
+    with _patch_cleans([_clean("clean-b", 222), _clean("clean-a", 111)]):
+        assert await recorder.async_refresh_geometry()
+
+    cloud.get_clean_map_data.assert_not_awaited()
+    assert recorder.geometry is None
+    assert zone_at(recorder.geometry, 1, 1) is None
+
+
+async def test_unknown_current_map_uses_the_newest_clean(recorder, cloud):
+    recorder.coordinator.device.robot_current_map_id = None
+    with _patch_cleans([_clean("clean-b", 222), _clean("clean-a", 111)]):
+        assert await recorder.async_refresh_geometry()
+
+    cloud.get_clean_map_data.assert_awaited_once_with("TEST-SERIAL", "clean-b")
+    assert recorder.geometry_clean_id == "clean-b"

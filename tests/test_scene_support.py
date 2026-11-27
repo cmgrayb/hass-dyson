@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+from homeassistant.const import UnitOfTemperature
 
 from custom_components.hass_dyson.climate import DysonClimateEntity
 from custom_components.hass_dyson.coordinator import DysonDataUpdateCoordinator
@@ -22,6 +23,8 @@ from custom_components.hass_dyson.switch import (
 def mock_coordinator():
     """Create a mock coordinator with device data."""
     coordinator = MagicMock(spec=DysonDataUpdateCoordinator)
+    coordinator.hass = MagicMock()
+    coordinator.hass.config.units.temperature_unit = UnitOfTemperature.CELSIUS
     coordinator.serial_number = "TEST-DEVICE-001"
     coordinator.device_name = "Test Dyson Device"
     coordinator.device_category = ["ec"]

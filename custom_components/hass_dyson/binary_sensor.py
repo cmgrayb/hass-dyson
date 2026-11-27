@@ -25,7 +25,7 @@ from .const import (
     ROBOT_STATES_CHARGING,
 )
 from .coordinator import DysonBLEDataUpdateCoordinator, DysonDataUpdateCoordinator
-from .device_utils import mask_serial
+from .device_utils import mask_serial, uses_jdm_commands
 from .entity import DysonBLEEntity, DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -154,6 +154,16 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
 
+    # Product error sensor — catches every self-check in CURRENT-FAULTS, including
+    # the ones without a named fault sensor (e.g. prot, iuw0).
+    if DEVICE_CATEGORY_EC in coordinator.device_category:
+        entities.append(DysonProductErrorSensor(coordinator))
+
+    # Live oscillation state, for devices that report oscs (#553)
+    product_state = (coordinator.data or {}).get("product-state", {})
+    if isinstance(product_state, dict) and "oscs" in product_state:
+        entities.append(DysonOscillationActiveSensor(coordinator))
+
     # Add firmware update available sensor for cloud-discovered devices only
     # TODO: Temporarily disabled due to bug in libdyson-rest firmware update detection
     # Will be re-enabled when libdyson-rest properly supports firmware update availability
@@ -192,8 +202,8 @@ async def async_setup_entry(
             coordinator.serial_number,
         )
         entities.append(DysonRobotBatteryChargingSensor(coordinator))
-        # RB05 reports flat numeric codes the subsystem sensors cannot read.
-        if coordinator.device and coordinator.device.mqtt_prefix == "RB05":
+        # JDM robots report flat numeric codes the subsystem sensors cannot read.
+        if coordinator.device and uses_jdm_commands(coordinator.device):
             entities.append(DysonRobotActionRequiredSensor(coordinator))
         _LOGGER.debug("Adding robot charging sensor for %s", coordinator.serial_number)
 
@@ -331,6 +341,41 @@ class DysonFilterReplacementSensor(DysonEntity, BinarySensorEntity):  # type: ig
             )
             self._attr_is_on = False
 
+        super()._handle_coordinator_update()
+
+
+class DysonProductErrorSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """On while any product or module self-check of the device fails.
+
+    The named fault sensors only cover the codes in FAULT_TRANSLATIONS. A
+    blocked machine can fail other checks: a PH04 whose fan would not start at
+    any speed reported prot and iuw0 as FAIL while every named sensor was off.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the product error sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_product_error"
+        # The repair issue is the main signal; this sensor is for automations
+        self._attr_entity_registry_enabled_default = False
+        self._attr_translation_key = "product_error"
+        self._attr_device_class = BinarySensorDeviceClass.PROBLEM
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:alert-circle-outline"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        device = self.coordinator.device
+        errors = getattr(device, "product_errors", None) if device else None
+        if not isinstance(errors, dict):
+            # No CURRENT-FAULTS message yet
+            self._attr_is_on = None
+            self._attr_extra_state_attributes = {}
+        else:
+            self._attr_is_on = bool(errors)
+            self._attr_extra_state_attributes = {"errors": errors}
         super()._handle_coordinator_update()
 
 
@@ -636,6 +681,32 @@ class DysonCleaningSolutionSensor(DysonEntity, BinarySensorEntity):  # type: ign
         super()._handle_coordinator_update()
 
 
+class DysonOscillationActiveSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
+    """Whether the device oscillates right now (oscs).
+
+    The fan entity's oscillating attribute follows the oson setting. oscs is
+    the live state: ON while the head moves, IDLE while the fan is paused or
+    off, OFF otherwise.
+    """
+
+    coordinator: DysonDataUpdateCoordinator
+
+    def __init__(self, coordinator: DysonDataUpdateCoordinator) -> None:
+        """Initialize the oscillation active sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_oscillation_active"
+        self._attr_translation_key = "oscillation_active"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:arrow-oscillating"
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        product_state = (self.coordinator.data or {}).get("product-state", {})
+        state = product_state.get("oscs") if isinstance(product_state, dict) else None
+        self._attr_is_on = None if state is None else state == "ON"
+        super()._handle_coordinator_update()
+
+
 class DysonRobotBatteryChargingSensor(DysonEntity, BinarySensorEntity):  # type: ignore[misc]
     """Charging state for robot vacuums.
 
@@ -730,18 +801,18 @@ class DysonRobotBatteryChargingSensor(DysonEntity, BinarySensorEntity):  # type:
 
 
 class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: ignore[misc]
-    """Binary sensor reporting motion detected by a Dyson BLE light.
+    """Compatibility entity for the as-yet undecoded BLE motion state.
 
-    The Dyson Lightcycle Morph (and compatible lamps) expose a motion detection
-    characteristic (11008) that fires a BLE notification whenever occupancy
-    changes.  This sensor surfaces that signal as a standard Home Assistant
-    motion binary sensor.
+    Keep its unique ID for existing installations, but do not enable new
+    entities by default or interpret characteristic 11008 as occupancy.
+    Until a motion decoder is validated, the transport reports unknown.
 
     Attributes:
         _attr_device_class: :attr:`BinarySensorDeviceClass.MOTION`
     """
 
     _attr_device_class = BinarySensorDeviceClass.MOTION
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: DysonBLEDataUpdateCoordinator) -> None:
         """Initialise the motion sensor.
@@ -755,11 +826,12 @@ class DysonMotionBinarySensor(DysonBLEEntity, BinarySensorEntity):  # type: igno
 
     @property
     def is_on(self) -> bool | None:
-        """Return True when motion has been detected."""
+        """Return a decoded Boolean, or unknown when no measurement exists."""
         data = self.coordinator.data
         if data is None:
             return None
-        return bool(data.get("motion_detected", False))
+        value = data.get("motion_detected")
+        return value if isinstance(value, bool) else None
 
 
 #         _LOGGER.debug(

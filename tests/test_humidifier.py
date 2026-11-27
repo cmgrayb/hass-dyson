@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.humidifier import HumidifierAction
 
 from custom_components.hass_dyson.const import DOMAIN
 from custom_components.hass_dyson.humidifier import (
@@ -105,12 +106,18 @@ class TestDysonHumidifierEntity:
     def test_update_state_auto_mode(
         self, pure_mock_coordinator, pure_mock_sensor_entity
     ):
-        """Test state update when humidifier is in auto mode."""
+        """Test state update when humidifier is in auto mode.
+
+        A PH04 in auto mode reports hume=HUMD with haut=ON, and rect is the
+        target it picked itself; humt is the manual setpoint (#553).
+        """
         pure_mock_coordinator.data["product-state"] = {
-            "hume": "OFF",
+            "hume": "HUMD",
             "haut": "ON",
             "humi": "0050",
             "humt": "0045",
+            "rect": "0035",
+            "msta": "OFF",
         }
         humidifier = pure_mock_sensor_entity(
             DysonHumidifierEntity, pure_mock_coordinator
@@ -121,7 +128,68 @@ class TestDysonHumidifierEntity:
         assert humidifier._attr_is_on is True
         assert humidifier._attr_mode == MODE_AUTO
         assert humidifier._attr_current_humidity == 50
+        assert humidifier._attr_target_humidity == 35
+        assert humidifier._attr_action == HumidifierAction.IDLE
+
+    def test_update_state_auto_mode_without_rect_uses_humt(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """Without a valid rect the manual setpoint is shown."""
+        pure_mock_coordinator.data["product-state"] = {
+            "hume": "HUMD",
+            "haut": "ON",
+            "humt": "0045",
+            "rect": "0000",
+        }
+        humidifier = pure_mock_sensor_entity(
+            DysonHumidifierEntity, pure_mock_coordinator
+        )
+
+        humidifier._handle_coordinator_update()
+
         assert humidifier._attr_target_humidity == 45
+
+    def test_update_state_auto_flag_without_hume_is_off(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """haut can stay ON while hume is OFF; humidification is off then."""
+        pure_mock_coordinator.data["product-state"] = {
+            "hume": "OFF",
+            "haut": "ON",
+            "humt": "0070",
+            "msta": "OFF",
+        }
+        humidifier = pure_mock_sensor_entity(
+            DysonHumidifierEntity, pure_mock_coordinator
+        )
+
+        humidifier._handle_coordinator_update()
+
+        assert humidifier._attr_is_on is False
+        assert humidifier._attr_mode is None
+        assert humidifier._attr_action == HumidifierAction.OFF
+
+    def test_update_state_humidifying_action(
+        self, pure_mock_coordinator, pure_mock_sensor_entity
+    ):
+        """msta=HUMD means the device is humidifying right now."""
+        pure_mock_coordinator.data["product-state"] = {
+            "hume": "HUMD",
+            "haut": "OFF",
+            "humt": "0050",
+            "rect": "0035",
+            "msta": "HUMD",
+        }
+        humidifier = pure_mock_sensor_entity(
+            DysonHumidifierEntity, pure_mock_coordinator
+        )
+
+        humidifier._handle_coordinator_update()
+
+        assert humidifier._attr_mode == MODE_NORMAL
+        assert humidifier._attr_action == HumidifierAction.HUMIDIFYING
+        # rect is ignored outside auto mode
+        assert humidifier._attr_target_humidity == 50
 
     def test_update_state_off(self, pure_mock_coordinator, pure_mock_sensor_entity):
         """Test state update when humidifier is off."""
@@ -203,6 +271,27 @@ class TestDysonHumidifierEntity:
 
         pure_mock_coordinator.device.set_target_humidity.assert_called_once_with(40)
         assert humidifier._attr_target_humidity == 40
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("requested", "expected"),
+        [(25, 30), (35, 40), (44, 40), (45, 50), (55, 60), (65, 70), (75, 70)],
+    )
+    async def test_set_humidity_rounds_halves_up(
+        self, pure_mock_coordinator, pure_mock_sensor_entity, requested, expected
+    ):
+        """Test that a value halfway between two steps rounds up."""
+        pure_mock_coordinator.device.set_target_humidity = AsyncMock()
+        humidifier = pure_mock_sensor_entity(
+            DysonHumidifierEntity, pure_mock_coordinator
+        )
+
+        await humidifier.async_set_humidity(requested)
+
+        pure_mock_coordinator.device.set_target_humidity.assert_called_once_with(
+            expected
+        )
+        assert humidifier._attr_target_humidity == expected
 
     @pytest.mark.asyncio
     async def test_set_mode_normal(

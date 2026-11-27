@@ -745,10 +745,21 @@ class TestDysonMotionBinarySensor:
         sensor = self._make_sensor()
         assert sensor._attr_unique_id == "CD06-GB-HAA0001A_motion"
 
-    def test_motion_false_missing_key(self):
-        """is_on returns False when motion_detected key is absent."""
+    def test_motion_unknown_missing_key(self):
+        """Missing data must not masquerade as confirmed absence of motion."""
         sensor = self._make_sensor(data={"power": True})
-        assert sensor.is_on is False
+        assert sensor.is_on is None
+
+    @pytest.mark.parametrize("value", [None, 0, 1, "false", "0000100000000000"])
+    def test_motion_unknown_for_undecoded_values(self, value):
+        """Only actual Boolean values are a decoded measurement."""
+        sensor = self._make_sensor(data={"motion_detected": value})
+        assert sensor.is_on is None
+
+    def test_unverified_motion_sensor_is_not_enabled_by_default(self):
+        """New installations must not advertise unverified motion detection."""
+        sensor = self._make_sensor()
+        assert sensor.entity_registry_enabled_default is False
 
 
 class TestBLEBinarySensorSetup:
@@ -1143,3 +1154,179 @@ class TestDysonCleaningSolutionSensor:
         )
         entities = mock_add_entities.call_args[0][0]
         assert not any(isinstance(e, DysonCleaningSolutionSensor) for e in entities)
+
+
+class TestDysonProductErrorSensor:
+    """Product error sensor built from the CURRENT-FAULTS error lists."""
+
+    def _sensor(self, pure_mock_coordinator):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonProductErrorSensor,
+        )
+
+        sensor = DysonProductErrorSensor(pure_mock_coordinator)
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_init(self, pure_mock_coordinator):
+        from homeassistant.components.binary_sensor import BinarySensorDeviceClass
+        from homeassistant.const import EntityCategory
+
+        sensor = self._sensor(pure_mock_coordinator)
+        assert sensor._attr_unique_id.endswith("_product_error")
+        assert sensor._attr_translation_key == "product_error"
+        assert sensor._attr_device_class == BinarySensorDeviceClass.PROBLEM
+        assert sensor._attr_entity_category == EntityCategory.DIAGNOSTIC
+        # The repair issue is the main signal (#553)
+        assert sensor.entity_registry_enabled_default is False
+
+    def test_on_with_failing_checks(self, pure_mock_coordinator):
+        """Shape captured from a blocked PH04 whose fan would not start."""
+        pure_mock_coordinator.device.product_errors = {"iuw0": "FAIL", "prot": "FAIL"}
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is True
+        assert sensor._attr_extra_state_attributes == {
+            "errors": {"iuw0": "FAIL", "prot": "FAIL"}
+        }
+
+    def test_off_when_all_checks_pass(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.product_errors = {}
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is False
+        assert sensor._attr_extra_state_attributes == {"errors": {}}
+
+    def test_unknown_until_faults_reported(self, pure_mock_coordinator):
+        pure_mock_coordinator.device.product_errors = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+        assert sensor._attr_extra_state_attributes == {}
+
+    def test_no_device_is_unknown(self, pure_mock_coordinator):
+        pure_mock_coordinator.device = None
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is None
+
+    @pytest.mark.asyncio
+    async def test_created_for_ec_devices_only(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator
+    ):
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        for category, expected in ((DEVICE_CATEGORY_EC, 1), ("other", 0)):
+            mock_add_entities = MagicMock()
+            pure_mock_coordinator.device_category = category
+            pure_mock_coordinator.device_capabilities = []
+            await async_setup_entry(
+                pure_mock_hass, pure_mock_config_entry, mock_add_entities
+            )
+            entities = mock_add_entities.call_args[0][0]
+            product_error_sensors = [
+                e
+                for e in entities
+                if getattr(e, "_attr_translation_key", None) == "product_error"
+            ]
+            assert len(product_error_sensors) == expected
+
+
+class TestDeviceProductErrors:
+    """DysonDevice.product_errors reads the CURRENT-FAULTS error lists."""
+
+    def _device(self, faults_data):
+        from custom_components.hass_dyson.device import DysonDevice
+
+        device = DysonDevice.__new__(DysonDevice)
+        device._faults_data = faults_data
+        return device
+
+    def test_none_before_faults_reported(self):
+        assert self._device({}).product_errors is None
+
+    def test_only_failing_keys_from_both_lists(self):
+        device = self._device(
+            {
+                "product-errors": {"prot": "FAIL", "amf1": "OK", "iuw0": "FAIL"},
+                "module-errors": {"szme": "OK", "wifi": "FAIL"},
+                "product-warnings": {"fltr": "CHNG"},
+            }
+        )
+        assert device.product_errors == {
+            "iuw0": "FAIL",
+            "prot": "FAIL",
+            "wifi": "FAIL",
+        }
+
+    def test_empty_when_all_ok(self):
+        device = self._device(
+            {"product-errors": {"prot": "OK"}, "module-errors": {"szme": "PASS"}}
+        )
+        assert device.product_errors == {}
+
+
+class TestDysonOscillationActiveSensor:
+    """Live oscillation state from oscs (#553)."""
+
+    def _sensor(self, coordinator):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonOscillationActiveSensor,
+        )
+
+        sensor = DysonOscillationActiveSensor(coordinator)
+        sensor.async_write_ha_state = MagicMock()
+        return sensor
+
+    def test_init(self, pure_mock_coordinator):
+        from homeassistant.const import EntityCategory
+
+        sensor = self._sensor(pure_mock_coordinator)
+        assert (
+            sensor._attr_unique_id
+            == f"{pure_mock_coordinator.serial_number}_oscillation_active"
+        )
+        assert sensor._attr_translation_key == "oscillation_active"
+        assert sensor._attr_entity_category == EntityCategory.DIAGNOSTIC
+
+    @pytest.mark.parametrize(
+        ("oscs", "expected"),
+        [("ON", True), ("IDLE", False), ("OFF", False), (None, None)],
+    )
+    def test_state_from_oscs(self, pure_mock_coordinator, oscs, expected):
+        product_state = {"oson": "ON"}
+        if oscs is not None:
+            product_state["oscs"] = oscs
+        pure_mock_coordinator.data = {"product-state": product_state}
+        sensor = self._sensor(pure_mock_coordinator)
+        sensor._handle_coordinator_update()
+        assert sensor._attr_is_on is expected
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reported", [True, False])
+    async def test_setup_only_when_oscs_reported(
+        self, pure_mock_hass, pure_mock_config_entry, pure_mock_coordinator, reported
+    ):
+        from custom_components.hass_dyson.binary_sensor import (
+            DysonOscillationActiveSensor,
+        )
+
+        mock_add_entities = MagicMock()
+        pure_mock_hass.data[DOMAIN] = {
+            pure_mock_config_entry.entry_id: pure_mock_coordinator
+        }
+        pure_mock_coordinator.device_category = [DEVICE_CATEGORY_EC]
+        pure_mock_coordinator.device_capabilities = []
+        product_state = {"oson": "ON"}
+        if reported:
+            product_state["oscs"] = "IDLE"
+        pure_mock_coordinator.data = {"product-state": product_state}
+
+        await async_setup_entry(
+            pure_mock_hass, pure_mock_config_entry, mock_add_entities
+        )
+
+        entities = mock_add_entities.call_args[0][0]
+        found = [e for e in entities if isinstance(e, DysonOscillationActiveSensor)]
+        assert len(found) == (1 if reported else 0)

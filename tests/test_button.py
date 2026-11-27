@@ -370,12 +370,22 @@ class TestButtonPlatformRobotSetup:
         return entry
 
     @pytest.mark.asyncio
-    async def test_ble_device_returns_early(self, mock_hass, mock_config_entry):
-        """BLE device skips button setup entirely."""
-        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = {"is_ble": True}
+    async def test_ble_lamp_uses_lamp_buttons(self, mock_hass, mock_config_entry):
+        """BLE lamps use their own actions, never MQTT/robot zone buttons."""
+        coordinator = MagicMock()
+        mock_hass.data[DOMAIN][mock_config_entry.entry_id] = {
+            "is_ble": True,
+            "ble_coordinator": coordinator,
+        }
         add_entities = MagicMock()
-        await async_setup_entry(mock_hass, mock_config_entry, add_entities)
-        add_entities.assert_not_called()
+        lamp_button = MagicMock()
+        with patch(
+            "custom_components.hass_dyson.ble_light_entities.lightcycle_buttons",
+            return_value=[lamp_button],
+        ) as factory:
+            await async_setup_entry(mock_hass, mock_config_entry, add_entities)
+        factory.assert_called_once_with(coordinator)
+        add_entities.assert_called_once_with([lamp_button])
 
     @pytest.mark.asyncio
     async def test_robot_with_token_creates_zone_buttons(

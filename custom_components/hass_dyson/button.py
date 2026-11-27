@@ -90,6 +90,9 @@ async def async_setup_entry(
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
     # BLE devices manage their own reconnection — MQTT reconnect button not applicable
     if isinstance(entry_data, dict) and entry_data.get("is_ble"):
+        from .ble_light_entities import lightcycle_buttons
+
+        async_add_entities(lightcycle_buttons(entry_data["ble_coordinator"]))
         return
     coordinator: DysonDataUpdateCoordinator = entry_data
 

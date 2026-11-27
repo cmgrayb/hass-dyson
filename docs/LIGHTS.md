@@ -13,7 +13,68 @@ Supported controls:
 | Entity | Description |
 |---|---|
 | Light | On/off, brightness (1–100 %), colour temperature (2 700–6 500 K / ≈ 154–370 mired) |
-| Binary sensor (motion) | Triggers when the built-in occupancy sensor detects movement |
+| Switches | Sensor enablement; daylight, age adjustment, sleep, away, personal daylight and wake-up schedule |
+| Select | Native Manual, Daylight, Study, Relax and Precision lighting modes |
+| Numbers | After-sunset brightness and colour temperature, wake-up brightness, encrypted year of birth |
+| Times and date | Personal sunrise/sunset, sleep window and away start date |
+| Buttons | Restore default solar times; synchronize the account's saved location |
+| Binary sensor (motion) | Compatibility entity only; reports `unknown`, disabled by default for new installations |
+
+## Account Setup for an Already Registered Lamp
+
+Use the normal Dyson account setup and its existing login/OTP steps. A lamp
+already registered to that account can reuse the account-owned Bluetooth key;
+no live phone/app connection or manually copied credentials are needed.
+
+With automatic device addition enabled, the integration matches a connectable
+Bluetooth advertisement by the lamp's exact serial name and retrieves the key
+from the owning account's regional API. If the lamp is not visible or its key
+cannot be retrieved, the existing BLE configuration step remains available.
+An unrelated account is never substituted for the lamp's linked parent account.
+This does not implement first-time provisioning of an unregistered lamp.
+
+The entry retains the account's room title, while its device and entities use
+the existing `Dyson <serial>` device identity. Basic control continues to use
+local Bluetooth regardless of the account's MQTT/cloud fallback preference.
+
+## Optional Settings and Privacy
+
+Optional attribute discovery runs in the background on the existing BLE link.
+Commands and notifications use the original device/coordinator, not a second
+integration, bridge or competing Bluetooth session. Settings are confirmed by a
+reply and a readback; physical changes update subscribed attributes. Unsupported
+features are unavailable individually. Supported but unset times/dates remain
+editable. A subscription failure falls back to periodic reads where supported.
+Readback confirmation briefly retries reads when the lamp applies a command
+asynchronously; it does not resend the command or restart the lighting mode.
+Morph writes also share a short minimum spacing so a combined scene or a sensor
+change immediately after a slider update does not silently lose a command.
+If a read/write reply times out, optional attribute commands pause until the
+next connection to avoid confusing a late reply with a new command.
+
+The movement and auto-brightness switches enable the lamp's built-in behaviour;
+they are not instantaneous motion or ambient-lux measurements. The original
+daylight switch is reused, with confirmed state when attribute access is
+available. Its legacy direct-write fallback remains for older devices.
+
+On the tested Morph firmware, changing a lighting mode or sensor enablement
+while the light is off can be acknowledged without being applied. Turn the light
+on before changing these controls. The integration checks the returned value,
+reports an unapplied change as an error and does not turn the light on implicitly.
+
+Location, timezone and daylight-saving rules are read from the owning Dyson
+account after initial connection and cached in the lamp's config entry for
+offline use. The synchronization button refreshes them explicitly. This never
+updates the location saved in Dyson's cloud. Cloud failure does not prevent
+basic local control. Coordinates, raw settings and birth year are not added to
+the public state-change event. The year-of-birth entity is disabled by default;
+enabling it exposes that setting as a normal Home Assistant entity state.
+Protect Home Assistant configuration backups because they contain device keys
+and the cached location.
+
+The wake-up schedule switch only enables an existing lamp schedule. Schedule
+editing/file transfer and app-local custom preset import are not implemented;
+Home Assistant scenes can store brightness and colour-temperature combinations.
 
 ---
 
@@ -210,7 +271,7 @@ Once the config entry is created, the integration will:
 2. Establish a GATT connection using `bleak_retry_connector` with up to 4 connection attempts
 3. Authenticate silently using the LTK (no button press, no cloud call)
 4. Read initial state (power, brightness, colour temperature, firmware version)
-5. Subscribe to motion and runtime notifications
+5. Subscribe to light-control and undecoded runtime notifications
 6. Fire a keepalive poll every 20 seconds to detect silent disconnects
 7. Reconnect automatically with exponential backoff (5 s, 15 s, 30 s, 60 s) on disconnect
 
@@ -223,7 +284,7 @@ State updates propagate to Home Assistant via the `dyson_ble_state_change` event
 | Entity | Platform | Notes |
 |---|---|---|
 | `light.<name>` | `light` | Power, brightness, colour temperature (2 700–6 500 K) |
-| `binary_sensor.<name>_motion` | `binary_sensor` | `on` when occupancy detected |
+| `binary_sensor.<name>_motion` | `binary_sensor` | Retained for compatibility; motion telemetry is not decoded, so reports `unknown` |
 
 ---
 
@@ -327,14 +388,18 @@ command ran — reload the entry so the properties are read after service discov
 
 ---
 
-### Motion sensor always off
+### Motion sensor reports unknown
 
-**Symptom**: The motion binary sensor never triggers even when movement is detected.
+Raw occupancy telemetry has not been validated. In controlled tests a stationary
+Lightcycle Morph repeatedly returned the nonzero 11008 payload
+`0000100000000000`. Treating any nonzero byte as movement produces false events;
+all-zero data is not established evidence of an empty room either.
 
-**Checklist**:
-- Verify motion detection is enabled on the lamp (hold the touch ring for ~3 s to toggle)
-- Confirm the lamp is fully authenticated (`authenticated: true` in the debug log)
-- The motion characteristic requires an active GATT subscription — reload if just reconnected
+The existing motion entity ID is retained for compatibility, but its state is
+`unknown` and new motion entities are disabled by default. Do not use it for
+occupancy automations. The lamp's own movement-controlled behaviour is separate
+from reporting instantaneous movement to Home Assistant. This is a protocol
+limitation, not a reason to reset or re-pair the lamp.
 
 ---
 

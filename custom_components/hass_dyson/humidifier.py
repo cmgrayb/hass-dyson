@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.humidifier import (
+    HumidifierAction,
     HumidifierDeviceClass,
     HumidifierEntity,
     HumidifierEntityFeature,
@@ -16,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import DysonDataUpdateCoordinator
-from .device_utils import mask_serial
+from .device_utils import humidifier_target_humidity, mask_serial
 from .entity import DysonEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -106,16 +107,25 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
             device_data, "haut", "OFF"
         )
 
-        # Determine if humidifier is on (either manual or auto mode)
-        self._attr_is_on = humidity_enabled == "HUMD" or humidity_auto == "ON"
+        # hume switches humidification; haut only selects auto mode and can
+        # stay ON while hume is OFF, which is off (#553)
+        self._attr_is_on = humidity_enabled == "HUMD"
 
         # Determine current mode
-        if humidity_auto == "ON":
-            self._attr_mode = MODE_AUTO
-        elif humidity_enabled == "HUMD":
-            self._attr_mode = MODE_NORMAL
-        else:
+        if not self._attr_is_on:
             self._attr_mode = None  # Off has no mode
+        elif humidity_auto == "ON":
+            self._attr_mode = MODE_AUTO
+        else:
+            self._attr_mode = MODE_NORMAL
+
+        # What the device is doing right now: msta is HUMD while it humidifies
+        if not self._attr_is_on:
+            self._attr_action = HumidifierAction.OFF
+        elif device_data.get("msta") == "HUMD":
+            self._attr_action = HumidifierAction.HUMIDIFYING
+        else:
+            self._attr_action = HumidifierAction.IDLE
 
     def _update_humidity(self, device_data: dict[str, Any]) -> None:
         """Update current and target humidity from device data."""
@@ -136,19 +146,9 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
         except ValueError, TypeError:
             self._attr_current_humidity = None
 
-        # Target humidity
-        target_humidity = self.coordinator.device.get_state_value(
-            device_data, "humt", "0040"
-        )
-        try:
-            humidity_percent = int(target_humidity)
-            # Only set target humidity if we have a valid reading
-            if target_humidity != "0000" and humidity_percent > 0:
-                self._attr_target_humidity = humidity_percent
-            else:
-                self._attr_target_humidity = 40  # Default to 40%
-        except ValueError, TypeError:
-            self._attr_target_humidity = 40  # Default to 40%
+        # Target humidity: rect in auto mode, humt otherwise
+        target_humidity = humidifier_target_humidity(device_data)
+        self._attr_target_humidity = 40 if target_humidity is None else target_humidity
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the humidifier on."""
@@ -219,8 +219,9 @@ class DysonHumidifierEntity(DysonEntity, HumidifierEntity):  # type: ignore[misc
         if not self.coordinator.device:
             return
 
-        # Round to nearest 10% increment (30, 40, 50, 60, 70) to match Dyson app behavior
-        rounded_humidity = round(humidity / 10) * 10
+        # Round to nearest 10% increment (30, 40, 50, 60, 70) to match Dyson app behavior.
+        # Halves round up: round() rounds them to even, which turned 45 into 40.
+        rounded_humidity = (int(humidity) + 5) // 10 * 10
         rounded_humidity = max(30, min(70, rounded_humidity))
 
         if rounded_humidity != humidity:

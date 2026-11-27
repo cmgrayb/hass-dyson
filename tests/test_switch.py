@@ -1331,5 +1331,5 @@ class TestDysonDaylightModeSwitch:
         result = await async_setup_entry(hass, config_entry, async_add_entities)
 
         assert result is True
-        assert len(added) == 1
+        assert len(added) == 8
         assert isinstance(added[0], DysonDaylightModeSwitch)
