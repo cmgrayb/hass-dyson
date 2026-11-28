@@ -45,6 +45,27 @@ Example:
 
 from __future__ import annotations
 
+# --- Fork workaround (ubtendurus/hass-dyson) -----------------------------------
+# The Dyson API now returns account items with category "formulation", which
+# libdyson-rest 0.17.2 does not model. Device.from_dict() then raises
+# "'formulation' is not a valid DeviceCategory" and the whole device list
+# (and so cloud sign-in) fails. Skip those items, as the library already does
+# for "oc". Remove once libdyson-rest handles the category upstream.
+try:
+    import libdyson_rest.async_client as _wa_async_client
+    import libdyson_rest.client as _wa_client
+
+    _WA_SKIP = frozenset({"oc", "formulation"})
+    _wa_async_client.UNSUPPORTED_DEVICE_CATEGORIES = (
+        _wa_async_client.UNSUPPORTED_DEVICE_CATEGORIES | _WA_SKIP
+    )
+    _wa_client.UNSUPPORTED_DEVICE_CATEGORIES = (
+        _wa_client.UNSUPPORTED_DEVICE_CATEGORIES | _WA_SKIP
+    )
+except Exception:  # noqa: BLE001 - never block setup over the workaround
+    pass
+# -------------------------------------------------------------------------------
+
 import logging
 from typing import Any
 

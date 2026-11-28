@@ -1,5 +1,21 @@
 # Dyson Integration for Home Assistant
 
+> **This is a fork.** All credit for this integration goes to
+> [@cmgrayb](https://github.com/cmgrayb) and the contributors of the original
+> project, **[cmgrayb/hass-dyson](https://github.com/cmgrayb/hass-dyson)**.
+> Please use the original repository for support, issues and new releases.
+>
+> **What this fork changes:** one small workaround on top of upstream `0.39.0`.
+> Cloud sign-in was failing with
+> `Invalid devices response: 'formulation' is not a valid DeviceCategory`
+> because the Dyson API now returns account items in a `formulation` category
+> that `libdyson-rest` 0.17.2 does not know. The fork skips those items (the same
+> way the library already skips `oc` devices) so the rest of the account's
+> devices are discovered normally. See the top of
+> `custom_components/hass_dyson/__init__.py`.
+>
+> The fork will be retired once the fix lands upstream.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/cmgrayb/hass-dyson/main/custom_components/hass_dyson/brand/logo.png" alt="Dyson Logo" width="400"/>
 </p>
