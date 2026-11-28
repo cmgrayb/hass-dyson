@@ -82,16 +82,6 @@ A core-ready Home Assistant integration for Dyson air purifiers, heaters, humidi
 - **BLE-only** - no Wi-Fi, no MQTT, no cloud required after the one-time LTK pairing fetch
   - Details and setup: [docs/FLOORCARE_BLE.md](docs/FLOORCARE_BLE.md)
 
-<!-- ## Planned Features
-
-Planned features are features we cannot currently complete due to lack of access to device of that type.
-
-If you feel you are technical enough to assist us with these features, we welcome the help.  Please reply to the issue tied to the feature and we'll be happy to work with you on it.
-
-If you feel you are not technical enough to assist, but can help financially, please consider a sponsorship.
-
-Anything helps, and all sponsorship money goes directly to development devices for this integration. -->
-
 ## Quick Start
 
 ### Installation
@@ -307,22 +297,13 @@ hass_dyson:
 
 ## Acknowledgments
 
+- **[cmgrayb/hass-dyson](https://github.com/cmgrayb/hass-dyson)** - The original integration this fork is based on, by @cmgrayb and contributors
 - **libshenxn** - For getting the Dyson community started with the original libdyson
 - **dotvezz** - For maintaining the libdyson-wg working group, ha-dyson, and opendyson, the inspiration for this integration
 - **libdyson-wg** - For maintaining excellent documentation and tooling without which this integration would not have been possible
 - **paho-mqtt** - Reliable MQTT communication library
 - **Home Assistant** - Amazing home automation platform
 - **Dyson** - For making great products worth putting in the work for
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=cmgrayb/hass-dyson&type=date&legend=top-left)](https://www.star-history.com/#cmgrayb/hass-dyson&type=date&legend=top-left)
-
-If you like our work, please give us a star!
-
-## Sponsorship
-
-This integration is provided free of charge and there is no requirement expressed or implied to donate.  Any money contributed through the sponsorship button as a gift goes to development devices to further improve this integration.
 
 ## License
 
